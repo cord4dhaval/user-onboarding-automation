@@ -34,6 +34,15 @@ export const goal = z.object({
    * A goal with no checks cannot tell when it has succeeded, which is why creating one
    * without them is refused rather than allowed to fail quietly thirty days later.
    */
+  /**
+   * Which connection should answer whether someone succeeded. Chosen when the campaign is
+   * created, because the person creating it knows where the truth lives; Claude then only
+   * has to work out which of that server's tools to ask.
+   */
+  verifyConnectionId: objectIdString.optional(),
+  /** Anything the person creating it knows that the tool list alone would not say. */
+  verifyHint: z.string().optional(),
+
   checks: z.array(z.object({
     key: z.string(),
     /** What this proves, in the words a person would use. */

@@ -57,6 +57,18 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
     })
     .sort((a, b) => Number(b.likely) - Number(a.likely));
 
+  // Only connections with a discovered tool list can be reasoned about as a verifier.
+  const verifiers = connections
+    .map((c) => {
+      const binding = bindings.find((b) => String(b.connectionId) === String(c._id));
+      return {
+        id: String(c._id),
+        provider: String(c.provider),
+        tools: ((binding?.discoveredTools ?? []) as unknown[]).length,
+      };
+    })
+    .filter((v) => v.tools > 0);
+
   const templateKeys = [...new Set(templates.map((t) => String(t.key)))];
   const channelKeys = [...new Set(channels.map((c) => String(c.key)))];
 
@@ -89,6 +101,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
           channelKeys={channelKeys}
           toolChoices={toolChoices}
           audiences={audiences}
+          verifiers={verifiers}
           action={createGoal}
         />
       </div>

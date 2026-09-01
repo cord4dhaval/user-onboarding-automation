@@ -225,7 +225,11 @@ export const TOOLS: ToolDef[] = [
             goal_key: String(g.key),
             name: String(g.name),
             success: g.success,
-            note: "Call verifiers to see what could answer this, then set_checks. Until then this campaign cannot tell when anyone succeeds.",
+            // Chosen by whoever created the campaign — they know where the truth lives, so
+            // the only open question is which of that server's tools to ask.
+            verify_connection_id: g.verifyConnectionId ?? null,
+            hint: g.verifyHint ?? null,
+            note: "Call verifiers to see what this connection exposes, then set_checks. Until then this campaign cannot tell when anyone succeeds.",
           })),
           need_plan: needPlan.map((g) => ({
             goal_instance_id: String(g._id),
@@ -711,7 +715,13 @@ TOOLS.push({
     "Everything connected that could answer 'has this person done X yet' — each connection with its tools and their input schemas. Call this before proposing how a campaign will verify success.",
   inputSchema: {
     type: "object",
-    properties: { product_id: { type: "string" } },
+    properties: {
+      product_id: { type: "string" },
+      connection_id: {
+        type: "string",
+        description: "Narrow to one connection — the campaign names which it should be verified against.",
+      },
+    },
     required: ["product_id"],
   },
   async handler(args, ctx) {
@@ -719,7 +729,8 @@ TOOLS.push({
     const productId = String(args.product_id);
     const orgId = await assertProduct(productId, ctx);
 
-    const connections = await db.collection(C.connections).find({ orgId, productId }).toArray();
+    const only = args.connection_id ? { _id: new ObjectId(String(args.connection_id)) } : {};
+    const connections = await db.collection(C.connections).find({ orgId, productId, ...only }).toArray();
     const out = [];
     for (const connection of connections) {
       const binding = await db.collection(C.mcpBindings).findOne({ orgId, connectionId: String(connection._id) });

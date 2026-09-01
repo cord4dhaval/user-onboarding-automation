@@ -4,12 +4,19 @@ import { useState } from "react";
 import Drawer from "../../../ui/drawer";
 import InputPicker, { type AudienceChoice, type ToolChoice } from "./input-picker";
 
+export interface VerifierChoice {
+  id: string;
+  provider: string;
+  tools: number;
+}
+
 export default function GoalDrawer({
   productId,
   templateKeys,
   channelKeys,
   toolChoices,
   audiences,
+  verifiers,
   action,
 }: {
   productId: string;
@@ -17,6 +24,7 @@ export default function GoalDrawer({
   channelKeys: string[];
   toolChoices: ToolChoice[];
   audiences: AudienceChoice[];
+  verifiers: VerifierChoice[];
   action: (formData: FormData) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -50,6 +58,38 @@ export default function GoalDrawer({
           </label>
 
           <InputPicker productId={productId} toolChoices={toolChoices} audiences={audiences} />
+
+          <h3 style={{ fontSize: 15, margin: "18px 0 0" }}>How we will know it worked</h3>
+          <p className="sub" style={{ margin: 0 }}>
+            Pick where the truth lives. Claude works out which of that server&apos;s tools answer your sentence
+            above, and writes the checks on its next run — a browser cannot ask it directly.
+          </p>
+
+          <label>
+            Verify against
+            <select name="verifyConnectionId" defaultValue={verifiers[0]?.id ?? ""}>
+              {verifiers.length === 0 && <option value="">— nothing connected that can answer —</option>}
+              {verifiers.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.provider} — {v.tools} tools
+                </option>
+              ))}
+            </select>
+            {verifiers.length === 0 && (
+              <span className="muted" style={{ fontSize: 13 }}>
+                <a href={`/products/${productId}/connections`}>Connect a server</a> and run Discover tools. Until
+                then this campaign can send, but cannot tell when anyone has succeeded.
+              </span>
+            )}
+          </label>
+
+          <label>
+            Anything Claude should know <span className="muted">(optional)</span>
+            <input
+              name="verifyHint"
+              placeholder="Accounts are found by work email, not personal"
+            />
+          </label>
 
           <h3 style={{ fontSize: 15, margin: "18px 0 0" }}>What happens on arrival</h3>
 

@@ -345,6 +345,8 @@ export async function createGoal(formData: FormData) {
           usd: Number(formData.get("usd") ?? 12),
         },
         allowedChannels: allowed,
+        verifyConnectionId: String(formData.get("verifyConnectionId") ?? "") || undefined,
+        verifyHint: String(formData.get("verifyHint") ?? "").trim() || undefined,
         // Left alone on edit so a plan already written is not wiped by saving the form.
         ...(alreadyHasChecks ? {} : { checks: [] }),
         needsVerificationPlan: !alreadyHasChecks,

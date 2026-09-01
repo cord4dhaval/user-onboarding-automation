@@ -112,9 +112,11 @@ Every run:
 Every run:
 1. sweep with product_id "${id}" and scope "plan".
 2. If total_work_items is 0, stop.
-3. For anything under need_verification_plan: call verifiers to see what could
-   answer that campaign's success sentence, then set_checks. Until this exists
-   the campaign cannot mark anyone as succeeded.
+3. For anything under need_verification_plan: it names verify_connection_id —
+   the source whoever created it said holds the truth. Call verifiers with that
+   connection_id, read the tools it exposes, and work out which answer the
+   success sentence. Respect any hint. Then set_checks. Until this exists the
+   campaign cannot mark anyone as succeeded.
 4. Classify unclassified people in batches — lead_card for context, then submit
    them all in one classify call.
 5. For each campaign under need_plan: lead_card, then plan_goal with 3-5 steps.
