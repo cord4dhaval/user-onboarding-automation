@@ -1,6 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
+import InputPicker from "./input-picker";
 import { createGoal, deleteGoal } from "../../../actions";
 import {scope, requireSession} from "../../../tenant";
 
@@ -137,81 +138,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
           <input name="successDescribed" defaultValue="Account created, two teammates tracked, one report opened" required />
         </label>
 
-        <h3 style={{ fontSize: 15, margin: "20px 0 0" }}>Where leads come from</h3>
-        <p className="sub" style={{ margin: "2px 0 0" }}>
-          A file arrives once. An MCP tool or an API is polled on the interval you set below.
-        </p>
-
-        <label>
-          Input
-          <select name="inputType" defaultValue="mcp">
-            <option value="mcp">MCP tool — recurring</option>
-            <option value="api">API endpoint + token — recurring</option>
-            <option value="file">Spreadsheet upload — one off</option>
-            <option value="none">None for now</option>
-          </select>
-        </label>
-
-        <label>
-          Input name
-          <input name="inputName" placeholder="TeamGrid CRM leads" />
-        </label>
-
-        <div className="card">
-          <div className="label">If MCP</div>
-          <label>
-            Which tool returns the leads
-            <select name="mcpTool" defaultValue={toolChoices[0]?.value}>
-              {toolChoices.length === 0 && <option value="">— no discovered tools —</option>}
-              {toolChoices.map((t) => (
-                <option key={t.value} value={t.value}>{t.likely ? `${t.label}  ★` : t.label}</option>
-              ))}
-            </select>
-          </label>
-          {toolChoices.length === 0 && (
-            <p className="sub" style={{ margin: "6px 0 0" }}>
-              <a href={`/products/${id}/connections`}>Connect a server</a> and run Discover tools first.
-            </p>
-          )}
-        </div>
-
-        <div className="card">
-          <div className="label">If API + token</div>
-          <label>Endpoint<input name="apiUrl" type="url" placeholder="https://api.example.com/v1/leads" /></label>
-          <label>Bearer token<input name="apiToken" type="password" placeholder="token" /></label>
-          <label>
-            Cursor parameter <span className="muted">(optional — how it resumes)</span>
-            <input name="cursorParam" placeholder="updated_since" />
-          </label>
-        </div>
-
-        <div className="card">
-          <div className="label">If spreadsheet</div>
-          <label>
-            File <span className="muted">(.xlsx or .csv — columns are read from the header row)</span>
-            <input name="file" type="file" accept=".xlsx,.xls,.csv" />
-          </label>
-        </div>
-
-        <div className="grid">
-          <label>
-            Check every
-            <select name="fetchEverySec" defaultValue="600">
-              <option value="300">5 minutes</option>
-              <option value="600">10 minutes</option>
-              <option value="1800">30 minutes</option>
-              <option value="3600">1 hour</option>
-              <option value="86400">1 day</option>
-            </select>
-          </label>
-          <label>
-            Urgency
-            <select name="triggerMode" defaultValue="batch">
-              <option value="realtime">Real time — first message goes out immediately</option>
-              <option value="batch">Batch — wait for a civil hour where they are</option>
-            </select>
-          </label>
-        </div>
+        <InputPicker productId={id} toolChoices={toolChoices} />
 
         <h3 style={{ fontSize: 15, margin: "20px 0 0" }}>What happens on arrival</h3>
 
