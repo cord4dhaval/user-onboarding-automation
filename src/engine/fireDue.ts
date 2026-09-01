@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { renderTemplate, toOutbound, type MergeVars } from "./compose.js";
+import { renderTemplate, toOutbound, type ComposedContent, type MergeVars } from "./compose.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
@@ -117,13 +117,13 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         opt_out_url: `${site}/unsubscribe?p=${personId}`,
       };
 
-      const content = renderTemplate(
-        template.blocks as Record<string, unknown>[],
-        vars,
-        action.content && (action.content as { bodyMd?: string }).bodyMd
-          ? (action.content as never)
-          : undefined,
-      );
+      const prior = action.content as Partial<ComposedContent> | undefined;
+      // A message someone read and approved ships exactly as read. Re-rendering it here
+      // would let the words change between the review screen and the recipient.
+      const content =
+        prior?.bodyMd && action.reviewedAt
+          ? (prior as ComposedContent)
+          : renderTemplate(template.blocks as Record<string, unknown>[], vars, prior);
 
       const priorClaims = await priorClaimsFor(String(action.goalInstanceId));
       const constraints = template.constraints as { maxWords?: number; noClaims?: string[] } | undefined;

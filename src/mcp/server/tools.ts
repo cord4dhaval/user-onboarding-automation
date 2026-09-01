@@ -578,10 +578,12 @@ export const TOOLS: ToolDef[] = [
             channelId: String(channel._id),
             angle: String(t.angle),
             rationale: String(t.rationale),
-            // Composed copy, so the renderer uses this instead of the template fallback.
+            // Claude writes the slot, not the whole message: the greeting, call to action
+            // and opt-out block are the template's, and are added when this renders.
             content: {
               subject: t.subject ? String(t.subject) : undefined,
-              bodyMd: body,
+              bodyMd: "",
+              slotText: body,
               personalizationUsed: [],
               claimsMade: (t.claims_made ?? []) as string[],
               wordCount: body.split(/\s+/).filter(Boolean).length,

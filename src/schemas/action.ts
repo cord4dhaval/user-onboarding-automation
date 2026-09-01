@@ -41,6 +41,8 @@ export const composedContent = z.object({
   /** Fed back to the composer so a later touch never repeats or contradicts an earlier one. */
   claimsMade: z.array(z.string()).default([]),
   wordCount: z.number().int().nonnegative(),
+  /** The slot's prose on its own. `bodyMd` is the rendered message that wraps it. */
+  slotText: z.string().optional(),
 });
 
 /** Touch, content, prediction and outcome in one document — one read tells the whole story. */

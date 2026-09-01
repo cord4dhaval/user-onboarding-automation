@@ -8,6 +8,12 @@ export interface ComposedContent {
   personalizationUsed: string[];
   claimsMade: string[];
   wordCount: number;
+  /**
+   * Just the slot's prose, as Claude wrote it — never the assembled message. Rendering
+   * reads this; `bodyMd` is the output of a render and feeding it back in would wrap a
+   * finished message in a second greeting and opt-out block.
+   */
+  slotText?: string;
 }
 
 type Block = Record<string, unknown>;
@@ -59,7 +65,7 @@ export function renderTemplate(
     }
     if (type === "slot") {
       const filled =
-        precomposed?.bodyMd ?? (typeof block.fallback === "string" ? merge(block.fallback, vars) : undefined);
+        precomposed?.slotText ?? (typeof block.fallback === "string" ? merge(block.fallback, vars) : undefined);
       if (filled) parts.push(filled);
       continue;
     }
@@ -88,6 +94,7 @@ export function renderTemplate(
     personalizationUsed,
     claimsMade: precomposed?.claimsMade ?? [],
     wordCount: bodyMd.split(/\s+/).filter(Boolean).length,
+    slotText: precomposed?.slotText,
   };
 }
 
