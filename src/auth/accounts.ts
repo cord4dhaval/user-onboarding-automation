@@ -3,6 +3,18 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { hashPassword, verifyPassword } from "./password.js";
 
+/**
+ * Raised for problems the person filling in the form can fix themselves, so the message is
+ * safe to show them. Anything else that escapes these functions is an internal fault and
+ * gets a generic message instead.
+ */
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
 export interface AccountResult {
   userId: string;
   orgId: string;
@@ -22,11 +34,12 @@ export async function createAccount(args: {
 }): Promise<AccountResult> {
   const db = await getDb();
   const email = args.email.trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That does not look like an email address");
-  if (args.password.length < 8) throw new Error("Password must be at least 8 characters");
+  if (!email) throw new AuthError("Enter your email address");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new AuthError("That does not look like an email address");
+  if (args.password.length < 8) throw new AuthError("Password must be at least 8 characters");
 
   const existing = await db.collection(C.users).findOne({ email });
-  if (existing) throw new Error("An account with that email already exists");
+  if (existing) throw new AuthError("An account with that email already exists. Sign in instead.");
 
   const orgId = new ObjectId();
   await db.collection(C.organizations).insertOne({
