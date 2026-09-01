@@ -146,7 +146,9 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       }
 
       const approvalMode = (goal?.schedule as { approvalMode?: string } | undefined)?.approvalMode ?? "gate_on";
-      if (approvalMode === "gate_on" && !dryRun) {
+      // The gate is for content nobody has looked at. Re-holding a message a human already
+      // approved would loop it back to review forever, and nothing would ever send.
+      if (approvalMode === "gate_on" && !action.reviewedAt && !dryRun) {
         await db.collection(C.actions).updateOne(
           { _id: action._id },
           { $set: { status: "awaiting_approval", content, validation: check } },
