@@ -132,3 +132,11 @@ main.auth button { align-self: stretch; text-align: center; }
 }
 input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--bad); }
 button[disabled] { opacity: 0.55; cursor: progress; }
+
+.preview { border: 1px solid var(--rule); border-radius: 5px; background: var(--ground); overflow: hidden; }
+.preview-head {
+  padding: 8px 14px; border-bottom: 1px solid var(--rule); font-size: 13.5px;
+}
+.preview-head .muted { display: inline-block; width: 58px; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .08em; text-transform: uppercase; }
+.preview-body { padding: 16px 14px; white-space: pre-wrap; font-size: 14.5px; line-height: 1.6; }
