@@ -10,6 +10,15 @@ import GoalDrawer from "./goal-drawer";
 
 export const dynamic = "force-dynamic";
 
+interface GoalCheck {
+  key: string;
+  tool: string;
+  describedAs?: string;
+}
+
+const checksOf = (goal: Record<string, unknown>): GoalCheck[] =>
+  ((goal.checks ?? []) as GoalCheck[]);
+
 export default async function Goals({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { orgId } = await requireSession();
@@ -84,6 +93,25 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
         />
       </div>
 
+      {rows.some(({ goal }) => checksOf(goal).length === 0) && (
+        <div className="note">
+          <p style={{ marginBottom: 6 }}>
+            <strong>Some campaigns have no verification plan yet.</strong> A browser cannot call Claude, so the
+            Plan routine writes it on its next run — usually within two hours. Those campaigns still send; they
+            simply cannot tell when anyone has succeeded until the plan exists.
+          </p>
+          <p className="sub" style={{ margin: 0 }}>
+            To do it now, paste this into a Claude session with the connector attached:
+          </p>
+          <pre style={{ margin: "8px 0 0" }}>
+{`Write the verification plans for product ${id}.
+Call sweep with scope "plan", then for each campaign under
+need_verification_plan: call verifiers, work out which tools answer its
+success sentence, and call set_checks.`}
+          </pre>
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <div className="empty">
           <strong>No goals yet</strong>
@@ -94,7 +122,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
           <table>
             <thead>
               <tr>
-                <th>Goal</th><th>Done when</th><th>First message</th>
+                <th>Goal</th><th>Done when</th><th>Verified by</th><th>First message</th>
                 <th>Input</th><th>Status</th><th>People</th><th />
               </tr>
             </thead>
@@ -112,6 +140,25 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                       <div className="muted" style={{ fontSize: 12.5 }}><code>{String(goal.key)}</code></div>
                     </td>
                     <td>{String((goal.success as { describedAs: string }).describedAs)}</td>
+                    <td>
+                      {checksOf(goal).length === 0 ? (
+                        <>
+                          <ClaudeBadge note="writing the plan" />
+                          <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
+                            Until it does, nobody can be marked as succeeded.
+                          </div>
+                        </>
+                      ) : (
+                        checksOf(goal).map((c) => (
+                          <div key={c.key} style={{ marginBottom: 2 }}>
+                            <span className="pill ok">{c.key}</span>
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              <code>{c.tool}</code>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </td>
                     <td>
                       <code>{ft.templateKey}</code>
                       <div className="muted" style={{ fontSize: 12.5 }}>{ft.channels.join(" → ")}</div>

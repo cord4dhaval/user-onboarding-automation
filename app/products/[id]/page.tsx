@@ -60,7 +60,15 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
     });
   }
   if (failed > 0) {
-    alerts.push({ text: `${failed} message${failed === 1 ? "" : "s"} failed to send`, href: `${base}/leads`, action: "Inspect" });
+    alerts.push({ text: `${failed} message${failed === 1 ? "" : "s"} failed to send`, href: `${base}/library`, action: "Inspect" });
+  }
+  const unverifiable = await db.collection(C.goals).countDocuments({ ...s, enabled: true, "checks.0": { $exists: false } });
+  if (unverifiable > 0) {
+    alerts.push({
+      text: `${unverifiable} campaign${unverifiable === 1 ? "" : "s"} cannot tell when anyone succeeds — no verification plan yet`,
+      href: `${base}/goals`,
+      action: "See why",
+    });
   }
 
   // Setup is a chain: each step is pointless until the one above it is done.

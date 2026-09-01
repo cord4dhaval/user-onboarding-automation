@@ -119,6 +119,18 @@ export const TOOLS: ToolDef[] = [
           ? activeGoals.filter((g) => !planned.has(String(g._id))).slice(0, limit)
           : [];
 
+        // Campaigns the UI created but could not write a verification plan for — a browser
+        // cannot call Claude, so it marks the work and this is where it is picked up.
+        const needVerificationPlan = wants("plan")
+          ? await db
+              .collection(C.goals)
+              // Queried on the condition itself rather than on a flag: a campaign created
+              // before the flag existed still has no checks, and still needs a plan.
+              .find({ ...s, enabled: true, "checks.0": { $exists: false } })
+              .limit(limit)
+              .toArray()
+          : [];
+
         const lowBuffers = [];
         for (const goal of wants("compose") ? activeGoals : []) {
           if (!goal.currentPlanId) continue;
@@ -170,6 +182,12 @@ export const TOOLS: ToolDef[] = [
             role: String(p.role ?? ""),
             company_domain: String(p.companyDomain ?? ""),
           })),
+          need_verification_plan: needVerificationPlan.map((g) => ({
+            goal_key: String(g.key),
+            name: String(g.name),
+            success: g.success,
+            note: "Call verifiers to see what could answer this, then set_checks. Until then this campaign cannot tell when anyone succeeds.",
+          })),
           need_plan: needPlan.map((g) => ({
             goal_instance_id: String(g._id),
             person_id: String(g.personId),
@@ -196,6 +214,7 @@ export const TOOLS: ToolDef[] = [
         (n, p) =>
           n +
           p.unclassified.length +
+          p.need_verification_plan.length +
           p.need_plan.length +
           p.low_buffers.length +
           p.replies_waiting.length +
@@ -686,7 +705,13 @@ TOOLS.push({
 
     await db.collection(C.goals).updateOne(
       { orgId, productId, key: String(args.goal_key) },
-      { $set: { checks: checks.map((c) => ({ ...c, args: c.args ?? {}, latch: c.latch ?? true, proposedBy: "claude" })) } },
+      {
+        $set: {
+          checks: checks.map((c) => ({ ...c, args: c.args ?? {}, latch: c.latch ?? true, proposedBy: "claude" })),
+          needsVerificationPlan: false,
+          checksWrittenAt: new Date(),
+        },
+      },
     );
     return { goal_key: String(args.goal_key), checks: checks.length };
   },
