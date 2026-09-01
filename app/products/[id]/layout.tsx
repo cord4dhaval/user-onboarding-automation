@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { ORG_ID, getProduct } from "../../tenant";
+import { getProduct, requireSession } from "../../tenant";
+import { logOut } from "../../auth-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,9 @@ export default async function ProductLayout({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const product = await getProduct(id);
+  const session = await requireSession();
+  const { orgId } = session;
+  const product = await getProduct(id, orgId);
   if (!product) {
     return (
       <main>
@@ -35,7 +38,7 @@ export default async function ProductLayout({
   }
 
   const db = await getDb();
-  const products = await db.collection(C.products).find({ orgId: ORG_ID }).sort({ createdAt: 1 }).toArray();
+  const products = await db.collection(C.products).find({ orgId: orgId }).sort({ createdAt: 1 }).toArray();
 
   return (
     <>
@@ -52,6 +55,10 @@ export default async function ProductLayout({
             </div>
           )}
         </div>
+        <span style={{ marginLeft: "auto" }} className="muted">{session.email}</span>
+        <form action={logOut}>
+          <button className="ghost" type="submit">Sign out</button>
+        </form>
       </nav>
       <nav className="tabs">
         {TABS.map((t) => (

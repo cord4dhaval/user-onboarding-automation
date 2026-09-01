@@ -12,7 +12,10 @@ import { inferCapabilities } from "@/mcp/discover.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
-import { ORG_ID } from "./tenant";
+import { requireSession } from "./tenant";
+
+/** Every action resolves the caller's organisation from their session, never a constant. */
+const currentOrg = async () => (await requireSession()).orgId;
 
 // ── products ──────────────────────────────────────────────────────────────────
 
@@ -25,7 +28,7 @@ export async function createProduct(formData: FormData) {
   const productId = new ObjectId();
   await db.collection(C.products).insertOne({
     _id: productId,
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     slug,
     name,
     // A minimal starting config, meant to be replaced — by hand on the product page, or
@@ -62,17 +65,17 @@ export async function saveProductConfig(formData: FormData) {
 
   await db
     .collection(C.products)
-    .updateOne({ _id: new ObjectId(productId), orgId: ORG_ID }, { $set: { config }, $inc: { version: 1 } });
+    .updateOne({ _id: new ObjectId(productId), orgId: (await currentOrg()) }, { $set: { config }, $inc: { version: 1 } });
   revalidatePath(`/products/${productId}`);
 }
 
 export async function generateTemplates(productId: string) {
   const db = await getDb();
-  const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId: ORG_ID });
+  const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId: (await currentOrg()) });
   if (!product) throw new Error("product not found");
 
   const { generateDefaultTemplates } = await import("@/engine/templates.js");
-  await generateDefaultTemplates(ORG_ID, productId, productConfig.parse(product.config));
+  await generateDefaultTemplates((await currentOrg()), productId, productConfig.parse(product.config));
   revalidatePath(`/products/${productId}`);
   revalidatePath(`/products/${productId}/templates`);
 }
@@ -94,7 +97,7 @@ export async function createConnection(formData: FormData) {
   const connectionId = new ObjectId();
   await db.collection(C.connections).insertOne({
     _id: connectionId,
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     key: provider,
     provider,
@@ -103,13 +106,13 @@ export async function createConnection(formData: FormData) {
     scopes: [],
     status: "pending",
     directions: ["in", "out"],
-    createdBy: ORG_ID,
+    createdBy: (await currentOrg()),
     createdAt: new Date(),
   });
 
   await db.collection(C.credentials).insertOne({
     _id: new ObjectId(),
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     connectionId: String(connectionId),
     authType: "mcp_bearer",
     ...sealSecret(token),
@@ -125,7 +128,7 @@ export async function discoverTools(productId: string, connectionId: string) {
   const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
   if (!connection?.serverUrl) throw new Error("connection not found");
 
-  const token = await resolveSecret(ORG_ID, connectionId, "ui.discover");
+  const token = await resolveSecret((await currentOrg()), connectionId, "ui.discover");
   const client = new McpClient(String(connection.serverUrl), token);
 
   let tools;
@@ -143,10 +146,10 @@ export async function discoverTools(productId: string, connectionId: string) {
   }
 
   await db.collection(C.mcpBindings).updateOne(
-    { orgId: ORG_ID, connectionId },
+    { orgId: (await currentOrg()), connectionId },
     {
       $set: {
-        orgId: ORG_ID,
+        orgId: (await currentOrg()),
         connectionId,
         discoveredTools: tools,
         capabilities: inferCapabilities(tools),
@@ -186,7 +189,7 @@ export async function saveBinding(formData: FormData) {
 
   await db
     .collection(C.mcpBindings)
-    .updateOne({ orgId: ORG_ID, connectionId }, { $set: { [`bind.${verb}`]: spec } });
+    .updateOne({ orgId: (await currentOrg()), connectionId }, { $set: { [`bind.${verb}`]: spec } });
   await db
     .collection(C.connections)
     .updateOne({ _id: new ObjectId(connectionId) }, { $set: { status: "healthy" } });
@@ -203,7 +206,7 @@ export async function createChannel(formData: FormData) {
 
   await db.collection(C.channels).insertOne({
     _id: new ObjectId(),
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     connectionId,
     key: String(formData.get("key")),
@@ -235,7 +238,7 @@ export async function createChannel(formData: FormData) {
 
 async function capabilitiesFor(connectionId: string) {
   const db = await getDb();
-  const binding = await db.collection(C.mcpBindings).findOne({ orgId: ORG_ID, connectionId });
+  const binding = await db.collection(C.mcpBindings).findOne({ orgId: (await currentOrg()), connectionId });
   const caps = (binding?.capabilities ?? {}) as Record<string, { value: unknown }>;
   const flat: Record<string, unknown> = {};
   for (const [key, cap] of Object.entries(caps)) flat[key] = cap.value;
@@ -264,7 +267,7 @@ export async function createSource(formData: FormData) {
 
   await db.collection(C.sources).insertOne({
     _id: new ObjectId(),
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     connectionId: String(formData.get("connectionId")),
     name: String(formData.get("name")),
@@ -303,10 +306,10 @@ export async function createGoal(formData: FormData) {
     .filter(Boolean);
 
   await db.collection(C.goals).updateOne(
-    { orgId: ORG_ID, productId, key },
+    { orgId: (await currentOrg()), productId, key },
     {
       $set: {
-        orgId: ORG_ID,
+        orgId: (await currentOrg()),
         productId,
         key,
         name: String(formData.get("name")),
@@ -375,7 +378,7 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
   }
 
   const base = {
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     name: String(formData.get("inputName") ?? goalKey),
     defaultGoalKey: goalKey,
@@ -397,7 +400,7 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
     await db
       .collection(C.mcpBindings)
       .updateOne(
-        { orgId: ORG_ID, connectionId },
+        { orgId: (await currentOrg()), connectionId },
         { $set: { "bind.fetch_leads": { tool, args: { cursor: "$cursor" } } } },
         { upsert: true },
       );
@@ -419,7 +422,7 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
     const connectionId = new ObjectId();
     await db.collection(C.connections).insertOne({
       _id: connectionId,
-      orgId: ORG_ID,
+      orgId: (await currentOrg()),
       productId,
       key: "api",
       provider: String(formData.get("inputName") ?? "api"),
@@ -428,12 +431,12 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       scopes: [],
       status: "healthy",
       directions: ["in"],
-      createdBy: ORG_ID,
+      createdBy: (await currentOrg()),
       createdAt: new Date(),
     });
     await db.collection(C.credentials).insertOne({
       _id: new ObjectId(),
-      orgId: ORG_ID,
+      orgId: (await currentOrg()),
       connectionId: String(connectionId),
       authType: "bearer",
       ...sealSecret(token),
@@ -527,7 +530,7 @@ export async function startOAuth(formData: FormData) {
   const connectionId = new ObjectId();
   await db.collection(C.connections).insertOne({
     _id: connectionId,
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     key: provider,
     provider,
@@ -538,7 +541,7 @@ export async function startOAuth(formData: FormData) {
     directions: ["in", "out"],
     // Held only until the callback consumes them.
     oauth: { metadata, clientId, clientSecret, verifier, state, redirectUri },
-    createdBy: ORG_ID,
+    createdBy: (await currentOrg()),
     createdAt: new Date(),
   });
 
@@ -570,8 +573,8 @@ export async function deleteConnection(productId: string, connectionId: string) 
   const db = await getDb();
 
   const [channels, sources] = await Promise.all([
-    db.collection(C.channels).countDocuments({ orgId: ORG_ID, connectionId }),
-    db.collection(C.sources).countDocuments({ orgId: ORG_ID, connectionId }),
+    db.collection(C.channels).countDocuments({ orgId: (await currentOrg()), connectionId }),
+    db.collection(C.sources).countDocuments({ orgId: (await currentOrg()), connectionId }),
   ]);
   if (channels > 0 || sources > 0) {
     throw new Error(
@@ -580,14 +583,14 @@ export async function deleteConnection(productId: string, connectionId: string) 
   }
 
   await Promise.all([
-    db.collection(C.credentials).deleteMany({ orgId: ORG_ID, connectionId }),
-    db.collection(C.mcpBindings).deleteMany({ orgId: ORG_ID, connectionId }),
-    db.collection(C.connections).deleteOne({ _id: new ObjectId(connectionId), orgId: ORG_ID }),
+    db.collection(C.credentials).deleteMany({ orgId: (await currentOrg()), connectionId }),
+    db.collection(C.mcpBindings).deleteMany({ orgId: (await currentOrg()), connectionId }),
+    db.collection(C.connections).deleteOne({ _id: new ObjectId(connectionId), orgId: (await currentOrg()) }),
   ]);
 
   await db.collection(C.audit).insertOne({
     _id: new ObjectId(),
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     actorType: "user",
     action: "connection.delete",
@@ -615,7 +618,7 @@ export async function createSmtpChannel(formData: FormData) {
   const connectionId = new ObjectId();
   await db.collection(C.connections).insertOne({
     _id: connectionId,
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     key: "smtp",
     provider: String(formData.get("provider") ?? "smtp"),
@@ -624,13 +627,13 @@ export async function createSmtpChannel(formData: FormData) {
     scopes: [],
     status: "healthy",
     directions: ["out"],
-    createdBy: ORG_ID,
+    createdBy: (await currentOrg()),
     createdAt: new Date(),
   });
 
   await db.collection(C.credentials).insertOne({
     _id: new ObjectId(),
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     connectionId: String(connectionId),
     authType: "smtp",
     ...sealSecret(pass),
@@ -639,7 +642,7 @@ export async function createSmtpChannel(formData: FormData) {
 
   await db.collection(C.channels).insertOne({
     _id: new ObjectId(),
-    orgId: ORG_ID,
+    orgId: (await currentOrg()),
     productId,
     connectionId: String(connectionId),
     key: "email",
@@ -673,7 +676,7 @@ export async function createSmtpChannel(formData: FormData) {
 
 export async function deleteChannel(productId: string, channelId: string) {
   const db = await getDb();
-  await db.collection(C.channels).deleteOne({ _id: new ObjectId(channelId), orgId: ORG_ID });
+  await db.collection(C.channels).deleteOne({ _id: new ObjectId(channelId), orgId: (await currentOrg()) });
   revalidatePath(`/products/${productId}/channels`);
 }
 
@@ -683,7 +686,7 @@ export async function deleteChannel(productId: string, channelId: string) {
  */
 export async function deleteGoal(productId: string, goalKey: string) {
   const db = await getDb();
-  const s = { orgId: ORG_ID, productId };
+  const s = { orgId: (await currentOrg()), productId };
 
   const instances = await db.collection(C.goalInstances).find({ ...s, goalKey }).project({ _id: 1 }).toArray();
   const ids = instances.map((i) => String(i._id));
@@ -702,14 +705,14 @@ export async function deleteGoal(productId: string, goalKey: string) {
 
 export async function deleteSource(productId: string, sourceId: string) {
   const db = await getDb();
-  await db.collection(C.sources).deleteOne({ _id: new ObjectId(sourceId), orgId: ORG_ID });
+  await db.collection(C.sources).deleteOne({ _id: new ObjectId(sourceId), orgId: (await currentOrg()) });
   revalidatePath(`/products/${productId}/sources`);
 }
 
 export async function toggleSource(productId: string, sourceId: string, enabled: boolean) {
   const db = await getDb();
   await db.collection(C.sources).updateOne(
-    { _id: new ObjectId(sourceId), orgId: ORG_ID },
+    { _id: new ObjectId(sourceId), orgId: (await currentOrg()) },
     { $set: { enabled, ...(enabled ? { nextFetchAt: new Date() } : {}) } },
   );
   revalidatePath(`/products/${productId}/sources`);

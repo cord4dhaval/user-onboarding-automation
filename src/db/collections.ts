@@ -21,6 +21,10 @@ export const COLLECTIONS = {
   workQueue: "work_queue",
   suppressions: "suppressions",
   audit: "audit",
+
+  oauthClients: "oauth_clients",
+  oauthCodes: "oauth_codes",
+  oauthTokens: "oauth_tokens",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

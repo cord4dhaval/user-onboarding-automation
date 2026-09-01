@@ -1,13 +1,14 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { generateTemplates, saveProductConfig } from "../../actions";
-import { getProduct, scope } from "../../tenant";
+import {getProduct, scope, requireSession} from "../../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProductOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const product = await getProduct(id);
+  const { orgId } = await requireSession();
+  const product = await getProduct(id, orgId);
   if (!product) return null;
 
   const cfg = product.config as {
@@ -18,7 +19,7 @@ export default async function ProductOverview({ params }: { params: Promise<{ id
   };
 
   const db = await getDb();
-  const s = scope(id);
+  const s = scope(orgId, id);
   const [templates, channels, connections, sources, goals, people, sent] = await Promise.all([
     db.collection(C.templates).countDocuments(s),
     db.collection(C.channels).find(s).toArray(),

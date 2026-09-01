@@ -2,14 +2,15 @@ import { headers } from "next/headers";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { TOOLS } from "@/mcp/server/tools.js";
-import { scope } from "../../../tenant";
+import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClaudeSetup({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
-  const s = scope(id);
+  const s = scope(orgId, id);
 
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";

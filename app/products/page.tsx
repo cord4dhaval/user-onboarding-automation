@@ -1,18 +1,24 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { createProduct } from "../actions";
-import { ORG_ID } from "../tenant";
+import { logOut } from "../auth-actions";
+import { requireSession } from "../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function Products() {
+  const { orgId, email } = await requireSession();
   const db = await getDb();
-  const products = await db.collection(C.products).find({ orgId: ORG_ID }).sort({ createdAt: 1 }).toArray();
+  const products = await db.collection(C.products).find({ orgId: orgId }).sort({ createdAt: 1 }).toArray();
 
   return (
     <main>
       <nav className="top">
         <span className="brand">Conversion Engine</span>
+        <span style={{ marginLeft: "auto" }} className="muted">{email}</span>
+        <form action={logOut}>
+          <button className="ghost" type="submit">Sign out</button>
+        </form>
       </nav>
 
       <h1>Products</h1>

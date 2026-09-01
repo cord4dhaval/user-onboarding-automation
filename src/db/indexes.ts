@@ -57,6 +57,9 @@ export async function ensureIndexes(): Promise<void> {
     { name: "suppression_lookup", unique: true },
   );
 
+  await db.collection(C.users).createIndex({ email: 1 }, { name: "user_email", unique: true });
+  await db.collection(C.memberships).createIndex({ userId: 1, orgId: 1 }, { name: "membership", unique: true });
+
   await db.collection(C.credentials).createIndex(
     { orgId: 1, connectionId: 1 },
     { name: "credential_lookup" },

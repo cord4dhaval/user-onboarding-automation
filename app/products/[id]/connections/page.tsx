@@ -1,15 +1,16 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { deleteConnection } from "../../../actions";
-import { scope } from "../../../tenant";
+import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function Connections({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
-  const rows = await db.collection(C.connections).find(scope(id)).toArray();
-  const bindings = await db.collection(C.mcpBindings).find({ orgId: scope(id).orgId }).toArray();
+  const rows = await db.collection(C.connections).find(scope(orgId, id)).toArray();
+  const bindings = await db.collection(C.mcpBindings).find({ orgId: scope(orgId, id).orgId }).toArray();
   const boundBy = new Map(bindings.map((b) => [String(b.connectionId), Object.keys((b.bind ?? {}) as object)]));
 
   return (

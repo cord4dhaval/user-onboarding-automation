@@ -35,3 +35,50 @@ npm run db:indexes
 
 `MASTER_KEY_B64` in an environment variable is a launch compromise. Move to a managed KMS
 before a second tenant's credentials are stored.
+
+## The clock
+
+The engine needs something to hit `/api/cron/tick` roughly every minute: it fetches due
+sources, sends what is due, and reconciles delivery. Vercel's Hobby plan allows only one
+cron run per day, so `vercel.json` keeps a daily entry as a fallback and the real clock
+lives outside.
+
+**cron-job.org (recommended)** — free, one-minute granularity.
+
+```
+URL      https://your-app.vercel.app/api/cron/tick
+Every    1 minute
+Header   Authorization: Bearer <CRON_SECRET>
+```
+
+**GitHub Actions** — five-minute floor, and it drifts under load. Pushing this file needs
+a token with the `workflow` scope.
+
+```yaml
+# .github/workflows/tick.yml
+name: Engine tick
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl --fail --silent --show-error --max-time 60 \
+            -H "authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/tick"
+```
+
+**Local, for testing** — works while your machine is on.
+
+```bash
+TICK_URL=https://your-app.vercel.app/api/cron/tick npm run scheduler
+```
+
+## Two clocks, two jobs
+
+The engine clock above is deterministic and needs no model. Separately, an hourly Claude
+routine calls the MCP server at `/api/mcp` to classify people, write their pipelines and
+compose the next touches. Setup steps are on each product's **Connect Claude** page.

@@ -1,19 +1,20 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { createChannel, createSmtpChannel, deleteChannel } from "../../../actions";
-import { ORG_ID, scope } from "../../../tenant";
+import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function Channels({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
-  const s = scope(id);
+  const s = scope(orgId, id);
 
   const [channels, connections, bindings] = await Promise.all([
     db.collection(C.channels).find(s).toArray(),
     db.collection(C.connections).find({ ...s, status: "healthy" }).toArray(),
-    db.collection(C.mcpBindings).find({ orgId: ORG_ID }).toArray(),
+    db.collection(C.mcpBindings).find({ orgId: orgId }).toArray(),
   ]);
 
   // Only a connection whose send tool is bound can carry a channel.

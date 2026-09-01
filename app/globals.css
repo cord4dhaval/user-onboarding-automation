@@ -114,3 +114,8 @@ code { font-family: var(--mono); font-size: 12.5px; background: var(--surface-2)
 
 button.danger { color: var(--bad); border-color: transparent; padding: 4px 8px; }
 button.danger:hover { border-color: var(--bad); }
+
+main.auth { max-width: 380px; margin: 12vh auto 0; }
+main.auth h1 { margin-bottom: 4px; }
+main.auth form.stack { max-width: none; margin-top: 24px; }
+main.auth button { align-self: stretch; text-align: center; }

@@ -2,14 +2,15 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
 import { createGoal, deleteGoal } from "../../../actions";
-import { scope } from "../../../tenant";
+import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function Goals({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
-  const s = scope(id);
+  const s = scope(orgId, id);
 
   const [goals, templates, sources, connections, bindings] = await Promise.all([
     db.collection(C.goals).find(s).toArray(),

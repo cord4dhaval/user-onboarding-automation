@@ -16,20 +16,32 @@ import { resolveChannelAdapter } from "../../engine/adapters.js";
  * status; the engine resolves secrets in-process at send time.
  */
 
+/** Who is calling. Resolved from their OAuth token, never from the arguments. */
+export interface ToolCtx {
+  orgId: string;
+  userId: string;
+}
+
 export interface ToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => Promise<unknown>;
+  handler: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
-async function orgOf(productId: string): Promise<string> {
+/**
+ * Every product id supplied by a caller is checked against their own organisation. A
+ * guessed id from another tenant resolves to nothing rather than to someone else's data.
+ */
+async function assertProduct(productId: string, ctx: ToolCtx): Promise<string> {
   const db = await getDb();
-  const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId) });
+  const product = await db
+    .collection(C.products)
+    .findOne({ _id: new ObjectId(productId), orgId: ctx.orgId });
   if (!product) throw new Error(`product ${productId} not found`);
-  return String(product.orgId);
+  return ctx.orgId;
 }
 
 export const TOOLS: ToolDef[] = [
@@ -37,9 +49,9 @@ export const TOOLS: ToolDef[] = [
     name: "list_products",
     description: "Every product this token can act on, with its goals and how much work is waiting.",
     inputSchema: { type: "object", properties: {} },
-    async handler() {
+    async handler(_args, ctx) {
       const db = await getDb();
-      const products = await db.collection(C.products).find({ status: "active" }).toArray();
+      const products = await db.collection(C.products).find({ orgId: ctx.orgId, status: "active" }).toArray();
       return Promise.all(
         products.map(async (p) => {
           const s = { orgId: String(p.orgId), productId: String(p._id) };
@@ -66,16 +78,18 @@ export const TOOLS: ToolDef[] = [
         limit: { type: "number", description: "Max items per section. Default 25." },
       },
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const db = await getDb();
       const limit = typeof args.limit === "number" ? args.limit : 25;
       const productIds = str(args.product_id)
         ? [str(args.product_id) as string]
-        : (await db.collection(C.products).find({ status: "active" }).toArray()).map((p) => String(p._id));
+        : (await db.collection(C.products).find({ orgId: ctx.orgId, status: "active" }).toArray()).map((p) =>
+            String(p._id),
+          );
 
       const packet = [];
       for (const productId of productIds) {
-        const orgId = await orgOf(productId);
+        const orgId = await assertProduct(productId, ctx);
         const s = { orgId, productId };
 
         const unclassified = await db
@@ -146,11 +160,13 @@ export const TOOLS: ToolDef[] = [
       properties: { product_id: { type: "string" }, person_id: { type: "string" } },
       required: ["product_id", "person_id"],
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const db = await getDb();
       const productId = String(args.product_id);
-      const orgId = await orgOf(productId);
-      const person = await db.collection(C.people).findOne({ _id: new ObjectId(String(args.person_id)) });
+      const orgId = await assertProduct(productId, ctx);
+      const person = await db
+        .collection(C.people)
+        .findOne({ _id: new ObjectId(String(args.person_id)), orgId, productId });
       if (!person) throw new Error("person not found");
 
       const [goal, actions, events, product] = await Promise.all([
@@ -238,15 +254,16 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["product_id", "results"],
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const db = await getDb();
+      await assertProduct(String(args.product_id), ctx);
       const results = (args.results ?? []) as Array<Record<string, unknown>>;
       let updated = 0;
 
       for (const r of results) {
         const icpFit = Number(r.icp_fit ?? 0);
         await db.collection(C.people).updateOne(
-          { _id: new ObjectId(String(r.person_id)) },
+          { _id: new ObjectId(String(r.person_id)), orgId: ctx.orgId },
           {
             $set: {
               belief: {
@@ -306,10 +323,12 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["goal_instance_id", "rationale", "steps"],
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const db = await getDb();
       const goalInstanceId = String(args.goal_instance_id);
-      const instance = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) });
+      const instance = await db
+        .collection(C.goalInstances)
+        .findOne({ _id: new ObjectId(goalInstanceId), orgId: ctx.orgId });
       if (!instance) throw new Error("goal instance not found");
 
       const previous = await db
@@ -367,10 +386,12 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["goal_instance_id", "touches"],
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const db = await getDb();
       const goalInstanceId = String(args.goal_instance_id);
-      const instance = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) });
+      const instance = await db
+        .collection(C.goalInstances)
+        .findOne({ _id: new ObjectId(goalInstanceId), orgId: ctx.orgId });
       if (!instance) throw new Error("goal instance not found");
 
       const orgId = String(instance.orgId);
@@ -429,10 +450,10 @@ export const TOOLS: ToolDef[] = [
     name: "poll_sources",
     description: "Fetch every source that is due now: ingest new leads, open their goals, queue their first touch.",
     inputSchema: { type: "object", properties: { product_id: { type: "string" } } },
-    async handler(args) {
+    async handler(args, ctx) {
       const productId = str(args.product_id);
-      const orgId = productId ? await orgOf(productId) : undefined;
-      if (!orgId) throw new Error("product_id is required");
+      if (!productId) throw new Error("product_id is required");
+      const orgId = await assertProduct(productId, ctx);
 
       const ids = await dueSources(orgId);
       const results = [];
@@ -459,9 +480,9 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["product_id"],
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const productId = String(args.product_id);
-      const orgId = await orgOf(productId);
+      const orgId = await assertProduct(productId, ctx);
       const dryRun = args.dry_run === false ? false : true;
       const sent = await fireDue({
         orgId,
@@ -485,13 +506,13 @@ export const TOOLS: ToolDef[] = [
       },
       required: ["action_ids", "decision"],
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const db = await getDb();
       const ids = (args.action_ids as string[]).map((id) => new ObjectId(id));
       const status = args.decision === "approve" ? "queued" : "skipped";
       const result = await db
         .collection(C.actions)
-        .updateMany({ _id: { $in: ids }, status: "awaiting_approval" }, { $set: { status } });
+        .updateMany({ _id: { $in: ids }, orgId: ctx.orgId, status: "awaiting_approval" }, { $set: { status } });
       return { updated: result.modifiedCount, decision: args.decision };
     },
   },
@@ -504,10 +525,10 @@ export const TOOLS: ToolDef[] = [
       properties: { product_id: { type: "string" } },
       required: ["product_id"],
     },
-    async handler(args) {
+    async handler(args, ctx) {
       const db = await getDb();
       const productId = String(args.product_id);
-      const orgId = await orgOf(productId);
+      const orgId = await assertProduct(productId, ctx);
       const s = { orgId, productId };
       const byStatus = await db
         .collection(C.actions)

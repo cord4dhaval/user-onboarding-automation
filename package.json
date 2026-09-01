@@ -14,7 +14,8 @@
     "start": "next start",
     "seed:teamgrid": "tsx --env-file=.env src/scripts/seed-teamgrid.ts",
     "test:live": "tsx --env-file=.env src/scripts/live-test.ts",
-    "scheduler": "tsx --env-file=.env src/scripts/scheduler.ts"
+    "scheduler": "tsx --env-file=.env src/scripts/scheduler.ts",
+    "seed:demo": "tsx --env-file=.env src/scripts/seed-demo.ts"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",

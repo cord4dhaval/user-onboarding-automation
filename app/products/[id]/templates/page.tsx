@@ -1,14 +1,15 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { generateTemplates } from "../../../actions";
-import { scope } from "../../../tenant";
+import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function Templates({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
-  const templates = await db.collection(C.templates).find(scope(id)).sort({ channel: 1, scope: 1 }).toArray();
+  const templates = await db.collection(C.templates).find(scope(orgId, id)).sort({ channel: 1, scope: 1 }).toArray();
 
   return (
     <main>

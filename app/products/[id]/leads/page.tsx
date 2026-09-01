@@ -1,13 +1,14 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { scope } from "../../../tenant";
+import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
 
 export default async function Leads({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
-  const s = scope(id);
+  const s = scope(orgId, id);
   const people = await db.collection(C.people).find(s).sort({ createdAt: -1 }).limit(100).toArray();
 
   const rows = await Promise.all(

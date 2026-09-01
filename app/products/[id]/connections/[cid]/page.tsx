@@ -4,7 +4,7 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { candidatesFor, type Capability } from "@/mcp/discover.js";
 import type { McpTool } from "@/mcp/client.js";
 import { discoverTools, saveBinding } from "../../../../actions";
-import { ORG_ID } from "../../../../tenant";
+import { requireSession} from "../../../../tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -36,11 +36,12 @@ function guessRef(argName: string): string {
 
 export default async function ConnectionDetail({ params }: { params: Promise<{ id: string; cid: string }> }) {
   const { id, cid } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
   const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(cid) });
   if (!connection) return <main><h1>Not found</h1></main>;
 
-  const binding = await db.collection(C.mcpBindings).findOne({ orgId: ORG_ID, connectionId: cid });
+  const binding = await db.collection(C.mcpBindings).findOne({ orgId: orgId, connectionId: cid });
   const tools = (binding?.discoveredTools ?? []) as McpTool[];
   const capabilities = (binding?.capabilities ?? {}) as Record<string, Capability>;
   const bound = (binding?.bind ?? {}) as Record<string, { tool: string }>;

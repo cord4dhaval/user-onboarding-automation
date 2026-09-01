@@ -1,7 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { createSource, deleteSource, runSourceNow, toggleSource } from "../../../actions";
-import { ORG_ID, scope } from "../../../tenant";
+import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +16,15 @@ function stamp(value: unknown): string {
 
 export default async function Sources({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const { orgId } = await requireSession();
   const db = await getDb();
-  const s = scope(id);
+  const s = scope(orgId, id);
 
   const [sources, connections, goals, bindings] = await Promise.all([
     db.collection(C.sources).find(s).toArray(),
     db.collection(C.connections).find({ ...s, status: "healthy" }).toArray(),
     db.collection(C.goals).find(s).toArray(),
-    db.collection(C.mcpBindings).find({ orgId: ORG_ID }).toArray(),
+    db.collection(C.mcpBindings).find({ orgId: orgId }).toArray(),
   ]);
 
   // Only a connection whose fetch tool is bound can back a source.

@@ -4,7 +4,7 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { sealSecret } from "@/crypto/envelope.js";
 import { exchangeCode, type AuthServerMetadata } from "@/mcp/oauth.js";
-import { ORG_ID } from "../../../tenant";
+import { requireSession } from "../../../tenant";
 
 /**
  * Completes the authorization-code exchange and stores the tokens encrypted.
@@ -13,6 +13,7 @@ import { ORG_ID } from "../../../tenant";
  * are cleared here so a replayed callback cannot mint a second token.
  */
 export async function GET(request: NextRequest) {
+  const { orgId: ORG_ID } = await requireSession();
   const params = request.nextUrl.searchParams;
   const code = params.get("code");
   const state = params.get("state");
