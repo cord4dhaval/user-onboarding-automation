@@ -25,10 +25,15 @@ export interface RoutineDef {
   essential: boolean;
 }
 
+/**
+ * One hour is the floor Claude Code routines allow, and all three sit on it: a lead who
+ * arrives at 09:05 should not wait until 11:20 for a pipeline. The minutes are staggered
+ * so the three never fire together and race each other over the same people.
+ */
 export const DEFAULT_CRONS: Record<RoutineKey, string> = {
   monitor: "5 * * * *",
-  plan: "20 */2 * * *",
-  compose: "35 */2 * * *",
+  plan: "20 * * * *",
+  compose: "35 * * * *",
 };
 
 /**
@@ -84,7 +89,7 @@ Every run:
       key: "plan",
       name: "Plan",
       cron: DEFAULT_CRONS.plan,
-      human: "every 2 hours, at :20",
+      human: "every hour, at :20",
       essential: true,
       job: "New people get understood and given a pipeline. New campaigns get a verification plan — which can only happen here, because the browser that created them cannot call Claude.",
       example:
@@ -103,17 +108,25 @@ Every run:
    campaign cannot mark anyone as succeeded.
 4. Classify unclassified people in batches — lead_card for context, then submit
    them all in one classify call.
-5. For each campaign under need_plan: lead_card, then plan_goal with 3-5 steps.
+5. For each campaign under need_plan: lead_card, then plan_goal.
+   Everyone gets a real sequence. Spend the campaign's touch budget, not a
+   cautious fraction of it — an unspent budget converts nobody.
+   Low confidence means try harder, not go quiet. Someone you read at 5% fit
+   gets the tightest gaps in their band and the boldest, most attention-earning
+   angles, because a polite generic message will not land on them and silence
+   loses them anyway. Someone you are sure of gets a calmer, straighter
+   sequence; the cadence bands already give them the wider gaps.
    Use only channels the campaign allows; lead_card lists what is connected and
-   what each can carry. Stay inside the budget and the cadence for that
-   temperature.
+   what each can carry. Stay inside the budget, the weekly cap and the cadence
+   band for that temperature. Those are the guardrails — work at their edge, not
+   half-way inside them.
 6. Stop after 40 people and leave the rest for the next run.`,
     },
     {
       key: "compose",
       name: "Compose",
       cron: DEFAULT_CRONS.compose,
-      human: "every 2 hours, at :35",
+      human: "every hour, at :35",
       essential: false,
       job: "Write the messages about to go out — in the shape of the channel each one is going on. Only the next two days' worth.",
       example:
@@ -125,9 +138,11 @@ ${registration("compose")}
 Every run:
 1. sweep with product_id "${productId}" and scope "compose".
 2. If total_work_items is 0, stop.
-3. For each low buffer: compose_batch for steps due in the next 48 hours only.
-   Not further ahead — a message written now for day 9 is usually wasted,
-   because the person signs up or unsubscribes first.
+3. For each low buffer: compose_batch for the steps it names. Each one carries
+   next_step and steps_due_in_window — the sweep has already filtered to what
+   falls inside 48 hours, so write those and nothing further ahead. A message
+   written now for day 9 is usually wasted, because the person signs up or
+   unsubscribes first.
 4. Write to the channel's shape. lead_card lists each channel's real limits:
    an email carries a subject, a body of a few hundred words, a link and an
    opt-out; a WhatsApp message is a couple of sentences with no link, and
@@ -135,7 +150,12 @@ Every run:
    becomes two different pieces of writing.
 5. Read their prior touches. Never repeat a claim already made to them, never
    contradict one, and let the register escalate naturally across a sequence.
-6. Stop after 30 touches.`,
+6. The lower your confidence in someone, the harder the opening line has to
+   work. Be specific and a little cheeky rather than polite and generic — a
+   message that reads like every other message gets deleted unread. This never
+   licenses a false claim: no invented capability, no number the product cannot
+   back, nothing the voice rules forbid.
+7. Stop after 30 touches.`,
     },
   ];
 }

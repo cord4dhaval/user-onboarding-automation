@@ -33,6 +33,11 @@ export interface ToolDef {
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
+/** How far ahead the compose routine writes. Further out and the person usually signs up or leaves first. */
+const COMPOSE_WINDOW_MS = 48 * 3_600_000;
+/** Two written ahead is a healthy buffer; below that the sequence is at risk of running dry. */
+const COMPOSE_BUFFER_DEPTH = 2;
+
 /**
  * Every product id supplied by a caller is checked against their own organisation. A
  * guessed id from another tenant resolves to nothing rather than to someone else's data.
@@ -88,6 +93,7 @@ export const TOOLS: ToolDef[] = [
     },
     async handler(args, ctx) {
       const db = await getDb();
+      const now = new Date();
       const limit = typeof args.limit === "number" ? args.limit : 25;
       const scope = String(args.scope ?? "all");
       const wants = (section: string) => scope === "all" || scope === section;
@@ -171,13 +177,50 @@ export const TOOLS: ToolDef[] = [
           });
         }
 
+        // A buffer is only low if something is actually about to go out. Counting queued
+        // messages alone reported people whose next step is three weeks away, which the
+        // compose routine then correctly declined to write — a sweep that says "three
+        // things to do" followed by a run that does nothing reads as a failure when it
+        // was not one.
         const lowBuffers = [];
         for (const goal of wants("compose") ? activeGoals : []) {
           if (!goal.currentPlanId) continue;
-          const queued = await db
-            .collection(C.actions)
-            .countDocuments({ ...s, goalInstanceId: String(goal._id), status: "queued" });
-          if (queued < 2) lowBuffers.push({ goal_instance_id: String(goal._id), queued });
+
+          const [queued, plan, written] = await Promise.all([
+            db.collection(C.actions).countDocuments({ ...s, goalInstanceId: String(goal._id), status: "queued" }),
+            db.collection(C.plans).findOne({ _id: new ObjectId(String(goal.currentPlanId)) }),
+            db
+              .collection(C.actions)
+              .find({ ...s, goalInstanceId: String(goal._id) }, { projection: { planStepId: 1 } })
+              .toArray(),
+          ]);
+          if (queued >= COMPOSE_BUFFER_DEPTH) continue;
+
+          const alreadyWritten = new Set(written.map((a) => Number(a.planStepId)).filter(Number.isFinite));
+          const startedAt = new Date(String(goal.startedAt ?? now));
+          const upcoming = ((plan?.steps ?? []) as Array<Record<string, unknown>>)
+            .map((step, index) => ({
+              // plan_goal writes the step as `id`; compose_batch echoes it back as `step_id`
+              // and stores it as `planStepId`. All three are the same number.
+              step_id: Number(step.id ?? step.step_id ?? index + 1),
+              channel: step.channel ? String(step.channel) : null,
+              angle: step.angle ? String(step.angle) : null,
+              dueAt: new Date(startedAt.getTime() + Number(step.after_days ?? step.afterDays ?? 0) * 86_400_000),
+            }))
+            .filter((step) => !alreadyWritten.has(step.step_id))
+            .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+
+          const next = upcoming[0];
+          if (!next || next.dueAt.getTime() > now.getTime() + COMPOSE_WINDOW_MS) continue;
+
+          lowBuffers.push({
+            goal_instance_id: String(goal._id),
+            queued,
+            // Named so the routine can write exactly what is due rather than guessing.
+            next_step: { step_id: next.step_id, channel: next.channel, angle: next.angle, due_at: next.dueAt },
+            steps_due_in_window: upcoming.filter((st) => st.dueAt.getTime() <= now.getTime() + COMPOSE_WINDOW_MS).length,
+            steps_remaining: upcoming.length,
+          });
           if (lowBuffers.length >= limit) break;
         }
 
@@ -501,6 +544,9 @@ export const TOOLS: ToolDef[] = [
       await db.collection(C.plans).insertOne({
         _id: planId,
         orgId: String(instance.orgId),
+        // Every other collection is scoped by both. Without productId a plan cannot be
+        // found by the product that owns it, only by walking its goal instance.
+        productId: String(instance.productId),
         goalInstanceId,
         version,
         steps: args.steps,

@@ -90,7 +90,7 @@ export const goal = z.object({
     approvalMode: z.enum(["gate_on", "auto_below_risk", "auto_send"]).default("gate_on"),
   }),
 
-  /** Cadence widens as a lead cools. Cold gets more variety, never more volume. */
+  /** Cadence tightens as confidence drops: the people least likely to convert get the most pressure, since a calm sequence would not reach them at all. Never past the weekly cap. */
   cadenceByTemp: z.record(temperatureBand, z.object({
     minGapDays: z.number().positive(),
     maxGapDays: z.number().positive(),

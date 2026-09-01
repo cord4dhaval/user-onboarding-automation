@@ -125,15 +125,29 @@ export default async function Routines({ params }: { params: Promise<{ id: strin
       <h2>How to schedule one</h2>
       <ol className="sub" style={{ paddingLeft: 20 }}>
         <li>Connect this engine as a custom connector — see <a href={`${base}/claude`}>Claude</a>.</li>
-        <li>In a Claude session, run <code>/schedule</code>.</li>
-        <li>Attach the connector, paste one prompt below, set its cron, and create it.</li>
-        <li>Repeat for each routine. Start with Monitor and Plan.</li>
+        <li>
+          Go to <a href="https://claude.ai/code/routines" target="_blank" rel="noreferrer">claude.ai/code/routines</a>{" "}
+          and click <strong>New routine</strong>. Not a chat — scheduled chat tasks cannot take a cron.
+        </li>
+        <li>Name it, paste one prompt below, and pick any repository. The prompt touches no code; a routine just wants one to clone.</li>
+        <li>Under <strong>Select a trigger</strong>, choose <strong>Schedule</strong> and enter the cron shown on the card.</li>
+        <li>
+          Under <strong>Connectors</strong>, keep this engine and remove every other one. A routine uses every tool
+          of every connector left attached, writes included, without asking during a run.
+        </li>
+        <li>Create it, then <strong>Run now</strong>. Repeat for each routine, starting with Monitor and Plan.</li>
       </ol>
       <p className="sub">
-        The minimum interval is one hour, and the start minutes below are deliberately staggered so the three
-        never fire together. Each prompt opens by calling <code>register_routine</code>, which is how this app
+        One hour is the floor Claude Code allows, and all three sit on it — a lead who arrives at 09:05
+        should not wait two hours for a pipeline. The start minutes are staggered so the three never fire
+        together over the same people. Each prompt opens by calling <code>register_routine</code>, which is how this app
         learns the schedule you set — it cannot read your Claude schedule any other way. Once a routine has
         registered, <a href={`${base}/logs`}>Logs</a> shows every run and the bell rings when one stops firing.
+      </p>
+      <p className="sub">
+        A green run status in Claude only means the session started and exited. It does not mean the work
+        happened — <a href={`${base}/logs`}>Logs</a> is the honest answer, because it records what the run
+        actually changed here.
       </p>
 
       <h2>The three</h2>

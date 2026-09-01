@@ -226,6 +226,15 @@ async function resolveRun(
   if (isRoutineKey(declared)) {
     // Already inside this routine's own run — the second announcement, not a new session.
     if (open && open.routine === declared) return adopt(open, argProductId);
+
+    // A routine that called something before announcing itself opened an undeclared run a
+    // few seconds ago. That was this run all along, so it is relabelled rather than left
+    // beside the real one as a phantom "by hand" row.
+    if (open && open.routine === "ad-hoc") {
+      await db.collection(C.routineRuns).updateOne({ _id: open._id }, { $set: { routine: declared } });
+      return adopt(open, argProductId);
+    }
+
     if (open) await finish(open, at);
     return {
       runId: await openRun({ orgId, userId, productId: argProductId, kind: declared, at }),
@@ -249,6 +258,56 @@ async function adopt(run: Document, argProductId: string): Promise<{ runId: Obje
     await db.collection(C.routineRuns).updateOne({ _id: run._id }, { $set: { productId: argProductId } });
   }
   return { runId: run._id as ObjectId, productId };
+}
+
+/**
+ * What each routine is allowed to touch.
+ *
+ * Prompt text was not enough: a Compose run whose prompt said "if there is nothing to do,
+ * stop" instead went and did the Plan routine's whole job — classifying people and writing
+ * pipelines. Harmless once; at scale it means Compose spends its budget planning and the
+ * messages actually due that day never get written.
+ *
+ * So the boundary is enforced where it can be, rather than asked for. Tools listed for more
+ * than one routine really are shared: Monitor replans someone who has gone off-plan, and
+ * repairs a campaign whose checks are bound to the wrong tool.
+ */
+const ALWAYS_ALLOWED = ["register_routine", "routine_status", "sweep", "lead_card", "report", "list_products"];
+
+const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
+  monitor: [...ALWAYS_ALLOWED, "mark_state", "plan_goal", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
+  plan: [...ALWAYS_ALLOWED, "verifiers", "set_checks", "classify", "plan_goal"],
+  compose: [...ALWAYS_ALLOWED, "compose_batch"],
+};
+
+/** Which routine, if any, the caller is currently running as. Ad-hoc sessions return null. */
+export async function currentRoutine(orgId: string, userId: string): Promise<RoutineKey | null> {
+  const db = await getDb();
+  const open = await db
+    .collection(C.routineRuns)
+    .findOne(
+      { orgId, userId, status: "running", lastCallAt: { $gte: new Date(Date.now() - IDLE_CLOSE_MS) } },
+      { sort: { lastCallAt: -1 }, projection: { routine: 1 } },
+    );
+  const routine = open ? String(open.routine) : "";
+  return isRoutineKey(routine) ? routine : null;
+}
+
+/**
+ * Refuses a tool that belongs to a different routine. Returns the reason, or null to allow.
+ * A person driving the tools by hand is never restricted — only a declared routine is.
+ */
+export async function refuseOutOfScope(orgId: string, userId: string, tool: string): Promise<string | null> {
+  const routine = await currentRoutine(orgId, userId);
+  if (!routine) return null;
+  if (ROUTINE_TOOLS[routine].includes(tool)) return null;
+
+  const owners = ROUTINE_KEYS.filter((key) => ROUTINE_TOOLS[key].includes(tool));
+  return (
+    `${tool} is not part of the ${routine} routine${owners.length ? ` — it belongs to ${owners.join(" and ")}` : ""}. ` +
+    `Stop and do only the steps in your own prompt. If you believe you should be calling this, the prompt saved ` +
+    `in this routine is probably the wrong one: check it against the Routines page.`
+  );
 }
 
 export interface ToolCallRecord {

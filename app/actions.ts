@@ -423,10 +423,15 @@ export async function createGoal(formData: FormData) {
           bufferDepth: 3,
           approvalMode: String(formData.get("approvalMode") ?? "gate_on"),
         },
+        // Confidence buys patience, not pressure. Someone read as a near-certain fit will
+        // convert on a calm sequence; someone read at 5% will not convert on one at all, so
+        // they get the tightest gaps and the boldest angles — there is nothing to lose that
+        // silence would not lose anyway. "dead" is the exception and stays untouched: a
+        // person who has actually said no is a different case from one who has not answered.
         cadenceByTemp: {
-          hot: { minGapDays: 2, maxGapDays: 3, maxAssetTier: "C" },
-          warm: { minGapDays: 4, maxGapDays: 6, maxAssetTier: "C" },
-          cold: { minGapDays: 8, maxGapDays: 12, maxAssetTier: "A" },
+          hot: { minGapDays: 2, maxGapDays: 4, maxAssetTier: "C" },
+          warm: { minGapDays: 2, maxGapDays: 3, maxAssetTier: "C" },
+          cold: { minGapDays: 1, maxGapDays: 2, maxAssetTier: "C" },
           dead: { minGapDays: 999, maxGapDays: 999, maxAssetTier: "A" },
         },
         sourceIds: [],

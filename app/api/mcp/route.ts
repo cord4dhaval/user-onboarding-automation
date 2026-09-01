@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { TOOLS, type ToolCtx } from "@/mcp/server/tools.js";
 import { resolveAccessToken } from "@/auth/oauth-server.js";
 import { appOrigin } from "@/auth/origin.js";
-import { recordToolCall } from "@/engine/runlog.js";
+import { recordToolCall, refuseOutOfScope } from "@/engine/runlog.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -99,6 +99,15 @@ export async function POST(request: NextRequest) {
     // opens with starts one and the gap after its last call ends it.
     const args = (params?.arguments ?? {}) as Record<string, unknown>;
     const startedAt = Date.now();
+
+    // A routine that has declared itself may only use its own tools. Refused as a tool
+    // error rather than a protocol one, so it lands in the run log where a person can see
+    // which routine reached for what.
+    const outOfScope = await refuseOutOfScope(ctx.orgId, ctx.userId, name);
+    if (outOfScope) {
+      await recordToolCall({ ...ctx, tool: name, args, error: outOfScope, ms: 0 });
+      return reply({ content: [{ type: "text", text: `Error: ${outOfScope}` }], isError: true });
+    }
 
     try {
       const result = await tool.handler(args, ctx);
