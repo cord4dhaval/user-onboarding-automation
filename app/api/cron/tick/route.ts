@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { runSource } from "@/engine/runSource.js";
 import { fireDue } from "@/engine/fireDue.js";
 import { reconcileDispatched } from "@/engine/reconcile.js";
+import { verifyDue } from "@/engine/verify.js";
 import { resolveChannelAdapter } from "@/engine/adapters.js";
 
 export const dynamic = "force-dynamic";
@@ -67,8 +68,11 @@ export async function GET(request: NextRequest) {
       limit: 25,
     });
     const reconciled = await reconcileDispatched(orgId, productId, 25);
-    if (sent.claimed || reconciled.checked) {
-      report.push({ product: String(product.name), sent, reconciled });
+    // Verification runs on the same clock as sending: a campaign that has succeeded should
+    // stop chasing someone within a minute, not on the next hourly Claude pass.
+    const verified = await verifyDue(orgId, productId, 25);
+    if (sent.claimed || reconciled.checked || verified.succeeded || verified.failed) {
+      report.push({ product: String(product.name), sent, reconciled, verified });
     }
   }
 

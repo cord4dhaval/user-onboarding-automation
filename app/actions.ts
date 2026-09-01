@@ -300,6 +300,28 @@ export async function createGoal(formData: FormData) {
   const db = await getDb();
   const productId = String(formData.get("productId"));
   const key = String(formData.get("key"));
+
+  // A campaign with no input never starts, and one with no way to check itself runs to its
+  // budget and closes as "unverified" a month later. Both failures are silent, so both are
+  // refused here rather than discovered long afterwards.
+  if (String(formData.get("inputType") ?? "none") === "none") {
+    throw new Error("This campaign needs an input — a spreadsheet, an audience, an MCP tool or an API.");
+  }
+
+  let checks: unknown[] = [];
+  const rawChecks = String(formData.get("checks") ?? "").trim();
+  if (rawChecks) {
+    try {
+      checks = JSON.parse(rawChecks) as unknown[];
+    } catch {
+      throw new Error("The verification plan is not valid JSON.");
+    }
+  }
+  if (checks.length === 0) {
+    throw new Error(
+      "This campaign needs a way to know when someone has succeeded. Ask Claude to propose one from your connected sources, or write the checks yourself.",
+    );
+  }
   // A priority chain, built from two explicit choices rather than a free-text list —
   // exactly one channel carries a touch, and the order has to be unambiguous.
   const channels = [String(formData.get("primaryChannel") ?? "email"), String(formData.get("fallbackChannel") ?? "")]
@@ -328,6 +350,7 @@ export async function createGoal(formData: FormData) {
           days: Number(formData.get("days") ?? 30),
           usd: Number(formData.get("usd") ?? 12),
         },
+        checks,
         // A priority order, not a broadcast list — exactly one channel carries a touch.
         firstTouch: { templateKey: String(formData.get("firstTouchTemplate")), channels },
         schedule: {

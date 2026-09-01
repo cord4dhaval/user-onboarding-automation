@@ -545,3 +545,93 @@ export const TOOLS: ToolDef[] = [
     },
   },
 ];
+
+/**
+ * Lets Claude write a campaign's verification plan at creation time.
+ *
+ * It reads the plain-words success sentence and the tools every connected verifier
+ * exposes, then proposes a tool and an assertion for each thing that has to be true. The
+ * engine runs those forever afterwards without a model.
+ */
+TOOLS.push({
+  name: "verifiers",
+  description:
+    "Everything connected that could answer 'has this person done X yet' — each connection with its tools and their input schemas. Call this before proposing how a campaign will verify success.",
+  inputSchema: {
+    type: "object",
+    properties: { product_id: { type: "string" } },
+    required: ["product_id"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+
+    const connections = await db.collection(C.connections).find({ orgId, productId }).toArray();
+    const out = [];
+    for (const connection of connections) {
+      const binding = await db.collection(C.mcpBindings).findOne({ orgId, connectionId: String(connection._id) });
+      const tools = (binding?.discoveredTools ?? []) as Array<{ name: string; description?: string; inputSchema?: unknown }>;
+      if (tools.length === 0) continue;
+      out.push({
+        connection_id: String(connection._id),
+        provider: String(connection.provider),
+        status: String(connection.status),
+        tools: tools.map((t) => ({ name: t.name, description: t.description, input: t.inputSchema })),
+      });
+    }
+    return {
+      verifiers: out,
+      assertion_language: {
+        exists: "the response contains anything at all",
+        "count >= N": "the first array in the response has at least N entries",
+        "$.path == value": "a value at that path equals a literal",
+        "$.path != value": "a value at that path differs from a literal",
+      },
+      argument_refs: ["$person.email", "$person.name", "$person.companyDomain", "$person.productUid", "$since"],
+    };
+  },
+});
+
+TOOLS.push({
+  name: "set_checks",
+  description:
+    "Store how a campaign will verify success. Each check names a connection, a tool, its arguments and an assertion. The engine runs them on every tick without a model, so they must be answerable from the tools alone.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      goal_key: { type: "string" },
+      checks: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            key: { type: "string", description: "Short identifier, e.g. account_created" },
+            describedAs: { type: "string", description: "What this proves, in plain words" },
+            connectionId: { type: "string" },
+            tool: { type: "string" },
+            args: { type: "object", description: 'Argument name to value or $ref, e.g. {"query":"$person.email"}' },
+            assert: { type: "string", description: 'exists · count >= 2 · $.plan != trial' },
+            latch: { type: "boolean", description: "True once means true forever. Defaults true." },
+          },
+          required: ["key", "describedAs", "connectionId", "tool", "assert"],
+        },
+      },
+    },
+    required: ["product_id", "goal_key", "checks"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const checks = (args.checks ?? []) as Array<Record<string, unknown>>;
+    if (checks.length === 0) throw new Error("a campaign needs at least one check");
+
+    await db.collection(C.goals).updateOne(
+      { orgId, productId, key: String(args.goal_key) },
+      { $set: { checks: checks.map((c) => ({ ...c, args: c.args ?? {}, latch: c.latch ?? true, proposedBy: "claude" })) } },
+    );
+    return { goal_key: String(args.goal_key), checks: checks.length };
+  },
+});

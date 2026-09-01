@@ -23,6 +23,31 @@ export const goal = z.object({
     describedAs: z.string(),
   }),
 
+  /**
+   * How the engine finds out whether someone succeeded.
+   *
+   * Claude writes these when the goal is created: it reads the plain-words success
+   * sentence, reads whatever verifiers are connected, and proposes a tool and an
+   * assertion for each thing that has to be true. The engine then runs them forever
+   * without a model.
+   *
+   * A goal with no checks cannot tell when it has succeeded, which is why creating one
+   * without them is refused rather than allowed to fail quietly thirty days later.
+   */
+  checks: z.array(z.object({
+    key: z.string(),
+    /** What this proves, in the words a person would use. */
+    describedAs: z.string(),
+    connectionId: objectIdString,
+    tool: z.string(),
+    args: z.record(z.string(), z.string()).default({}),
+    /** Evaluated against the tool's response; true means this check has passed. */
+    assert: z.string(),
+    /** Once true, never asked again — settled facts do not need re-checking. */
+    latch: z.boolean().default(true),
+    proposedBy: z.enum(["claude", "human"]).default("claude"),
+  })).default([]),
+
   failure: z.object({
     conditions: z.array(z.string()),
     silenceDays: z.number().int().positive(),
