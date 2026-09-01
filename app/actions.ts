@@ -719,3 +719,21 @@ export async function toggleSource(productId: string, sourceId: string, enabled:
   );
   revalidatePath(`/products/${productId}/sources`);
 }
+
+/** Releases or rejects messages held for review. */
+export async function decide(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const ids = formData.getAll("ids").map((v) => new ObjectId(String(v)));
+  const approve = String(formData.get("decision")) === "approve";
+
+  await db.collection(C.actions).updateMany(
+    { _id: { $in: ids }, orgId, productId, status: "awaiting_approval" },
+    // Approving returns it to the queue rather than sending directly, so budgets, caps and
+    // suppression are all still checked at the moment it actually goes out.
+    { $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date() } },
+  );
+
+  revalidatePath(`/products/${productId}/review`, "layout");
+}

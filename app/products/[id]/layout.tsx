@@ -3,19 +3,10 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { getProduct, requireSession } from "../../tenant";
 import { logOut } from "../../auth-actions";
+import ThemeToggle from "../../theme";
+import Nav from "./nav";
 
 export const dynamic = "force-dynamic";
-
-const TABS = [
-  { href: "", label: "Overview" },
-  { href: "/connections", label: "Connections" },
-  { href: "/channels", label: "Channels" },
-  { href: "/sources", label: "Sources" },
-  { href: "/goals", label: "Goals" },
-  { href: "/templates", label: "Templates" },
-  { href: "/leads", label: "Leads" },
-  { href: "/claude", label: "Connect Claude" },
-];
 
 export default async function ProductLayout({
   children,
@@ -26,46 +17,61 @@ export default async function ProductLayout({
 }) {
   const { id } = await params;
   const session = await requireSession();
-  const { orgId } = session;
-  const product = await getProduct(id, orgId);
+  const product = await getProduct(id, session.orgId);
+
   if (!product) {
     return (
-      <main>
+      <main className="page">
         <h1>Product not found</h1>
-        <p className="empty"><a href="/products">Back to products</a></p>
+        <p className="sub">It may belong to another workspace, or it may have been deleted.</p>
+        <p><a href="/products">Back to products</a></p>
       </main>
     );
   }
 
   const db = await getDb();
-  const products = await db.collection(C.products).find({ orgId: orgId }).sort({ createdAt: 1 }).toArray();
+  const [products, review] = await Promise.all([
+    db.collection(C.products).find({ orgId: session.orgId }).sort({ createdAt: 1 }).toArray(),
+    db
+      .collection(C.actions)
+      .countDocuments({ orgId: session.orgId, productId: id, status: "awaiting_approval" }),
+  ]);
 
   return (
-    <>
-      <nav className="top">
-        <a className="brand" href="/products">Conversion Engine</a>
-        <span className="muted">/</span>
-        <div className="switcher">
-          <strong>{String(product.name)}</strong>
-          {products.length > 1 && (
-            <div className="menu">
-              {products.map((p) => (
-                <a key={String(p._id)} href={`/products/${String(p._id)}`}>{String(p.name)}</a>
-              ))}
-            </div>
-          )}
+    <div className="app">
+      <aside className="side">
+        <a className="brand" href="/products" style={{ padding: "4px 10px 12px" }}>Engine</a>
+        <Nav productId={id} counts={{ review }} />
+        <div className="foot">
+          <a href={`/products/${id}/settings`}>Settings</a>
         </div>
-        <span style={{ marginLeft: "auto" }} className="muted">{session.email}</span>
-        <form action={logOut}>
-          <button className="ghost" type="submit">Sign out</button>
-        </form>
-      </nav>
-      <nav className="tabs">
-        {TABS.map((t) => (
-          <a key={t.href} href={`/products/${id}${t.href}`}>{t.label}</a>
-        ))}
-      </nav>
-      {children}
-    </>
+      </aside>
+
+      <div>
+        <header className="topbar">
+          {products.length > 1 ? (
+            <details className="switcher">
+              <summary><strong>{String(product.name)}</strong> <span className="muted">▾</span></summary>
+              <div>
+                {products.map((p) => (
+                  <a key={String(p._id)} href={`/products/${String(p._id)}`}>{String(p.name)}</a>
+                ))}
+              </div>
+            </details>
+          ) : (
+            <strong>{String(product.name)}</strong>
+          )}
+
+          <span className="spacer" />
+          <ThemeToggle />
+          <span className="muted" style={{ fontSize: 13 }}>{session.email}</span>
+          <form action={logOut}>
+            <button className="quiet sm" type="submit">Sign out</button>
+          </form>
+        </header>
+
+        <main className="page">{children}</main>
+      </div>
+    </div>
   );
 }
