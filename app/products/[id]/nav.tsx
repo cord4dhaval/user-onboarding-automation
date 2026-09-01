@@ -25,6 +25,7 @@ const SETUP = [
   { href: "/providers", label: "Providers" },
   { href: "/claude", label: "Connect Claude" },
   { href: "/routines", label: "Routines" },
+  { href: "/logs", label: "Logs" },
 ];
 
 export default function Nav({ productId, counts }: { productId: string; counts: NavCounts }) {

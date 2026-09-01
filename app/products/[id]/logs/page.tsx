@@ -1,7 +1,15 @@
 import { requireSession } from "../../../tenant";
 import { runCalls, toggleRoutine } from "../../../actions";
 import { routineHealth, type RoutineHealth } from "@/engine/routines.js";
-import { describeCounters, latestRuns, listRuns, sumCounters, type RunKind, type RunRow } from "@/engine/runlog.js";
+import {
+  closeIdleRuns,
+  describeCounters,
+  latestRuns,
+  listRuns,
+  sumCounters,
+  type RunKind,
+  type RunRow,
+} from "@/engine/runlog.js";
 import RunDrawer from "./run-drawer";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +99,11 @@ export default async function Logs({
   const { orgId } = await requireSession();
   const now = new Date();
   const base = `/products/${id}`;
+
+  // The tick normally does this once a minute. Doing it here too means the page is right
+  // even on a product whose clock is not wired up yet, rather than showing week-old runs as
+  // still running.
+  await closeIdleRuns(now);
 
   const [health, latest, runs] = await Promise.all([
     routineHealth(orgId, id),

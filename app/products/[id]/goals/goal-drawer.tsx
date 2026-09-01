@@ -18,6 +18,8 @@ export default function GoalDrawer({
   audiences,
   verifiers,
   action,
+  existing,
+  label,
 }: {
   productId: string;
   templateKeys: string[];
@@ -26,38 +28,63 @@ export default function GoalDrawer({
   audiences: AudienceChoice[];
   verifiers: VerifierChoice[];
   action: (formData: FormData) => void | Promise<void>;
+  /** Present when editing. Inputs and checks are left alone — saving a form should not
+      re-ingest a spreadsheet or discard a plan Claude has already written. */
+  existing?: {
+    key: string;
+    name: string;
+    successDescribed: string;
+    verifyConnectionId?: string;
+    verifyHint?: string;
+    allowedChannels: string[];
+    firstTouchTemplate: string;
+    primaryChannel: string;
+    fallbackChannel?: string;
+    touches: number;
+    days: number;
+    approvalMode: string;
+  };
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const isEdit = Boolean(existing);
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}>New goal</button>
+      <button type="button" className={isEdit ? "quiet sm" : ""} onClick={() => setOpen(true)}>
+        {label ?? "New goal"}
+      </button>
 
       <Drawer
         open={open}
         onClose={() => setOpen(false)}
-        title="New goal"
-        description="What comes in, what happens the moment it does, and what counts as done."
+        title={isEdit ? `Edit ${existing?.name}` : "New goal"}
+        description={
+          isEdit
+            ? "Inputs and the verification plan are left as they are — only what is below changes."
+            : "What comes in, what happens the moment it does, and what counts as done."
+        }
         width={560}
       >
         <form action={action} className="stack">
           <input type="hidden" name="productId" value={productId} />
+          {isEdit && <input type="hidden" name="goalKey" value={existing?.key} />}
 
           <label>
             Name
-            <input name="name" placeholder="New user onboarding" required />
+            <input name="name" defaultValue={existing?.name} placeholder="New user onboarding" required />
           </label>
 
           <label>
             Done when <span className="muted">(plain words — what activation actually looks like)</span>
             <input
               name="successDescribed"
-              defaultValue="Account created, two teammates tracked, one report opened"
+              defaultValue={existing?.successDescribed ?? "Account created, two teammates tracked, one report opened"}
               required
             />
           </label>
 
-          <InputPicker productId={productId} toolChoices={toolChoices} audiences={audiences} />
+          {!isEdit && <InputPicker productId={productId} toolChoices={toolChoices} audiences={audiences} />}
 
           <h3 style={{ fontSize: 15, margin: "18px 0 0" }}>How we will know it worked</h3>
           <p className="sub" style={{ margin: 0 }}>
@@ -67,7 +94,7 @@ export default function GoalDrawer({
 
           <label>
             Verify against
-            <select name="verifyConnectionId" defaultValue={verifiers[0]?.id ?? ""}>
+            <select name="verifyConnectionId" defaultValue={existing?.verifyConnectionId ?? verifiers[0]?.id ?? ""}>
               {verifiers.length === 0 && <option value="">— nothing connected that can answer —</option>}
               {verifiers.map((v) => (
                 <option key={v.id} value={v.id}>
@@ -87,6 +114,7 @@ export default function GoalDrawer({
             Anything Claude should know <span className="muted">(optional)</span>
             <input
               name="verifyHint"
+              defaultValue={existing?.verifyHint}
               placeholder="Accounts are found by work email, not personal"
             />
           </label>
@@ -102,7 +130,12 @@ export default function GoalDrawer({
             ) : (
               channelKeys.map((k) => (
                 <label key={k} className="check">
-                  <input type="checkbox" name="allowedChannels" value={k} defaultChecked={k === channelKeys[0]} />
+                  <input
+                    type="checkbox"
+                    name="allowedChannels"
+                    value={k}
+                    defaultChecked={existing ? existing.allowedChannels.includes(k) : k === channelKeys[0]}
+                  />
                   {k}
                 </label>
               ))
@@ -116,14 +149,14 @@ export default function GoalDrawer({
           <div className="grid">
             <label>
               Send
-              <select name="firstTouchTemplate">
+              <select name="firstTouchTemplate" defaultValue={existing?.firstTouchTemplate}>
                 {templateKeys.length === 0 && <option value="welcome">welcome</option>}
                 {templateKeys.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
             </label>
             <label>
               Via
-              <select name="primaryChannel" defaultValue={channelKeys[0] ?? "email"}>
+              <select name="primaryChannel" defaultValue={existing?.primaryChannel ?? channelKeys[0] ?? "email"}>
                 {channelKeys.length === 0 && <option value="email">email</option>}
                 {channelKeys.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
@@ -139,20 +172,20 @@ export default function GoalDrawer({
 
           <label>
             If that is unavailable <span className="muted">(optional fallback)</span>
-            <select name="fallbackChannel" defaultValue="">
+            <select name="fallbackChannel" defaultValue={existing?.fallbackChannel ?? ""}>
               <option value="">— none —</option>
               {channelKeys.map((k) => <option key={k} value={k}>{k}</option>)}
             </select>
           </label>
 
           <div className="grid">
-            <label>Max messages<input name="touches" type="number" defaultValue={9} /></label>
-            <label>Max days<input name="days" type="number" defaultValue={30} /></label>
+            <label>Max messages<input name="touches" type="number" defaultValue={existing?.touches ?? 9} /></label>
+            <label>Max days<input name="days" type="number" defaultValue={existing?.days ?? 30} /></label>
           </div>
 
           <label>
             Before sending
-            <select name="approvalMode" defaultValue="gate_on">
+            <select name="approvalMode" defaultValue={existing?.approvalMode ?? "gate_on"}>
               <option value="gate_on">Hold each for review</option>
               <option value="auto_send">Send automatically</option>
             </select>
@@ -181,7 +214,7 @@ export default function GoalDrawer({
             </div>
           </details>
 
-          <button type="submit">Create goal</button>
+          <button type="submit">{isEdit ? "Save changes" : "Create goal"}</button>
         </form>
       </Drawer>
     </>

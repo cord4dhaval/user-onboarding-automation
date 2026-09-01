@@ -63,11 +63,9 @@ export function rollup(tool: string, args: Document, result: unknown): RunCounte
   const r = (result ?? {}) as Document;
 
   switch (tool) {
-    case "sweep": {
-      const packets = Array.isArray(result) ? result : [];
-      for (const p of packets as Document[]) out.work_items = (out.work_items ?? 0) + int(p.total_work_items);
+    case "sweep":
+      out.work_items = int(r.total_work_items);
       break;
-    }
     case "classify":
       out.classified = int(r.updated);
       break;
@@ -91,7 +89,7 @@ export function rollup(tool: string, args: Document, result: unknown): RunCounte
       out.checks_resolved = 1;
       break;
     case "set_checks":
-      out.checks_set = Array.isArray(r.checks) ? (r.checks as unknown[]).length : 1;
+      out.checks_set = int(r.checks);
       break;
     case "verify_person":
       out.probed = 1;
@@ -99,11 +97,18 @@ export function rollup(tool: string, args: Document, result: unknown): RunCounte
     case "approve":
       out[args.decision === "reject" ? "rejected" : "approved"] = int(r.updated);
       break;
-    case "poll_sources":
-      out.leads_ingested = int(r.ingested);
+    case "poll_sources": {
+      // One result per source, each an ingest summary.
+      const results = Array.isArray(r.results) ? (r.results as Document[]) : [];
+      for (const one of results) {
+        out.leads_ingested = (out.leads_ingested ?? 0) + int(one.created) + int(one.attachedToExisting);
+        out.first_touches = (out.first_touches ?? 0) + int(one.firstTouchesQueued);
+      }
       break;
+    }
     case "fire_due":
-      out.sent = int(r.sent ?? r.claimed);
+      out.sent = int(r.sent);
+      out.reconciled = int((r.reconciled as Document | undefined)?.checked);
       break;
     case "lead_card":
       out.read = 1;
@@ -131,6 +136,7 @@ const COUNTER_LABELS: Record<string, [string, string]> = {
   approved: ["approved", "approved"],
   rejected: ["rejected", "rejected"],
   leads_ingested: ["lead in", "leads in"],
+  first_touches: ["first touch queued", "first touches queued"],
   sent: ["sent", "sent"],
   reconciled: ["reconciled", "reconciled"],
 };
@@ -189,9 +195,11 @@ async function openRun(input: OpenRunInput): Promise<ObjectId> {
 /**
  * Which run this call belongs to.
  *
- * A scoped sweep always starts a fresh one — that is the routine announcing itself. Every
- * other call joins whatever is still open for the same token, and opens an ad-hoc run if
- * nothing is, so no call is ever orphaned.
+ * A routine announces itself twice — `register_routine` names it, and the opening `sweep`
+ * names it again as a scope. Either is enough to start a run, and the second one joins the
+ * run the first started rather than splitting one session into two. Every other call joins
+ * whatever is still open for the same token, and opens an ad-hoc run if nothing is, so no
+ * call is ever orphaned.
  */
 async function resolveRun(
   orgId: string,
@@ -203,10 +211,8 @@ async function resolveRun(
   const db = await getDb();
   const argProductId = typeof args.product_id === "string" ? args.product_id : "";
 
-  if (tool === "sweep" && isRoutineKey(args.scope)) {
-    await closeRun(orgId, userId, at);
-    return { runId: await openRun({ orgId, userId, productId: argProductId, kind: args.scope, at }), productId: argProductId };
-  }
+  const declared =
+    tool === "register_routine" ? args.routine : tool === "sweep" ? args.scope : undefined;
 
   const open = await db
     .collection(C.routineRuns)
@@ -215,19 +221,32 @@ async function resolveRun(
       { sort: { lastCallAt: -1 } },
     );
 
-  if (open) {
-    const productId = String(open.productId ?? "") || argProductId;
-    // A run that opened before its product was known adopts the first one it sees.
-    if (!open.productId && argProductId) {
-      await db.collection(C.routineRuns).updateOne({ _id: open._id }, { $set: { productId: argProductId } });
-    }
-    return { runId: open._id as ObjectId, productId };
+  if (isRoutineKey(declared)) {
+    // Already inside this routine's own run — the second announcement, not a new session.
+    if (open && open.routine === declared) return adopt(open, argProductId);
+    if (open) await finish(open, at);
+    return {
+      runId: await openRun({ orgId, userId, productId: argProductId, kind: declared, at }),
+      productId: argProductId,
+    };
   }
+
+  if (open) return adopt(open, argProductId);
 
   return {
     runId: await openRun({ orgId, userId, productId: argProductId, kind: "ad-hoc", at }),
     productId: argProductId,
   };
+}
+
+/** A run that opened before its product was known adopts the first one it sees. */
+async function adopt(run: Document, argProductId: string): Promise<{ runId: ObjectId; productId: string }> {
+  const productId = String(run.productId ?? "") || argProductId;
+  if (!run.productId && argProductId) {
+    const db = await getDb();
+    await db.collection(C.routineRuns).updateOne({ _id: run._id }, { $set: { productId: argProductId } });
+  }
+  return { runId: run._id as ObjectId, productId };
 }
 
 export interface ToolCallRecord {
@@ -283,16 +302,6 @@ export async function recordToolCall(record: ToolCallRecord): Promise<void> {
   } catch {
     // Deliberately silent.
   }
-}
-
-/** Closes whatever run this token has open. Called when a new one starts. */
-async function closeRun(orgId: string, userId: string, at: Date): Promise<void> {
-  const db = await getDb();
-  const open = await db
-    .collection(C.routineRuns)
-    .findOne({ orgId, userId, status: "running" }, { sort: { lastCallAt: -1 } });
-  if (!open) return;
-  await finish(open, at);
 }
 
 async function finish(run: Document, now: Date): Promise<void> {

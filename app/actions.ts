@@ -1135,3 +1135,88 @@ export async function toggleRoutine(productId: string, key: string, enabled: boo
   revalidatePath(`/products/${productId}/logs`);
   revalidatePath(`/products/${productId}/routines`);
 }
+
+/** Pausing stops new people entering and holds anything queued; sent history is untouched. */
+export async function toggleGoal(productId: string, key: string, enabled: boolean, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+
+  await db.collection(C.goals).updateOne({ orgId, productId, key }, { $set: { enabled } });
+  // The inputs stop too, otherwise a paused campaign keeps pulling people in and queueing
+  // messages that then sit there.
+  await db.collection(C.sources).updateMany({ orgId, productId, defaultGoalKey: key }, { $set: { enabled } });
+
+  if (!enabled) {
+    const instances = await db
+      .collection(C.goalInstances)
+      .find({ orgId, productId, goalKey: key, status: "active" })
+      .project({ _id: 1 })
+      .toArray();
+    await db.collection(C.actions).updateMany(
+      { orgId, productId, goalInstanceId: { $in: instances.map((i) => String(i._id)) }, status: "queued" },
+      // Held rather than skipped: resuming should not have lost the queue.
+      { $set: { status: "held", heldReason: "campaign paused" } },
+    );
+  } else {
+    await db
+      .collection(C.actions)
+      .updateMany({ orgId, productId, status: "held" }, { $set: { status: "queued" }, $unset: { heldReason: "" } });
+  }
+
+  revalidatePath(`/products/${productId}/goals`);
+}
+
+/**
+ * Edits a campaign in place. Deliberately does not touch its inputs, its verification plan
+ * or anyone already running under it — saving a form should not quietly re-ingest a
+ * spreadsheet or discard checks Claude has already worked out.
+ */
+export async function updateGoal(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const key = String(formData.get("goalKey"));
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) throw new Error("Give the campaign a name.");
+
+  const allowedChannels = formData.getAll("allowedChannels").map(String).filter(Boolean);
+  const channels = [String(formData.get("primaryChannel") ?? "email"), String(formData.get("fallbackChannel") ?? "")]
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const allowed = allowedChannels.length > 0 ? [...new Set([...allowedChannels, ...channels])] : channels;
+
+  const verifyConnectionId = String(formData.get("verifyConnectionId") ?? "") || undefined;
+  const existing = await db.collection(C.goals).findOne({ orgId, productId, key });
+
+  // Pointing a campaign at a different server invalidates checks written against the old
+  // one, so they are cleared and Claude writes a fresh plan.
+  const verifierChanged =
+    verifyConnectionId !== undefined && String(existing?.verifyConnectionId ?? "") !== verifyConnectionId;
+
+  await db.collection(C.goals).updateOne(
+    { orgId, productId, key },
+    {
+      $set: {
+        name,
+        success: {
+          expression: String(formData.get("successExpression") ?? existing?.success?.expression ?? "account_created"),
+          describedAs: String(formData.get("successDescribed")),
+        },
+        budget: {
+          touches: Number(formData.get("touches") ?? 9),
+          days: Number(formData.get("days") ?? 30),
+          usd: Number(formData.get("usd") ?? 12),
+        },
+        allowedChannels: allowed,
+        verifyConnectionId,
+        verifyHint: String(formData.get("verifyHint") ?? "").trim() || undefined,
+        firstTouch: { templateKey: String(formData.get("firstTouchTemplate")), channels },
+        "schedule.approvalMode": String(formData.get("approvalMode") ?? "gate_on"),
+        "failure.silenceDays": Number(formData.get("silenceDays") ?? 30),
+        ...(verifierChanged ? { checks: [], needsVerificationPlan: true } : {}),
+      },
+    },
+  );
+
+  revalidatePath(`/products/${productId}/goals`);
+}

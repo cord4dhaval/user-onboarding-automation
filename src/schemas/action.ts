@@ -66,7 +66,9 @@ export const action = z.object({
   // "dispatched" means the provider accepted it for later delivery; the reconciler moves
   // it to sent or failed once the provider says which.
   status: z
-    .enum(["queued", "awaiting_approval", "sending", "dispatched", "sent", "failed", "skipped"])
+    // "held" is a paused campaign's queue, kept intact so resuming restores it rather than
+    // losing the work; "skipped" is a decision that will not be revisited.
+    .enum(["queued", "held", "awaiting_approval", "sending", "dispatched", "sent", "failed", "skipped"])
     .default("queued"),
   dueAt: z.date(),
   sentAt: z.date().optional(),

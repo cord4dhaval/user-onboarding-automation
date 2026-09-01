@@ -2,7 +2,7 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
 import { audienceCount } from "@/engine/library.js";
-import { createGoal, deleteGoal } from "../../../actions";
+import { createGoal, deleteGoal, toggleGoal, updateGoal } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
 import ClaudeBadge from "../../../ui/claude-badge";
@@ -140,7 +140,7 @@ success sentence, and call set_checks.`}
             <thead>
               <tr>
                 <th>Goal</th><th>Done when</th><th>Verified by</th><th>First message</th>
-                <th>Input</th><th>Status</th><th>People</th><th />
+                <th>Input</th><th>State</th><th>People</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -212,7 +212,9 @@ success sentence, and call set_checks.`}
                       )}
                     </td>
                     <td>
-                      {!usable ? (
+                      {goal.enabled === false ? (
+                        <span className="status"><span className="dot" /> paused</span>
+                      ) : !usable ? (
                         <span className="status"><span className="dot bad" /> no channel</span>
                       ) : feeding.length === 0 ? (
                         <span className="status"><span className="dot" /> no input</span>
@@ -233,7 +235,38 @@ success sentence, and call set_checks.`}
                       {active} active
                       <div className="muted">{done} done</div>
                     </td>
-                    <td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <div className="row">
+                        <GoalDrawer
+                          productId={id}
+                          templateKeys={templateKeys}
+                          channelKeys={channelKeys}
+                          toolChoices={toolChoices}
+                          audiences={audiences}
+                          verifiers={verifiers}
+                          action={updateGoal}
+                          label="Edit"
+                          existing={{
+                            key: String(goal.key),
+                            name: String(goal.name),
+                            successDescribed: String((goal.success as { describedAs: string }).describedAs),
+                            verifyConnectionId: goal.verifyConnectionId ? String(goal.verifyConnectionId) : undefined,
+                            verifyHint: goal.verifyHint ? String(goal.verifyHint) : undefined,
+                            allowedChannels: (goal.allowedChannels ?? []) as string[],
+                            firstTouchTemplate: ft.templateKey,
+                            primaryChannel: ft.channels[0] ?? "email",
+                            fallbackChannel: ft.channels[1],
+                            touches: budget.touches,
+                            days: budget.days,
+                            approvalMode: sch.approvalMode,
+                          }}
+                        />
+                        <form action={toggleGoal.bind(null, id, String(goal.key), goal.enabled === false)}>
+                          <button className="quiet sm" type="submit">
+                            {goal.enabled === false ? "Resume" : "Pause"}
+                          </button>
+                        </form>
+                      </div>
                       <ConfirmButton
                         title={`Delete "${String(goal.name)}"?`}
                         body={
