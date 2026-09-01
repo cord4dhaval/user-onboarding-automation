@@ -23,7 +23,8 @@ const SETUP = [
   { href: "/channels", label: "Channels" },
   { href: "/connections", label: "Connections" },
   { href: "/providers", label: "Providers" },
-  { href: "/claude", label: "Claude" },
+  { href: "/claude", label: "Connect Claude" },
+  { href: "/routines", label: "Routines" },
 ];
 
 export default function Nav({ productId, counts }: { productId: string; counts: NavCounts }) {
