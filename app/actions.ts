@@ -312,11 +312,15 @@ export async function createGoal(formData: FormData) {
   // something only Claude can do.
   const existing = await db.collection(C.goals).findOne({ orgId: await currentOrg(), productId, key });
   const alreadyHasChecks = ((existing?.checks ?? []) as unknown[]).length > 0;
-  // A priority chain, built from two explicit choices rather than a free-text list —
-  // exactly one channel carries a touch, and the order has to be unambiguous.
+  // Two different questions, deliberately kept apart. Which channels this campaign may
+  // ever use is a multiple choice; which one carries the first message is a single one
+  // with a fallback, because two messages arriving at once reads as spam.
+  const allowedChannels = formData.getAll("allowedChannels").map(String).filter(Boolean);
   const channels = [String(formData.get("primaryChannel") ?? "email"), String(formData.get("fallbackChannel") ?? "")]
     .map((c) => c.trim())
     .filter(Boolean);
+  // The first-touch channel is implicitly allowed — picking it is saying so.
+  const allowed = allowedChannels.length > 0 ? [...new Set([...allowedChannels, ...channels])] : channels;
 
   await db.collection(C.goals).updateOne(
     { orgId: (await currentOrg()), productId, key },
@@ -340,6 +344,7 @@ export async function createGoal(formData: FormData) {
           days: Number(formData.get("days") ?? 30),
           usd: Number(formData.get("usd") ?? 12),
         },
+        allowedChannels: allowed,
         // Left alone on edit so a plan already written is not wiped by saving the form.
         ...(alreadyHasChecks ? {} : { checks: [] }),
         needsVerificationPlan: !alreadyHasChecks,

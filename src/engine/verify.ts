@@ -175,6 +175,7 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
   if (!person) return "unchanged";
 
   const results = { ...((instance.checkResults ?? {}) as Record<string, boolean>) };
+  const probes: Record<string, unknown> = {};
   const since = new Date(String(instance.startedAt));
   let ranAny = false;
 
@@ -194,6 +195,16 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
 
       const passed = evaluateAssertion(check.assert, payload);
       ranAny = true;
+
+      // The raw response is kept whatever the reading, because Claude decides the verdict
+      // from what the tool actually returned rather than from our interpretation of it.
+      probes[check.key] = {
+        tool: check.tool,
+        at: new Date(),
+        engineReading: passed,
+        // Trimmed: a probe is evidence, not an archive, and some tools return a lot.
+        response: JSON.parse(JSON.stringify(payload ?? null)),
+      };
 
       if (passed === null) {
         // Ambiguous. Recorded so a person or Claude can look, never guessed either way.
@@ -238,7 +249,15 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
   if (allPassed) {
     await db.collection(C.goalInstances).updateOne(
       { _id: instance._id },
-      { $set: { status: "succeeded", checkResults: results, endedAt: now, outcome: "verified" } },
+      {
+        $set: {
+          status: "succeeded",
+          checkResults: results,
+          probeResults: probes,
+          endedAt: now,
+          outcome: "verified by the engine",
+        },
+      },
     );
     // Congratulating someone and then chasing them twice is the obvious failure here.
     await db.collection(C.actions).updateMany(
@@ -263,6 +282,7 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
         $set: {
           status: "failed",
           checkResults: results,
+          probeResults: probes,
           endedAt: now,
           outcome: deadlinePassed ? "deadline passed" : "budget spent",
         },
@@ -292,6 +312,7 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
     {
       $set: {
         checkResults: results,
+        probeResults: probes,
         lastVerifiedAt: now,
         nextVerifyAt: new Date(now.getTime() + interval),
         verifyIntervalMinutes: Math.round(interval / 60_000),

@@ -78,9 +78,9 @@ export const TOOLS: ToolDef[] = [
         limit: { type: "number", description: "Max items per section. Default 25." },
         scope: {
           type: "string",
-          enum: ["all", "triage", "plan", "compose", "review"],
+          enum: ["all", "monitor", "plan", "compose"],
           description:
-            "Which slice of work to return, so separate routines can run on separate schedules without duplicating each other. triage = replies and checks that did not settle; plan = unclassified people and campaigns with no plan; compose = buffers running low; review = calibration. Defaults to all.",
+            "Which slice of work to return, so separate routines run on separate schedules without duplicating each other. monitor = everyone in an active campaign, with their latest probe results, replies and unsettled checks — where they are, whether they are done, what happens next; plan = unclassified people, campaigns with no pipeline, campaigns with no verification plan; compose = steps due inside 48 hours. Defaults to all.",
         },
       },
     },
@@ -131,6 +131,44 @@ export const TOOLS: ToolDef[] = [
               .toArray()
           : [];
 
+        // The heart of monitor: everyone still running, with what the engine last saw.
+        // Verification and "what next" are the same question about the same person, so
+        // they are answered from one packet rather than two passes.
+        const inFlight = [];
+        for (const goal of wants("monitor") ? activeGoals.slice(0, limit) : []) {
+          const person = await db.collection(C.people).findOne({ _id: new ObjectId(String(goal.personId)) });
+          const lastSent = await db
+            .collection(C.actions)
+            .find({ ...s, goalInstanceId: String(goal._id), status: "sent" })
+            .sort({ sentAt: -1 })
+            .limit(1)
+            .toArray();
+
+          inFlight.push({
+            goal_instance_id: String(goal._id),
+            person_id: String(goal.personId),
+            name: person?.name ?? person?.primaryEmail,
+            goal_key: String(goal.goalKey),
+            segment: (person?.belief as { segment?: string } | undefined)?.segment ?? null,
+            temperature: (person?.temp as { band?: string } | undefined)?.band ?? null,
+            spent: goal.spent,
+            deadline: goal.deadline,
+            started_at: goal.startedAt,
+            check_results: goal.checkResults ?? {},
+            // What the tools actually returned last time, so a verdict rests on data
+            // rather than on the engine's reading of it.
+            last_probes: goal.probeResults ?? null,
+            last_verified_at: goal.lastVerifiedAt ?? null,
+            last_message: lastSent[0]
+              ? {
+                  angle: String(lastSent[0].angle),
+                  sent_at: lastSent[0].sentAt,
+                  subject: (lastSent[0].content as { subject?: string })?.subject ?? null,
+                }
+              : null,
+          });
+        }
+
         const lowBuffers = [];
         for (const goal of wants("compose") ? activeGoals : []) {
           if (!goal.currentPlanId) continue;
@@ -141,7 +179,7 @@ export const TOOLS: ToolDef[] = [
           if (lowBuffers.length >= limit) break;
         }
 
-        const replies = wants("triage")
+        const replies = wants("monitor")
           ? await db
               .collection(C.events)
               .find({ ...s, type: "reply_received", handled: { $ne: true } })
@@ -151,7 +189,7 @@ export const TOOLS: ToolDef[] = [
 
         // Checks the engine ran but could not settle. These are the ones that need a
         // person's judgment rather than another tick.
-        const undetermined = wants("triage")
+        const undetermined = wants("monitor")
           ? await db
               .collection(C.events)
               .find({ ...s, type: "check_undetermined", handled: { $ne: true } })
@@ -162,7 +200,7 @@ export const TOOLS: ToolDef[] = [
 
         // Campaigns whose every check has been false for a long time while the person is
         // plainly engaged — usually a verification plan pointing at the wrong tool.
-        const stale = wants("review")
+        const stale = wants("monitor")
           ? activeGoals
               .filter((g) => {
                 const results = (g.checkResults ?? {}) as Record<string, boolean>;
@@ -182,6 +220,7 @@ export const TOOLS: ToolDef[] = [
             role: String(p.role ?? ""),
             company_domain: String(p.companyDomain ?? ""),
           })),
+          in_flight: inFlight,
           need_verification_plan: needVerificationPlan.map((g) => ({
             goal_key: String(g.key),
             name: String(g.name),
@@ -216,6 +255,7 @@ export const TOOLS: ToolDef[] = [
           p.unclassified.length +
           p.need_verification_plan.length +
           p.need_plan.length +
+          p.in_flight.length +
           p.low_buffers.length +
           p.replies_waiting.length +
           p.undetermined_checks.length +
@@ -296,6 +336,27 @@ export const TOOLS: ToolDef[] = [
         })),
         events: events.map((e) => ({ type: e.type, ts: e.ts, payload: e.payload })),
         product_config: product?.config ?? null,
+        // What each channel can actually carry. Without this, copy gets written to an
+        // email's shape and sent as a WhatsApp message, where it lands badly.
+        channels: (
+          await db.collection(C.channels).find({ orgId, productId, enabled: true }).toArray()
+        ).map((c) => {
+          const caps = (c.capabilities ?? {}) as Record<string, unknown>;
+          return {
+            key: String(c.key),
+            status: String(c.status),
+            max_subject_chars: caps.maxSubjectLength ?? null,
+            max_body_chars: caps.maxBodyLength ?? null,
+            html: Boolean(caps.html),
+            attachments: Boolean(caps.attachments),
+            window_rules: caps.windowRules ?? null,
+            reports_back: {
+              opens: Boolean(caps.trackingOpens),
+              clicks: Boolean(caps.trackingClicks),
+              replies: Boolean(caps.inboundReplies),
+            },
+          };
+        }),
       };
     },
   },
@@ -373,7 +434,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "plan_goal",
     description:
-      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Stored as a new version; the previous plan is kept with your rationale for replacing it.",
+      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Every channel must be one the campaign allows — lead_card lists what is connected and what each can carry. Stored as a new version; the previous plan is kept with your rationale for replacing it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -405,6 +466,22 @@ export const TOOLS: ToolDef[] = [
         .collection(C.goalInstances)
         .findOne({ _id: new ObjectId(goalInstanceId), orgId: ctx.orgId });
       if (!instance) throw new Error("goal instance not found");
+
+      // A plan that names a channel the campaign does not allow would queue messages that
+      // can never send, so it is refused rather than stored.
+      const goalDef = await db
+        .collection(C.goals)
+        .findOne({ orgId: ctx.orgId, productId: String(instance.productId), key: String(instance.goalKey) });
+      const allowed = (goalDef?.allowedChannels ?? []) as string[];
+      if (allowed.length > 0) {
+        const steps = (args.steps ?? []) as Array<{ channel?: string }>;
+        const stray = steps.map((st) => String(st.channel)).filter((ch) => !allowed.includes(ch));
+        if (stray.length > 0) {
+          throw new Error(
+            `This campaign may only use ${allowed.join(", ")}. The plan asks for ${[...new Set(stray)].join(", ")}.`,
+          );
+        }
+      }
 
       const previous = await db
         .collection(C.plans)
@@ -850,5 +927,114 @@ TOOLS.push({
     const { verifyCampaign } = await import("../../engine/verify.js");
     const outcome = await verifyCampaign(ctx.orgId, String(instance._id));
     return { key: String(args.key), passed: Boolean(args.passed), campaign_now: outcome };
+  },
+});
+
+/**
+ * Sets a person's state after reading what the tools actually returned.
+ *
+ * The engine gathers the evidence and settles only what is beyond doubt. This is where the
+ * rest is decided: a response shaped differently from what the assertion expected, someone
+ * who signed up under another address, a picture that does not add up. Claude's verdict
+ * wins, and it is recorded with its reasoning so the trail shows who decided and why.
+ */
+TOOLS.push({
+  name: "mark_state",
+  description:
+    "Set the outcome for people in active campaigns after reading their probe results. Use 'succeeded' only when the raw response actually supports it; 'failed' only for a real ending, not for a check that has simply not passed yet; 'continue' to leave a campaign running with a note about where the person is.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      verdicts: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            goal_instance_id: { type: "string" },
+            state: { type: "string", enum: ["succeeded", "failed", "continue"] },
+            why: { type: "string", description: "What in the evidence supports this." },
+            cooling_days: { type: "number", description: "For failed: how long before they may be approached again. Defaults to 90." },
+            objection: { type: "string", description: "Anything they said that a later attempt should open on." },
+          },
+          required: ["goal_instance_id", "state", "why"],
+        },
+      },
+    },
+    required: ["product_id", "verdicts"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const verdicts = (args.verdicts ?? []) as Array<Record<string, unknown>>;
+    const now = new Date();
+    const applied: Array<Record<string, unknown>> = [];
+
+    for (const v of verdicts) {
+      const instance = await db
+        .collection(C.goalInstances)
+        .findOne({ _id: new ObjectId(String(v.goal_instance_id)), orgId, productId });
+      if (!instance || instance.status !== "active") continue;
+
+      const state = String(v.state);
+      const personId = new ObjectId(String(instance.personId));
+
+      if (state === "continue") {
+        await db
+          .collection(C.goalInstances)
+          .updateOne({ _id: instance._id }, { $set: { lastReviewNote: String(v.why), lastReviewedAt: now } });
+        applied.push({ goal_instance_id: String(instance._id), state });
+        continue;
+      }
+
+      await db.collection(C.goalInstances).updateOne(
+        { _id: instance._id },
+        {
+          $set: {
+            status: state === "succeeded" ? "succeeded" : "failed",
+            endedAt: now,
+            outcome: String(v.why),
+            decidedBy: "claude",
+          },
+        },
+      );
+
+      // Congratulating someone and then chasing them twice is the failure this prevents.
+      await db.collection(C.actions).updateMany(
+        { orgId, goalInstanceId: String(instance._id), status: { $in: ["queued", "awaiting_approval"] } },
+        { $set: { status: "skipped", skipReason: `campaign ${state}` } },
+      );
+
+      const coolingDays = typeof v.cooling_days === "number" ? v.cooling_days : 90;
+      const personUpdate: Record<string, unknown> = {
+        lifecycle: "cooling",
+        coolingUntil: new Date(now.getTime() + coolingDays * 86_400_000),
+      };
+      await db.collection(C.people).updateOne({ _id: personId }, { $set: personUpdate });
+
+      // Objections outlive the campaign that heard them, so a later attempt can open on
+      // what the person actually said rather than repeating what already failed.
+      if (v.objection) {
+        await db.collection(C.people).updateOne({ _id: personId }, {
+          $push: { objections: { text: String(v.objection), at: now, source: "claude" } },
+        } as never);
+      }
+
+      await db.collection(C.events).insertOne({
+        _id: new ObjectId(),
+        orgId,
+        productId,
+        personId: String(instance.personId),
+        source: "system",
+        type: `campaign_${state}`,
+        payload: { why: String(v.why), by: "claude" },
+        ts: now,
+      });
+
+      applied.push({ goal_instance_id: String(instance._id), state, cooling_days: coolingDays });
+    }
+
+    return { applied: applied.length, verdicts: applied };
   },
 });

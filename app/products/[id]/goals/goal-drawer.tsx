@@ -53,6 +53,26 @@ export default function GoalDrawer({
 
           <h3 style={{ fontSize: 15, margin: "18px 0 0" }}>What happens on arrival</h3>
 
+          <fieldset className="fieldset">
+            <legend>Channels this campaign may use</legend>
+            {channelKeys.length === 0 ? (
+              <span className="muted" style={{ fontSize: 13 }}>
+                None connected yet — <a href={`/products/${productId}/channels`}>connect one</a>.
+              </span>
+            ) : (
+              channelKeys.map((k) => (
+                <label key={k} className="check">
+                  <input type="checkbox" name="allowedChannels" value={k} defaultChecked={k === channelKeys[0]} />
+                  {k}
+                </label>
+              ))
+            )}
+          </fieldset>
+          <p className="sub" style={{ margin: 0 }}>
+            Claude plans within this set and never outside it. Ticking WhatsApp does not mean every message
+            goes there — it means a later step is allowed to.
+          </p>
+
           <div className="grid">
             <label>
               Send

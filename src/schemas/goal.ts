@@ -59,6 +59,12 @@ export const goal = z.object({
     usd: z.number().nonnegative(),
   }),
 
+  /**
+   * Every channel this campaign may reach for. Claude plans within this set and never
+   * outside it, so a campaign meant for email alone cannot quietly start sending WhatsApp.
+   */
+  allowedChannels: z.array(channelKey).min(1),
+
   /** Fires immediately on entry, deterministically, without waiting for a Claude session. */
   firstTouch: z.object({
     templateKey: z.string(),

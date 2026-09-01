@@ -70,86 +70,83 @@ export default async function Routines({ params }: { params: Promise<{ id: strin
 
   const routines: Routine[] = [
     {
-      name: "Triage",
+      name: "Monitor",
       cron: "5 * * * *",
       human: "every hour, at :05",
       essential: true,
-      job: "Someone is stuck and nothing moves until a decision is made — replies that arrived, and checks the engine could not interpret.",
+      job: "Every person in an active campaign: where are they, are they done, and what happens next. Verification and monitoring are the same question about the same person, so they are answered in one pass.",
       example:
-        'Rahul replies "mid-migration, ask me in Q3". Triage recognises a deferral rather than a refusal, pulls July out of it, stops the four remaining messages, and closes gracefully. In July a campaign picks him up and opens on exactly that.',
+        "Priya's probes show an account and two sessions — marked succeeded, her two queued messages cancelled, the next campaign opened. Rahul has not moved in nine days and the profitability angle failed twice, so his remaining steps are replaced with the surveillance objection. Deepa replied \"ask in Q3\" — campaign closed, cooling until July, her reason recorded for whoever picks her up then.",
       prompt: `${preamble}
 
 Every run:
-1. sweep with product_id "${id}" and scope "triage".
-2. If total_work_items is 0, stop and say "nothing to triage".
-3. For each reply: read it with lead_card, work out the intent, then draft a
-   grounded answer with record_reply. Never invent a product capability to
-   close someone — say what is true, or escalate it.
-4. For each undetermined check: call verify_person, read what the tool actually
-   returned, and call resolve_check only if that response plainly supports the
-   verdict. If it does not, leave it and say what is ambiguous.
-5. Report what you settled and what you left.`,
+1. sweep with product_id "${id}" and scope "monitor".
+2. If total_work_items is 0, stop and say "nothing to monitor".
+3. For each person under in_flight, read last_probes — what the tools actually
+   returned — alongside check_results and their last message. Decide:
+     succeeded  the evidence plainly shows it. Not "probably".
+     failed     a real ending: they said no, or the budget and deadline are
+                spent. Never because a check has simply not passed yet.
+     continue   still running. Say in one line where they are.
+   Submit them together with mark_state.
+4. Where someone is off-plan — stalled, or a signal the plan did not expect —
+   call plan_goal with a new version and say why the old one is being replaced.
+5. For each reply: read it, then record_reply with a grounded answer. Never
+   invent a capability to close someone.
+6. For each undetermined check: verify_person, read the raw response, and
+   resolve_check only if it plainly supports the verdict.
+7. On your first run of the day, also look at verification_looks_wrong. Those
+   campaigns have run two weeks with nothing passing, which usually means a
+   check is bound to the wrong tool. Use verifiers and set_checks to fix it.`,
     },
     {
       name: "Plan",
       cron: "20 */2 * * *",
       human: "every 2 hours, at :20",
       essential: true,
-      job: "New people have to be understood before anything can be written to them — who they are, what they are stuck on, and the sequence that fits.",
+      job: "New people get understood and given a pipeline. New campaigns get a verification plan — which can only happen here, because the browser that created them cannot call Claude.",
       example:
-        "Twelve leads arrive overnight. Priya, VP Engineering, is read as an engineering leader with no honest view of where the team's time goes, so her sequence opens by showing the product. Deepa in HR gets a different sequence entirely, opening on audit-ready attendance.",
+        "Twelve leads arrive overnight. Priya reads as an engineering leader whose problem is no honest view of where the team's time goes, so her pipeline opens by showing the product. Deepa in HR gets a different one entirely, opening on audit-ready attendance.",
       prompt: `${preamble}
 
 Every run:
 1. sweep with product_id "${id}" and scope "plan".
 2. If total_work_items is 0, stop.
-3. Classify unclassified people in batches — lead_card for context, then submit
+3. For anything under need_verification_plan: call verifiers to see what could
+   answer that campaign's success sentence, then set_checks. Until this exists
+   the campaign cannot mark anyone as succeeded.
+4. Classify unclassified people in batches — lead_card for context, then submit
    them all in one classify call.
-4. For each campaign in need_plan: lead_card, then plan_goal with 3-5 steps.
-   Each step needs a channel, an angle, days from now, and a one-line why.
-   Stay inside the campaign's budget and its cadence for that temperature.
-5. Stop after 40 people and leave the rest for the next run.`,
+5. For each campaign under need_plan: lead_card, then plan_goal with 3-5 steps.
+   Use only channels the campaign allows; lead_card lists what is connected and
+   what each can carry. Stay inside the budget and the cadence for that
+   temperature.
+6. Stop after 40 people and leave the rest for the next run.`,
     },
     {
       name: "Compose",
       cron: "35 */2 * * *",
       human: "every 2 hours, at :35",
       essential: false,
-      job: "Write the messages about to go out — only the next two days' worth.",
+      job: "Write the messages about to go out — in the shape of the channel each one is going on. Only the next two days' worth.",
       example:
-        "Rahul's third message is due Thursday, so it is written on Tuesday, knowing he already got the profitability angle and never clicked. It opens on the surveillance objection instead, and cannot reuse a claim already made to him.",
+        "Rahul's replanned step is due Thursday on email: subject line, around 140 words, a link, an opt-out. His step after that is WhatsApp: about 45 words, no link, and outside the 24-hour window it has to use an approved template. Same angle, two different pieces of writing.",
       prompt: `${preamble}
 
 Every run:
 1. sweep with product_id "${id}" and scope "compose".
 2. If total_work_items is 0, stop.
 3. For each low buffer: compose_batch for steps due in the next 48 hours only.
-   Not three ahead — a message written now for day 9 is usually wasted, because
-   the person signs up or unsubscribes first.
-4. Write in the product's voice. Read their prior touches and never repeat a
-   claim already made to them, or contradict one.
-5. Stop after 30 touches.`,
-    },
-    {
-      name: "Review",
-      cron: "50 7 * * *",
-      human: "daily, 07:50",
-      essential: false,
-      job: "Is any of this working, and is the system measuring itself correctly? The slow question nothing else has time for.",
-      example:
-        'Eight campaigns have run three weeks with no success recorded while those people are visibly clicking. The "has signed up" check was pointed at a tool that only returns currently-active users. Review re-points it, and eight campaigns about to close as failures are recorded as the successes they were.',
-      prompt: `${preamble}
-
-Every run:
-1. sweep with product_id "${id}" and scope "review".
-2. For anything under verification_looks_wrong: these campaigns have run two
-   weeks with no check ever passing. Call verify_person, look at what the tools
-   return, and if a check is bound to the wrong tool, propose a better one with
-   verifiers and set_checks.
-3. Call report to compare what was predicted against what happened. Where a
-   segment is consistently misjudged, say so — that usually means the segment
-   needs splitting rather than the copy needs changing.
-4. Report findings. Change nothing else.`,
+   Not further ahead — a message written now for day 9 is usually wasted,
+   because the person signs up or unsubscribes first.
+4. Write to the channel's shape. lead_card lists each channel's real limits:
+   an email carries a subject, a body of a few hundred words, a link and an
+   opt-out; a WhatsApp message is a couple of sentences with no link, and
+   outside its reply window it must use an approved template. The same angle
+   becomes two different pieces of writing.
+5. Read their prior touches. Never repeat a claim already made to them, never
+   contradict one, and let the register escalate naturally across a sequence.
+6. Stop after 30 touches.`,
     },
   ];
 
@@ -160,7 +157,7 @@ Every run:
           <h1>Routines</h1>
           <p className="sub" style={{ marginBottom: 0 }}>
             The engine sends on its own clock and needs no AI to do it. These four scheduled Claude sessions do
-            the part that needs judgment. Nothing they do is urgent, which is what makes running four of them
+            the part that needs judgment. Nothing they do is urgent, which is what makes running three of them
             cheap and makes it safe when one misses a turn.
           </p>
         </div>
@@ -219,7 +216,7 @@ Every run:
         never fire together.
       </p>
 
-      <h2>The four</h2>
+      <h2>The three</h2>
       {routines.map((r) => (
         <div className="card" key={r.name} style={{ marginBottom: 18 }}>
           <div className="row" style={{ marginBottom: 8 }}>
@@ -250,10 +247,9 @@ Every run:
         <table>
           <thead><tr><th>Stops</th><th>Still works</th><th>Waits</th></tr></thead>
           <tbody>
-            <tr><td><strong>Triage</strong></td><td>Everything sends and verifies</td><td>Replies go unanswered — the most visible gap</td></tr>
-            <tr><td><strong>Plan</strong></td><td>Welcomes go out, existing sequences continue</td><td>New people stay unclassified</td></tr>
+            <tr><td><strong>Monitor</strong></td><td>Everything sends; the engine still gathers evidence</td><td>Nobody is marked as finished, and replies go unanswered</td></tr>
+            <tr><td><strong>Plan</strong></td><td>Welcomes go out, existing sequences continue</td><td>New people stay unclassified; new campaigns cannot verify</td></tr>
             <tr><td><strong>Compose</strong></td><td>Anything already written still sends</td><td>Sequences run dry after about two days</td></tr>
-            <tr><td><strong>Review</strong></td><td>Everything</td><td>Nothing, for a while. Least urgent by design.</td></tr>
             <tr><td><strong>The engine</strong></td><td>Nothing sends</td><td>This is the one that matters</td></tr>
           </tbody>
         </table>
