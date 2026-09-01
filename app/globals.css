@@ -140,3 +140,7 @@ button[disabled] { opacity: 0.55; cursor: progress; }
 .preview-head .muted { display: inline-block; width: 58px; font-family: var(--mono); font-size: 11px;
   letter-spacing: .08em; text-transform: uppercase; }
 .preview-body { padding: 16px 14px; white-space: pre-wrap; font-size: 14.5px; line-height: 1.6; }
+
+.demo-card { margin-top: 22px; }
+.demo-card table th { background: none; padding-left: 0; border: 0; }
+.demo-card table td { border: 0; }
