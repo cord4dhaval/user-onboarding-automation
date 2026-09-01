@@ -281,21 +281,62 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
     return "failed";
   }
 
-  await db
-    .collection(C.goalInstances)
-    .updateOne({ _id: instance._id }, { $set: { checkResults: results, lastVerifiedAt: now } });
+  // A campaign that is still running gets its next look scheduled by tier. An unreachable
+  // verifier backs off rather than retrying in a tight loop.
+  const interval = ranAny
+    ? verifyIntervalMs(person, instance.lastContactedAt as Date | undefined)
+    : 30 * 60_000;
+
+  await db.collection(C.goalInstances).updateOne(
+    { _id: instance._id },
+    {
+      $set: {
+        checkResults: results,
+        lastVerifiedAt: now,
+        nextVerifyAt: new Date(now.getTime() + interval),
+        verifyIntervalMinutes: Math.round(interval / 60_000),
+      },
+    },
+  );
   return ranAny ? "unchanged" : "skipped";
 }
 
-/** Verifies every active campaign that is due, cheapest-first. */
+/**
+ * How often one person's checks are worth re-running.
+ *
+ * Someone contacted in the last two days and running hot is the most likely to have just
+ * converted, and noticing late means congratulating them after chasing them again. Someone
+ * cold and silent has nothing happening, and asking hourly only spends a rate limit.
+ */
+export function verifyIntervalMs(person: Document | null, lastContactedAt?: Date): number {
+  const HOUR = 3_600_000;
+  const band = (person?.temp as { band?: string } | undefined)?.band;
+  const contactedRecently = lastContactedAt
+    ? Date.now() - new Date(lastContactedAt).getTime() < 48 * HOUR
+    : false;
+
+  if (band === "hot" && contactedRecently) return HOUR;
+  if (band === "cold" || band === "dead") return 24 * HOUR;
+  return 6 * HOUR;
+}
+
+/** Verifies every active campaign whose interval has elapsed. */
 export async function verifyDue(orgId: string, productId: string, limit = 50): Promise<VerifySummary> {
   const db = await getDb();
   const summary: VerifySummary = { examined: 0, succeeded: 0, failed: 0, unchanged: 0, skipped: [] };
 
+  const now = new Date();
+  // Only what is actually due. Re-checking everyone on every tick spends a provider's rate
+  // limit on questions whose answers cannot have changed.
   const due = await db
     .collection(C.goalInstances)
-    .find({ orgId, productId, status: "active" })
-    .sort({ lastVerifiedAt: 1 })
+    .find({
+      orgId,
+      productId,
+      status: "active",
+      $or: [{ nextVerifyAt: { $lte: now } }, { nextVerifyAt: { $exists: false } }],
+    })
+    .sort({ nextVerifyAt: 1 })
     .limit(limit)
     .toArray();
 

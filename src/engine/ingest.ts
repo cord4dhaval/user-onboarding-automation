@@ -169,6 +169,9 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
         spent: { touches: 0, usd: 0 },
         deadline: new Date(now.getTime() + goal.budget.days * 86_400_000),
         nextTickAt: new Date(now.getTime() + goal.schedule.tickEverySec * 1000),
+        // Checked an hour in: long enough for a fast signup to have happened, short enough
+        // that we stop chasing them almost immediately when it has.
+        nextVerifyAt: new Date(now.getTime() + 60 * 60_000),
         startedAt: now,
       });
 

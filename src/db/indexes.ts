@@ -19,6 +19,9 @@ export async function ensureIndexes(): Promise<void> {
     // on the ticks it is not due for.
     { key: { orgId: 1, status: 1, nextTickAt: 1 }, name: "due_ticks" },
     { key: { orgId: 1, personId: 1, status: 1 }, name: "active_goal_per_person" },
+    // Drives verification: only campaigns actually due are read, so a person on a daily
+    // tier costs nothing on the ticks in between.
+    { key: { orgId: 1, productId: 1, status: 1, nextVerifyAt: 1 }, name: "due_verification" },
   ]);
 
   await db.collection(C.sources).createIndex(

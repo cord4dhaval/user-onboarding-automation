@@ -116,7 +116,9 @@ export default async function PersonPage({
       ) : (
         <div className="tw scroll">
           <table>
-            <thead><tr><th>Campaign</th><th>Started</th><th>Ended</th><th>Spent</th><th>Outcome</th></tr></thead>
+            <thead>
+              <tr><th>Campaign</th><th>Started</th><th>Checks</th><th>Verified</th><th>Spent</th><th>Outcome</th></tr>
+            </thead>
             <tbody>
               {campaigns.map((c) => {
                 const spent = c.spent as { touches: number; usd: number };
@@ -124,7 +126,23 @@ export default async function PersonPage({
                   <tr key={String(c._id)}>
                     <td><code>{String(c.goalKey)}</code></td>
                     <td className="muted num">{when(c.startedAt)}</td>
-                    <td className="muted num">{when(c.endedAt)}</td>
+                    <td>
+                      {Object.keys((c.checkResults ?? {}) as Record<string, boolean>).length === 0 ? (
+                        <span className="muted">not checked yet</span>
+                      ) : (
+                        Object.entries((c.checkResults ?? {}) as Record<string, boolean>).map(([key, passed]) => (
+                          <div key={key}>
+                            <span className={`pill ${passed ? "ok" : ""}`}>{passed ? "✓" : "·"} {key}</span>
+                          </div>
+                        ))
+                      )}
+                    </td>
+                    <td className="muted num">
+                      {when(c.lastVerifiedAt)}
+                      {c.status === "active" && c.nextVerifyAt ? (
+                        <div style={{ fontSize: 12 }}>next {when(c.nextVerifyAt)}</div>
+                      ) : null}
+                    </td>
                     <td className="num">{spent?.touches ?? 0} msg</td>
                     <td>
                       <span className={`pill ${c.status === "succeeded" ? "ok" : c.status === "active" ? "" : "bad"}`}>

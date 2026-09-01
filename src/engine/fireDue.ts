@@ -198,9 +198,15 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       );
 
       // Budget and cap are decremented in the database, never tracked in a caller's head.
-      await db
-        .collection(C.goalInstances)
-        .updateOne({ _id: goalInstance._id }, { $inc: { "spent.touches": 1 } });
+      await db.collection(C.goalInstances).updateOne(
+        { _id: goalInstance._id },
+        {
+          $inc: { "spent.touches": 1 },
+          // Someone just contacted is the most likely to act, so bring their next check
+          // forward rather than waiting out the current interval.
+          $set: { lastContactedAt: new Date(), nextVerifyAt: new Date(Date.now() + 60 * 60_000) },
+        },
+      );
       // The same spend is recorded against the person, so the cost of pursuing one human
       // across every campaign they have ever been in is answerable.
       await db.collection(C.people).updateOne(
