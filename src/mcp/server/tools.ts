@@ -5,6 +5,8 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue } from "../../engine/fireDue.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
+import { registerRoutine, routineHealth } from "../../engine/routines.js";
+import { listRuns, sumCounters, ROUTINE_KEYS, type RoutineKey } from "../../engine/runlog.js";
 
 /**
  * The surface a Claude routine drives.
@@ -1047,5 +1049,132 @@ TOOLS.push({
     }
 
     return { applied: applied.length, verdicts: applied };
+  },
+});
+
+/**
+ * Lets a scheduled routine tell the engine it exists.
+ *
+ * Nothing else can. The schedule lives in Claude, and this app has no way to read it — so
+ * the console would otherwise have to trust a cron somebody typed into a form once and
+ * never corrected. Instead the routine re-declares its own schedule on every run, which
+ * keeps our copy true and turns silence into a signal: a routine that stops calling in is
+ * a routine that stopped.
+ */
+TOOLS.push({
+  name: "register_routine",
+  description:
+    "Declare which routine you are and the cron you run on. Call this first in every scheduled run. It is what lets the console show when each routine last ran, when it is due next, and raise an alert when one stops firing.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      routine: {
+        type: "string",
+        enum: [...ROUTINE_KEYS],
+        description: "Which routine this session is. Must match the scope you sweep with.",
+      },
+      cron: {
+        type: "string",
+        description: "The five-field cron this session is scheduled on, exactly as set in Claude. Example: 5 * * * *",
+      },
+      note: { type: "string", description: "Anything a person should know about this schedule." },
+    },
+    required: ["product_id", "routine", "cron"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const key = String(args.routine) as RoutineKey;
+    if (!(ROUTINE_KEYS as readonly string[]).includes(key)) {
+      throw new Error(`routine must be one of ${ROUTINE_KEYS.join(", ")}`);
+    }
+
+    const { cron, nextRunAt } = await registerRoutine({
+      orgId,
+      productId,
+      key,
+      cron: String(args.cron),
+      note: str(args.note),
+    });
+
+    return {
+      registered: key,
+      cron,
+      next_run_at: nextRunAt?.toISOString() ?? null,
+      note: "Recorded. Your tool calls from here until you go quiet are logged as this run.",
+    };
+  },
+});
+
+/**
+ * What a person would otherwise have to open the console to find out: which routines are
+ * set up, when each last ran, and whether any of them has stopped.
+ */
+TOOLS.push({
+  name: "routine_status",
+  description:
+    "Which routines are registered for a product, when each last ran and what it achieved, when each is due next, and which are overdue. Use this to answer 'are my routines healthy' without opening the console.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      runs: { type: "number", description: "How many recent runs to include per routine. Default 5, max 25." },
+    },
+    required: ["product_id"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const perRoutine = Math.min(typeof args.runs === "number" ? args.runs : 5, 25);
+
+    const [health, recent] = await Promise.all([
+      routineHealth(orgId, productId),
+      listRuns(orgId, productId, { limit: 200 }),
+    ]);
+
+    const routines = health.map((h) => {
+      const runs = recent.filter((r) => r.routine === h.key).slice(0, perRoutine);
+      return {
+        routine: h.key,
+        registered: h.registered,
+        enabled: h.enabled,
+        state: h.state,
+        cron: h.cron,
+        last_run_at: h.lastRunAt?.toISOString() ?? null,
+        last_status: h.lastStatus,
+        next_run_at: h.nextRunAt?.toISOString() ?? null,
+        late_by_minutes: h.lateByMinutes,
+        totals_across_recent_runs: sumCounters(runs),
+        recent_runs: runs.map((r) => ({
+          at: r.startedAt,
+          status: r.status,
+          seconds: Math.round(r.ms / 1000),
+          calls: r.calls,
+          errors: r.errors,
+          did: r.counters,
+          first_error: r.firstError,
+        })),
+      };
+    });
+
+    const engine = recent.find((r) => r.routine === "engine");
+    const problems = routines
+      .filter((r) => r.state === "late" || r.state === "never" || (!r.registered && r.routine !== "compose"))
+      .map((r) =>
+        r.registered
+          ? `${r.routine} is ${r.state} — last run ${r.last_run_at ?? "never"}`
+          : `${r.routine} has never registered, so nothing is scheduled for it`,
+      );
+
+    return {
+      product_id: productId,
+      routines,
+      last_engine_tick_with_work: engine
+        ? { at: engine.startedAt, did: engine.counters, status: engine.status }
+        : null,
+      problems,
+      healthy: problems.length === 0,
+    };
   },
 });

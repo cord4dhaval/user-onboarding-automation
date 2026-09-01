@@ -17,6 +17,10 @@ export const COLLECTIONS = {
   actions: "actions",
   templates: "templates",
 
+  routines: "routines",
+  routineRuns: "routine_runs",
+  routineCalls: "routine_calls",
+
   events: "events",
   workQueue: "work_queue",
   suppressions: "suppressions",

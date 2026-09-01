@@ -44,6 +44,26 @@ export async function ensureIndexes(): Promise<void> {
     { name: "cascade_resolution" },
   );
 
+  await db.collection(C.routines).createIndex(
+    { orgId: 1, productId: 1, key: 1 },
+    { name: "routine_identity", unique: true },
+  );
+
+  await db.collection(C.routineRuns).createIndexes([
+    { key: { orgId: 1, productId: 1, startedAt: -1 }, name: "run_log" },
+    // Resolving which open run a tool call belongs to, on every single call.
+    { key: { orgId: 1, userId: 1, status: 1, lastCallAt: -1 }, name: "open_run" },
+    { key: { status: 1, lastCallAt: 1 }, name: "idle_runs" },
+    // Counters are read daily and stay a month; the raw calls below are read twice a year
+    // and would be the bulk of the collection, so they go sooner.
+    { key: { startedAt: 1 }, name: "run_retention", expireAfterSeconds: 30 * 86_400 },
+  ]);
+
+  await db.collection(C.routineCalls).createIndexes([
+    { key: { orgId: 1, runId: 1, ts: 1 }, name: "run_detail" },
+    { key: { ts: 1 }, name: "call_retention", expireAfterSeconds: 14 * 86_400 },
+  ]);
+
   await db.collection(C.events).createIndex(
     { orgId: 1, personId: 1, ts: -1 },
     { name: "person_timeline" },

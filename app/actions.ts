@@ -13,6 +13,8 @@ import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registe
 import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
 import { notify } from "@/engine/notify.js";
+import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
+import { setRoutineEnabled } from "@/engine/routines.js";
 import { requireSession } from "./tenant";
 
 /** Campaign keys are derived from the name, so nobody has to invent an identifier. */
@@ -529,6 +531,17 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
   if (inputType === "file") {
     const file = formData.get("file");
     if (!(file instanceof File) || file.size === 0) throw new Error("Choose a spreadsheet to upload");
+
+    // Saving the same form twice should not leave two identical inputs behind. The people
+    // dedupe on their own, but the inputs would otherwise accumulate silently.
+    const duplicate = await db.collection(C.sources).findOne({
+      orgId: (await currentOrg()),
+      productId,
+      defaultGoalKey: goalKey,
+      kind: "excel_upload",
+      uploadedFile: file.name,
+    });
+    if (duplicate) return;
 
     const { parseSpreadsheet, guessFieldMap } = await import("@/engine/spreadsheet.js");
     const { rows, columns } = parseSpreadsheet(await file.arrayBuffer());
@@ -1094,4 +1107,31 @@ export async function createHttpChannel(formData: FormData) {
   });
 
   revalidatePath(`/products/${productId}/channels`);
+}
+
+// ── routine logs ──────────────────────────────────────────────────────────────
+
+/**
+ * The raw calls behind one run, fetched only when someone opens it.
+ *
+ * The log page shows sixty runs; loading every call for all of them up front would be a
+ * few thousand documents to render four lines of summary.
+ */
+export async function runCalls(runId: string): Promise<CallRow[]> {
+  const orgId = await currentOrg();
+  return listCalls(orgId, runId);
+}
+
+/**
+ * Pauses a routine's lateness alert.
+ *
+ * The routine keeps running if it is still scheduled in Claude — this app cannot stop it.
+ * It only says "I know this one is off", so a routine you deliberately unscheduled stops
+ * ringing the bell every hour.
+ */
+export async function toggleRoutine(productId: string, key: string, enabled: boolean) {
+  const orgId = await currentOrg();
+  await setRoutineEnabled(orgId, productId, key as RoutineKey, enabled);
+  revalidatePath(`/products/${productId}/logs`);
+  revalidatePath(`/products/${productId}/routines`);
 }

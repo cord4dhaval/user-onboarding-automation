@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { TOOLS, type ToolCtx } from "@/mcp/server/tools.js";
 import { resolveAccessToken } from "@/auth/oauth-server.js";
 import { appOrigin } from "@/auth/origin.js";
+import { recordToolCall } from "@/engine/runlog.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -93,14 +94,22 @@ export async function POST(request: NextRequest) {
     const tool = TOOLS.find((t) => t.name === name);
     if (!tool) return fail(-32601, `unknown tool: ${name}`);
 
+    // Every call is logged here rather than in thirty handlers. This is also where a run
+    // gets its boundaries: a routine has no session id to give us, so the scoped sweep it
+    // opens with starts one and the gap after its last call ends it.
+    const args = (params?.arguments ?? {}) as Record<string, unknown>;
+    const startedAt = Date.now();
+
     try {
-      const result = await tool.handler((params?.arguments ?? {}) as Record<string, unknown>, ctx);
+      const result = await tool.handler(args, ctx);
+      await recordToolCall({ ...ctx, tool: name, args, result, ms: Date.now() - startedAt });
       return reply({
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         structuredContent: result,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      await recordToolCall({ ...ctx, tool: name, args, error: message, ms: Date.now() - startedAt });
       // A tool error rather than a protocol error, so the caller can read it and adapt
       // instead of the session dying.
       return reply({ content: [{ type: "text", text: `Error: ${message}` }], isError: true });

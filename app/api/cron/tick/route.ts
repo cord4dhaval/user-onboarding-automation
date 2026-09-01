@@ -6,6 +6,8 @@ import { fireDue } from "@/engine/fireDue.js";
 import { reconcileDispatched } from "@/engine/reconcile.js";
 import { verifyDue } from "@/engine/verify.js";
 import { resolveChannelAdapter } from "@/engine/adapters.js";
+import { closeIdleRuns, recordEngineRun } from "@/engine/runlog.js";
+import { checkRoutineHealth } from "@/engine/routines.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -72,9 +74,29 @@ export async function GET(request: NextRequest) {
     // stop chasing someone within a minute, not on the next hourly Claude pass.
     const verified = await verifyDue(orgId, productId, 25);
     if (sent.claimed || reconciled.checked || verified.succeeded || verified.failed) {
-      report.push({ product: String(product.name), sent, reconciled, verified });
+      const work = { product: String(product.name), sent, reconciled, verified };
+      report.push(work);
+      // Only ticks that did something are kept. A row a minute, mostly empty, would bury
+      // the ones worth reading under 1,400 that say nothing.
+      await recordEngineRun({
+        orgId,
+        productId,
+        startedAt: now,
+        counters: {
+          sent: sent.claimed ?? 0,
+          reconciled: reconciled.checked ?? 0,
+          succeeded: verified.succeeded ?? 0,
+          failed: verified.failed ?? 0,
+        },
+        report: work,
+      });
     }
+
+    await checkRoutineHealth(orgId, productId);
   }
 
-  return NextResponse.json({ at: now.toISOString(), dueSources: due.length, report });
+  // A routine that finished two minutes ago should not still read as running.
+  const closed = await closeIdleRuns(now);
+
+  return NextResponse.json({ at: now.toISOString(), dueSources: due.length, runsClosed: closed, report });
 }

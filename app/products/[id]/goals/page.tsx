@@ -34,6 +34,9 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
     db.collection(C.channels).find({ ...s, enabled: true }).toArray(),
   ]);
 
+  const providerOf = (connectionId?: unknown) =>
+    connections.find((c) => String(c._id) === String(connectionId))?.provider;
+
   const audienceDocs = await db.collection(C.audiences).find(s).sort({ createdAt: -1 }).toArray();
   const audiences = await Promise.all(
     audienceDocs.map(async (a) => ({
@@ -109,9 +112,10 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
       {rows.some(({ goal }) => checksOf(goal).length === 0) && (
         <div className="note">
           <p style={{ marginBottom: 6 }}>
-            <strong>Some campaigns have no verification plan yet.</strong> A browser cannot call Claude, so the
-            Plan routine writes it on its next run — usually within two hours. Those campaigns still send; they
-            simply cannot tell when anyone has succeeded until the plan exists.
+            <strong>Some campaigns are still waiting on their verification plan.</strong> You chose where to
+            verify; working out which of that server&apos;s tools answer your success sentence is Claude&apos;s
+            part, and a browser cannot ask it directly. The Plan routine does it on its next run. Until then
+            those campaigns send normally — they just cannot mark anyone as succeeded.
           </p>
           <p className="sub" style={{ margin: 0 }}>
             To do it now, paste this into a Claude session with the connector attached:
@@ -156,10 +160,25 @@ success sentence, and call set_checks.`}
                     <td>
                       {checksOf(goal).length === 0 ? (
                         <>
-                          <ClaudeBadge note="writing the plan" />
-                          <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
-                            Until it does, nobody can be marked as succeeded.
-                          </div>
+                          {goal.verifyConnectionId ? (
+                            <>
+                              <span className="pill accent">{String(providerOf(goal.verifyConnectionId))}</span>
+                              <div style={{ marginTop: 4 }}>
+                                <ClaudeBadge note="choosing tools" />
+                              </div>
+                              <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
+                                You picked where to look. Claude works out which of its tools answer
+                                &ldquo;{String((goal.success as { describedAs: string }).describedAs)}&rdquo;.
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <ClaudeBadge note="no source chosen" />
+                              <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
+                                Nothing was picked to verify against, so nobody can be marked as succeeded.
+                              </div>
+                            </>
+                          )}
                         </>
                       ) : (
                         checksOf(goal).map((c) => (
