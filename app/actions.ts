@@ -209,28 +209,51 @@ export async function saveBinding(formData: FormData) {
 
 // ── channels ──────────────────────────────────────────────────────────────────
 
+/**
+ * Creates an MCP channel and binds its send tool in the same step.
+ *
+ * Previously these were two screens: bind the tool on Connections, then come here. Since
+ * the only reason to bind Send is to have a channel, asking for both at once removes a
+ * step people were reliably getting stuck on.
+ */
 export async function createChannel(formData: FormData) {
   const db = await getDb();
+  const orgId = await currentOrg();
   const productId = String(formData.get("productId"));
-  const connectionId = String(formData.get("connectionId"));
+
+  const [connectionId, tool] = String(formData.get("sendTool") ?? "").split("::");
+  if (!connectionId || !tool) throw new Error("Pick which tool sends the message.");
+
+  const args: Record<string, string> = {};
+  for (const [field, value] of formData.entries()) {
+    if (field.startsWith("arg:") && String(value).trim()) args[field.slice(4)] = String(value).trim();
+  }
+
+  const returnPath = String(formData.get("returnMessageId") ?? "").trim();
+  const spec: Record<string, unknown> = { tool, args };
+  if (returnPath) spec.returns = { message_id: returnPath };
+
+  await db
+    .collection(C.mcpBindings)
+    .updateOne({ orgId, connectionId }, { $set: { "bind.send": spec } }, { upsert: true });
+  await db
+    .collection(C.connections)
+    .updateOne({ _id: new ObjectId(connectionId), orgId }, { $set: { status: "healthy" } });
 
   await db.collection(C.channels).insertOne({
     _id: new ObjectId(),
-    orgId: (await currentOrg()),
+    orgId,
     productId,
     connectionId,
-    key: String(formData.get("key")),
+    key: String(formData.get("key") ?? "email"),
     kind: "mcp",
     from: String(formData.get("from") ?? "") || undefined,
-    // Taken from the connection's discovered capabilities, so the planner never proposes
-    // an angle this channel cannot actually support.
+    replyTo: String(formData.get("replyTo") ?? "") || undefined,
     capabilities: {
       ...(await capabilitiesFor(connectionId)),
       maxSubjectLength: Number(formData.get("maxSubjectLength") ?? 0) || undefined,
       maxBodyLength: Number(formData.get("maxBodyLength") ?? 0) || undefined,
     },
-    replyTo: String(formData.get("replyTo") ?? "") || undefined,
-    // The provider's own published limits, enforced by the engine before every send.
     governor: {
       dailyCap: Number(formData.get("dailyCap") ?? 50),
       perMinute: Number(formData.get("perMinute") ?? 0) || undefined,
@@ -243,6 +266,7 @@ export async function createChannel(formData: FormData) {
     status: "healthy",
     enabled: true,
   });
+
   revalidatePath(`/products/${productId}/channels`);
 }
 

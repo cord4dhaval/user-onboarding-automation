@@ -1,22 +1,12 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
+import type { McpTool } from "@/mcp/client.js";
 import { createChannel, createHttpChannel, createSmtpChannel, deleteChannel } from "../../../actions";
+import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
-import {scope, requireSession} from "../../../tenant";
+import ChannelDrawer from "./channel-drawer";
 
 export const dynamic = "force-dynamic";
-
-/** What most providers expect; edited per provider, since none of them agree on names. */
-const EXAMPLE_PAYLOAD = JSON.stringify(
-  {
-    from: "$channel.from",
-    to: "$person.email",
-    subject: "$content.subject",
-    text: "$content.body",
-  },
-  null,
-  2,
-);
 
 export default async function Channels({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -26,48 +16,102 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
 
   const [channels, connections, bindings] = await Promise.all([
     db.collection(C.channels).find(s).toArray(),
-    db.collection(C.connections).find({ ...s, status: "healthy" }).toArray(),
-    db.collection(C.mcpBindings).find({ orgId: orgId }).toArray(),
+    db.collection(C.connections).find({ ...s, serverUrl: { $exists: true } }).toArray(),
+    db.collection(C.mcpBindings).find({ orgId }).toArray(),
   ]);
 
-  // Only a connection whose send tool is bound can carry a channel.
-  const sendable = connections.filter((c) =>
-    bindings.some((b) => String(b.connectionId) === String(c._id) && (b.bind as Record<string, unknown>)?.send),
-  );
+  const bindingFor = (connectionId: string) =>
+    bindings.find((b) => String(b.connectionId) === connectionId);
+
+  // Every connection with its full tool list. Nothing is filtered or ranked — guessing
+  // which tool sends was worse than asking, because "mail" appears inside "email" and the
+  // readers outranked the sender.
+  const connectionTools = connections
+    .map((c) => {
+      const binding = bindingFor(String(c._id));
+      const tools = (binding?.discoveredTools ?? []) as McpTool[];
+      return {
+        id: String(c._id),
+        provider: String(c.provider),
+        serverUrl: String(c.serverUrl),
+        boundSendTool: (binding?.bind as Record<string, { tool?: string }> | undefined)?.send?.tool,
+        tools: tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          args: Object.keys((t.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {}),
+        })),
+      };
+    })
+    .filter((c) => c.tools.length > 0);
 
   return (
-    <main>
-      <h1>Channels</h1>
-      <p className="sub">
-        How messages go out. Three ways, and every channel type takes whichever fits: your own mail account
-        over SMTP, an MCP connection whose send tool you bound, or any provider with an HTTP endpoint and a
-        token. A product MCP that can send is both your channel and your source at once.
-      </p>
+    <>
+      <div className="head">
+        <div>
+          <h1>Channels</h1>
+          <p className="sub" style={{ marginBottom: 0 }}>
+            How messages leave. Three ways, and any channel type can use whichever fits: your own mail account
+            over SMTP, an MCP connection whose send tool you bound, or any provider with an HTTP endpoint and a
+            token.
+          </p>
+        </div>
+        <div className="spacer" />
+        <ChannelDrawer
+          productId={id}
+          connections={connectionTools}
+          smtpAction={createSmtpChannel}
+          mcpAction={createChannel}
+          httpAction={createHttpChannel}
+        />
+      </div>
 
       {channels.length === 0 ? (
-        <p className="empty">No channels yet.</p>
+        <div className="empty">
+          <strong>No channel yet</strong>
+          Campaigns will create people and queue messages that never leave. Add one above.
+          {connectionTools.length > 0 && (
+            <p style={{ margin: "10px 0 0" }}>
+              {connectionTools.map((c) => `${c.provider} (${c.tools.length} tools)`).join(" · ")} — pick the one
+              that sends when you add the channel.
+            </p>
+          )}
+        </div>
       ) : (
-        <div className="tw">
+        <div className="tw scroll">
           <table>
-            <thead><tr><th>Channel</th><th>From</th><th>Today</th><th>Reports back</th><th>Status</th><th /></tr></thead>
+            <thead>
+              <tr><th>Channel</th><th>Through</th><th>Today</th><th>Reports back</th><th>Status</th><th /></tr>
+            </thead>
             <tbody>
               {channels.map((c) => {
-                const caps = c.capabilities as Record<string, unknown>;
-                const gov = c.governor as { sentToday: number; dailyCap: number };
+                const caps = (c.capabilities ?? {}) as Record<string, unknown>;
+                const gov = (c.governor ?? {}) as { sentToday?: number; dailyCap?: number };
+                const connection = connections.find((x) => String(x._id) === String(c.connectionId));
                 return (
                   <tr key={String(c._id)}>
-                    <td><strong>{String(c.key)}</strong> <span className="muted">{String(c.kind)}</span></td>
-                    <td className="muted">{String(c.from ?? "provider default")}</td>
-                    <td>{gov.sentToday}/{gov.dailyCap}</td>
-                    <td className="muted">
-                      {caps.trackingOpens ? "opens" : "no opens"} · {caps.inboundReplies ? "replies" : "no replies"}
-                      {caps.asyncDelivery ? " · queued, reconciled" : ""}
+                    <td>
+                      <strong>{String(c.key)}</strong>
+                      <div className="muted" style={{ fontSize: 12.5 }}>{String(c.from ?? "provider default")}</div>
                     </td>
-                    <td><span className={`pill ${c.status === "healthy" ? "ok" : "warn"}`}>{String(c.status)}</span></td>
+                    <td>
+                      {String(connection?.provider ?? c.kind)}
+                      <div className="muted" style={{ fontSize: 12.5 }}>{String(c.kind)}</div>
+                    </td>
+                    <td className="num">{gov.sentToday ?? 0}/{gov.dailyCap ?? "—"}</td>
+                    <td className="muted" style={{ fontSize: 12.5 }}>
+                      {caps.trackingOpens ? "opens" : "no opens"} · {caps.inboundReplies ? "replies" : "no replies"}
+                      {caps.asyncDelivery ? <div>queued, reconciled</div> : null}
+                    </td>
+                    <td>
+                      <span className="status">
+                        <span className={`dot ${c.status === "healthy" ? "ok" : "bad"}`} />
+                        {String(c.status)}
+                      </span>
+                    </td>
                     <td>
                       <ConfirmButton
                         title={`Remove the ${String(c.key)} channel?`}
-                        body="Goals that send on it will have nowhere to deliver until another channel is connected. Messages already sent are kept."
+                        body="Campaigns that send on it will have nowhere to deliver until another is connected. Messages already sent are kept."
                         confirmLabel="Remove channel"
                         action={deleteChannel.bind(null, id, String(c._id))}
                       />
@@ -79,135 +123,6 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
           </table>
         </div>
       )}
-
-      <h2>Add a channel</h2>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="label">Email over SMTP</div>
-        <p className="sub" style={{ margin: "0 0 12px" }}>
-          Use this when the product&apos;s MCP has no send tool — the common case, since most product MCPs are
-          read surfaces. Works with any SMTP: Gmail app password, Zoho, Brevo, your own server. The password is
-          encrypted on arrival and never shown again.
-        </p>
-        <form action={createSmtpChannel} className="stack">
-          <input type="hidden" name="productId" value={id} />
-          <label>Name<input name="provider" defaultValue="smtp" /></label>
-          <div className="grid">
-            <label>Host<input name="host" placeholder="smtp.gmail.com" required /></label>
-            <label>Port<input name="port" type="number" defaultValue={587} /></label>
-          </div>
-          <label>Username<input name="user" placeholder="you@yourdomain.com" required /></label>
-          <label>Password<input name="pass" type="password" placeholder="app password" required /></label>
-          <label>From<input name="from" placeholder="TeamGrid &lt;hi@yourdomain.com&gt;" required /></label>
-          <label>Daily cap<input name="dailyCap" type="number" defaultValue={50} min={1} /></label>
-          <button type="submit">Create email channel</button>
-        </form>
-      </div>
-
-      <h3 style={{ fontSize: 15, margin: "24px 0 8px" }}>Or an API endpoint</h3>
-      <div className="card" style={{ marginBottom: 16 }}>
-        <p className="sub" style={{ margin: "0 0 12px" }}>
-          Any provider that takes a token over HTTP. The payload describes their body shape — every provider
-          names these fields differently, so the mapping is yours to give rather than something we can guess.
-        </p>
-        <form action={createHttpChannel} className="stack">
-          <input type="hidden" name="productId" value={id} />
-          <label>Name<input name="provider" placeholder="Resend, Postmark, your own service" required /></label>
-          <label>
-            Channel
-            <select name="key">
-              <option value="email">email</option>
-              <option value="whatsapp">whatsapp</option>
-              <option value="sms">sms</option>
-              <option value="in_app">in_app</option>
-              <option value="push">push</option>
-            </select>
-          </label>
-          <label>Endpoint<input name="endpointUrl" type="url" placeholder="https://api.resend.com/emails" required /></label>
-          <label>Token<input name="token" type="password" placeholder="bearer token" required /></label>
-          <label>
-            Payload <span className="muted">(their field names, our values)</span>
-            <textarea
-              name="payloadTemplate"
-              defaultValue={EXAMPLE_PAYLOAD}
-              style={{ minHeight: 130 }}
-            />
-          </label>
-          <div className="grid">
-            <label>
-              Where their id lives <span className="muted">(optional)</span>
-              <input name="messageIdPath" placeholder="$.id" />
-            </label>
-            <label>
-              Auth header <span className="muted">(if not Authorization)</span>
-              <input name="authHeader" placeholder="x-api-key" />
-            </label>
-          </div>
-          <label>From<input name="from" placeholder="TeamGrid &lt;hi@yourdomain.com&gt;" /></label>
-          <div className="grid">
-            <label>Per minute<input name="perMinute" type="number" placeholder="20" /></label>
-            <label>Per hour<input name="perHour" type="number" placeholder="100" /></label>
-            <label>Daily cap<input name="dailyCap" type="number" defaultValue={50} /></label>
-          </div>
-          <div className="grid">
-            <label>Max subject chars<input name="maxSubjectLength" type="number" placeholder="200" /></label>
-            <label>Max body chars<input name="maxBodyLength" type="number" placeholder="20000" /></label>
-          </div>
-          <button type="submit">Create channel</button>
-        </form>
-      </div>
-
-      <h3 style={{ fontSize: 15, margin: "24px 0 8px" }}>Or from an MCP connection</h3>
-      {sendable.length === 0 ? (
-        <p className="empty">
-          No connection has a send tool bound. Neither TeamGrid nor Brandgrid exposes one — use SMTP above.
-        </p>
-      ) : (
-        <form action={createChannel} className="stack">
-          <input type="hidden" name="productId" value={id} />
-          <label>
-            Connection
-            <select name="connectionId">
-              {sendable.map((c) => (
-                <option key={String(c._id)} value={String(c._id)}>
-                  {String(c.provider)} — {String(c.serverUrl)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Channel
-            <select name="key">
-              <option value="email">email</option>
-              <option value="whatsapp">whatsapp</option>
-              <option value="sms">sms</option>
-              <option value="in_app">in_app</option>
-            </select>
-          </label>
-          <label>
-            From <span className="muted">(leave blank if the provider controls it)</span>
-            <input name="from" placeholder="TeamGrid &lt;hi@teamgrid.ai&gt;" />
-          </label>
-          <label>
-            Reply-To <span className="muted">(where replies should land)</span>
-            <input name="replyTo" placeholder="hello@teamgrid.ai" />
-          </label>
-          <p className="sub" style={{ margin: "4px 0 0" }}>
-            Provider limits. Take these from the tool&apos;s own documentation — the engine enforces them before
-            every send, so a message is never rejected for exceeding a cap it could have checked.
-          </p>
-          <div className="grid">
-            <label>Per minute<input name="perMinute" type="number" placeholder="20" /></label>
-            <label>Per hour<input name="perHour" type="number" placeholder="100" /></label>
-            <label>Daily cap<input name="dailyCap" type="number" defaultValue={50} min={1} /></label>
-          </div>
-          <div className="grid">
-            <label>Max subject chars<input name="maxSubjectLength" type="number" placeholder="200" /></label>
-            <label>Max body chars<input name="maxBodyLength" type="number" placeholder="20000" /></label>
-          </div>
-          <button type="submit">Create channel</button>
-        </form>
-      )}
-    </main>
+    </>
   );
 }

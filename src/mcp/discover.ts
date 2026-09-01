@@ -63,21 +63,51 @@ export function inferCapabilities(tools: McpTool[]): Record<string, Capability> 
 }
 
 /**
- * Candidate tools for each adapter verb. Claude ranks these and proposes a binding; the
- * user confirms or overrides in the UI. Nothing here is ever auto-applied — a wrong guess
- * about which tool sends mail is expensive.
+ * Candidate tools for each adapter verb, best first.
+ *
+ * Matching on the description alone is worse than useless here: "mail" appears inside
+ * "email", so every tool whose description mentions an email address looked like a sender.
+ * A name match therefore outranks a description match, and for verbs that act on the world
+ * the obvious readers are excluded outright — get_email_tokens is never a way to send one.
  */
-export function candidatesFor(
-  verb: "send" | "send_status" | "fetch_leads" | "poll_inbound" | "health",
-  tools: McpTool[],
-): McpTool[] {
-  const patterns: Record<typeof verb, RegExp> = {
-    send: /^(?!.*status).*(send|deliver|dispatch|mail|message)/i,
-    send_status: /(send|mail|delivery).*(status|state)|status.*(send|mail)/i,
-    fetch_leads: /lead|contact|signup|pipeline|crm|new_user|subscriber/i,
-    poll_inbound: /inbound|repl(y|ies)|receive|conversation/i,
-    health: /health|quota|status|ping|limit/i,
-  };
-  const re = patterns[verb];
-  return tools.filter((t) => re.test(t.name) || (t.description ? re.test(t.description) : false));
+export type Verb = "send" | "send_status" | "fetch_leads" | "poll_inbound" | "health";
+
+const PATTERNS: Record<Verb, { name: RegExp; description?: RegExp; excludeReaders?: boolean }> = {
+  send: {
+    name: /(^|_)(send|deliver|dispatch|post|publish|notify|email|mail|message|sms|text)(_|$)/i,
+    description: /\b(sends?|delivers?|dispatches)\b/i,
+    excludeReaders: true,
+  },
+  send_status: {
+    name: /(status|state).*(send|mail|message|delivery)|(send|mail|message|delivery).*(status|state)/i,
+  },
+  fetch_leads: {
+    name: /(^|_)(lead|leads|contact|contacts|signup|signups|subscriber|pipeline|crm|new_user)(_|$)/i,
+    description: /\b(leads?|contacts?|signups?)\b/i,
+  },
+  poll_inbound: {
+    name: /(^|_)(inbound|repl(y|ies)|receive|conversation|messages?)(_|$)/i,
+  },
+  health: {
+    name: /(^|_)(health|quota|status|ping|limits?|settings)(_|$)/i,
+  },
+};
+
+/** Tools that plainly only read. Nothing named this way sends anything. */
+const READER = /^(get|list|search|fetch|read|describe|inspect|count|export)_/i;
+
+export function candidatesFor(verb: Verb, tools: McpTool[]): McpTool[] {
+  const pattern = PATTERNS[verb];
+  const scored: Array<{ tool: McpTool; score: number }> = [];
+
+  for (const tool of tools) {
+    if (pattern.excludeReaders && READER.test(tool.name)) continue;
+
+    let score = 0;
+    if (pattern.name.test(tool.name)) score += 10;
+    if (pattern.description && tool.description && pattern.description.test(tool.description)) score += 3;
+    if (score > 0) scored.push({ tool, score });
+  }
+
+  return scored.sort((a, b) => b.score - a.score).map((entry) => entry.tool);
 }
