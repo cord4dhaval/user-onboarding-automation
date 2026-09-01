@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { checkArgs } from "./argcheck.js";
 
 export interface McpTool {
   name: string;
@@ -28,10 +29,17 @@ export class McpClient {
   private initialized = false;
   private nextId = 1;
 
+  /** Tool name to its declared inputSchema, for checking a call before making it. */
+  private readonly schemas = new Map<string, unknown>();
+
   constructor(
     private readonly serverUrl: string,
     private readonly token: string,
-  ) {}
+    /** Schemas kept from discovery. Absent ones are filled in by listTools. */
+    knownSchemas?: Record<string, unknown>,
+  ) {
+    for (const [name, schema] of Object.entries(knownSchemas ?? {})) this.schemas.set(name, schema);
+  }
 
   private headers(): Record<string, string> {
     const headers: Record<string, string> = {
@@ -113,6 +121,7 @@ export class McpClient {
         "tools/list",
         cursor ? { cursor } : {},
       );
+      for (const tool of page.tools ?? []) this.schemas.set(tool.name, tool.inputSchema);
       tools.push(...(page.tools ?? []));
       cursor = page.nextCursor;
     } while (cursor);
@@ -120,6 +129,17 @@ export class McpClient {
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+    // A binding is written once by hand against a schema that can change afterwards.
+    // Checking here names the mistake — wrong field, wrong type, missing required — at the
+    // call that makes it, rather than leaving whatever the provider chose to say about it.
+    const schema = this.schemas.get(name);
+    if (schema) {
+      const problems = checkArgs(schema, args);
+      if (problems.length > 0) {
+        throw new Error(`MCP tool "${name}" rejects these arguments: ${problems.join("; ")}`);
+      }
+    }
+
     const result = await this.rpc<{ content?: unknown; structuredContent?: unknown; isError?: boolean }>(
       "tools/call",
       { name, arguments: args },

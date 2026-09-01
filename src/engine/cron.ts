@@ -140,12 +140,3 @@ export function nextCronRun(expression: string, after: Date = new Date()): Date 
 
   return null;
 }
-
-/** How long between two consecutive firings, used to decide when a run is overdue. */
-export function cronIntervalMs(expression: string, from: Date = new Date()): number | null {
-  const first = nextCronRun(expression, from);
-  if (!first) return null;
-  const second = nextCronRun(expression, first);
-  if (!second) return null;
-  return second.getTime() - first.getTime();
-}

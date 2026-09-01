@@ -7,6 +7,7 @@ import { McpSourceAdapter } from "../adapters/source/mcp.js";
 import { HttpSourceAdapter } from "../adapters/source/http.js";
 import { AudienceSourceAdapter } from "../adapters/source/audience.js";
 import { McpClient } from "../mcp/client.js";
+import { schemasFor } from "../mcp/schemas.js";
 import { resolveSecret } from "../crypto/broker.js";
 import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
 import type { Binding } from "../mcp/binding.js";
@@ -79,7 +80,11 @@ async function buildAdapter(source: Record<string, unknown>): Promise<SourceAdap
   if (!connection?.serverUrl) throw new Error("connection has no server URL");
 
   const token = await resolveSecret(String(source.orgId), String(source.connectionId), "runSource");
-  const client = new McpClient(String(connection.serverUrl), token);
+  const client = new McpClient(
+    String(connection.serverUrl),
+    token,
+    await schemasFor(String(source.connectionId)),
+  );
   return new McpSourceAdapter(client, binding.bind as Binding);
 }
 

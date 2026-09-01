@@ -2,6 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { McpClient } from "../mcp/client.js";
+import { schemasFor } from "../mcp/schemas.js";
 import { resolveSecret } from "../crypto/broker.js";
 
 /**
@@ -190,7 +191,7 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
       if (!connection?.serverUrl) continue;
 
       const token = await resolveSecret(orgId, check.connectionId, "engine.verify");
-      const client = new McpClient(String(connection.serverUrl), token);
+      const client = new McpClient(String(connection.serverUrl), token, await schemasFor(check.connectionId));
       const payload = await client.callTool(check.tool, resolveArgs(check.args, person, since));
 
       const passed = evaluateAssertion(check.assert, payload);

@@ -35,11 +35,27 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
         provider: String(c.provider),
         serverUrl: String(c.serverUrl),
         boundSendTool: (binding?.bind as Record<string, { tool?: string }> | undefined)?.send?.tool,
-        tools: tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          args: Object.keys((t.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {}),
-        })),
+        tools: tools.map((t) => {
+          const schema = t.inputSchema as
+            | { properties?: Record<string, { type?: unknown; description?: string }>; required?: string[] }
+            | undefined;
+          const properties = schema?.properties ?? {};
+          const required = new Set((schema?.required ?? []).map(String));
+          const args = Object.entries(properties).map(([name, spec]) => ({
+            name,
+            required: required.has(name),
+            type: Array.isArray(spec?.type)
+              ? spec.type.map(String).join(" or ")
+              : typeof spec?.type === "string"
+                ? spec.type
+                : undefined,
+            description: typeof spec?.description === "string" ? spec.description : undefined,
+          }));
+          // What the tool insists on comes first: those are the fields that decide whether
+          // this channel can send at all.
+          args.sort((a, b) => Number(b.required) - Number(a.required));
+          return { name: t.name, description: t.description, args };
+        }),
       };
     })
     .filter((c) => c.tools.length > 0);

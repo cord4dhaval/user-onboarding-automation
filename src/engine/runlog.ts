@@ -138,6 +138,8 @@ const COUNTER_LABELS: Record<string, [string, string]> = {
   leads_ingested: ["lead in", "leads in"],
   first_touches: ["first touch queued", "first touches queued"],
   sent: ["sent", "sent"],
+  held: ["held for review", "held for review"],
+  deferred: ["deferred to a civil hour", "deferred to a civil hour"],
   reconciled: ["reconciled", "reconciled"],
 };
 
@@ -393,13 +395,18 @@ export interface RunRow {
 }
 
 function toRow(run: Document): RunRow {
+  const startedAt = new Date(String(run.startedAt));
+  const lastCallAt = new Date(String(run.lastCallAt ?? run.startedAt));
+
   return {
     id: String(run._id),
     routine: String(run.routine) as RunKind,
     status: String(run.status) as RunStatus,
-    startedAt: new Date(String(run.startedAt)).toISOString(),
+    startedAt: startedAt.toISOString(),
     endedAt: run.endedAt ? new Date(String(run.endedAt)).toISOString() : null,
-    ms: int(run.ms),
+    // A run still in progress has no stored duration yet, so it is measured from where it
+    // has got to — otherwise a session three minutes in reads as "0 ms".
+    ms: int(run.ms) || Math.max(0, lastCallAt.getTime() - startedAt.getTime()),
     calls: int(run.calls),
     errors: int(run.errors),
     counters: (run.counters ?? {}) as RunCounters,

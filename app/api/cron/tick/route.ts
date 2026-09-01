@@ -83,7 +83,11 @@ export async function GET(request: NextRequest) {
         productId,
         startedAt: now,
         counters: {
-          sent: sent.claimed ?? 0,
+          // A claimed message is not a sent one — three held for review would otherwise
+          // read as three delivered.
+          sent: sent.sent ?? 0,
+          held: sent.heldForApproval ?? 0,
+          deferred: sent.deferred ?? 0,
           reconciled: reconciled.checked ?? 0,
           succeeded: verified.succeeded ?? 0,
           failed: verified.failed ?? 0,

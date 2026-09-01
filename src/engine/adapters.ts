@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { resolveSecret } from "../crypto/broker.js";
 import { McpClient } from "../mcp/client.js";
 import type { Binding } from "../mcp/binding.js";
+import { schemasFor } from "../mcp/schemas.js";
 import { McpChannelAdapter } from "../adapters/channel/mcp.js";
 import { SmtpAdapter } from "../adapters/channel/smtp.js";
 import { HttpChannelAdapter, type HttpChannelConfig } from "../adapters/channel/http.js";
@@ -45,7 +46,7 @@ export async function resolveChannelAdapter(orgId: string, channelId: string): P
   if (!binding?.bind || !(binding.bind as Record<string, unknown>).send) {
     throw new Error("this connection has no send tool bound");
   }
-  const client = new McpClient(String(connection.serverUrl), secret);
+  const client = new McpClient(String(connection.serverUrl), secret, await schemasFor(connectionId));
   // A bound status verb means the provider queues rather than delivers, so sends must be
   // reconciled afterwards instead of being trusted on the call.
   const asyncDelivery = Boolean((binding.bind as Record<string, unknown>).send_status);

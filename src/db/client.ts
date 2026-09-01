@@ -16,7 +16,10 @@ export async function getDb(): Promise<Db> {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error("MONGODB_URI is not set");
 
-  const candidate = client ?? new MongoClient(uri, { maxPoolSize: 10 });
+  // Without ignoreUndefined the driver stores an optional field left blank as null. That
+  // null then travels: a channel saved with no reply-to address sent replyTo: null to a
+  // provider whose schema accepts a string or nothing, and every send on it failed.
+  const candidate = client ?? new MongoClient(uri, { maxPoolSize: 10, ignoreUndefined: true });
   try {
     await candidate.connect();
   } catch (err) {

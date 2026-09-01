@@ -1,6 +1,6 @@
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { cronIntervalMs, nextCronRun, parseCron } from "./cron.js";
+import { nextCronRun, parseCron } from "./cron.js";
 import { notify } from "./notify.js";
 import { ROUTINE_KEYS, type RoutineKey } from "./runlog.js";
 
@@ -350,10 +350,4 @@ export async function checkRoutineHealth(orgId: string, productId: string): Prom
       href: `${base}/logs`,
     });
   }
-}
-
-/** Roughly how often a routine fires, for the copy on the routines page. */
-export function cadenceMinutes(cron: string): number | null {
-  const ms = cronIntervalMs(cron);
-  return ms === null ? null : Math.round(ms / 60_000);
 }

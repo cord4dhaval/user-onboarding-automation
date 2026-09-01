@@ -7,7 +7,11 @@ export interface ConnectionTools {
   id: string;
   provider: string;
   serverUrl: string;
-  tools: Array<{ name: string; description?: string; args: string[] }>;
+  tools: Array<{
+    name: string;
+    description?: string;
+    args: Array<{ name: string; required: boolean; type?: string; description?: string }>;
+  }>;
   /** Already mapped to Send, if it was bound on the connections page. */
   boundSendTool?: string;
 }
@@ -156,12 +160,27 @@ export default function ChannelDrawer({
                   <>
                     <p className="sub" style={{ margin: 0 }}>
                       What to pass it. Values starting with <code>$</code> are filled in per person; anything
-                      else is sent as written. Leave a field blank to omit it.
+                      else is sent as written. Optional fields can be left blank; the ones this tool marks
+                      required have to be mapped, or it will refuse every message.
                     </p>
                     {selected.args.map((arg) => (
-                      <label key={arg}>
-                        <span>Argument <code>{arg}</code></span>
-                        <input name={`arg:${arg}`} defaultValue={guessRef(arg)} placeholder="$person.email" />
+                      <label key={arg.name}>
+                        <span>
+                          Argument <code>{arg.name}</code>{" "}
+                          <span className="muted">
+                            {arg.required ? "required" : "optional"}
+                            {arg.type ? ` · ${arg.type}` : ""}
+                          </span>
+                        </span>
+                        <input
+                          name={`arg:${arg.name}`}
+                          defaultValue={guessRef(arg.name)}
+                          placeholder="$person.email"
+                          required={arg.required}
+                        />
+                        {arg.description ? (
+                          <span className="muted">{arg.description.slice(0, 140)}</span>
+                        ) : null}
                       </label>
                     ))}
                     <label>

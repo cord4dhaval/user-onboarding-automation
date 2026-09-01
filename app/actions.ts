@@ -1,6 +1,7 @@
 "use server";
 
 import { ObjectId } from "mongodb";
+import { requiredArgs } from "@/mcp/argcheck.js";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db/client.js";
@@ -182,6 +183,29 @@ export async function discoverTools(productId: string, connectionId: string) {
   revalidatePath(`/products/${productId}/connections/${connectionId}`);
 }
 
+/**
+ * A binding that omits an argument the tool insists on produces a channel or source that
+ * fails on every call, and the failure surfaces per message, hours later, in whatever
+ * words the provider chose. The schema is already in hand, so refuse the save instead.
+ */
+async function assertRequiredArgsMapped(
+  orgId: string,
+  connectionId: string,
+  tool: string,
+  args: Record<string, string>,
+) {
+  const db = await getDb();
+  const binding = await db.collection(C.mcpBindings).findOne({ orgId, connectionId });
+  const discovered = (binding?.discoveredTools ?? []) as Array<{ name?: string; inputSchema?: unknown }>;
+  const schema = discovered.find((t) => t.name === tool)?.inputSchema;
+  const missing = requiredArgs(schema).filter((name) => !args[name]);
+  if (missing.length > 0) {
+    throw new Error(
+      `${tool} requires ${missing.join(", ")}. Map ${missing.length === 1 ? "it" : "them"} before saving.`,
+    );
+  }
+}
+
 /** Saves which tool serves a verb, with its argument mapping. */
 export async function saveBinding(formData: FormData) {
   const db = await getDb();
@@ -194,6 +218,8 @@ export async function saveBinding(formData: FormData) {
   for (const [key, value] of formData.entries()) {
     if (key.startsWith("arg:") && String(value).trim()) args[key.slice(4)] = String(value).trim();
   }
+
+  await assertRequiredArgsMapped(await currentOrg(), connectionId, tool, args);
 
   const returnPath = String(formData.get("returnMessageId") ?? "").trim();
   const spec: Record<string, unknown> = { tool, args };
@@ -230,6 +256,8 @@ export async function createChannel(formData: FormData) {
   for (const [field, value] of formData.entries()) {
     if (field.startsWith("arg:") && String(value).trim()) args[field.slice(4)] = String(value).trim();
   }
+
+  await assertRequiredArgsMapped(orgId, connectionId, tool, args);
 
   const returnPath = String(formData.get("returnMessageId") ?? "").trim();
   const spec: Record<string, unknown> = { tool, args };

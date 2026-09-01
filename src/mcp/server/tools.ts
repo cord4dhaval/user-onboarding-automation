@@ -842,6 +842,7 @@ TOOLS.push({
 
     const { evaluateAssertion } = await import("../../engine/verify.js");
     const { McpClient } = await import("../../mcp/client.js");
+    const { schemasFor } = await import("../../mcp/schemas.js");
     const { resolveSecret } = await import("../../crypto/broker.js");
 
     const results = [];
@@ -855,7 +856,11 @@ TOOLS.push({
           continue;
         }
         const token = await resolveSecret(orgId, String(check.connectionId), "mcp.verify_person");
-        const client = new McpClient(String(connection.serverUrl), token);
+        const client = new McpClient(
+          String(connection.serverUrl),
+          token,
+          await schemasFor(String(check.connectionId)),
+        );
 
         const argMap: Record<string, unknown> = {};
         for (const [name, ref] of Object.entries((check.args ?? {}) as Record<string, string>)) {
