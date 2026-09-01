@@ -38,11 +38,20 @@ interface GoalDoc {
   schedule: { tickEverySec: number; quietHours?: [number, number] };
 }
 
-/** Applies the source's field map, so arbitrary column names land in our own shape. */
+/**
+ * Applies the source's field map, so arbitrary column names land in our own shape.
+ *
+ * Falls back to a case-insensitive match on the column name. Exports differ on
+ * capitalisation constantly — "Email" one week, "email" the next — and a mapping that is
+ * right except for a capital letter should not silently drop every row.
+ */
 function mapRecord(raw: RawRecord, fieldMap: Record<string, string>): Record<string, unknown> {
+  const lowered = new Map(Object.keys(raw).map((key) => [key.toLowerCase().trim(), key]));
   const mapped: Record<string, unknown> = {};
+
   for (const [ours, theirs] of Object.entries(fieldMap)) {
-    const value = raw[theirs];
+    const key = theirs in raw ? theirs : lowered.get(theirs.toLowerCase().trim());
+    const value = key === undefined ? undefined : raw[key];
     if (value !== undefined && value !== null && value !== "") mapped[ours] = value;
   }
   return mapped;

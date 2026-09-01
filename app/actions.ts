@@ -470,7 +470,9 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       connectionId: "",
       kind: "excel_upload",
       triggerMode: "batch",
-      fieldMap: rawMap ? fieldMap : { ...guessed, ...fieldMap },
+      // Guesses read from the file's own headers win over the generic defaults. Spreading
+      // the defaults last would overwrite a correct "Email" with a literal "email".
+      fieldMap: rawMap ? fieldMap : { ...fieldMap, ...guessed },
       uploadedRows: rows.length,
       uploadedFile: file.name,
     });
