@@ -57,7 +57,10 @@ export async function invoke(
   const args: Record<string, unknown> = {};
   for (const [name, ref] of Object.entries(spec.args)) {
     const value = resolveRef(ref, ctx);
-    if (value !== undefined) args[name] = value;
+    // An optional the user left blank reaches here as null. Sending it fails schema
+    // validation on servers that accept a string or nothing at all; omitting it is what
+    // "unset" means.
+    if (value !== undefined && value !== null) args[name] = value;
   }
 
   const raw = await client.callTool(spec.tool, args);

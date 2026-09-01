@@ -124,7 +124,13 @@ export class McpClient {
       "tools/call",
       { name, arguments: args },
     );
-    if (result.isError) throw new Error(`MCP tool "${name}" reported an error`);
+    if (result.isError) {
+      // The server puts its reason in the content blocks. Dropping them leaves an operator
+      // with a failure and no way to tell a bad argument from an expired credential.
+      const reason = unwrapContent(result.content);
+      const detail = typeof reason === "string" ? reason : reason ? JSON.stringify(reason) : "";
+      throw new Error(`MCP tool "${name}" reported an error${detail ? `: ${detail.slice(0, 500)}` : ""}`);
+    }
     // Prefer the typed payload; fall back to the content blocks a server returns instead.
     return result.structuredContent ?? unwrapContent(result.content) ?? result;
   }
