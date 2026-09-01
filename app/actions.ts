@@ -571,7 +571,7 @@ export async function probeAuth(formData: FormData): Promise<void> {
  * Refuses while a channel or source still points at it — deleting underneath them would
  * leave goals with a first touch that silently never sends.
  */
-export async function deleteConnection(productId: string, connectionId: string) {
+export async function deleteConnection(productId: string, connectionId: string, _formData?: FormData) {
   const db = await getDb();
 
   const [channels, sources] = await Promise.all([
@@ -676,7 +676,7 @@ export async function createSmtpChannel(formData: FormData) {
   revalidatePath(`/products/${productId}/channels`);
 }
 
-export async function deleteChannel(productId: string, channelId: string) {
+export async function deleteChannel(productId: string, channelId: string, _formData?: FormData) {
   const db = await getDb();
   await db.collection(C.channels).deleteOne({ _id: new ObjectId(channelId), orgId: (await currentOrg()) });
   revalidatePath(`/products/${productId}/channels`);
@@ -686,7 +686,7 @@ export async function deleteChannel(productId: string, channelId: string) {
  * Deletes a goal and everything that only existed because of it: its instances, plans and
  * queued actions. Sent history is kept — it is the record of what a real person received.
  */
-export async function deleteGoal(productId: string, goalKey: string) {
+export async function deleteGoal(productId: string, goalKey: string, _formData?: FormData) {
   const db = await getDb();
   const s = { orgId: (await currentOrg()), productId };
 
@@ -705,7 +705,7 @@ export async function deleteGoal(productId: string, goalKey: string) {
   revalidatePath(`/products/${productId}/sources`);
 }
 
-export async function deleteSource(productId: string, sourceId: string) {
+export async function deleteSource(productId: string, sourceId: string, _formData?: FormData) {
   const db = await getDb();
   await db.collection(C.sources).deleteOne({ _id: new ObjectId(sourceId), orgId: (await currentOrg()) });
   revalidatePath(`/products/${productId}/sources`);

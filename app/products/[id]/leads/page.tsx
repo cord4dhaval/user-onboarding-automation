@@ -1,6 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import {scope, requireSession} from "../../../tenant";
+import { requireSession, scope } from "../../../tenant";
+import ClaudeBadge from "../../../ui/claude-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,7 @@ export default async function Leads({ params }: { params: Promise<{ id: string }
                     <td>
                       {belief
                         ? <>{belief.segment} <span className="muted">{Math.round(belief.confidence * 100)}%</span></>
-                        : <span className="pill warn">unclassified</span>}
+                        : <ClaudeBadge note="next run" />}
                     </td>
                     <td>{temp ? <span className="pill">{temp.band} {Math.round(temp.score)}</span> : "—"}</td>
                     <td>{goal ? <code>{String(goal.goalKey)}</code> : <span className="muted">none</span>}</td>

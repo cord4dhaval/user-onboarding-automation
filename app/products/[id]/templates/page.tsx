@@ -5,6 +5,7 @@ import { renderTemplate, type MergeVars } from "@/engine/compose.js";
 import { validate } from "@/engine/validate.js";
 import { generateTemplates } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
+import ClaudeBadge from "../../../ui/claude-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -102,9 +103,12 @@ export default async function Templates({
 
             return (
               <div className="card" key={String(t._id)} style={{ marginBottom: 20 }}>
-                <div className="label">
-                  {String(t.key)} · {String(t.channel)} · {String(t.scope)}
-                  {t.segmentKey ? ` · ${String(t.segmentKey)}` : ""}
+                <div className="row" style={{ marginBottom: 10 }}>
+                  <span className="label" style={{ margin: 0 }}>
+                    {String(t.key)} · {String(t.channel)} · {String(t.scope)}
+                    {t.segmentKey ? ` · ${String(t.segmentKey)}` : ""}
+                  </span>
+                  {t.createdBy === "claude" && <ClaudeBadge note="drafted" />}
                 </div>
 
                 <h3 style={{ margin: "10px 0 6px", fontSize: 14 }}>Preview</h3>

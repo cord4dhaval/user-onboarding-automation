@@ -1,6 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { createChannel, createSmtpChannel, deleteChannel } from "../../../actions";
+import ConfirmButton from "../../../ui/confirm";
 import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
@@ -51,9 +52,12 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
                     </td>
                     <td><span className={`pill ${c.status === "healthy" ? "ok" : "warn"}`}>{String(c.status)}</span></td>
                     <td>
-                      <form action={deleteChannel.bind(null, id, String(c._id))}>
-                        <button className="ghost danger" type="submit">Delete</button>
-                      </form>
+                      <ConfirmButton
+                        title={`Remove the ${String(c.key)} channel?`}
+                        body="Goals that send on it will have nowhere to deliver until another channel is connected. Messages already sent are kept."
+                        confirmLabel="Remove channel"
+                        action={deleteChannel.bind(null, id, String(c._id))}
+                      />
                     </td>
                   </tr>
                 );

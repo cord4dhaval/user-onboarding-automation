@@ -325,3 +325,79 @@ main.auth button[type="submit"] { align-self: stretch; text-align: center; }
 }
 .switcher > div a { padding: 7px 10px; border-radius: var(--r-sm); color: var(--ink-2); font-size: 14px; }
 .switcher > div a:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+
+/* ── overlays ─────────────────────────────────────────────────────────────── */
+.scrim {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(16, 17, 20, .38);
+  display: flex; justify-content: flex-end;
+  animation: fade 120ms ease-out;
+}
+.scrim.center { justify-content: center; align-items: center; padding: 20px; }
+:root[data-theme="dark"] .scrim { background: rgba(0, 0, 0, .62); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .scrim { background: rgba(0, 0, 0, .62); }
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide { from { transform: translateX(14px); opacity: .4; } to { transform: none; opacity: 1; } }
+
+.drawer {
+  background: var(--ground); border-left: 1px solid var(--rule);
+  height: 100%; max-width: 100%; display: flex; flex-direction: column;
+  animation: slide 160ms ease-out; box-shadow: var(--shadow);
+}
+.drawer > header {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 16px 20px; border-bottom: 1px solid var(--rule);
+}
+.drawer > header h2 { margin: 0; font-size: 17px; }
+.drawer > header button { margin-left: auto; }
+.drawer-body { padding: 20px; overflow-y: auto; flex: 1; }
+.drawer-body form.stack { max-width: none; }
+
+.modal {
+  background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  padding: 22px 24px; max-width: 440px; width: 100%; box-shadow: var(--shadow);
+}
+.modal h2 { margin: 0; font-size: 18px; }
+button.destructive { background: var(--bad); border-color: var(--bad); color: #fff; }
+
+/* ── notifications ────────────────────────────────────────────────────────── */
+.bell-wrap { position: relative; }
+.bell { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; }
+.bell.critical { color: var(--bad); border-color: var(--bad); }
+.bell.action { color: var(--warm); border-color: var(--warm); }
+.bell.good { color: var(--good); border-color: var(--good); }
+.bell-count { font-family: var(--font-mono), monospace; font-size: 11px; font-weight: 600; }
+
+.bell-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: 350px; max-width: 90vw;
+  background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.bell-panel > header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; border-bottom: 1px solid var(--rule); font-size: 14px;
+}
+.bell-panel ul { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
+.bell-panel li {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 11px 14px; border-bottom: 1px solid var(--rule-soft); font-size: 13.5px;
+  border-left: 3px solid transparent;
+}
+.bell-panel li:last-child { border-bottom: 0; }
+.bell-panel li.critical { border-left-color: var(--bad); }
+.bell-panel li.action { border-left-color: var(--warm); }
+.bell-panel li.good { border-left-color: var(--good); }
+.bell-panel li > div { flex: 1; min-width: 0; }
+.bell-panel li a { font-size: 13px; }
+.bell-panel li button { margin-left: auto; padding: 2px 7px; }
+
+/* ── claude badge ─────────────────────────────────────────────────────────── */
+.claude-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono), monospace; font-size: 11px; font-weight: 500;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); white-space: nowrap;
+}
+.claude-note { color: var(--ink-3); font-weight: 400; }

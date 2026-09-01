@@ -21,6 +21,7 @@ export const COLLECTIONS = {
   workQueue: "work_queue",
   suppressions: "suppressions",
   audit: "audit",
+  notifications: "notifications",
 
   oauthClients: "oauth_clients",
   oauthCodes: "oauth_codes",

@@ -1,6 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { createSource, deleteSource, runSourceNow, toggleSource } from "../../../actions";
+import ConfirmButton from "../../../ui/confirm";
 import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
@@ -90,9 +91,12 @@ export default async function Sources({ params }: { params: Promise<{ id: string
                     >
                       <button className="ghost" type="submit">{src.enabled ? "Pause" : "Resume"}</button>
                     </form>
-                    <form action={deleteSource.bind(null, id, String(src._id))} style={{ display: "inline" }}>
-                      <button className="ghost danger" type="submit">Delete</button>
-                    </form>
+                    <ConfirmButton
+                      title={`Delete "${String(src.name)}"?`}
+                      body="People it already brought in stay, along with their goals. Only the input is removed."
+                      confirmLabel="Delete input"
+                      action={deleteSource.bind(null, id, String(src._id))}
+                    />
                   </td>
                 </tr>
               ))}

@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { getProduct, requireSession } from "../../tenant";
 import { logOut } from "../../auth-actions";
 import ThemeToggle from "../../theme";
+import Notifications from "../../ui/notifications";
 import Nav from "./nav";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +64,7 @@ export default async function ProductLayout({
           )}
 
           <span className="spacer" />
+          <Notifications productId={id} />
           <ThemeToggle />
           <span className="muted" style={{ fontSize: 13 }}>{session.email}</span>
           <form action={logOut}>

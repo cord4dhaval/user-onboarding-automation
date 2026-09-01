@@ -1,6 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { getProduct, requireSession, scope } from "../../tenant";
+import ClaudeBadge from "../../ui/claude-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -150,8 +151,9 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
 
       {unclassified > 0 && (
         <p className="sub">
-          {unclassified} {unclassified === 1 ? "person is" : "people are"} waiting to be classified. Claude does
-          that on its next run — see <a href={`${base}/claude`}>Claude</a>.
+          <ClaudeBadge note={`${unclassified} waiting`} />{" "}
+          They get a segment and a plan on the next routine run — see{" "}
+          <a href={`${base}/claude`}>Claude</a>.
         </p>
       )}
     </>

@@ -1,6 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { deleteConnection } from "../../../actions";
+import ConfirmButton from "../../../ui/confirm";
 import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
@@ -44,14 +45,12 @@ export default async function Connections({ params }: { params: Promise<{ id: st
                     <td><span className={`pill ${c.status === "healthy" ? "ok" : "warn"}`}>{String(c.status)}</span></td>
                     <td>
                       <a href={`/products/${id}/connections/${String(c._id)}`}>Configure</a>
-                      <form
+                      <ConfirmButton
+                        title={`Disconnect ${String(c.provider)}?`}
+                        body="The stored credential and the tool bindings go with it. Reconnecting means authorising again from scratch."
+                        confirmLabel="Disconnect"
                         action={deleteConnection.bind(null, id, String(c._id))}
-                        style={{ display: "inline" }}
-                      >
-                        <button className="ghost danger" type="submit" style={{ marginLeft: 10 }}>
-                          Delete
-                        </button>
-                      </form>
+                      />
                     </td>
                   </tr>
                 );
