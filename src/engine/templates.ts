@@ -11,6 +11,9 @@ import type { ProductConfig } from "../schemas/product.js";
  * before any Claude session has run. Claude replaces and improves them later through
  * upsert_template; a human edits them in the template editor. Nothing here is final.
  */
+/** Config values are written mid-sentence; a fallback has to start like a sentence. */
+const sentence = (text: string) => (text ? text[0]!.toUpperCase() + text.slice(1) : text);
+
 export async function generateDefaultTemplates(
   orgId: string,
   productId: string,
@@ -91,13 +94,13 @@ export async function generateDefaultTemplates(
                 : [{
                     type: "subject",
                     slot: `hook on "${segment.pain}", under 55 characters`,
-                    fallback: `{{first_name}} — about ${segment.pain}`,
+                    fallback: `{{first_name}}, about ${segment.pain}`,
                   }]),
               { type: "text", fixed: "Hi {{first_name}}," },
               {
                 type: "slot",
                 instruct: `Open on their pain: ${segment.pain}. Then how ${segment.useCase} addresses it. Pre-empt: ${segment.objections[0] ?? "setup effort"}.`,
-                fallback: `${segment.useCase} — without the spreadsheet gymnastics.`,
+                fallback: `${sentence(segment.useCase)}, without the spreadsheet gymnastics.`,
               },
               { type: "cta", fixed: "Get started", url: config.trialLinkTemplate },
               ...(isShortForm ? [] : [{ type: "system", fixed: "opt_out_block" }]),

@@ -1,32 +1,35 @@
 /* ── tokens ───────────────────────────────────────────────────────────────────
-   Cream paper in light, warm near-black in dark, vivid colour on top of both.
+   One background across the whole console — sidebar, header and page share it, and
+   hairline rules do the separating. Panels are distinguished by a border, not by a
+   second shade, so the eye follows structure rather than blocks of colour.
+
    The four temperature hues are the scale the engine already grades leads by, so
-   colour carries meaning rather than decoration. Cobalt is the one brand colour
+   colour carries meaning rather than decoration; blue is the single brand colour
    and never stands in for a state. */
 :root {
-  --ground: #FBF7F0;
+  --ground: #FFFFFF;
   --surface: #FFFFFF;
-  --surface-2: #F4EFE6;
-  --surface-3: #EDE7DB;
-  --ink: #1A1714;
-  --ink-2: #55504A;
-  --ink-3: #8B8479;
-  --rule: #E8E1D5;
-  --rule-soft: #F1ECE3;
-  --accent: #0B57FF;
-  --accent-soft: #E3EBFF;
+  --surface-2: #F5F6F8;
+  --surface-3: #ECEEF1;
+  --ink: #101114;
+  --ink-2: #565C66;
+  --ink-3: #8A9099;
+  --rule: #E6E8EC;
+  --rule-soft: #F0F1F4;
+  --accent: #2C5CFF;
+  --accent-soft: #EDF1FF;
   --accent-ink: #FFFFFF;
-  --hot: #E8341C;
-  --warm: #C2700B;
-  --cold: #3D7A94;
-  --good: #0E8A54;
-  --bad: #C8003C;
-  --hot-soft: #FDE8E4;
-  --warm-soft: #FBEFD9;
-  --cold-soft: #E4EFF4;
-  --good-soft: #DFF3E9;
-  --bad-soft: #FCE1E9;
-  --shadow: 0 1px 2px rgba(26, 23, 20, .04), 0 8px 24px -18px rgba(26, 23, 20, .18);
+  --hot: #E5342B;
+  --warm: #B87503;
+  --cold: #3F7FA6;
+  --good: #0D8A56;
+  --bad: #D11C48;
+  --hot-soft: #FDECEA;
+  --warm-soft: #FBF2DF;
+  --cold-soft: #EAF2F7;
+  --good-soft: #E2F4EC;
+  --bad-soft: #FCE8EE;
+  --shadow: 0 1px 2px rgba(16, 17, 20, .05), 0 10px 28px -20px rgba(16, 17, 20, .25);
 
   --r-sm: 5px;
   --r: 8px;
@@ -38,55 +41,55 @@
    the two. An explicit light choice must still beat a dark OS. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ground: #131211;
-    --surface: #1C1A18;
-    --surface-2: #24211E;
-    --surface-3: #2C2825;
-    --ink: #F5F1EA;
-    --ink-2: #B8B1A6;
-    --ink-3: #857E73;
-    --rule: #2E2A26;
-    --rule-soft: #232120;
-    --accent: #6E9BFF;
-    --accent-soft: #16203A;
-    --accent-ink: #0B0F1A;
-    --hot: #FF6B4F;
+    --ground: #0E0F12;
+    --surface: #0E0F12;
+    --surface-2: #17191E;
+    --surface-3: #1F222899;
+    --ink: #EDEEF1;
+    --ink-2: #A5ABB5;
+    --ink-3: #71777F;
+    --rule: #23262C;
+    --rule-soft: #1A1D22;
+    --accent: #6E90FF;
+    --accent-soft: #161D33;
+    --accent-ink: #0A0C14;
+    --hot: #FF6B5E;
     --warm: #E8A33D;
     --cold: #6FA8C0;
-    --good: #2FCC8B;
+    --good: #2ECC8F;
     --bad: #FF4D74;
-    --hot-soft: #2E1A16;
-    --warm-soft: #2C2314;
-    --cold-soft: #17262C;
-    --good-soft: #10291F;
-    --bad-soft: #2E141D;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -18px rgba(0, 0, 0, .8);
+    --hot-soft: #2A1512;
+    --warm-soft: #2A2210;
+    --cold-soft: #14232B;
+    --good-soft: #0D2820;
+    --bad-soft: #2C111C;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px -20px rgba(0, 0, 0, .9);
   }
 }
 :root[data-theme="dark"] {
-  --ground: #131211;
-  --surface: #1C1A18;
-  --surface-2: #24211E;
-  --surface-3: #2C2825;
-  --ink: #F5F1EA;
-  --ink-2: #B8B1A6;
-  --ink-3: #857E73;
-  --rule: #2E2A26;
-  --rule-soft: #232120;
-  --accent: #6E9BFF;
-  --accent-soft: #16203A;
-  --accent-ink: #0B0F1A;
-  --hot: #FF6B4F;
+  --ground: #0E0F12;
+  --surface: #0E0F12;
+  --surface-2: #17191E;
+  --surface-3: #1F222899;
+  --ink: #EDEEF1;
+  --ink-2: #A5ABB5;
+  --ink-3: #71777F;
+  --rule: #23262C;
+  --rule-soft: #1A1D22;
+  --accent: #6E90FF;
+  --accent-soft: #161D33;
+  --accent-ink: #0A0C14;
+  --hot: #FF6B5E;
   --warm: #E8A33D;
   --cold: #6FA8C0;
-  --good: #2FCC8B;
+  --good: #2ECC8F;
   --bad: #FF4D74;
-  --hot-soft: #2E1A16;
-  --warm-soft: #2C2314;
-  --cold-soft: #17262C;
-  --good-soft: #10291F;
-  --bad-soft: #2E141D;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -18px rgba(0, 0, 0, .8);
+  --hot-soft: #2A1512;
+  --warm-soft: #2A2210;
+  --cold-soft: #14232B;
+  --good-soft: #0D2820;
+  --bad-soft: #2C111C;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px -20px rgba(0, 0, 0, .9);
 }
 
 /* ── base ─────────────────────────────────────────────────────────────────── */
@@ -138,7 +141,7 @@ code {
 
 .side {
   border-right: 1px solid var(--rule);
-  background: var(--surface);
+  background: var(--ground);
   display: flex; flex-direction: column; gap: 2px;
   padding: 14px 10px;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
@@ -165,8 +168,8 @@ code {
 
 .topbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 22px; border-bottom: 1px solid var(--rule);
-  background: var(--surface); position: sticky; top: 0; z-index: 20;
+  padding: 11px 22px; border-bottom: 1px solid var(--rule);
+  background: var(--ground); position: sticky; top: 0; z-index: 20;
 }
 .topbar .spacer { margin-left: auto; }
 .brand {
@@ -184,11 +187,13 @@ code {
   border-radius: var(--r); padding: 15px 17px;
 }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-.stat .label {
+/* Standalone rather than scoped to a parent, so any card can carry a label. */
+.label {
+  font-family: var(--font-mono), monospace;
   font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-3); margin-bottom: 6px;
 }
-.stat .value {
+.value {
   font-family: var(--font-display), sans-serif; font-variation-settings: "wdth" 94;
   font-size: 30px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
   line-height: 1.05;
@@ -203,10 +208,12 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
 th {
   font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ink-3); font-weight: 500; background: var(--surface-2); white-space: nowrap;
+  color: var(--ink-3); font-weight: 500; background: var(--ground); white-space: nowrap;
+  border-bottom-color: var(--rule);
 }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--surface-2); }
+thead tr:hover { background: none; }
 
 /* ── indicators ───────────────────────────────────────────────────────────── */
 .pill {
@@ -299,7 +306,7 @@ main.auth button[type="submit"] { align-self: stretch; text-align: center; }
 .demo-card tbody tr:hover { background: none; }
 
 /* ── preview ──────────────────────────────────────────────────────────────── */
-.preview { border: 1px solid var(--rule); border-radius: var(--r); background: var(--ground); overflow: hidden; }
+.preview { border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface-2); overflow: hidden; }
 .preview-head { padding: 9px 15px; border-bottom: 1px solid var(--rule); font-size: 13px; }
 .preview-head .k {
   display: inline-block; width: 58px; font-family: var(--font-mono), monospace;

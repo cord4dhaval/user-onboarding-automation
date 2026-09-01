@@ -46,12 +46,14 @@ export default async function Templates({
   );
   const personId = String(selected._id);
 
+  const site = String((product?.config as { website?: string })?.website ?? "https://example.com").replace(/\/$/, "");
   const vars: MergeVars = {
     first_name: name.split(" ")[0] || "there",
     full_name: name,
     company: String(selected.companyDomain ?? "").split(".")[0] || "your team",
+    person_id: personId,
     trial_link: trialTemplate.replace("{{person_id}}", personId),
-    opt_out_url: `https://example.com/unsubscribe?p=${personId}`,
+    opt_out_url: `${site}/unsubscribe?p=${personId}`,
   };
 
   return (

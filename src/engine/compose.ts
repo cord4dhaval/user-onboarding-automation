@@ -16,6 +16,8 @@ export interface MergeVars {
   first_name: string;
   full_name: string;
   company: string;
+  /** Product configs build their trial link from this, so it has to be in the vocabulary. */
+  person_id: string;
   trial_link: string;
   opt_out_url: string;
   [key: string]: string;

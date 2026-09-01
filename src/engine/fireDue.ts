@@ -101,12 +101,20 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         .collection(C.goals)
         .findOne({ orgId: opts.orgId, productId: opts.productId, key: String(goalInstance.goalKey) });
 
+      // The trial link comes from the product's own config rather than a hardcoded host,
+      // so a second product does not silently send people to the first one's site.
+      const product = await db.collection(C.products).findOne({ _id: new ObjectId(productIdOf(action)) });
+      const config = (product?.config ?? {}) as { trialLinkTemplate?: string; website?: string };
+      const personId = String(person._id);
+      const site = (config.website ?? "https://example.com").replace(/\/$/, "");
+
       const vars: MergeVars = {
         first_name: name.split(" ")[0] || "there",
         full_name: name,
         company: String(person.companyDomain ?? "").split(".")[0] || "your team",
-        trial_link: `https://teamgrid.ai/start?p=${String(person._id)}`,
-        opt_out_url: `https://teamgrid.ai/unsubscribe?p=${String(person._id)}`,
+        person_id: personId,
+        trial_link: (config.trialLinkTemplate ?? `${site}/start?p={{person_id}}`).replace("{{person_id}}", personId),
+        opt_out_url: `${site}/unsubscribe?p=${personId}`,
       };
 
       const content = renderTemplate(
@@ -206,6 +214,10 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
   }
 
   return summary;
+
+  function productIdOf(action: Record<string, unknown>): string {
+    return String(action.productId);
+  }
 
   async function release(id: ObjectId, status: string, extra: Record<string, unknown>) {
     const db = await getDb();
