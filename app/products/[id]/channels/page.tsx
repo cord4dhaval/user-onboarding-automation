@@ -1,10 +1,22 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { createChannel, createSmtpChannel, deleteChannel } from "../../../actions";
+import { createChannel, createHttpChannel, createSmtpChannel, deleteChannel } from "../../../actions";
 import ConfirmButton from "../../../ui/confirm";
 import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
+
+/** What most providers expect; edited per provider, since none of them agree on names. */
+const EXAMPLE_PAYLOAD = JSON.stringify(
+  {
+    from: "$channel.from",
+    to: "$person.email",
+    subject: "$content.subject",
+    text: "$content.body",
+  },
+  null,
+  2,
+);
 
 export default async function Channels({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,8 +39,9 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
     <main>
       <h1>Channels</h1>
       <p className="sub">
-        How messages go out. Either over SMTP with your own mail account, or through an MCP connection whose
-        send tool you bound — a product MCP that can send is both your channel and your source at once.
+        How messages go out. Three ways, and every channel type takes whichever fits: your own mail account
+        over SMTP, an MCP connection whose send tool you bound, or any provider with an HTTP endpoint and a
+        token. A product MCP that can send is both your channel and your source at once.
       </p>
 
       {channels.length === 0 ? (
@@ -88,6 +101,59 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
           <label>From<input name="from" placeholder="TeamGrid &lt;hi@yourdomain.com&gt;" required /></label>
           <label>Daily cap<input name="dailyCap" type="number" defaultValue={50} min={1} /></label>
           <button type="submit">Create email channel</button>
+        </form>
+      </div>
+
+      <h3 style={{ fontSize: 15, margin: "24px 0 8px" }}>Or an API endpoint</h3>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p className="sub" style={{ margin: "0 0 12px" }}>
+          Any provider that takes a token over HTTP. The payload describes their body shape — every provider
+          names these fields differently, so the mapping is yours to give rather than something we can guess.
+        </p>
+        <form action={createHttpChannel} className="stack">
+          <input type="hidden" name="productId" value={id} />
+          <label>Name<input name="provider" placeholder="Resend, Postmark, your own service" required /></label>
+          <label>
+            Channel
+            <select name="key">
+              <option value="email">email</option>
+              <option value="whatsapp">whatsapp</option>
+              <option value="sms">sms</option>
+              <option value="in_app">in_app</option>
+              <option value="push">push</option>
+            </select>
+          </label>
+          <label>Endpoint<input name="endpointUrl" type="url" placeholder="https://api.resend.com/emails" required /></label>
+          <label>Token<input name="token" type="password" placeholder="bearer token" required /></label>
+          <label>
+            Payload <span className="muted">(their field names, our values)</span>
+            <textarea
+              name="payloadTemplate"
+              defaultValue={EXAMPLE_PAYLOAD}
+              style={{ minHeight: 130 }}
+            />
+          </label>
+          <div className="grid">
+            <label>
+              Where their id lives <span className="muted">(optional)</span>
+              <input name="messageIdPath" placeholder="$.id" />
+            </label>
+            <label>
+              Auth header <span className="muted">(if not Authorization)</span>
+              <input name="authHeader" placeholder="x-api-key" />
+            </label>
+          </div>
+          <label>From<input name="from" placeholder="TeamGrid &lt;hi@yourdomain.com&gt;" /></label>
+          <div className="grid">
+            <label>Per minute<input name="perMinute" type="number" placeholder="20" /></label>
+            <label>Per hour<input name="perHour" type="number" placeholder="100" /></label>
+            <label>Daily cap<input name="dailyCap" type="number" defaultValue={50} /></label>
+          </div>
+          <div className="grid">
+            <label>Max subject chars<input name="maxSubjectLength" type="number" placeholder="200" /></label>
+            <label>Max body chars<input name="maxBodyLength" type="number" placeholder="20000" /></label>
+          </div>
+          <button type="submit">Create channel</button>
         </form>
       </div>
 

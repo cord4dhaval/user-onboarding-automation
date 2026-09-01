@@ -15,6 +15,15 @@ import { productConfig } from "@/schemas/product.js";
 import { notify } from "@/engine/notify.js";
 import { requireSession } from "./tenant";
 
+/** Campaign keys are derived from the name, so nobody has to invent an identifier. */
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+}
+
 /** Every action resolves the caller's organisation from their session, never a constant. */
 const currentOrg = async () => (await requireSession()).orgId;
 
@@ -299,7 +308,9 @@ export async function runSourceNow(productId: string, sourceId: string) {
 export async function createGoal(formData: FormData) {
   const db = await getDb();
   const productId = String(formData.get("productId"));
-  const key = String(formData.get("key"));
+  const name = String(formData.get("name") ?? "").trim();
+  const key = slugify(name);
+  if (!key) throw new Error("Give the campaign a name.");
 
   // An input is genuinely required: without one the campaign never starts at all.
   if (String(formData.get("inputType") ?? "none") === "none") {
@@ -329,7 +340,7 @@ export async function createGoal(formData: FormData) {
         orgId: (await currentOrg()),
         productId,
         key,
-        name: String(formData.get("name")),
+        name,
         entry: { expression: "lead_created", minIcpFit: Number(formData.get("minIcpFit") ?? 0) },
         success: {
           expression: String(formData.get("successExpression") ?? "account_created"),
@@ -964,4 +975,99 @@ export async function deleteAudience(productId: string, audienceId: string, _for
   const orgId = await currentOrg();
   await db.collection(C.audiences).deleteOne({ _id: new ObjectId(audienceId), orgId });
   revalidatePath(`/products/${productId}/audiences`);
+}
+
+/**
+ * Creates a channel over a plain HTTP endpoint — the third way to reach people, alongside
+ * SMTP and an MCP tool. A provider with a REST API and no MCP server is the common case,
+ * and without this they could only ever be a source.
+ */
+export async function createHttpChannel(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+
+  const endpointUrl = String(formData.get("endpointUrl") ?? "").trim();
+  const token = String(formData.get("token") ?? "");
+  if (!endpointUrl || !token) throw new Error("An endpoint and a token are both required.");
+
+  let payloadTemplate: Record<string, unknown>;
+  try {
+    payloadTemplate = JSON.parse(String(formData.get("payloadTemplate") ?? "{}")) as Record<string, unknown>;
+  } catch {
+    throw new Error('The payload must be valid JSON, for example {"to":"$person.email"}');
+  }
+  if (Object.keys(payloadTemplate).length === 0) {
+    throw new Error("The payload describes what to send this provider — it cannot be empty.");
+  }
+
+  const connectionId = new ObjectId();
+  await db.collection(C.connections).insertOne({
+    _id: connectionId,
+    orgId,
+    productId,
+    key: "http",
+    provider: String(formData.get("provider") ?? "api"),
+    authType: "bearer",
+    endpointUrl,
+    http: {
+      endpointUrl,
+      method: String(formData.get("method") ?? "POST"),
+      payloadTemplate,
+      messageIdPath: String(formData.get("messageIdPath") ?? "").trim() || undefined,
+      authHeader: String(formData.get("authHeader") ?? "").trim() || undefined,
+    },
+    scopes: [],
+    status: "healthy",
+    directions: ["out"],
+    createdBy: orgId,
+    createdAt: new Date(),
+  });
+
+  await db.collection(C.credentials).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    connectionId: String(connectionId),
+    authType: "bearer",
+    ...sealSecret(token),
+    status: "verified",
+  });
+
+  await db.collection(C.channels).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    productId,
+    connectionId: String(connectionId),
+    key: String(formData.get("key") ?? "email"),
+    kind: "native",
+    from: String(formData.get("from") ?? "") || undefined,
+    replyTo: String(formData.get("replyTo") ?? "") || undefined,
+    // Declared honestly: an endpoint that reports nothing back should not have the planner
+    // reaching for angles that depend on open rates.
+    capabilities: {
+      send: true,
+      html: true,
+      trackingOpens: false,
+      trackingClicks: false,
+      bounceWebhook: false,
+      inboundReplies: false,
+      consentRequired: false,
+      fromDomain: "caller_controlled",
+      maxSubjectLength: Number(formData.get("maxSubjectLength") ?? 0) || undefined,
+      maxBodyLength: Number(formData.get("maxBodyLength") ?? 0) || undefined,
+    },
+    governor: {
+      dailyCap: Number(formData.get("dailyCap") ?? 50),
+      perMinute: Number(formData.get("perMinute") ?? 0) || undefined,
+      perHour: Number(formData.get("perHour") ?? 0) || undefined,
+      warmupDay: 1,
+      sentToday: 0,
+      windowStartedAt: new Date(),
+    },
+    policy: { audience: ["cold", "warm_lead", "existing_user"] },
+    status: "healthy",
+    enabled: true,
+  });
+
+  revalidatePath(`/products/${productId}/channels`);
 }

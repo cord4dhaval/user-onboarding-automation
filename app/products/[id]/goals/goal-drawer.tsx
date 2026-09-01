@@ -43,10 +43,10 @@ export default function GoalDrawer({
         <form action={action} className="stack">
           <input type="hidden" name="productId" value={productId} />
 
-          <div className="grid">
-            <label>Key<input name="key" placeholder="new_user" required /></label>
-            <label>Name<input name="name" placeholder="New user onboarding" required /></label>
-          </div>
+          <label>
+            Name
+            <input name="name" placeholder="New user onboarding" required />
+          </label>
 
           <label>
             Done when <span className="muted">(plain words — what activation actually looks like)</span>

@@ -6,6 +6,7 @@ import { McpClient } from "../mcp/client.js";
 import type { Binding } from "../mcp/binding.js";
 import { McpChannelAdapter } from "../adapters/channel/mcp.js";
 import { SmtpAdapter } from "../adapters/channel/smtp.js";
+import { HttpChannelAdapter, type HttpChannelConfig } from "../adapters/channel/http.js";
 import type { ChannelAdapter } from "../adapters/channel/types.js";
 
 /**
@@ -29,6 +30,14 @@ export async function resolveChannelAdapter(orgId: string, channelId: string): P
     return new SmtpAdapter(
       { host: cfg.host, port: cfg.port, secure: cfg.port === 465, user: cfg.user, pass: secret },
       String(channel.from ?? cfg.user),
+    );
+  }
+
+  if (connection.authType === "bearer" && connection.endpointUrl) {
+    return new HttpChannelAdapter(
+      String(channel.key),
+      connection.http as HttpChannelConfig,
+      secret,
     );
   }
 
