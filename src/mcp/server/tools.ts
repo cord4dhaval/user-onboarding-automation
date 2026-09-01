@@ -76,11 +76,19 @@ export const TOOLS: ToolDef[] = [
       properties: {
         product_id: { type: "string", description: "Product to sweep. Omit to sweep every product." },
         limit: { type: "number", description: "Max items per section. Default 25." },
+        scope: {
+          type: "string",
+          enum: ["all", "triage", "plan", "compose", "review"],
+          description:
+            "Which slice of work to return, so separate routines can run on separate schedules without duplicating each other. triage = replies and checks that did not settle; plan = unclassified people and campaigns with no plan; compose = buffers running low; review = calibration. Defaults to all.",
+        },
       },
     },
     async handler(args, ctx) {
       const db = await getDb();
       const limit = typeof args.limit === "number" ? args.limit : 25;
+      const scope = String(args.scope ?? "all");
+      const wants = (section: string) => scope === "all" || scope === section;
       const productIds = str(args.product_id)
         ? [str(args.product_id) as string]
         : (await db.collection(C.products).find({ orgId: ctx.orgId, status: "active" }).toArray()).map((p) =>
@@ -92,11 +100,13 @@ export const TOOLS: ToolDef[] = [
         const orgId = await assertProduct(productId, ctx);
         const s = { orgId, productId };
 
-        const unclassified = await db
-          .collection(C.people)
-          .find({ ...s, needsClassification: true, suppressedAt: { $exists: false } })
-          .limit(limit)
-          .toArray();
+        const unclassified = wants("plan")
+          ? await db
+              .collection(C.people)
+              .find({ ...s, needsClassification: true, suppressedAt: { $exists: false } })
+              .limit(limit)
+              .toArray()
+          : [];
 
         const activeGoals = await db.collection(C.goalInstances).find({ ...s, status: "active" }).limit(200).toArray();
         const planned = new Set(
@@ -105,10 +115,12 @@ export const TOOLS: ToolDef[] = [
 
         // A goal instance with no plan has had its welcome and nothing since — that is the
         // gap a routine exists to close.
-        const needPlan = activeGoals.filter((g) => !planned.has(String(g._id))).slice(0, limit);
+        const needPlan = wants("plan")
+          ? activeGoals.filter((g) => !planned.has(String(g._id))).slice(0, limit)
+          : [];
 
         const lowBuffers = [];
-        for (const goal of activeGoals) {
+        for (const goal of wants("compose") ? activeGoals : []) {
           if (!goal.currentPlanId) continue;
           const queued = await db
             .collection(C.actions)
@@ -117,11 +129,37 @@ export const TOOLS: ToolDef[] = [
           if (lowBuffers.length >= limit) break;
         }
 
-        const replies = await db
-          .collection(C.events)
-          .find({ ...s, type: "reply_received", handled: { $ne: true } })
-          .limit(limit)
-          .toArray();
+        const replies = wants("triage")
+          ? await db
+              .collection(C.events)
+              .find({ ...s, type: "reply_received", handled: { $ne: true } })
+              .limit(limit)
+              .toArray()
+          : [];
+
+        // Checks the engine ran but could not settle. These are the ones that need a
+        // person's judgment rather than another tick.
+        const undetermined = wants("triage")
+          ? await db
+              .collection(C.events)
+              .find({ ...s, type: "check_undetermined", handled: { $ne: true } })
+              .sort({ ts: -1 })
+              .limit(limit)
+              .toArray()
+          : [];
+
+        // Campaigns whose every check has been false for a long time while the person is
+        // plainly engaged — usually a verification plan pointing at the wrong tool.
+        const stale = wants("review")
+          ? activeGoals
+              .filter((g) => {
+                const results = (g.checkResults ?? {}) as Record<string, boolean>;
+                const anyPassed = Object.values(results).some(Boolean);
+                const age = Date.now() - new Date(String(g.startedAt)).getTime();
+                return !anyPassed && age > 14 * 86_400_000;
+              })
+              .slice(0, limit)
+          : [];
 
         packet.push({
           product_id: productId,
@@ -140,14 +178,32 @@ export const TOOLS: ToolDef[] = [
           })),
           low_buffers: lowBuffers,
           replies_waiting: replies.map((e) => ({ event_id: String(e._id), person_id: String(e.personId) })),
+          undetermined_checks: undetermined.map((e) => ({
+            event_id: String(e._id),
+            person_id: String(e.personId),
+            detail: e.payload,
+          })),
+          verification_looks_wrong: stale.map((g) => ({
+            goal_instance_id: String(g._id),
+            person_id: String(g.personId),
+            goal_key: String(g.goalKey),
+            started_at: g.startedAt,
+          })),
         });
       }
 
       const total = packet.reduce(
-        (n, p) => n + p.unclassified.length + p.need_plan.length + p.low_buffers.length + p.replies_waiting.length,
+        (n, p) =>
+          n +
+          p.unclassified.length +
+          p.need_plan.length +
+          p.low_buffers.length +
+          p.replies_waiting.length +
+          p.undetermined_checks.length +
+          p.verification_looks_wrong.length,
         0,
       );
-      return { total_work_items: total, products: packet };
+      return { scope, total_work_items: total, products: packet };
     },
   },
 
@@ -633,5 +689,141 @@ TOOLS.push({
       { $set: { checks: checks.map((c) => ({ ...c, args: c.args ?? {}, latch: c.latch ?? true, proposedBy: "claude" })) } },
     );
     return { goal_key: String(args.goal_key), checks: checks.length };
+  },
+});
+
+/**
+ * Runs a person's checks now and hands back the raw responses.
+ *
+ * The engine settles the clear cases on its own tick. This exists for the ones it cannot:
+ * a response the assertion could not read, or a picture that does not add up. Claude gets
+ * what the tools actually returned and decides.
+ */
+TOOLS.push({
+  name: "verify_person",
+  description:
+    "Run a person's campaign checks right now and return the raw tool responses alongside what the engine made of them. Use when a check came back undetermined, or when the recorded state does not match what you can see.",
+  inputSchema: {
+    type: "object",
+    properties: { product_id: { type: "string" }, person_id: { type: "string" } },
+    required: ["product_id", "person_id"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const personId = String(args.person_id);
+
+    const instance = await db
+      .collection(C.goalInstances)
+      .findOne({ orgId, productId, personId, status: "active" });
+    if (!instance) return { active_campaign: null, note: "No campaign is running for this person." };
+
+    const goal = await db.collection(C.goals).findOne({ orgId, productId, key: instance.goalKey });
+    const person = await db.collection(C.people).findOne({ _id: new ObjectId(personId) });
+    const checks = (goal?.checks ?? []) as Array<Record<string, unknown>>;
+
+    const { evaluateAssertion } = await import("../../engine/verify.js");
+    const { McpClient } = await import("../../mcp/client.js");
+    const { resolveSecret } = await import("../../crypto/broker.js");
+
+    const results = [];
+    for (const check of checks) {
+      try {
+        const connection = await db
+          .collection(C.connections)
+          .findOne({ _id: new ObjectId(String(check.connectionId)), orgId });
+        if (!connection?.serverUrl) {
+          results.push({ key: check.key, error: "verifier not found" });
+          continue;
+        }
+        const token = await resolveSecret(orgId, String(check.connectionId), "mcp.verify_person");
+        const client = new McpClient(String(connection.serverUrl), token);
+
+        const argMap: Record<string, unknown> = {};
+        for (const [name, ref] of Object.entries((check.args ?? {}) as Record<string, string>)) {
+          argMap[name] = ref.startsWith("$person.")
+            ? (person as Record<string, unknown> | null)?.[ref.slice(8)]
+            : ref === "$since"
+              ? new Date(String(instance.startedAt)).toISOString()
+              : ref;
+        }
+
+        const payload = await client.callTool(String(check.tool), argMap);
+        results.push({
+          key: check.key,
+          described_as: check.describedAs,
+          tool: check.tool,
+          args: argMap,
+          assertion: check.assert,
+          engine_verdict: evaluateAssertion(String(check.assert), payload),
+          raw_response: payload,
+        });
+      } catch (err) {
+        results.push({ key: check.key, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    return {
+      goal_instance_id: String(instance._id),
+      goal_key: String(instance.goalKey),
+      success_rule: goal?.success,
+      recorded: instance.checkResults ?? {},
+      checks: results,
+    };
+  },
+});
+
+/**
+ * Records Claude's verdict on a check the engine could not settle. Written as a human-style
+ * override rather than a silent edit, so the trail shows who decided and why.
+ */
+TOOLS.push({
+  name: "resolve_check",
+  description:
+    "Settle a check the engine returned as undetermined. Say whether it passed and why. This can complete a campaign, so use it only when the raw response actually supports the verdict.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      goal_instance_id: { type: "string" },
+      key: { type: "string" },
+      passed: { type: "boolean" },
+      why: { type: "string", description: "What in the response supports this." },
+      event_id: { type: "string", description: "The undetermined event this answers, if any." },
+    },
+    required: ["goal_instance_id", "key", "passed", "why"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const instance = await db
+      .collection(C.goalInstances)
+      .findOne({ _id: new ObjectId(String(args.goal_instance_id)), orgId: ctx.orgId });
+    if (!instance) throw new Error("campaign not found");
+
+    await db.collection(C.goalInstances).updateOne(
+      { _id: instance._id },
+      { $set: { [`checkResults.${String(args.key)}`]: Boolean(args.passed) } },
+    );
+    await db.collection(C.events).insertOne({
+      _id: new ObjectId(),
+      orgId: ctx.orgId,
+      productId: String(instance.productId),
+      personId: String(instance.personId),
+      source: "system",
+      type: "check_resolved",
+      payload: { key: args.key, passed: args.passed, why: args.why, by: "claude" },
+      ts: new Date(),
+    });
+    if (args.event_id) {
+      await db
+        .collection(C.events)
+        .updateOne({ _id: new ObjectId(String(args.event_id)) }, { $set: { handled: true } });
+    }
+
+    // Re-run so a campaign whose last check just settled completes on the spot rather than
+    // waiting for the next tick.
+    const { verifyCampaign } = await import("../../engine/verify.js");
+    const outcome = await verifyCampaign(ctx.orgId, String(instance._id));
+    return { key: String(args.key), passed: Boolean(args.passed), campaign_now: outcome };
   },
 });
