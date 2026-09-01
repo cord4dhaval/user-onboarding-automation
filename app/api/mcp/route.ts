@@ -53,6 +53,13 @@ async function callerFor(request: NextRequest): Promise<ToolCtx | null> {
 }
 
 export async function POST(request: NextRequest) {
+  // Every request needs a token, including the handshake. Leaving discovery methods open
+  // makes a client probing the server conclude it needs no authentication at all, and it
+  // then never runs the OAuth flow. The 401 below carries the pointer to our metadata, so
+  // a compliant client discovers where to authorise from the rejection itself.
+  const ctx = await callerFor(request);
+  if (!ctx) return unauthorized();
+
   let body: JsonRpcRequest;
   try {
     body = (await request.json()) as JsonRpcRequest;
@@ -65,8 +72,6 @@ export async function POST(request: NextRequest) {
   const fail = (code: number, message: string) =>
     NextResponse.json({ jsonrpc: "2.0", id, error: { code, message } });
 
-  // The handshake and tool listing are open, so a client can discover the server and learn
-  // where to authorise. Everything that touches data requires a token.
   if (method === "initialize") {
     return reply({
       protocolVersion: PROTOCOL_VERSION,
@@ -84,9 +89,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (method === "tools/call") {
-    const ctx = await callerFor(request);
-    if (!ctx) return unauthorized();
-
     const name = String(params?.name ?? "");
     const tool = TOOLS.find((t) => t.name === name);
     if (!tool) return fail(-32601, `unknown tool: ${name}`);
