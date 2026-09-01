@@ -201,6 +201,15 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       await db
         .collection(C.goalInstances)
         .updateOne({ _id: goalInstance._id }, { $inc: { "spent.touches": 1 } });
+      // The same spend is recorded against the person, so the cost of pursuing one human
+      // across every campaign they have ever been in is answerable.
+      await db.collection(C.people).updateOne(
+        { _id: person._id },
+        {
+          $inc: { "investment.messages": 1, "investment.usd": Number(action.cost ?? 0) },
+          $set: { lastContactedAt: new Date() },
+        },
+      );
       await db
         .collection(C.channels)
         .updateOne({ _id: channel._id }, { $inc: { "governor.sentToday": 1 } });

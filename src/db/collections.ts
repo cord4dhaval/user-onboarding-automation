@@ -22,6 +22,7 @@ export const COLLECTIONS = {
   suppressions: "suppressions",
   audit: "audit",
   notifications: "notifications",
+  audiences: "audiences",
 
   oauthClients: "oauth_clients",
   oauthCodes: "oauth_codes",

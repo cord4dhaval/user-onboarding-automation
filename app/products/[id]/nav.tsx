@@ -12,8 +12,9 @@ export interface NavCounts {
  */
 const WORK = [
   { href: "", label: "Home" },
-  { href: "/goals", label: "Goals" },
-  { href: "/leads", label: "Leads" },
+  { href: "/goals", label: "Campaigns" },
+  { href: "/library", label: "Library" },
+  { href: "/audiences", label: "Audiences" },
   { href: "/review", label: "Review", counter: "review" as const },
 ];
 

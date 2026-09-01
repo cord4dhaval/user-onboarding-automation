@@ -401,3 +401,38 @@ button.destructive { background: var(--bad); border-color: var(--bad); color: #f
   background: var(--accent-soft); color: var(--accent); white-space: nowrap;
 }
 .claude-note { color: var(--ink-3); font-weight: 400; }
+
+/* ── timeline ─────────────────────────────────────────────────────────────── */
+.timeline { display: flex; flex-direction: column; margin-bottom: 22px; }
+.timeline > div {
+  display: grid; grid-template-columns: 116px 14px 1fr; gap: 10px;
+  align-items: start; padding: 7px 0; font-size: 14px;
+}
+.timeline .t-when {
+  font-family: var(--font-mono), monospace; font-size: 11.5px;
+  color: var(--ink-3); padding-top: 3px; font-variant-numeric: tabular-nums;
+}
+/* A single column: filled markers for what happened, hollow for what is scheduled. */
+.timeline .t-mark { position: relative; display: flex; justify-content: center; height: 100%; }
+.timeline .t-mark::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink-3); margin-top: 6px; z-index: 1;
+}
+.timeline .t-mark::after {
+  content: ""; position: absolute; top: 6px; bottom: -8px; width: 1px; background: var(--rule);
+}
+.timeline > div:last-child .t-mark::after { display: none; }
+.timeline .t-mark.signal::before { background: var(--good); }
+.timeline .t-mark.next::before { background: transparent; border: 1.5px dashed var(--accent); }
+.timeline .future strong { color: var(--ink-2); }
+
+.fieldset {
+  border: 1px solid var(--rule); border-radius: var(--r-sm);
+  padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 0;
+}
+.fieldset legend {
+  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3); padding: 0 4px;
+}
+label.check { flex-direction: row; align-items: center; gap: 7px; font-size: 13.5px; }
+label.check input { width: auto; }

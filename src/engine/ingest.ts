@@ -21,6 +21,7 @@ interface SourceDoc {
   _id: ObjectId;
   orgId: string;
   productId: string;
+  kind: string;
   triggerMode: "realtime" | "batch";
   fieldMap: Record<string, string>;
   dedupeKey: string;
@@ -108,6 +109,10 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       let personId: ObjectId;
       if (existing) {
         personId = existing._id;
+        // A returning person gets another arrival rather than a second record.
+        await db.collection(C.people).updateOne({ _id: personId }, {
+          $push: { arrivals: { sourceId: String(source._id), kind: String(source.kind), at: now } },
+        } as never);
         summary.attachedToExisting++;
       } else {
         personId = new ObjectId();
@@ -132,6 +137,12 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
           },
           needsClassification: true,
           sourceId: String(source._id),
+          // Every arrival is kept, so someone who keeps circling is visible as such.
+          arrivals: [{ sourceId: String(source._id), kind: String(source.kind), at: now }],
+          lifecycle: "new",
+          attempts: 0,
+          objections: [],
+          investment: { messages: 0, usd: 0, enrichmentCalls: 0, assetsGenerated: 0, campaignsRun: 0 },
           createdAt: now,
         });
         summary.created++;
@@ -159,6 +170,12 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
         deadline: new Date(now.getTime() + goal.budget.days * 86_400_000),
         nextTickAt: new Date(now.getTime() + goal.schedule.tickEverySec * 1000),
         startedAt: now,
+      });
+
+      await db.collection(C.people).updateOne({ _id: personId }, {
+        $set: { lifecycle: "active" },
+        $inc: { attempts: 1, "investment.campaignsRun": 1 },
+        $unset: { coolingUntil: "" },
       });
 
       const queued = await queueFirstTouch({

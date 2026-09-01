@@ -8,16 +8,32 @@ export interface ToolChoice {
   likely: boolean;
 }
 
-type InputType = "mcp" | "api" | "file" | "none";
+type InputType = "audience" | "mcp" | "api" | "file" | "none";
 
 /**
  * Only the fields belonging to the chosen input are rendered. Showing all three at once
  * asks the reader to work out which ones apply, and leaves empty fields in the payload
  * that look like they were skipped rather than never asked for.
  */
-export default function InputPicker({ productId, toolChoices }: { productId: string; toolChoices: ToolChoice[] }) {
-  const [type, setType] = useState<InputType>("mcp");
-  const recurring = type === "mcp" || type === "api";
+export interface AudienceChoice {
+  id: string;
+  name: string;
+  size: number;
+  kind: string;
+}
+
+export default function InputPicker({
+  productId,
+  toolChoices,
+  audiences = [],
+}: {
+  productId: string;
+  toolChoices: ToolChoice[];
+  audiences?: AudienceChoice[];
+}) {
+  const [type, setType] = useState<InputType>(audiences.length ? "audience" : "mcp");
+  // An audience is re-checked on a schedule just like a pull, so it needs an interval.
+  const recurring = type === "mcp" || type === "api" || type === "audience";
 
   return (
     <>
@@ -29,6 +45,7 @@ export default function InputPicker({ productId, toolChoices }: { productId: str
       <label>
         Input
         <select name="inputType" value={type} onChange={(e) => setType(e.target.value as InputType)}>
+          <option value="audience">Audience from the library</option>
           <option value="mcp">MCP tool — recurring</option>
           <option value="api">API endpoint + token — recurring</option>
           <option value="file">Spreadsheet upload — one off</option>
@@ -40,6 +57,29 @@ export default function InputPicker({ productId, toolChoices }: { productId: str
         <label>
           Input name
           <input name="inputName" placeholder="TeamGrid CRM leads" />
+        </label>
+      )}
+
+      {type === "audience" && (
+        <label>
+          Which audience
+          <select name="audienceId" defaultValue={audiences[0]?.id}>
+            {audiences.length === 0 && <option value="">— none built yet —</option>}
+            {audiences.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} — {a.size} {a.size === 1 ? "person" : "people"} ({a.kind})
+              </option>
+            ))}
+          </select>
+          {audiences.length === 0 ? (
+            <span className="muted" style={{ fontSize: 13 }}>
+              <a href={`/products/${productId}/audiences`}>Build one</a> from your library first.
+            </span>
+          ) : (
+            <span className="muted" style={{ fontSize: 13 }}>
+              A dynamic audience keeps feeding this campaign as people become eligible.
+            </span>
+          )}
         </label>
       )}
 

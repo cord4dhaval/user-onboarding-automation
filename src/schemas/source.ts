@@ -10,7 +10,9 @@ export const source = z.object({
   productId: objectIdString,
   connectionId: objectIdString,
   name: z.string(),
-  kind: z.enum(["excel_upload", "csv", "api_pull", "webhook_push", "mcp_source", "crm_sync"]),
+  kind: z.enum(["excel_upload", "csv", "api_pull", "webhook_push", "mcp_source", "crm_sync", "audience"]),
+  /** Set when kind is "audience" — the group in the library this campaign draws from. */
+  audienceId: objectIdString.optional(),
 
   /**
    * realtime: the person just raised their hand, so the first touch ignores quiet hours.

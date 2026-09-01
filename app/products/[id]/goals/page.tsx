@@ -1,6 +1,7 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
+import { audienceCount } from "@/engine/library.js";
 import { createGoal, deleteGoal } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
@@ -23,6 +24,16 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
     db.collection(C.mcpBindings).find({ orgId }).toArray(),
     db.collection(C.channels).find({ ...s, enabled: true }).toArray(),
   ]);
+
+  const audienceDocs = await db.collection(C.audiences).find(s).sort({ createdAt: -1 }).toArray();
+  const audiences = await Promise.all(
+    audienceDocs.map(async (a) => ({
+      id: String(a._id),
+      name: String(a.name),
+      kind: String(a.kind),
+      size: await audienceCount(orgId, id, a),
+    })),
+  );
 
   // One flat list of "connection → tool", so a tool can never be paired with the wrong
   // server and the choice needs no client-side wiring.
@@ -68,6 +79,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
           templateKeys={templateKeys}
           channelKeys={channelKeys}
           toolChoices={toolChoices}
+          audiences={audiences}
           action={createGoal}
         />
       </div>

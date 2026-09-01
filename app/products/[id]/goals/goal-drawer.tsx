@@ -2,19 +2,21 @@
 
 import { useState } from "react";
 import Drawer from "../../../ui/drawer";
-import InputPicker, { type ToolChoice } from "./input-picker";
+import InputPicker, { type AudienceChoice, type ToolChoice } from "./input-picker";
 
 export default function GoalDrawer({
   productId,
   templateKeys,
   channelKeys,
   toolChoices,
+  audiences,
   action,
 }: {
   productId: string;
   templateKeys: string[];
   channelKeys: string[];
   toolChoices: ToolChoice[];
+  audiences: AudienceChoice[];
   action: (formData: FormData) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -47,7 +49,7 @@ export default function GoalDrawer({
             />
           </label>
 
-          <InputPicker productId={productId} toolChoices={toolChoices} />
+          <InputPicker productId={productId} toolChoices={toolChoices} audiences={audiences} />
 
           <h3 style={{ fontSize: 15, margin: "18px 0 0" }}>What happens on arrival</h3>
 

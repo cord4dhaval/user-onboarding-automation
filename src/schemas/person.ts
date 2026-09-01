@@ -34,6 +34,40 @@ export const identity = z.object({
   verified: z.boolean().default(false),
 });
 
+/**
+ * Where a person came from, every time. Three arrivals is itself a signal — that person
+ * keeps circling — and a single sourceId could never say so.
+ */
+export const arrival = z.object({
+  sourceId: objectIdString.optional(),
+  kind: z.string(),
+  at: z.date(),
+  detail: z.string().optional(),
+});
+
+/**
+ * What has been spent on this one person, across everything. Sends, enrichment, generated
+ * assets and model time all land here, so the cost of pursuing someone is answerable.
+ */
+export const investment = z.object({
+  messages: z.number().int().nonnegative().default(0),
+  usd: z.number().nonnegative().default(0),
+  enrichmentCalls: z.number().int().nonnegative().default(0),
+  assetsGenerated: z.number().int().nonnegative().default(0),
+  campaignsRun: z.number().int().nonnegative().default(0),
+});
+
+/**
+ * Where a person sits between campaigns.
+ *
+ * new         never contacted
+ * active      a campaign is working on them right now
+ * cooling     an attempt ended; they may be approached again after coolingUntil
+ * dormant     several attempts spent, resting for a long while
+ * suppressed  they said no. Permanent, and no campaign may ever pick them up.
+ */
+export const lifecycleState = z.enum(["new", "active", "cooling", "dormant", "suppressed"]);
+
 export const person = z.object({
   orgId: objectIdString,
   productId: objectIdString,
@@ -55,6 +89,18 @@ export const person = z.object({
   belief: belief.optional(),
   temp: temperature.optional(),
   sourceId: objectIdString.optional(),
+  arrivals: z.array(arrival).default([]),
+
+  lifecycle: lifecycleState.default("new"),
+  /** Set when an attempt ends. Nothing may contact them before this passes. */
+  coolingUntil: z.date().optional(),
+  attempts: z.number().int().nonnegative().default(0),
+  /** Accumulated across every campaign, so attempt two knows what attempt one heard. */
+  objections: z.array(z.object({ text: z.string(), at: z.date(), source: z.string() })).default([]),
+  investment: investment.default({}),
+  lastContactedAt: z.date().optional(),
+  lastSignalAt: z.date().optional(),
+
   /** Set on ingest, cleared once Claude has classified and planned. */
   needsClassification: z.boolean().default(true),
   createdAt: z.date(),

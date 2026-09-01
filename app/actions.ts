@@ -12,6 +12,7 @@ import { inferCapabilities } from "@/mcp/discover.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
+import { notify } from "@/engine/notify.js";
 import { requireSession } from "./tenant";
 
 /** Every action resolves the caller's organisation from their session, never a constant. */
@@ -391,6 +392,22 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
     effectiveIntervalSec: Math.max(intervalSec, 60),
   };
 
+  if (inputType === "audience") {
+    const audienceId = String(formData.get("audienceId") ?? "");
+    if (!audienceId) throw new Error("Pick which audience this campaign draws from");
+
+    await db.collection(C.sources).insertOne({
+      _id: new ObjectId(),
+      ...base,
+      connectionId: "",
+      kind: "audience",
+      audienceId,
+      // The library already holds our own field names, so no mapping is needed.
+      fieldMap: { email: "email", name: "name", role: "role", company_domain: "company_domain", timezone: "timezone" },
+    });
+    return;
+  }
+
   if (inputType === "mcp") {
     // One dropdown carries both halves so the tool can never be paired with the wrong
     // connection: "connectionId::toolName".
@@ -736,4 +753,193 @@ export async function decide(formData: FormData) {
   );
 
   revalidatePath(`/products/${productId}/review`, "layout");
+}
+
+// ── library ───────────────────────────────────────────────────────────────────
+
+/**
+ * Adds people to the library with no campaign attached. Without this the library only ever
+ * holds people you had already decided to chase, which defeats the point of having one.
+ */
+export async function importPeople(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const now = new Date();
+
+  let rows: Array<Record<string, unknown>> = [];
+  let kind = "manual";
+
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    const { parseSpreadsheet, guessFieldMap } = await import("@/engine/spreadsheet.js");
+    const parsed = parseSpreadsheet(await file.arrayBuffer());
+    const map = guessFieldMap(parsed.columns);
+    kind = "file_upload";
+    rows = parsed.rows.map((r) => ({
+      email: map.email ? r[map.email] : undefined,
+      name: map.name ? r[map.name] : undefined,
+      role: map.role ? r[map.role] : undefined,
+      company_domain: map.company_domain ? r[map.company_domain] : undefined,
+    }));
+  } else {
+    // One per line: an address on its own, or "Name <address>".
+    const pasted = String(formData.get("pasted") ?? "").trim();
+    rows = pasted
+      .split(/[\n,;]+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/^(.*?)\s*<([^>]+)>$/);
+        return match ? { name: match[1]?.trim(), email: match[2] } : { email: line };
+      });
+  }
+
+  let added = 0;
+  let merged = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const email = String(row.email ?? "").trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      skipped++;
+      continue;
+    }
+
+    // Someone who said no is never re-added by an import.
+    const blocked = await db.collection(C.suppressions).findOne({ orgId, identityValue: email });
+    if (blocked) {
+      skipped++;
+      continue;
+    }
+
+    const existing = await db
+      .collection(C.people)
+      .findOne({ orgId, productId, "identities.value": email });
+
+    if (existing) {
+      await db.collection(C.people).updateOne({ _id: existing._id }, {
+        $push: { arrivals: { kind, at: now, detail: "library import" } },
+      } as never);
+      merged++;
+      continue;
+    }
+
+    await db.collection(C.people).insertOne({
+      _id: new ObjectId(),
+      orgId,
+      productId,
+      identities: [{ kind: "email", value: email, verified: false }],
+      primaryEmail: email,
+      name: row.name ? String(row.name) : undefined,
+      role: row.role ? String(row.role) : undefined,
+      companyDomain: row.company_domain ? String(row.company_domain) : email.split("@")[1],
+      timezone: "UTC",
+      language: "en",
+      stage: "lead",
+      consent: { state: "legitimate_interest", capturedAt: now, evidence: `library:${kind}` },
+      arrivals: [{ kind, at: now, detail: "library import" }],
+      lifecycle: "new",
+      attempts: 0,
+      objections: [],
+      investment: { messages: 0, usd: 0, enrichmentCalls: 0, assetsGenerated: 0, campaignsRun: 0 },
+      needsClassification: true,
+      createdAt: now,
+    });
+    added++;
+  }
+
+  await notify({
+    orgId,
+    productId,
+    severity: "good",
+    dedupeKey: `library:import:${Date.now()}`,
+    title: `Added ${added} ${added === 1 ? "person" : "people"} to the library`,
+    body: [merged && `${merged} already known`, skipped && `${skipped} skipped`].filter(Boolean).join(" · ") || undefined,
+    href: `/products/${productId}/library`,
+  });
+
+  revalidatePath(`/products/${productId}/library`);
+}
+
+export async function suppressPerson(productId: string, personId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const person = await db.collection(C.people).findOne({ _id: new ObjectId(personId), orgId });
+  if (!person?.primaryEmail) return;
+
+  // Suppression is permanent and lives in two places: on the person, so the library shows
+  // it, and in the block list, which every ingest and every send checks.
+  await db.collection(C.suppressions).updateOne(
+    { orgId, identityValue: String(person.primaryEmail) },
+    { $setOnInsert: { orgId, identityValue: String(person.primaryEmail), reason: "marked by hand", at: new Date() } },
+    { upsert: true },
+  );
+  await db
+    .collection(C.people)
+    .updateOne({ _id: person._id }, { $set: { lifecycle: "suppressed", suppressedAt: new Date() } });
+  await db
+    .collection(C.goalInstances)
+    .updateMany({ orgId, personId, status: "active" }, { $set: { status: "failed", outcome: "suppressed", endedAt: new Date() } });
+  await db
+    .collection(C.actions)
+    .updateMany({ orgId, personId, status: { $in: ["queued", "awaiting_approval"] } }, { $set: { status: "skipped" } });
+
+  revalidatePath(`/products/${productId}/library`);
+}
+
+// ── audiences ─────────────────────────────────────────────────────────────────
+
+export async function saveAudience(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const audienceId = String(formData.get("audienceId") ?? "");
+  const kind = String(formData.get("kind") ?? "dynamic");
+  const now = new Date();
+
+  const num = (key: string) => {
+    const raw = String(formData.get(key) ?? "").trim();
+    return raw ? Number(raw) : undefined;
+  };
+  const list = (key: string) => {
+    const values = formData.getAll(key).map(String).filter(Boolean);
+    return values.length ? values : undefined;
+  };
+
+  const doc = {
+    orgId,
+    productId,
+    name: String(formData.get("name")).trim(),
+    description: String(formData.get("description") ?? "").trim() || undefined,
+    kind,
+    filter:
+      kind === "dynamic"
+        ? {
+            silentDays: num("silentDays"),
+            quietDays: num("quietDays"),
+            lifecycle: list("lifecycle"),
+            temperature: list("temperature"),
+            everEngaged: formData.get("everEngaged") === "on" ? true : undefined,
+            minIcpFit: num("minIcpFit"),
+            excludeSuppressed: true,
+          }
+        : undefined,
+    personIds: kind === "static" ? formData.getAll("personIds").map(String) : [],
+    updatedAt: now,
+  };
+
+  if (audienceId) {
+    await db.collection(C.audiences).updateOne({ _id: new ObjectId(audienceId), orgId }, { $set: doc });
+  } else {
+    await db.collection(C.audiences).insertOne({ _id: new ObjectId(), ...doc, createdBy: "human", createdAt: now });
+  }
+  revalidatePath(`/products/${productId}/audiences`);
+}
+
+export async function deleteAudience(productId: string, audienceId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  await db.collection(C.audiences).deleteOne({ _id: new ObjectId(audienceId), orgId });
+  revalidatePath(`/products/${productId}/audiences`);
 }

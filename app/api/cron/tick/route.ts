@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     .collection(C.sources)
     .find({
       enabled: true,
-      kind: { $in: ["mcp_source", "api_pull", "crm_sync"] },
+      kind: { $in: ["mcp_source", "api_pull", "crm_sync", "audience"] },
       $or: [{ nextFetchAt: { $lte: now } }, { nextFetchAt: { $exists: false } }],
     })
     .limit(20)

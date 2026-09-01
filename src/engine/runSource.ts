@@ -5,6 +5,7 @@ import { ingest, type IngestSummary } from "./ingest.js";
 import { RowsAdapter } from "../adapters/source/rows.js";
 import { McpSourceAdapter } from "../adapters/source/mcp.js";
 import { HttpSourceAdapter } from "../adapters/source/http.js";
+import { AudienceSourceAdapter } from "../adapters/source/audience.js";
 import { McpClient } from "../mcp/client.js";
 import { resolveSecret } from "../crypto/broker.js";
 import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
@@ -44,6 +45,11 @@ export async function runSource(sourceId: string, pushedRows?: RawRecord[]): Pro
 
 async function buildAdapter(source: Record<string, unknown>): Promise<SourceAdapter> {
   const db = await getDb();
+
+  if (source.kind === "audience") {
+    if (!source.audienceId) throw new Error("audience source has no audience");
+    return new AudienceSourceAdapter(String(source.orgId), String(source.productId), String(source.audienceId));
+  }
 
   if (source.kind === "api_pull") {
     const connection = await db
@@ -85,7 +91,7 @@ export async function dueSources(orgId: string, at = new Date()): Promise<string
     .find({
       orgId,
       enabled: true,
-      kind: { $in: ["mcp_source", "api_pull", "crm_sync"] },
+      kind: { $in: ["mcp_source", "api_pull", "crm_sync", "audience"] },
       $or: [{ nextFetchAt: { $lte: at } }, { nextFetchAt: { $exists: false } }],
     })
     .project({ _id: 1 })
