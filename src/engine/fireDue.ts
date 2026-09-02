@@ -142,7 +142,8 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // between approval and send must not change a message a human already signed off.
       // Three things have to agree before a message goes out designed: the template asks
       // for it, the channel can carry it, and the channel is email.
-      const wantsHtml = String(template.format ?? "html") !== "text";
+      // A reviewer who chose plain text outranks the template's own format.
+      const wantsHtml = String(action.format ?? template.format ?? "html") !== "text";
       if (!content.bodyHtml && wantsHtml && String(action.channel) === "email" && caps?.html !== false) {
         content.bodyHtml = renderHtml(
           resolveBlocks(template.blocks as Record<string, unknown>[], vars, prior),

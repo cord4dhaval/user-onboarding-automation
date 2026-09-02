@@ -142,6 +142,12 @@ export default async function Review({
                 <form action={decide} className="row">
                   <input type="hidden" name="productId" value={id} />
                   <input type="hidden" name="ids" value={String(action._id)} />
+                  {/* Designed mail is the default; plain text is a per-message escape
+                      hatch for a recipient the HTML would not serve. */}
+                  <select name="format" defaultValue="html" aria-label="Send as">
+                    <option value="html">Designed email</option>
+                    <option value="text">Plain text</option>
+                  </select>
                   <SubmitButton name="decision" value="approve" size="sm" icon={<Check />} pendingLabel="Sending…">Approve</SubmitButton>
                   <SubmitButton name="decision" value="reject" variant="quiet" size="sm" icon={<X />}>Reject</SubmitButton>
                 </form>

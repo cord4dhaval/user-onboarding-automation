@@ -228,13 +228,29 @@ async function queueFirstTouch(args: {
   );
   if (!pick) return false;
 
-  const template = await db.collection(C.templates).findOne({
-    orgId: args.orgId,
-    productId: args.productId,
-    key: args.goal.firstTouch.templateKey,
-    channel: pick.key,
-    status: "active",
-  });
+  // A campaign names a template key, not one document: the same key exists once per
+  // channel and again per segment, and the channel is only known here. findOne over that
+  // set returned whichever document Mongo reached first, so a lead could be sent a
+  // segment's mail on the strength of nothing at all.
+  //
+  // A lead who has just arrived has no segment yet — they are classified later — so the
+  // product default is the only honest pick for them.
+  const candidates = await db
+    .collection(C.templates)
+    .find({
+      orgId: args.orgId,
+      productId: args.productId,
+      key: args.goal.firstTouch.templateKey,
+      channel: pick.key,
+      status: "active",
+    })
+    .toArray();
+
+  const segment = typeof person.segment === "string" ? person.segment : undefined;
+  const template =
+    (segment && candidates.find((t) => t.scope === "segment" && t.segmentKey === segment)) ||
+    candidates.find((t) => t.scope === "product_default") ||
+    candidates[0];
   if (!template) return false;
 
   const dueAt = nextSendableAt(

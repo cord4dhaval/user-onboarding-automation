@@ -868,12 +868,20 @@ export async function decide(formData: FormData) {
   const productId = String(formData.get("productId"));
   const ids = formData.getAll("ids").map((v) => new ObjectId(String(v)));
   const approve = String(formData.get("decision")) === "approve";
+  // The reviewer is looking at the designed mail; sending it as plain text is their call
+  // to make here, on the message in front of them, not a template-wide setting.
+  const asText = String(formData.get("format") ?? "html") === "text";
 
   await db.collection(C.actions).updateMany(
     { _id: { $in: ids }, orgId, productId, status: "awaiting_approval" },
     // Approving returns it to the queue rather than sending directly, so budgets, caps and
     // suppression are all still checked at the moment it actually goes out.
-    { $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date() } },
+    {
+      $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date(), format: asText ? "text" : "html" },
+      // Dropping the rendered HTML is not enough on its own — the sender rebuilds it from
+      // the template when it is missing, so the choice is recorded on the action too.
+      ...(approve && asText ? { $unset: { "content.bodyHtml": "" } } : {}),
+    },
   );
 
   revalidatePath(`/products/${productId}/review`, "layout");
