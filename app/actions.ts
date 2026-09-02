@@ -13,7 +13,7 @@ import { inferCapabilities } from "@/mcp/discover.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
-import { notify } from "@/engine/notify.js";
+import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { setRoutineEnabled } from "@/engine/routines.js";
 import { requireSession } from "./tenant";
@@ -456,7 +456,11 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
   const inputType = String(formData.get("inputType") ?? "none");
   if (inputType === "none") return;
 
-  const intervalSec = Number(formData.get("intervalSec") ?? 600);
+  // The goal form names this field "fetchEverySec" and the sources page names it
+  // "intervalSec". Reading only one of them left every input created from the goal form
+  // polling every ten minutes whatever the user picked.
+  const intervalSec =
+    Number(formData.get("fetchEverySec") ?? formData.get("intervalSec") ?? 600) || 600;
   const triggerMode = String(formData.get("triggerMode") ?? "batch");
   const dedupeKey = String(formData.get("dedupeKey") ?? "email");
 
@@ -473,7 +477,8 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
   const base = {
     orgId: (await currentOrg()),
     productId,
-    name: String(formData.get("inputName") ?? goalKey),
+    // An empty field is still a value, so ?? would leave the input unnamed.
+    name: String(formData.get("inputName") || goalKey),
     defaultGoalKey: goalKey,
     triggerMode,
     dedupeKey,
@@ -1037,14 +1042,14 @@ export async function saveAudience(formData: FormData) {
   } else {
     await db.collection(C.audiences).insertOne({ _id: new ObjectId(), ...doc, createdBy: "human", createdAt: now });
   }
-  revalidatePath(`/products/${productId}/audiences`);
+  revalidatePath(`/products/${productId}/library`);
 }
 
 export async function deleteAudience(productId: string, audienceId: string, _formData?: FormData) {
   const db = await getDb();
   const orgId = await currentOrg();
   await db.collection(C.audiences).deleteOne({ _id: new ObjectId(audienceId), orgId });
-  revalidatePath(`/products/${productId}/audiences`);
+  revalidatePath(`/products/${productId}/library`);
 }
 
 /**
@@ -1165,8 +1170,7 @@ export async function runCalls(runId: string): Promise<CallRow[]> {
 export async function toggleRoutine(productId: string, key: string, enabled: boolean) {
   const orgId = await currentOrg();
   await setRoutineEnabled(orgId, productId, key as RoutineKey, enabled);
-  revalidatePath(`/products/${productId}/logs`);
-  revalidatePath(`/products/${productId}/routines`);
+  revalidatePath(`/products/${productId}/claude`);
 }
 
 /** Pausing stops new people entering and holds anything queued; sent history is untouched. */
@@ -1238,18 +1242,483 @@ export async function updateGoal(formData: FormData) {
         budget: {
           touches: Number(formData.get("touches") ?? 9),
           days: Number(formData.get("days") ?? 30),
-          usd: Number(formData.get("usd") ?? 12),
+          // The form no longer asks for these, so an edit must keep what is already set
+          // rather than resetting it to the default every time somebody renames a campaign.
+          usd: Number(formData.get("usd") ?? existing?.budget?.usd ?? 12),
         },
         allowedChannels: allowed,
         verifyConnectionId,
-        verifyHint: String(formData.get("verifyHint") ?? "").trim() || undefined,
+        verifyHint: String(formData.get("verifyHint") ?? existing?.verifyHint ?? "").trim() || undefined,
         firstTouch: { templateKey: String(formData.get("firstTouchTemplate")), channels },
         "schedule.approvalMode": String(formData.get("approvalMode") ?? "gate_on"),
-        "failure.silenceDays": Number(formData.get("silenceDays") ?? 30),
+        "failure.silenceDays": Number(formData.get("silenceDays") ?? existing?.failure?.silenceDays ?? 30),
         ...(verifierChanged ? { checks: [], needsVerificationPlan: true } : {}),
       },
     },
   );
 
   revalidatePath(`/products/${productId}/goals`);
+}
+
+/**
+ * Recomputes the derived alerts behind the bell and the dashboard band. The engine does
+ * this on its own clock; this is the button for when somebody has just fixed the thing
+ * being complained about and wants the page to agree.
+ */
+export async function refreshDashboard(productId: string, _formData?: FormData) {
+  const orgId = await currentOrg();
+  await refreshDerived(orgId, productId);
+  revalidatePath(`/products/${productId}`);
+}
+
+// ── templates ─────────────────────────────────────────────────────────────────
+
+/** A new block starts with everything it needs to render, so the preview is never empty. */
+function blankBlock(type: string): Record<string, unknown> {
+  switch (type) {
+    case "subject":
+      return { type: "subject", slot: "one line, under 55 characters", fallback: "{{first_name}}, a quick one" };
+    case "preheader":
+      return { type: "preheader", fallback: "The line the inbox shows next to the subject." };
+    case "heading":
+      return { type: "heading", level: 1, fixed: "A headline worth the open" };
+    case "text":
+      return { type: "text", fixed: "Hi {{first_name}}," };
+    case "slot":
+      return { type: "slot", instruct: "Two sentences, specific to this person.", fallback: "Here is what changes for your team this week." };
+    case "list":
+      return { type: "list", style: "check", items: ["First point", "Second point"] };
+    case "card":
+      return { type: "card", rows: [{ label: "Plan", value: "Starter" }], accent: false };
+    case "callout":
+      return { type: "callout", fixed: "One line worth setting apart." };
+    case "divider":
+      return { type: "divider" };
+    case "image":
+      return { type: "image", url: "https://example.com/image.png", alt: "" };
+    case "cta":
+      return { type: "cta", fixed: "Get started", url: "{{trial_link}}" };
+    case "system":
+      return { type: "system", fixed: "opt_out_block" };
+    default:
+      throw new Error(`unknown block type "${type}"`);
+  }
+}
+
+async function loadTemplate(productId: string, templateId: string) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const doc = await db
+    .collection(C.templates)
+    .findOne({ _id: new ObjectId(templateId), orgId, productId });
+  if (!doc) throw new Error("template not found");
+  return { db, orgId, doc };
+}
+
+function refreshTemplate(productId: string, templateId: string) {
+  revalidatePath(`/products/${productId}/templates`);
+  revalidatePath(`/products/${productId}/templates/${templateId}`);
+}
+
+export async function createTemplate(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const name = String(formData.get("name") ?? "").trim() || "Untitled";
+  const channel = String(formData.get("channel") ?? "email");
+  const scope = String(formData.get("scope") ?? "product_default");
+  const segmentKey = String(formData.get("segmentKey") ?? "").trim();
+  const key = slugify(String(formData.get("key") ?? "").trim() || name);
+
+  const isEmail = channel === "email";
+  const blocks: Record<string, unknown>[] = isEmail
+    ? [
+        blankBlock("subject"),
+        blankBlock("preheader"),
+        blankBlock("heading"),
+        blankBlock("text"),
+        blankBlock("slot"),
+        blankBlock("cta"),
+        blankBlock("system"),
+      ]
+    : [blankBlock("slot"), blankBlock("cta")];
+
+  const templateId = new ObjectId();
+  await db.collection(C.templates).insertOne({
+    _id: templateId,
+    orgId,
+    productId,
+    key,
+    name,
+    channel,
+    // Short-form channels have no HTML to speak of, so they are text by definition.
+    format: isEmail ? (String(formData.get("format") ?? "html") === "text" ? "text" : "html") : "text",
+    stage: String(formData.get("stage") ?? "first_touch"),
+    scope,
+    ...(scope === "segment" && segmentKey ? { segmentKey } : {}),
+    version: 1,
+    blocks,
+    constraints: { maxWords: isEmail ? 140 : 45, noClaims: [] },
+    assetIds: [],
+    stats: { sent: 0, replied: 0, converted: 0, alpha: 1, beta: 1 },
+    // New work starts as a draft. A template that begins active would join the cascade
+    // before anyone has read it once.
+    status: "draft",
+    createdBy: "human",
+  });
+
+  redirect(`/products/${productId}/templates/${String(templateId)}`);
+}
+
+export async function duplicateTemplate(productId: string, templateId: string, _formData?: FormData) {
+  const { db, orgId, doc } = await loadTemplate(productId, templateId);
+  const copyId = new ObjectId();
+  const { _id: _ignored, ...rest } = doc;
+  await db.collection(C.templates).insertOne({
+    ...rest,
+    _id: copyId,
+    orgId,
+    name: `${String(doc.name ?? doc.key)} copy`,
+    key: `${String(doc.key)}-copy`,
+    parentId: templateId,
+    version: 1,
+    stats: { sent: 0, replied: 0, converted: 0, alpha: 1, beta: 1 },
+    status: "draft",
+    createdBy: "human",
+  });
+  redirect(`/products/${productId}/templates/${String(copyId)}`);
+}
+
+export async function deleteTemplate(productId: string, templateId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  // Queued mail names its template and renders from it at send time, so removing one out
+  // from under a pending touch would fail that send hours later, in the engine.
+  const pending = await db
+    .collection(C.actions)
+    .countDocuments({ orgId, productId, templateId, status: { $in: ["queued", "awaiting_approval", "sending"] } });
+  if (pending > 0) {
+    throw new Error(`${pending} message${pending === 1 ? " is" : "s are"} still queued against this template`);
+  }
+
+  await db.collection(C.templates).deleteOne({ _id: new ObjectId(templateId), orgId, productId });
+  revalidatePath(`/products/${productId}/templates`);
+  redirect(`/products/${productId}/templates`);
+}
+
+export async function saveTemplateMeta(formData: FormData) {
+  const productId = String(formData.get("productId"));
+  const templateId = String(formData.get("templateId"));
+  const { db, orgId } = await loadTemplate(productId, templateId);
+
+  const maxWords = Number(formData.get("maxWords"));
+  const noClaims = String(formData.get("noClaims") ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  await db.collection(C.templates).updateOne(
+    { _id: new ObjectId(templateId), orgId, productId },
+    {
+      $set: {
+        name: String(formData.get("name") ?? "").trim() || "Untitled",
+        stage: String(formData.get("stage") ?? "first_touch"),
+        status: String(formData.get("status") ?? "draft"),
+        format: String(formData.get("format") ?? "html") === "text" ? "text" : "html",
+        "constraints.maxWords": Number.isFinite(maxWords) && maxWords > 0 ? Math.round(maxWords) : undefined,
+        "constraints.noClaims": noClaims,
+      },
+    },
+  );
+  refreshTemplate(productId, templateId);
+}
+
+export async function addTemplateBlock(formData: FormData) {
+  const productId = String(formData.get("productId"));
+  const templateId = String(formData.get("templateId"));
+  const { db, orgId } = await loadTemplate(productId, templateId);
+  await db
+    .collection(C.templates)
+    .updateOne(
+      { _id: new ObjectId(templateId), orgId, productId },
+      { $push: { blocks: blankBlock(String(formData.get("type"))) } as never },
+    );
+  refreshTemplate(productId, templateId);
+}
+
+export async function removeTemplateBlock(productId: string, templateId: string, index: number, _formData?: FormData) {
+  const { db, orgId, doc } = await loadTemplate(productId, templateId);
+  const blocks = (doc.blocks as unknown[]).filter((_, at) => at !== index);
+  if (blocks.length === 0) throw new Error("a template needs at least one block");
+  await db
+    .collection(C.templates)
+    .updateOne({ _id: new ObjectId(templateId), orgId, productId }, { $set: { blocks } });
+  refreshTemplate(productId, templateId);
+}
+
+export async function moveTemplateBlock(
+  productId: string,
+  templateId: string,
+  index: number,
+  direction: -1 | 1,
+  _formData?: FormData,
+) {
+  const { db, orgId, doc } = await loadTemplate(productId, templateId);
+  const blocks = [...(doc.blocks as unknown[])];
+  const target = index + direction;
+  if (target < 0 || target >= blocks.length) return;
+  [blocks[index], blocks[target]] = [blocks[target], blocks[index]];
+  await db
+    .collection(C.templates)
+    .updateOne({ _id: new ObjectId(templateId), orgId, productId }, { $set: { blocks } });
+  refreshTemplate(productId, templateId);
+}
+
+/** Rebuilds one block from the editor's fields. Unknown fields are dropped, not stored. */
+export async function updateTemplateBlock(formData: FormData) {
+  const productId = String(formData.get("productId"));
+  const templateId = String(formData.get("templateId"));
+  const index = Number(formData.get("index"));
+  const { db, orgId, doc } = await loadTemplate(productId, templateId);
+
+  const blocks = [...(doc.blocks as Record<string, unknown>[])];
+  const current = blocks[index];
+  if (!current) throw new Error("that block no longer exists");
+
+  const text = (field: string) => {
+    const value = formData.get(field);
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    return trimmed || undefined;
+  };
+  const lines = (field: string) =>
+    String(formData.get(field) ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+  const type = String(current.type);
+  let next: Record<string, unknown>;
+
+  switch (type) {
+    case "subject":
+      next = { type, slot: text("slot") ?? "one line", fallback: text("fallback") };
+      break;
+    case "preheader":
+      next = { type, slot: text("slot"), fallback: text("fallback") };
+      break;
+    case "text":
+    case "callout":
+      next = { type, fixed: text("fixed") ?? "" };
+      break;
+    case "slot":
+      next = { type, name: text("name"), instruct: text("instruct") ?? "", fallback: text("fallback") };
+      break;
+    case "heading":
+      next = {
+        type,
+        level: Math.min(3, Math.max(1, Number(formData.get("level") ?? 1))),
+        fixed: text("fixed"),
+        slot: text("slot"),
+        fallback: text("fallback"),
+      };
+      break;
+    case "list":
+      next = { type, style: String(formData.get("style") ?? "bullet"), items: lines("items") };
+      break;
+    case "card":
+      next = {
+        type,
+        title: text("title"),
+        accent: formData.get("accent") === "on",
+        // One row per line, label and value split on the first pipe.
+        rows: lines("rows").map((line) => {
+          const [label, ...rest] = line.split("|");
+          return { label: (label ?? "").trim(), value: rest.join("|").trim() };
+        }),
+      };
+      break;
+    case "image":
+      next = {
+        type,
+        url: text("url") ?? "",
+        alt: text("alt") ?? "",
+        width: Number(formData.get("width")) || undefined,
+        href: text("href"),
+      };
+      break;
+    case "cta":
+      next = { type, fixed: text("fixed") ?? "Get started", url: text("url") ?? "{{trial_link}}" };
+      break;
+    default:
+      next = current;
+  }
+
+  blocks[index] = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined));
+  await db
+    .collection(C.templates)
+    .updateOne({ _id: new ObjectId(templateId), orgId, productId }, { $set: { blocks } });
+  refreshTemplate(productId, templateId);
+}
+
+// ── brand ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Reads the brand off the product's own website. This exists so a tenant who has
+ * connected nothing still sends mail in their own colours — a dedicated brand provider is
+ * an upgrade on this, never a precondition for it.
+ */
+export async function detectBrandFromWebsite(productId: string, _formData?: FormData) {
+  const orgId = await currentOrg();
+  const { ensureWebsiteBrandSource, refreshBrandSource } = await import("@/engine/brand.js");
+  await ensureWebsiteBrandSource(orgId, productId);
+
+  const db = await getDb();
+  const source = await db.collection(C.brandSources).findOne({ orgId, productId, kind: "css_vars" });
+  if (!source) throw new Error("this product has no website in its config yet");
+  await refreshBrandSource(String(source._id));
+  revalidatePath(`/products/${productId}/brand`);
+}
+
+export async function addBrandSource(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const kind = String(formData.get("kind"));
+  const url = String(formData.get("url") ?? "").trim();
+  const connectionId = String(formData.get("connectionId") ?? "").trim();
+
+  if ((kind === "css_vars" || kind === "http_tokens") && !url) throw new Error("a URL is required");
+  if (kind === "mcp_brand" && !connectionId) throw new Error("choose a connection");
+
+  await db.collection(C.brandSources).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    productId,
+    name: String(formData.get("name") ?? "").trim() || kind,
+    kind,
+    ...(url ? { url } : {}),
+    ...(connectionId ? { connectionId } : {}),
+    tokenMap: {},
+    // Lower numbers lose on conflict, so a hand-typed override sits above anything fetched.
+    precedence: Number(formData.get("precedence")) || (kind === "mcp_brand" ? 50 : 20),
+    refreshEverySec: kind === "css_vars" ? 604_800 : 86_400,
+    enabled: true,
+  });
+
+  const created = await db.collection(C.brandSources).findOne({ orgId, productId, kind }, { sort: { _id: -1 } });
+  if (created) {
+    const { refreshBrandSource } = await import("@/engine/brand.js");
+    // Fetch immediately: a source added and left blank until the next tick looks broken.
+    try {
+      await refreshBrandSource(String(created._id));
+    } catch {
+      // The health field on the source now carries the reason; the page shows it.
+    }
+  }
+  revalidatePath(`/products/${productId}/brand`);
+}
+
+export async function refreshBrand(productId: string, sourceId: string, _formData?: FormData) {
+  const { refreshBrandSource } = await import("@/engine/brand.js");
+  try {
+    await refreshBrandSource(sourceId);
+  } catch {
+    // Recorded on the source. Throwing here would replace the page with a crash screen.
+  }
+  revalidatePath(`/products/${productId}/brand`);
+}
+
+export async function deleteBrandSource(productId: string, sourceId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  await db.collection(C.brandSources).deleteOne({ _id: new ObjectId(sourceId), orgId, productId });
+  const { rebuildKit } = await import("@/engine/brand.js");
+  await rebuildKit(orgId, productId);
+  revalidatePath(`/products/${productId}/brand`);
+}
+
+/**
+ * The hand-entered overrides. Stored as one `manual` source at the top of the precedence
+ * order rather than written into the kit, so a brand refresh can never overwrite a value
+ * somebody typed on purpose.
+ */
+export async function saveManualBrand(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+
+  const value = (field: string) => {
+    const raw = String(formData.get(field) ?? "").trim();
+    return raw || undefined;
+  };
+  const colour = (field: string) => {
+    const raw = value(field);
+    return raw && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(raw) ? raw.toLowerCase() : undefined;
+  };
+
+  const gradient = String(formData.get("gradient") ?? "")
+    .split(",")
+    .map((stop) => stop.trim().toLowerCase())
+    .filter((stop) => /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(stop));
+
+  const literal: Record<string, unknown> = {};
+  const color: Record<string, unknown> = {};
+  for (const field of ["bg", "surface", "text", "muted", "border", "accent", "accentText"]) {
+    const found = colour(field);
+    if (found) color[field] = found;
+  }
+  if (gradient.length >= 2) color.gradient = gradient.slice(0, 3);
+  if (Object.keys(color).length) literal.color = color;
+
+  const logoUrl = value("logoUrl");
+  if (logoUrl) {
+    literal.logo = {
+      light: logoUrl,
+      alt: value("logoAlt") ?? "",
+      width: Number(formData.get("logoWidth")) || 132,
+      ...(value("logoHref") ? { href: value("logoHref") } : {}),
+    };
+  }
+
+  const heading = value("headingStack");
+  const body = value("bodyStack");
+  if (heading || body) literal.font = { ...(heading ? { headingStack: heading } : {}), ...(body ? { bodyStack: body } : {}) };
+
+  const legalName = value("legalName");
+  const address = value("address");
+  const disclaimer = value("disclaimer");
+  if (legalName || address || disclaimer) {
+    literal.footer = {
+      ...(legalName ? { legalName } : {}),
+      ...(address ? { address } : {}),
+      ...(disclaimer ? { disclaimer } : {}),
+    };
+  }
+
+  await db.collection(C.brandSources).updateOne(
+    { orgId, productId, kind: "manual" },
+    {
+      $set: {
+        orgId,
+        productId,
+        name: "Typed by hand",
+        kind: "manual",
+        literal,
+        resolved: literal,
+        tokenMap: {},
+        precedence: 90,
+        refreshEverySec: 31_536_000,
+        enabled: true,
+        lastRunAt: new Date(),
+        health: { status: "healthy" },
+      },
+      $setOnInsert: { _id: new ObjectId() },
+    },
+    { upsert: true },
+  );
+
+  const { rebuildKit } = await import("@/engine/brand.js");
+  await rebuildKit(orgId, productId);
+  revalidatePath(`/products/${productId}/brand`);
+  revalidatePath(`/products/${productId}/templates`);
 }

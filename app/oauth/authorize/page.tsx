@@ -3,6 +3,7 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { getClient, issueCode } from "@/auth/oauth-server.js";
 import { requireSession } from "../../tenant";
+import { SubmitButton } from "../../ui/kit";
 
 export const dynamic = "force-dynamic";
 
@@ -105,8 +106,8 @@ export default async function Authorize({ searchParams }: { searchParams: Promis
       </p>
 
       <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-        <form action={approve}><button type="submit">Authorise</button></form>
-        <form action={deny}><button type="submit" className="ghost">Cancel</button></form>
+        <form action={approve}><SubmitButton pendingLabel="Authorising…">Authorise</SubmitButton></form>
+        <form action={deny}><SubmitButton variant="ghost">Cancel</SubmitButton></form>
       </div>
     </main>
   );

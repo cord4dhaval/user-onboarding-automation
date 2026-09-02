@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Monitor, Moon, Sun } from "lucide-react";
 
 type Theme = "light" | "dark" | "system";
 
@@ -46,7 +47,7 @@ export default function ThemeToggle() {
         applyTheme(next);
       }}
     >
-      {theme === "dark" ? "◗" : theme === "light" ? "◒" : "◐"} {LABEL[theme]}
+      {theme === "dark" ? <Moon size={15} /> : theme === "light" ? <Sun size={15} /> : <Monitor size={15} />}
     </button>
   );
 }

@@ -15,6 +15,8 @@ export interface IngestSummary {
   filteredOut: number;
   firstTouchesQueued: number;
   errors: string[];
+  /** Where the source got to. Persisted by the caller once the batch is committed. */
+  nextCursor?: string;
 }
 
 interface SourceDoc {
@@ -83,8 +85,9 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     .findOne({ orgId: source.orgId, productId: source.productId, key: source.defaultGoalKey })) as GoalDoc | null;
   if (!goal) throw new Error(`goal "${source.defaultGoalKey}" not found for this product`);
 
-  const { records } = await adapter.fetch(source.cursor);
+  const { records, nextCursor } = await adapter.fetch(source.cursor);
   summary.fetched = records.length;
+  summary.nextCursor = nextCursor;
 
   for (const raw of records) {
     try {

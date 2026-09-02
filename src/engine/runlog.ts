@@ -17,7 +17,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
  */
 
 /** The scopes a routine sweeps with. Anything else is a person poking at the tools by hand. */
-export const ROUTINE_KEYS = ["monitor", "plan", "compose"] as const;
+export const ROUTINE_KEYS = ["monitor", "plan", "compose", "groom"] as const;
 export type RoutineKey = (typeof ROUTINE_KEYS)[number];
 /** `engine` is the model-free tick; `ad-hoc` is a human or an unscoped session. */
 export type RunKind = RoutineKey | "engine" | "ad-hoc";
@@ -278,6 +278,9 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   monitor: [...ALWAYS_ALLOWED, "mark_state", "plan_goal", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
   plan: [...ALWAYS_ALLOWED, "verifiers", "set_checks", "classify", "plan_goal"],
   compose: [...ALWAYS_ALLOWED, "compose_batch"],
+  // Groom finishes setup, so it writes templates and campaigns — and raises the one
+  // notification for the parts only a human can supply.
+  groom: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "plan_goal"],
 };
 
 /** Which routine, if any, the caller is currently running as. Ad-hoc sessions return null. */

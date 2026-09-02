@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Eye } from "lucide-react";
 import Drawer from "../../../ui/drawer";
+import { Button, Spinner } from "../../../ui/kit";
 import type { CallRow } from "@/engine/runlog.js";
 
 /**
@@ -34,10 +36,12 @@ export default function RunDrawer({
 
   return (
     <>
-      <button type="button" className="quiet sm" onClick={show}>{label}</button>
+      <Button variant="quiet" size="sm" icon={<Eye />} loading={pending && !calls} onClick={show}>
+        {label}
+      </Button>
       <Drawer open={open} title={title} description={subtitle} onClose={() => setOpen(false)} width={720}>
         {pending && !calls ? (
-          <p className="muted">Loading the calls…</p>
+          <p className="muted row"><Spinner /> Loading the calls…</p>
         ) : !calls?.length ? (
           <div className="empty">
             <strong>No calls kept</strong>

@@ -44,6 +44,20 @@ export async function ensureIndexes(): Promise<void> {
     { name: "cascade_resolution" },
   );
 
+  // One kit per product: the send path reads it by this key on every run.
+  await db.collection(C.brandKits).createIndex(
+    { orgId: 1, productId: 1 },
+    { name: "brand_kit_identity", unique: true },
+  );
+  await db.collection(C.brandSources).createIndex(
+    { enabled: 1, nextFetchAt: 1 },
+    { name: "brand_due" },
+  );
+  await db.collection(C.brandSources).createIndex(
+    { orgId: 1, productId: 1, precedence: 1 },
+    { name: "brand_merge_order" },
+  );
+
   await db.collection(C.routines).createIndex(
     { orgId: 1, productId: 1, key: 1 },
     { name: "routine_identity", unique: true },
@@ -64,10 +78,27 @@ export async function ensureIndexes(): Promise<void> {
     { key: { ts: 1 }, name: "call_retention", expireAfterSeconds: 14 * 86_400 },
   ]);
 
-  await db.collection(C.events).createIndex(
-    { orgId: 1, personId: 1, ts: -1 },
-    { name: "person_timeline" },
-  );
+  await db.collection(C.events).createIndexes([
+    { key: { orgId: 1, personId: 1, ts: -1 }, name: "person_timeline" },
+    // The timeline is the one collection that grows with every touch on every person, and
+    // nothing reads past the last couple of hundred entries. A year is well beyond the
+    // window any caller asks for.
+    { key: { ts: 1 }, name: "event_retention", expireAfterSeconds: 365 * 86_400 },
+  ]);
+
+  // Audit answers "who changed this, and when" long after the fact, so it outlives the rest.
+  await db.collection(C.audit).createIndexes([
+    { key: { orgId: 1, at: -1 }, name: "audit_log" },
+    { key: { at: 1 }, name: "audit_retention", expireAfterSeconds: 180 * 86_400 },
+  ]);
+
+  // TTL skips documents whose indexed field is not a date, and readAt is null until someone
+  // reads the notification. So this expires read notices a month on and leaves unread ones
+  // standing, which is the behaviour wanted either way.
+  await db.collection(C.notifications).createIndexes([
+    { key: { orgId: 1, productId: 1, readAt: 1, updatedAt: -1 }, name: "inbox" },
+    { key: { readAt: 1 }, name: "notification_retention", expireAfterSeconds: 30 * 86_400 },
+  ]);
 
   // The lease. Without it two concurrent runs claim the same job and double-send.
   await db.collection(C.workQueue).createIndex(

@@ -33,6 +33,197 @@ export interface ToolDef {
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
+/**
+ * Why a "succeeded" verdict cannot be accepted, or null when it can.
+ *
+ * The tool description has always said to mark success only when the evidence supports it.
+ * That was a request, and a request is not a guardrail — a campaign was ended for three
+ * people on two checks that were structurally incapable of returning false and a third
+ * that never resolved at all.
+ *
+ * So the rule lives here now, in the same place the budget and suppression rules live:
+ * every check the campaign defines must actually have passed. Nothing upstream can
+ * reason its way past it.
+ */
+/**
+ * Checks that have passed for everyone they have ever run on.
+ *
+ * Real success is never unanimous. A check with a perfect record across a meaningful
+ * number of people is almost always bound to something org-wide — a tool answering about
+ * the caller's own account rather than the person's — and it will keep ending campaigns
+ * for people who have done nothing.
+ *
+ * Three is the floor. Below that a clean run is ordinary luck, and crying wolf about it
+ * would teach everyone to ignore this.
+ */
+async function undiscriminatingChecks(
+  orgId: string,
+  productId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const db = await getDb();
+  const instances = await db
+    .collection(C.goalInstances)
+    .find({ orgId, productId, checkResults: { $exists: true } })
+    .project({ goalKey: 1, checkResults: 1 })
+    .toArray();
+  if (instances.length < 3) return [];
+
+  const tally = new Map<string, { goalKey: string; key: string; pass: number; seen: number }>();
+  for (const instance of instances) {
+    for (const [key, value] of Object.entries((instance.checkResults ?? {}) as Record<string, boolean>)) {
+      const id = `${String(instance.goalKey)}::${key}`;
+      const row = tally.get(id) ?? { goalKey: String(instance.goalKey), key, pass: 0, seen: 0 };
+      row.seen += 1;
+      if (value === true) row.pass += 1;
+      tally.set(id, row);
+    }
+  }
+
+  return [...tally.values()]
+    .filter((row) => row.seen >= 3 && row.pass === row.seen)
+    .map((row) => ({
+      goal_key: row.goalKey,
+      check: row.key,
+      passed_for: `${row.pass} of ${row.seen} people`,
+      why_this_matters:
+        "A check that has never returned false is probably not looking at the person. Read one probe and compare the scope it asked for with the scope the response says it used, then repair it with set_checks.",
+    }));
+}
+
+interface DiscriminationResult {
+  key: string;
+  tool: string;
+  verdict: "discriminates" | "identical" | "untested";
+  note?: string;
+}
+
+/**
+ * Runs each proposed check against two different people and compares the answers.
+ *
+ * This is the cheapest possible test of the only property a check must have: that it can
+ * tell one person from another. A check bound to a tool that ignores its scoping argument
+ * returns the caller's own data both times, passes for everybody, and ends every campaign
+ * it touches. Nothing downstream can detect that from a single response — but two
+ * responses side by side make it obvious.
+ *
+ * Untested is not a failure. With fewer than two people on file there is nothing to
+ * compare, and a campaign should not be blocked on that.
+ */
+async function discriminationTest(
+  orgId: string,
+  productId: string,
+  checks: Array<Record<string, unknown>>,
+): Promise<DiscriminationResult[]> {
+  const db = await getDb();
+  const { McpClient } = await import("../client.js");
+  const { schemasFor } = await import("../schemas.js");
+  const { resolveSecret } = await import("../../crypto/broker.js");
+  const { scopeEchoMismatches } = await import("../../engine/verify.js");
+
+  const people = await db.collection(C.people).find({ orgId, productId }).limit(2).toArray();
+  const out: DiscriminationResult[] = [];
+
+  for (const check of checks) {
+    const key = String(check.key);
+    const tool = String(check.tool);
+    const checkArgs = (check.args ?? {}) as Record<string, string>;
+
+    if (people.length < 2) {
+      out.push({ key, tool, verdict: "untested", note: "fewer than two people on file" });
+      continue;
+    }
+    // A check taking no per-person argument cannot possibly discriminate, and needs no
+    // network call to prove it.
+    if (!Object.values(checkArgs).some((ref) => ref.startsWith("$person."))) {
+      out.push({ key, tool, verdict: "identical", note: "no $person argument, so it asks the same question for everyone" });
+      continue;
+    }
+
+    try {
+      const connection = await db
+        .collection(C.connections)
+        .findOne({ _id: new ObjectId(String(check.connectionId)), orgId });
+      if (!connection?.serverUrl) {
+        out.push({ key, tool, verdict: "untested", note: "connection not found" });
+        continue;
+      }
+      const token = await resolveSecret(orgId, String(check.connectionId), "engine.discriminate");
+      const client = new McpClient(String(connection.serverUrl), token, await schemasFor(String(check.connectionId)));
+
+      const answers: string[] = [];
+      const echoes: string[] = [];
+      for (const person of people) {
+        const sent = resolveCheckArgs(checkArgs, person);
+        const payload = await client.callTool(tool, sent);
+        answers.push(JSON.stringify(payload ?? null));
+        const mismatch = scopeEchoMismatches(sent, payload);
+        if (mismatch.length) {
+          echoes.push(mismatch.map((m) => `${m.arg}: asked ${m.sent}, answered about ${m.echoed}`).join("; "));
+        }
+      }
+
+      const identical = answers[0] === answers[1];
+      out.push({
+        key,
+        tool,
+        verdict: identical ? "identical" : "discriminates",
+        ...(echoes.length ? { note: echoes[0] } : {}),
+      });
+    } catch (err) {
+      out.push({ key, tool, verdict: "untested", note: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return out;
+}
+
+/** The same "$person.email" resolution the engine uses at verification time. */
+function resolveCheckArgs(args: Record<string, string>, person: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [name, ref] of Object.entries(args)) {
+    if (!ref.startsWith("$")) {
+      out[name] = ref;
+      continue;
+    }
+    let cursor: unknown = { person };
+    for (const part of ref.slice(1).split(".")) {
+      if (cursor === null || typeof cursor !== "object") {
+        cursor = undefined;
+        break;
+      }
+      cursor = (cursor as Record<string, unknown>)[part];
+    }
+    if (cursor !== undefined) out[name] = cursor;
+  }
+  return out;
+}
+
+async function refuseUnverifiedSuccess(
+  instance: Record<string, unknown>,
+  orgId: string,
+  productId: string,
+): Promise<string | null> {
+  const db = await getDb();
+  const goal = await db
+    .collection(C.goals)
+    .findOne({ orgId, productId, key: String(instance.goalKey) });
+  if (!goal) return `campaign "${String(instance.goalKey)}" no longer exists`;
+
+  const checks = (goal.checks ?? []) as Array<{ key: string; describedAs?: string }>;
+  if (checks.length === 0) {
+    return "this campaign has no verification plan, so nothing can prove success. Call verifiers and set_checks first.";
+  }
+
+  const results = (instance.checkResults ?? {}) as Record<string, boolean>;
+  const unmet = checks.filter((check) => results[check.key] !== true);
+  if (unmet.length === 0) return null;
+
+  const detail = unmet
+    .map((check) => `${check.key} (${results[check.key] === false ? "returned false" : "never resolved"})`)
+    .join(", ");
+  return `not every check has passed: ${detail}. Success means all of them. If a check cannot pass because it is bound to the wrong tool or an argument the provider ignores, fix it with set_checks — do not mark success around it.`;
+}
+
 /** How far ahead the compose routine writes. Further out and the person usually signs up or leaves first. */
 const COMPOSE_WINDOW_MS = 48 * 3_600_000;
 /** Two written ahead is a healthy buffer; below that the sequence is at risk of running dry. */
@@ -256,6 +447,12 @@ export const TOOLS: ToolDef[] = [
               .slice(0, limit)
           : [];
 
+        // The opposite failure, and the more dangerous one. A check that has never
+        // returned false is not evidence — it is a constant. It ends campaigns, cancels
+        // queued mail and reads as success, all silently. Two checks like this passed
+        // everyone on this product before anybody noticed.
+        const tooEasy = wants("monitor") ? await undiscriminatingChecks(orgId, productId) : [];
+
         packet.push({
           product_id: productId,
           unclassified: unclassified.map((p) => ({
@@ -295,6 +492,7 @@ export const TOOLS: ToolDef[] = [
             goal_key: String(g.goalKey),
             started_at: g.startedAt,
           })),
+          verification_too_easy: tooEasy,
         });
       }
 
@@ -308,7 +506,8 @@ export const TOOLS: ToolDef[] = [
           p.low_buffers.length +
           p.replies_waiting.length +
           p.undetermined_checks.length +
-          p.verification_looks_wrong.length,
+          p.verification_looks_wrong.length +
+          p.verification_too_easy.length,
         0,
       );
       return { scope, total_work_items: total, products: packet };
@@ -665,7 +864,10 @@ export const TOOLS: ToolDef[] = [
       const results = [];
       for (const id of ids) {
         try {
-          results.push({ source_id: id, ...(await runSource(id)) });
+          // The cursor is internal bookkeeping. Handing the model an opaque position it
+          // cannot act on only invites it to reason about one.
+          const { nextCursor: _cursor, ...summary } = await runSource(id);
+          results.push({ source_id: id, ...summary });
         } catch (err) {
           results.push({ source_id: id, error: err instanceof Error ? err.message : String(err) });
         }
@@ -841,6 +1043,19 @@ TOOLS.push({
     const checks = (args.checks ?? []) as Array<Record<string, unknown>>;
     if (checks.length === 0) throw new Error("a campaign needs at least one check");
 
+    // Every check is tried against two different people before it is trusted. A check that
+    // answers identically for both is not looking at the person — it is describing the
+    // caller's own account, and it will pass for everyone forever.
+    const discrimination = await discriminationTest(orgId, productId, checks);
+    const blind = discrimination.filter((r: DiscriminationResult) => r.verdict === "identical");
+    if (blind.length > 0 && args.accept_undiscriminating !== true) {
+      throw new Error(
+        `these checks answered identically for two different people, so they cannot tell them apart: ${blind
+          .map((r: DiscriminationResult) => `${r.key} (${r.tool}${r.note ? ` — ${r.note}` : ""})`)
+          .join("; ")}. Usually the scoping argument is one the provider ignores because it needs a privilege this token does not have — look at what the response echoes back. Bind them to something person-specific, or pass accept_undiscriminating if the check is genuinely org-wide and another check carries the per-person proof.`,
+      );
+    }
+
     await db.collection(C.goals).updateOne(
       { orgId, productId, key: String(args.goal_key) },
       {
@@ -848,10 +1063,11 @@ TOOLS.push({
           checks: checks.map((c) => ({ ...c, args: c.args ?? {}, latch: c.latch ?? true, proposedBy: "claude" })),
           needsVerificationPlan: false,
           checksWrittenAt: new Date(),
+          discrimination,
         },
       },
     );
-    return { goal_key: String(args.goal_key), checks: checks.length };
+    return { goal_key: String(args.goal_key), checks: checks.length, discrimination };
   },
 });
 
@@ -1007,7 +1223,7 @@ TOOLS.push({
 TOOLS.push({
   name: "mark_state",
   description:
-    "Set the outcome for people in active campaigns after reading their probe results. Use 'succeeded' only when the raw response actually supports it; 'failed' only for a real ending, not for a check that has simply not passed yet; 'continue' to leave a campaign running with a note about where the person is.",
+    "Set the outcome for people in active campaigns after reading their probe results. 'succeeded' is refused unless every check the campaign defines has actually passed — if a check cannot pass because it is bound to the wrong tool or an argument the provider ignores, repair it with set_checks rather than marking success around it. Use 'failed' only for a real ending, not for a check that has simply not passed yet; 'continue' leaves a campaign running with a note about where the person is.",
   inputSchema: {
     type: "object",
     properties: {
@@ -1045,6 +1261,18 @@ TOOLS.push({
 
       const state = String(v.state);
       const personId = new ObjectId(String(instance.personId));
+
+      // Succeeded is the verdict that ends a campaign and cancels the rest of its
+      // messages, so it is the one that gets checked against the evidence rather than
+      // taken on trust. Failure needs no such gate: a person who says no has said no,
+      // and no tool will ever prove it.
+      if (state === "succeeded") {
+        const refusal = await refuseUnverifiedSuccess(instance, orgId, productId);
+        if (refusal) {
+          applied.push({ goal_instance_id: String(instance._id), state: "refused", why: refusal });
+          continue;
+        }
+      }
 
       if (state === "continue") {
         await db
@@ -1229,5 +1457,612 @@ TOOLS.push({
       problems,
       healthy: problems.length === 0,
     };
+  },
+});
+
+// ── brand and templates ───────────────────────────────────────────────────────
+
+TOOLS.push({
+  name: "get_brand",
+  description:
+    "The product's resolved brand kit: palette, type, shape, logo and footer, with where each value came from. Read it before writing copy — a headline written for a 34px display face is a different sentence from one written for a paragraph.",
+  inputSchema: {
+    type: "object",
+    properties: { product_id: { type: "string" } },
+    required: ["product_id"],
+  },
+  async handler(args, ctx) {
+    const productId = await assertProduct(String(args.product_id), ctx);
+    const { loadBrandKit } = await import("../../engine/brand.js");
+    const db = await getDb();
+    const kit = await loadBrandKit(ctx.orgId, productId);
+    const sources = await db
+      .collection(C.brandSources)
+      .find({ orgId: ctx.orgId, productId })
+      .sort({ precedence: 1 })
+      .toArray();
+
+    return {
+      product_id: productId,
+      // A kit with no provenance is the neutral default, which is worth saying plainly:
+      // copy written as though the brand were known would be a guess.
+      branded: Object.keys(kit.provenance ?? {}).length > 0,
+      color: kit.color,
+      font: kit.font,
+      shape: kit.shape,
+      logo: kit.logo ?? null,
+      footer: kit.footer,
+      provenance: kit.provenance,
+      sources: sources.map((source) => ({
+        name: String(source.name),
+        kind: String(source.kind),
+        precedence: Number(source.precedence),
+        health: (source.health as { status?: string })?.status ?? "pending",
+        fields: Object.keys((source.resolved ?? {}) as object),
+      })),
+    };
+  },
+});
+
+TOOLS.push({
+  name: "upsert_template",
+  description:
+    "Create or replace a template. Blocks are structure and copy; appearance comes from the brand kit at render time, so never write HTML or colours here. A new template starts as a draft until someone activates it.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      key: { type: "string", description: "Stable identifier. Reusing one replaces that template's blocks." },
+      name: { type: "string" },
+      channel: { type: "string" },
+      format: {
+        type: "string",
+        enum: ["html", "text"],
+        description:
+          "Defaults to html, which carries the plain text alongside. Choose text where a plain note reads better than a designed one.",
+      },
+      stage: { type: "string", description: "Defaults to first_touch." },
+      scope: { type: "string", enum: ["product_default", "segment"], description: "Defaults to product_default." },
+      segment_key: { type: "string" },
+      status: { type: "string", enum: ["draft", "active", "paused"] },
+      max_words: { type: "number" },
+      blocks: {
+        type: "array",
+        description:
+          "In order. Types: subject, preheader, heading, text, slot, list, card, callout, divider, image, cta, system. A slot is what you fill per person later; give every slot a fallback so a first touch can fire before any session has run.",
+        items: { type: "object", additionalProperties: true },
+      },
+      rationale: { type: "string", description: "Why this template, or what the previous one got wrong." },
+    },
+    required: ["product_id", "key", "blocks"],
+  },
+  async handler(args, ctx) {
+    const productId = await assertProduct(String(args.product_id), ctx);
+    const db = await getDb();
+    const { block } = await import("../../schemas/template.js");
+    const { z } = await import("zod");
+
+    // Validated here rather than at render time: a malformed block that reaches the
+    // engine fails per message, hours later, in whatever words Mongo chose.
+    const parsed = z.array(block).min(1).safeParse(args.blocks);
+    if (!parsed.success) {
+      throw new Error(`blocks are not valid: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
+    }
+
+    const key = String(args.key);
+    const channel = str(args.channel) ?? "email";
+    const scope = str(args.scope) ?? "product_default";
+    const segmentKey = str(args.segment_key);
+    const filter: Record<string, unknown> = { orgId: ctx.orgId, productId, key, channel, scope };
+    if (scope === "segment") {
+      if (!segmentKey) throw new Error("a segment-scoped template needs segment_key");
+      filter.segmentKey = segmentKey;
+    }
+
+    const existing = await db.collection(C.templates).findOne(filter);
+    const maxWords = typeof args.max_words === "number" ? Math.round(args.max_words) : undefined;
+
+    await db.collection(C.templates).updateOne(
+      filter,
+      {
+        $set: {
+          ...filter,
+          name: str(args.name) ?? key,
+          format: str(args.format) === "text" || channel !== "email" ? "text" : "html",
+          stage: str(args.stage) ?? "first_touch",
+          blocks: parsed.data,
+          constraints: {
+            maxWords: maxWords ?? (existing?.constraints as { maxWords?: number } | undefined)?.maxWords ?? (channel === "email" ? 140 : 45),
+            noClaims: ((existing?.constraints as { noClaims?: string[] } | undefined)?.noClaims) ?? [],
+          },
+          // Replacing a template's blocks is a new version of it, not an edit of the one
+          // whose numbers were collected against different words.
+          version: Number(existing?.version ?? 0) + 1,
+          status: str(args.status) ?? (existing ? String(existing.status) : "draft"),
+          createdBy: "claude",
+          rationale: str(args.rationale),
+        },
+        $setOnInsert: {
+          _id: new ObjectId(),
+          assetIds: [],
+          stats: { sent: 0, replied: 0, converted: 0, alpha: 1, beta: 1 },
+        },
+      },
+      { upsert: true },
+    );
+
+    const saved = await db.collection(C.templates).findOne(filter);
+    return {
+      template_id: String(saved?._id),
+      key,
+      version: Number(saved?.version ?? 1),
+      status: String(saved?.status),
+      replaced: Boolean(existing),
+    };
+  },
+});
+
+TOOLS.push({
+  name: "preview_template",
+  description:
+    "Render a template exactly as the engine would, for a real person or a sample one. Returns the subject, the plain-text part, validation, and the size of the HTML part. Check your own work here before a human sees it.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      template_id: { type: "string" },
+      key: { type: "string", description: "Alternative to template_id." },
+      person_id: { type: "string", description: "Omit to render against a sample lead." },
+      include_html: { type: "boolean", description: "Defaults to false — the HTML is large and rarely worth the context." },
+    },
+    required: ["product_id"],
+  },
+  async handler(args, ctx) {
+    const productId = await assertProduct(String(args.product_id), ctx);
+    const db = await getDb();
+    const { renderTemplate, resolveBlocks } = await import("../../engine/compose.js");
+    const { renderHtml } = await import("../../engine/html.js");
+    const { loadBrandKit } = await import("../../engine/brand.js");
+    const { validate } = await import("../../engine/validate.js");
+
+    const templateId = str(args.template_id);
+    const template = templateId
+      ? await db.collection(C.templates).findOne({ _id: new ObjectId(templateId), orgId: ctx.orgId, productId })
+      : await db.collection(C.templates).findOne({ orgId: ctx.orgId, productId, key: str(args.key) });
+    if (!template) throw new Error("template not found");
+
+    const personId = str(args.person_id);
+    const person = personId
+      ? await db.collection(C.people).findOne({ _id: new ObjectId(personId), orgId: ctx.orgId })
+      : null;
+    const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId) });
+    const config = (product?.config ?? {}) as { website?: string; trialLinkTemplate?: string };
+    const site = (config.website ?? "https://example.com").replace(/\/$/, "");
+    const name = String(person?.name ?? "Priya Nair");
+    const id = person ? String(person._id) : "sample";
+
+    const vars = {
+      first_name: name.split(" ")[0] || "there",
+      full_name: name,
+      company: String(person?.companyDomain ?? "cloudnine.dev").split(".")[0] || "your team",
+      person_id: id,
+      trial_link: (config.trialLinkTemplate ?? `${site}/start?p={{person_id}}`).replace("{{person_id}}", id),
+      opt_out_url: `${site}/unsubscribe?p=${id}`,
+    };
+
+    const blocks = template.blocks as Record<string, unknown>[];
+    const rendered = renderTemplate(blocks, vars);
+    const constraints = template.constraints as { maxWords?: number; noClaims?: string[] } | undefined;
+    const check = validate(rendered, {
+      channelKey: String(template.channel),
+      maxWords: constraints?.maxWords,
+      noClaims: constraints?.noClaims,
+    });
+
+    const html =
+      String(template.channel) === "email" && String(template.format ?? "html") !== "text"
+        ? renderHtml(resolveBlocks(blocks, vars), await loadBrandKit(ctx.orgId, productId))
+        : undefined;
+
+    return {
+      template_id: String(template._id),
+      key: String(template.key),
+      rendered_for: person ? { person_id: id, name } : "sample lead",
+      format: String(template.format ?? "html"),
+      subject: rendered.subject ?? null,
+      preheader: rendered.preheader ?? null,
+      body_text: rendered.bodyMd,
+      word_count: rendered.wordCount,
+      would_send: check.ok,
+      hard_fails: check.hardFails,
+      soft_fails: check.softFails,
+      // Gmail clips past 102KB, so the number matters more than the markup does.
+      html_kb: html ? Math.round((html.length / 1024) * 10) / 10 : null,
+      html: args.include_html === true ? html ?? null : null,
+    };
+  },
+});
+
+// ── setup grooming ────────────────────────────────────────────────────────────
+
+/** The stage ladder a product's templates are measured against. */
+const TEMPLATE_LADDER = [
+  { key: "welcome", when: "the moment they arrive" },
+  { key: "activation_nudge", when: "day two, if they have not activated" },
+  { key: "value_proof", when: "day four, still cold" },
+  { key: "objection", when: "day seven, stalled" },
+  { key: "last_call", when: "day twelve, trial ending" },
+];
+
+TOOLS.push({
+  name: "setup_gaps",
+  description:
+    "What this product still needs before it can work, split into what you can finish yourself and what only a person can supply. Read-only.",
+  inputSchema: {
+    type: "object",
+    properties: { product_id: { type: "string" } },
+    required: ["product_id"],
+  },
+  async handler(args, ctx) {
+    const productId = await assertProduct(String(args.product_id), ctx);
+    const db = await getDb();
+    const s = { orgId: ctx.orgId, productId };
+
+    const [templates, goals, sources, channels, brandSources, kit] = await Promise.all([
+      db.collection(C.templates).find(s).project({ key: 1, channel: 1, status: 1, createdAt: 1 }).toArray(),
+      db.collection(C.goals).find(s).toArray(),
+      db.collection(C.sources).countDocuments({ ...s, enabled: true }),
+      db.collection(C.channels).countDocuments({ ...s, enabled: true }),
+      db.collection(C.brandSources).countDocuments(s),
+      db.collection(C.brandKits).findOne(s),
+    ]);
+
+    const haveKeys = new Set(templates.map((t) => String(t.key)));
+    const missingTemplates = TEMPLATE_LADDER.filter((rung) => !haveKeys.has(rung.key));
+    const branded = Object.keys((kit?.provenance ?? {}) as object).length > 0;
+
+    // Two piles, because they need two different responses: one is work, the other is a
+    // request. Mixing them produces a routine that nags about what it should have done.
+    const yours: Array<Record<string, string>> = [];
+    const theirs: Array<Record<string, string>> = [];
+
+    for (const rung of missingTemplates) {
+      yours.push({
+        gap: "missing_template",
+        key: rung.key,
+        detail: `No template for ${rung.key} — ${rung.when}.`,
+        fix: "upsert_template with status draft",
+      });
+    }
+    for (const goal of goals.filter((g) => !((g.checks ?? []) as unknown[]).length)) {
+      yours.push({
+        gap: "campaign_without_checks",
+        key: String(goal.key),
+        detail: `Campaign "${String(goal.name ?? goal.key)}" cannot tell whether anyone succeeded.`,
+        fix: "verifiers then set_checks",
+      });
+    }
+
+    if (!branded) {
+      theirs.push({
+        gap: "no_brand",
+        detail: brandSources
+          ? "A brand source exists but resolved nothing usable."
+          : "No brand kit, so every email goes out unstyled.",
+        fix: "Read the product website on the Brand page, or connect a brand provider.",
+      });
+    }
+    if (sources === 0) {
+      theirs.push({ gap: "no_source", detail: "No lead source, so nobody ever enters a campaign.", fix: "Upload a spreadsheet or connect a source." });
+    }
+    if (channels === 0) {
+      theirs.push({ gap: "no_channel", detail: "No channel can send, so nothing leaves the building.", fix: "Connect SMTP or a sending provider." });
+    }
+
+    // A draft is fine on the day it is written and a question a week later. A campaign
+    // with no createdAt predates drafting and is left alone rather than guessed about.
+    const stale = goals.filter(
+      (g) =>
+        g.enabled === false &&
+        g.createdAt instanceof Date &&
+        Date.now() - g.createdAt.getTime() > 5 * 86_400_000,
+    );
+    if (stale.length) {
+      theirs.push({
+        gap: "campaigns_never_started",
+        detail: `${stale.length} campaign${stale.length === 1 ? "" : "s"} drafted but never turned on: ${stale.map((g) => String(g.name ?? g.key)).join(", ")}.`,
+        fix: "Review and activate them, or delete them.",
+      });
+    }
+
+    return {
+      product_id: productId,
+      branded,
+      counts: { templates: templates.length, campaigns: goals.length, sources, channels },
+      ladder_covered: TEMPLATE_LADDER.filter((r) => haveKeys.has(r.key)).map((r) => r.key),
+      // What you can do now.
+      yours,
+      // What only a person can supply.
+      theirs,
+      gaps: yours.length + theirs.length,
+    };
+  },
+});
+
+TOOLS.push({
+  name: "notify_owner",
+  description:
+    "Raise one notification for the person who owns this product, for something only they can do. Repeats collapse into the existing unread row rather than stacking, so saying the same thing daily is harmless — and pointless.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      key: { type: "string", description: "Stable identifier for this concern, e.g. \"setup:no_source\"." },
+      title: { type: "string" },
+      body: { type: "string", description: "One short paragraph. Say what is blocked and what would unblock it." },
+      href: { type: "string", description: "Where in the console they should land." },
+    },
+    required: ["product_id", "key", "title", "body"],
+  },
+  async handler(args, ctx) {
+    const productId = await assertProduct(String(args.product_id), ctx);
+    const { notify } = await import("../../engine/notify.js");
+    const db = await getDb();
+    const key = `groom:${String(args.key)}`;
+
+    // Whether this is new is worth telling the caller: a routine that learns it already
+    // asked has no reason to spend a run rephrasing the same request.
+    const existing = await db
+      .collection(C.notifications)
+      .findOne({ orgId: ctx.orgId, productId, dedupeKey: key, readAt: null });
+
+    await notify({
+      orgId: ctx.orgId,
+      productId,
+      severity: "action",
+      title: String(args.title),
+      body: String(args.body),
+      href: str(args.href),
+      dedupeKey: key,
+    });
+
+    return {
+      raised: !existing,
+      dedupe_key: key,
+      note: existing
+        ? "already standing, unread — collapsed into the existing row"
+        : "notification raised",
+    };
+  },
+});
+
+// ── creating a product ────────────────────────────────────────────────────────
+
+TOOLS.push({
+  name: "add_product",
+  description:
+    "Create a product from what you read on its website, and lay the groundwork: it reads the brand off the same site and writes the deterministic starter templates. Follow it with upsert_template to improve those and draft_campaign to propose campaigns. Read the site before calling this — a config guessed without reading is worse than no config.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      slug: { type: "string", description: "Lower-case, hyphenated. Derived from the name if omitted." },
+      website: { type: "string" },
+      one_liner: { type: "string", description: "What it does, in the words the site uses." },
+      value_props: { type: "array", items: { type: "string" }, description: "Two to four. Concrete, not adjectives." },
+      activation: {
+        type: "object",
+        description: "What counts as activated — behaviour, not signup. An inactive trial converts far worse.",
+        properties: {
+          described_as: { type: "string" },
+          events: { type: "array", items: { type: "string" } },
+        },
+        required: ["described_as"],
+      },
+      segments: {
+        type: "array",
+        description: "Only those the page actually supports. Two real ones beat five invented.",
+        items: {
+          type: "object",
+          properties: {
+            key: { type: "string" },
+            name: { type: "string" },
+            detect: { type: "string", description: "How to recognise this person from enrichment." },
+            use_case: { type: "string" },
+            pain: { type: "string" },
+            objections: { type: "array", items: { type: "string" } },
+            preferred_channels: { type: "array", items: { type: "string" } },
+          },
+          required: ["key", "name", "detect", "use_case", "pain"],
+        },
+      },
+      voice: {
+        type: "object",
+        properties: {
+          tone: { type: "string" },
+          do: { type: "array", items: { type: "string" } },
+          dont: { type: "array", items: { type: "string" } },
+          reading_level: { type: "number" },
+        },
+        required: ["tone"],
+      },
+      forbidden_claims: { type: "array", items: { type: "string" }, description: "Anything the product cannot back up." },
+      trial_link: { type: "string", description: "Where a message sends someone. {{person_id}} is substituted." },
+    },
+    required: ["name", "website", "one_liner", "value_props", "activation", "voice"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const { productConfig } = await import("../../schemas/product.js");
+    const { generateDefaultTemplates } = await import("../../engine/templates.js");
+
+    const name = String(args.name);
+    const slug =
+      (str(args.slug) ?? name)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "product";
+
+    const existing = await db.collection(C.products).findOne({ orgId: ctx.orgId, slug });
+    if (existing) throw new Error(`a product with slug "${slug}" already exists — edit it rather than adding a second`);
+
+    const segments = ((args.segments ?? []) as Array<Record<string, unknown>>).map((segment) => ({
+      key: String(segment.key),
+      name: String(segment.name),
+      detect: String(segment.detect),
+      useCase: String(segment.use_case),
+      pain: String(segment.pain),
+      objections: (segment.objections ?? []) as string[],
+      preferredChannels: ((segment.preferred_channels ?? ["email"]) as string[]),
+    }));
+    const voice = args.voice as Record<string, unknown>;
+    const activation = args.activation as Record<string, unknown>;
+    const website = String(args.website).replace(/\/$/, "");
+
+    // Parsed here so a malformed config fails at the tool boundary, with the field named,
+    // rather than three days later inside a renderer.
+    const config = productConfig.parse({
+      website,
+      oneLiner: String(args.one_liner),
+      valueProps: args.value_props,
+      segments,
+      activation: { describedAs: String(activation.described_as), events: (activation.events ?? []) as string[] },
+      voice: {
+        tone: String(voice.tone),
+        do: (voice.do ?? []) as string[],
+        dont: (voice.dont ?? []) as string[],
+        readingLevel: typeof voice.reading_level === "number" ? voice.reading_level : 8,
+      },
+      constraints: { forbiddenClaims: (args.forbidden_claims ?? []) as string[] },
+      suggestedChannels: [{ key: "email", why: "Everyone has one, and it carries a real message.", priority: 1 }],
+      trialLinkTemplate: str(args.trial_link) ?? `${website}/start?p={{person_id}}`,
+    });
+
+    const productId = new ObjectId();
+    await db.collection(C.products).insertOne({
+      _id: productId,
+      orgId: ctx.orgId,
+      slug,
+      name,
+      config,
+      version: 1,
+      status: "active",
+      createdAt: new Date(),
+    });
+
+    // Brand and starter templates come free with the website. Neither is allowed to fail
+    // the creation: a product with no brand is plainer mail, not a broken product.
+    let branded = false;
+    try {
+      const { ensureWebsiteBrandSource, refreshBrandSource } = await import("../../engine/brand.js");
+      await ensureWebsiteBrandSource(ctx.orgId, String(productId));
+      const source = await db
+        .collection(C.brandSources)
+        .findOne({ orgId: ctx.orgId, productId: String(productId), kind: "css_vars" });
+      if (source) {
+        await refreshBrandSource(String(source._id));
+        branded = true;
+      }
+    } catch {
+      // Recorded on the brand source itself; the Brand page shows why.
+    }
+
+    const templates = await generateDefaultTemplates(ctx.orgId, String(productId), config);
+
+    return {
+      product_id: String(productId),
+      slug,
+      segments: segments.length,
+      brand_read: branded,
+      starter_templates: templates,
+      next: [
+        "get_brand, then upsert_template for the rest of the ladder — activation_nudge, value_proof, objection, last_call.",
+        "draft_campaign for four or five campaigns that suit this product.",
+        "setup_gaps to see what is left, then tell the person what is waiting on them.",
+      ],
+    };
+  },
+});
+
+TOOLS.push({
+  name: "draft_campaign",
+  description:
+    "Propose a campaign. It is created switched off, with whatever it still needs recorded on it, and never starts sending on its own — a person turns it on. Its verification plan is written later by the Plan routine.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      name: { type: "string" },
+      success_described: { type: "string", description: "What done looks like, in plain words. Behaviour, not signup." },
+      first_touch_template: { type: "string", description: "A template key that exists — welcome, activation_nudge, and so on." },
+      primary_channel: { type: "string", description: "Defaults to email." },
+      touches: { type: "number", description: "Whole budget, not a cautious fraction. Defaults to 9." },
+      days: { type: "number", description: "Defaults to 30." },
+      min_icp_fit: { type: "number", description: "0 to 1. Defaults to 0 — everyone." },
+      rationale: { type: "string", description: "Why this campaign is worth running for this product." },
+    },
+    required: ["product_id", "name", "success_described", "first_touch_template"],
+  },
+  async handler(args, ctx) {
+    const productId = await assertProduct(String(args.product_id), ctx);
+    const db = await getDb();
+
+    const name = String(args.name);
+    const key = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    if (!key) throw new Error("give the campaign a name that reduces to a key");
+
+    const templateKey = String(args.first_touch_template);
+    const template = await db.collection(C.templates).findOne({ orgId: ctx.orgId, productId, key: templateKey });
+    if (!template) throw new Error(`no template with key "${templateKey}" — write it with upsert_template first`);
+
+    const channel = str(args.primary_channel) ?? "email";
+    const [sources, channels] = await Promise.all([
+      db.collection(C.sources).countDocuments({ orgId: ctx.orgId, productId, enabled: true }),
+      db.collection(C.channels).countDocuments({ orgId: ctx.orgId, productId, enabled: true, key: channel }),
+    ]);
+
+    // Recorded on the campaign rather than left implicit, so the console can say what it
+    // is waiting for instead of showing a campaign that simply never does anything.
+    const needs: string[] = [];
+    if (sources === 0) needs.push("a lead source — nobody enters this campaign without one");
+    if (channels === 0) needs.push(`a working ${channel} channel — nothing can be sent`);
+    needs.push("a review, then switch it on");
+
+    await db.collection(C.goals).updateOne(
+      { orgId: ctx.orgId, productId, key },
+      {
+        $set: {
+          orgId: ctx.orgId,
+          productId,
+          key,
+          name,
+          entry: { expression: "lead_created", minIcpFit: Number(args.min_icp_fit ?? 0) },
+          success: { expression: "account_created", describedAs: String(args.success_described) },
+          failure: { conditions: ["unsubscribe", "hard_bounce", "explicit_no"], silenceDays: 30 },
+          budget: { touches: Number(args.touches ?? 9), days: Number(args.days ?? 30), usd: 12 },
+          allowedChannels: [channel],
+          checks: [],
+          needsVerificationPlan: true,
+          firstTouch: { templateKey, channels: [channel] },
+          schedule: { fetchEverySec: 600, tickEverySec: 600, bufferDepth: 3, approvalMode: "gate_on" },
+          cadenceByTemp: {
+            hot: { minGapDays: 2, maxGapDays: 4, maxAssetTier: "C" },
+            warm: { minGapDays: 2, maxGapDays: 3, maxAssetTier: "C" },
+            cold: { minGapDays: 1, maxGapDays: 2, maxAssetTier: "C" },
+            dead: { minGapDays: 999, maxGapDays: 999, maxAssetTier: "A" },
+          },
+          sourceIds: [],
+          // Off. A campaign that starts sending because a scheduled session decided it
+          // was ready is the worst surprise this system could produce.
+          enabled: false,
+          needs,
+          rationale: str(args.rationale),
+        },
+        $setOnInsert: { _id: new ObjectId(), createdAt: new Date() },
+      },
+      { upsert: true },
+    );
+
+    return { key, name, enabled: false, needs };
   },
 });

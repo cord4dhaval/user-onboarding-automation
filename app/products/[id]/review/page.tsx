@@ -3,6 +3,8 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { requireSession, scope } from "../../../tenant";
 import { decide } from "../../../actions";
+import { Check, CheckCheck, X } from "lucide-react";
+import { SubmitButton } from "../../../ui/kit";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +90,7 @@ export default async function Review({
               {held.map((a) => (
                 <input key={String(a._id)} type="hidden" name="ids" value={String(a._id)} />
               ))}
-              <button className="quiet" type="submit">Approve all {held.length} shown</button>
+              <SubmitButton variant="quiet" icon={<CheckCheck />} pendingLabel="Approving…">Approve all {held.length} shown</SubmitButton>
             </form>
           </>
         )}
@@ -140,8 +142,8 @@ export default async function Review({
                 <form action={decide} className="row">
                   <input type="hidden" name="productId" value={id} />
                   <input type="hidden" name="ids" value={String(action._id)} />
-                  <button name="decision" value="approve" type="submit" className="sm">Approve</button>
-                  <button name="decision" value="reject" type="submit" className="quiet sm">Reject</button>
+                  <SubmitButton name="decision" value="approve" size="sm" icon={<Check />} pendingLabel="Sending…">Approve</SubmitButton>
+                  <SubmitButton name="decision" value="reject" variant="quiet" size="sm" icon={<X />}>Reject</SubmitButton>
                 </form>
               </div>
 

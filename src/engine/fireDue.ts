@@ -1,7 +1,9 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { renderTemplate, toOutbound, type ComposedContent, type MergeVars } from "./compose.js";
+import { renderTemplate, resolveBlocks, toOutbound, type ComposedContent, type MergeVars } from "./compose.js";
+import { renderHtml } from "./html.js";
+import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
@@ -47,6 +49,11 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     blocked: [],
     failed: [],
   };
+
+  // One kit per run rather than one per message: it is the same document for every action
+  // in this product, and the send path must not turn into a query per recipient.
+  let kitMemo: ResolvedKit | undefined;
+  const brandKit = async () => (kitMemo ??= await loadBrandKit(opts.orgId, opts.productId));
 
   const due = await db
     .collection(C.actions)
@@ -128,8 +135,20 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const priorClaims = await priorClaimsFor(String(action.goalInstanceId));
       const constraints = template.constraints as { maxWords?: number; noClaims?: string[] } | undefined;
       const caps = channel.capabilities as
-        | { maxSubjectLength?: number; maxBodyLength?: number }
+        | { maxSubjectLength?: number; maxBodyLength?: number; html?: boolean }
         | undefined;
+
+      // The HTML part is frozen with the text, for the same reason: a brand refreshed
+      // between approval and send must not change a message a human already signed off.
+      // Three things have to agree before a message goes out designed: the template asks
+      // for it, the channel can carry it, and the channel is email.
+      const wantsHtml = String(template.format ?? "html") !== "text";
+      if (!content.bodyHtml && wantsHtml && String(action.channel) === "email" && caps?.html !== false) {
+        content.bodyHtml = renderHtml(
+          resolveBlocks(template.blocks as Record<string, unknown>[], vars, prior),
+          await brandKit(),
+        );
+      }
       const check = validate(content, {
         channelKey: String(action.channel),
         maxWords: constraints?.maxWords,

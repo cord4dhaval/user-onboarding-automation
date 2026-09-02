@@ -1,3 +1,4 @@
+import { CircleCheck, Pause, Play, Target } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
@@ -6,6 +7,7 @@ import { createGoal, deleteGoal, toggleGoal, updateGoal } from "../../../actions
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
 import ClaudeBadge from "../../../ui/claude-badge";
+import { ActionButton } from "../../../ui/kit";
 import GoalDrawer from "./goal-drawer";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +35,6 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
     db.collection(C.mcpBindings).find({ orgId }).toArray(),
     db.collection(C.channels).find({ ...s, enabled: true }).toArray(),
   ]);
-
-  const providerOf = (connectionId?: unknown) =>
-    connections.find((c) => String(c._id) === String(connectionId))?.provider;
 
   const audienceDocs = await db.collection(C.audiences).find(s).sort({ createdAt: -1 }).toArray();
   const audiences = await Promise.all(
@@ -80,21 +79,19 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
       goal: g,
       active: await db.collection(C.goalInstances).countDocuments({ ...s, goalKey: g.key, status: "active" }),
       done: await db.collection(C.goalInstances).countDocuments({ ...s, goalKey: g.key, status: "succeeded" }),
-      unplanned: await db
-        .collection(C.goalInstances)
-        .countDocuments({ ...s, goalKey: g.key, status: "active", currentPlanId: { $exists: false } }),
       feeding: sources.filter((src) => String(src.defaultGoalKey) === String(g.key)),
     })),
   );
+
+  const awaitingPlan = rows.filter(({ goal }) => checksOf(goal).length === 0).length;
 
   return (
     <>
       <div className="head">
         <div>
-          <h1>Goals</h1>
+          <h1>Campaigns</h1>
           <p className="sub" style={{ marginBottom: 0 }}>
-            A goal says what comes in, what happens the moment it does, what counts as done, and how often to
-            check.
+            Who comes in, what they get, and what counts as done.
           </p>
         </div>
         <div className="spacer" />
@@ -109,134 +106,119 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
         />
       </div>
 
-      {rows.some(({ goal }) => checksOf(goal).length === 0) && (
+      {awaitingPlan > 0 && (
         <div className="note">
-          <p style={{ marginBottom: 6 }}>
-            <strong>Some campaigns are still waiting on their verification plan.</strong> You chose where to
-            verify; working out which of that server&apos;s tools answer your success sentence is Claude&apos;s
-            part, and a browser cannot ask it directly. The Plan routine does it on its next run. Until then
-            those campaigns send normally — they just cannot mark anyone as succeeded.
+          <p style={{ margin: 0 }}>
+            <ClaudeBadge note="writing verification plans" />{" "}
+            {awaitingPlan === 1 ? "One campaign is" : `${awaitingPlan} campaigns are`} waiting on Claude to work
+            out which tools prove success. They send normally meanwhile — they just cannot mark anyone as
+            finished. The Plan routine handles it on its next run.
           </p>
-          <p className="sub" style={{ margin: 0 }}>
-            To do it now, paste this into a Claude session with the connector attached:
-          </p>
-          <pre style={{ margin: "8px 0 0" }}>
-{`Write the verification plans for product ${id}.
-Call sweep with scope "plan", then for each campaign under
-need_verification_plan: call verifiers, work out which tools answer its
-success sentence, and call set_checks.`}
-          </pre>
         </div>
       )}
 
       {rows.length === 0 ? (
         <div className="empty">
-          <strong>No goals yet</strong>
-          A goal takes leads from somewhere and drives them toward something. Create the first one above.
+          <strong>No campaigns yet</strong>
+          A campaign takes people from somewhere and drives them toward something.
         </div>
       ) : (
         <div className="tw scroll">
           <table>
             <thead>
               <tr>
-                <th>Goal</th><th>Done when</th><th>Verified by</th><th>First message</th>
-                <th>Input</th><th>State</th><th>People</th><th>Actions</th>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Comes from</th>
+                <th>Done when</th>
+                <th className="num">People</th>
+                <th />
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ goal, active, done, unplanned, feeding }) => {
+              {rows.map(({ goal, active, done, feeding }) => {
                 const sch = goal.schedule as { fetchEverySec: number; approvalMode: string };
                 const budget = goal.budget as { touches: number; days: number };
                 const ft = goal.firstTouch as { templateKey: string; channels: string[] };
                 const usable = channelKeys.some((k) => ft.channels.includes(k));
+                const paused = goal.enabled === false;
+                const checks = checksOf(goal);
 
                 return (
                   <tr key={String(goal._id)}>
                     <td>
                       <strong>{String(goal.name)}</strong>
-                      <div className="muted" style={{ fontSize: 12.5 }}><code>{String(goal.key)}</code></div>
+                      <div className="muted" style={{ fontSize: 12.5 }}>
+                        <code>{ft.templateKey}</code> via {ft.channels.join(" → ") || "no channel"}
+                      </div>
                     </td>
-                    <td>{String((goal.success as { describedAs: string }).describedAs)}</td>
+
                     <td>
-                      {checksOf(goal).length === 0 ? (
-                        <>
-                          {goal.verifyConnectionId ? (
-                            <>
-                              <span className="pill accent">{String(providerOf(goal.verifyConnectionId))}</span>
-                              <div style={{ marginTop: 4 }}>
-                                <ClaudeBadge note="choosing tools" />
-                              </div>
-                              <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
-                                You picked where to look. Claude works out which of its tools answer
-                                &ldquo;{String((goal.success as { describedAs: string }).describedAs)}&rdquo;.
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <ClaudeBadge note="no source chosen" />
-                              <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
-                                Nothing was picked to verify against, so nobody can be marked as succeeded.
-                              </div>
-                            </>
-                          )}
-                        </>
+                      {/* Running has to mean someone is actually in flight. Deciding it from
+                          configuration alone left a campaign whose people had all finished
+                          reporting itself as running with nobody in it. */}
+                      {paused ? (
+                        <span className="status"><span className="dot" /> Paused</span>
+                      ) : !usable ? (
+                        <span className="status"><span className="dot bad" /> No channel</span>
+                      ) : feeding.length === 0 ? (
+                        <span className="status"><span className="dot bad" /> No input</span>
+                      ) : active > 0 ? (
+                        <span className="status"><span className="dot ok" /> Running</span>
+                      ) : done > 0 ? (
+                        <span className="status" title="Everyone who entered has finished. It will pick up new leads as they arrive.">
+                          <span className="dot" /> Idle
+                        </span>
                       ) : (
-                        checksOf(goal).map((c) => (
-                          <div key={c.key} style={{ marginBottom: 2 }}>
-                            <span className="pill ok">{c.key}</span>
-                            <div className="muted" style={{ fontSize: 12 }}>
-                              <code>{c.tool}</code>
-                            </div>
-                          </div>
-                        ))
+                        <span className="status" title="Set up and waiting — nobody has entered it yet.">
+                          <span className="dot" /> Waiting for leads
+                        </span>
                       )}
+                      <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
+                        {budget.touches} msg · {budget.days}d
+                        <div>{sch.approvalMode === "gate_on" ? "review each" : "auto-send"}</div>
+                      </div>
                     </td>
-                    <td>
-                      <code>{ft.templateKey}</code>
-                      <div className="muted" style={{ fontSize: 12.5 }}>{ft.channels.join(" → ")}</div>
-                    </td>
+
                     <td>
                       {feeding.length === 0 ? (
-                        <span className="muted">none</span>
+                        <span className="muted">nothing yet</span>
                       ) : (
                         feeding.map((src) => (
                           <div key={String(src._id)} style={{ marginBottom: 3 }}>
-                            <span className={`pill ${src.enabled ? "ok" : ""}`}>{String(src.name)}</span>
+                            <strong style={{ fontSize: 13.5 }}>{String(src.name)}</strong>
                             <div className="muted" style={{ fontSize: 12 }}>
-                              {["mcp_source", "api_pull", "crm_sync"].includes(String(src.kind))
+                              {["mcp_source", "api_pull", "crm_sync", "audience"].includes(String(src.kind))
                                 ? `every ${Math.round(Number(src.effectiveIntervalSec ?? 600) / 60)}m`
-                                : "on arrival"}
+                                : "one off"}
                             </div>
                           </div>
                         ))
                       )}
                     </td>
-                    <td>
-                      {goal.enabled === false ? (
-                        <span className="status"><span className="dot" /> paused</span>
-                      ) : !usable ? (
-                        <span className="status"><span className="dot bad" /> no channel</span>
-                      ) : feeding.length === 0 ? (
-                        <span className="status"><span className="dot" /> no input</span>
-                      ) : (
-                        <span className="status"><span className="dot ok" /> running</span>
-                      )}
-                      <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
-                        {budget.touches} messages · {budget.days}d ·{" "}
-                        {sch.approvalMode === "gate_on" ? "review each" : "auto-send"}
+
+                    <td style={{ maxWidth: 260 }}>
+                      <div style={{ fontSize: 13.5 }}>
+                        {String((goal.success as { describedAs: string }).describedAs)}
                       </div>
-                      {unplanned > 0 && (
-                        <div style={{ marginTop: 5 }}>
-                          <ClaudeBadge note={`${unplanned} awaiting a plan`} />
-                        </div>
-                      )}
+                      <div style={{ marginTop: 4 }}>
+                        {checks.length > 0 ? (
+                          <span className="pill ok">
+                            <CircleCheck size={12} /> {checks.length} check{checks.length === 1 ? "" : "s"}
+                          </span>
+                        ) : (
+                          <ClaudeBadge note={goal.verifyConnectionId ? "choosing tools" : "no source picked"} />
+                        )}
+                      </div>
                     </td>
-                    <td className="num">
+
+                    <td className="num" style={{ whiteSpace: "nowrap" }}>
                       {active} active
                       <div className="muted">{done} done</div>
                     </td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      <div className="row">
+
+                    <td>
+                      <div className="row" style={{ flexWrap: "nowrap", justifyContent: "flex-end" }}>
                         <GoalDrawer
                           productId={id}
                           templateKeys={templateKeys}
@@ -251,34 +233,34 @@ success sentence, and call set_checks.`}
                             name: String(goal.name),
                             successDescribed: String((goal.success as { describedAs: string }).describedAs),
                             verifyConnectionId: goal.verifyConnectionId ? String(goal.verifyConnectionId) : undefined,
-                            verifyHint: goal.verifyHint ? String(goal.verifyHint) : undefined,
-                            allowedChannels: (goal.allowedChannels ?? []) as string[],
                             firstTouchTemplate: ft.templateKey,
                             primaryChannel: ft.channels[0] ?? "email",
-                            fallbackChannel: ft.channels[1],
                             touches: budget.touches,
                             days: budget.days,
                             approvalMode: sch.approvalMode,
                           }}
                         />
-                        <form action={toggleGoal.bind(null, id, String(goal.key), goal.enabled === false)}>
-                          <button className="quiet sm" type="submit">
-                            {goal.enabled === false ? "Resume" : "Pause"}
-                          </button>
-                        </form>
+                        <ActionButton
+                          variant="quiet"
+                          size="sm"
+                          icon={paused ? <Play /> : <Pause />}
+                          action={toggleGoal.bind(null, id, String(goal.key), paused)}
+                          aria-label={paused ? "Resume campaign" : "Pause campaign"}
+                          title={paused ? "Resume" : "Pause"}
+                        />
+                        <ConfirmButton
+                          title={`Delete "${String(goal.name)}"?`}
+                          body={
+                            <>
+                              This removes the campaign, its {active + done} run
+                              {active + done === 1 ? "" : "s"} and anything queued but not yet sent. Messages
+                              already delivered are kept — they are the record of what real people received.
+                            </>
+                          }
+                          confirmLabel="Delete campaign"
+                          action={deleteGoal.bind(null, id, String(goal.key))}
+                        />
                       </div>
-                      <ConfirmButton
-                        title={`Delete "${String(goal.name)}"?`}
-                        body={
-                          <>
-                            This removes the goal, its {active + done} run{active + done === 1 ? "" : "s"} and
-                            anything queued but not yet sent. Messages already delivered are kept — they are the
-                            record of what real people received.
-                          </>
-                        }
-                        confirmLabel="Delete goal"
-                        action={deleteGoal.bind(null, id, String(goal.key))}
-                      />
                     </td>
                   </tr>
                 );
@@ -286,6 +268,13 @@ success sentence, and call set_checks.`}
             </tbody>
           </table>
         </div>
+      )}
+
+      {rows.length > 0 && (
+        <p className="sub row" style={{ gap: 6 }}>
+          <Target size={14} /> {rows.length} campaign{rows.length === 1 ? "" : "s"} ·{" "}
+          {rows.reduce((n, r) => n + r.active, 0)} people in flight
+        </p>
       )}
     </>
   );

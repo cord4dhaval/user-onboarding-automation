@@ -7,17 +7,21 @@
    colour carries meaning rather than decoration; blue is the single brand colour
    and never stands in for a state. */
 :root {
-  --ground: #FFFFFF;
+  --ground: #F8F9FC;
   --surface: #FFFFFF;
-  --surface-2: #F5F6F8;
-  --surface-3: #ECEEF1;
-  --ink: #101114;
-  --ink-2: #565C66;
-  --ink-3: #8A9099;
-  --rule: #E6E8EC;
-  --rule-soft: #F0F1F4;
-  --accent: #2C5CFF;
-  --accent-soft: #EDF1FF;
+  --surface-2: #EFF1F7;
+  --surface-3: #E4E8F2;
+  --ink: #0D1220;
+  --ink-2: #4E566B;
+  --ink-3: #828AA0;
+  --rule: #E2E6F0;
+  --rule-soft: #EFF1F7;
+  /* A navy this deep needs no split in light mode — 8.3:1 as text on the ground and
+     8.7:1 behind white as a fill, so --accent and --accent-fill are the same value.
+     They separate again on the dark ground, where a navy that dark disappears. */
+  --accent: #1E40AF;
+  --accent-fill: #1E40AF;
+  --accent-soft: #E8EDFB;
   --accent-ink: #FFFFFF;
   --hot: #E5342B;
   --warm: #B87503;
@@ -29,7 +33,7 @@
   --cold-soft: #EAF2F7;
   --good-soft: #E2F4EC;
   --bad-soft: #FCE8EE;
-  --shadow: 0 1px 2px rgba(16, 17, 20, .05), 0 10px 28px -20px rgba(16, 17, 20, .25);
+  --shadow: 0 1px 2px rgba(13, 18, 32, .05), 0 10px 28px -20px rgba(13, 18, 32, .28);
 
   --r-sm: 5px;
   --r: 8px;
@@ -41,18 +45,22 @@
    the two. An explicit light choice must still beat a dark OS. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ground: #0E0F12;
-    --surface: #0E0F12;
-    --surface-2: #17191E;
-    --surface-3: #1F222899;
-    --ink: #EDEEF1;
-    --ink-2: #A5ABB5;
-    --ink-3: #71777F;
-    --rule: #23262C;
-    --rule-soft: #1A1D22;
-    --accent: #6E90FF;
-    --accent-soft: #161D33;
-    --accent-ink: #0A0C14;
+    --ground: #0A0E1A;
+    --surface: #101626;
+    --surface-2: #161D30;
+    --surface-3: #1D2540;
+    --ink: #EDEFF6;
+    --ink-2: #9BA3B8;
+    --ink-3: #6B7387;
+    --rule: #1E2536;
+    --rule-soft: #151A28;
+    /* Text and fill separate here: #1E40AF is 2.2:1 against this ground, so links
+       take a lighter step and the fill takes the deepest navy that still clears the
+       3:1 boundary rule for a control. */
+    --accent: #6B8AFF;
+    --accent-fill: #3B62E8;
+    --accent-soft: #141B33;
+    --accent-ink: #FFFFFF;
     --hot: #FF6B5E;
     --warm: #E8A33D;
     --cold: #6FA8C0;
@@ -67,18 +75,22 @@
   }
 }
 :root[data-theme="dark"] {
-  --ground: #0E0F12;
-  --surface: #0E0F12;
-  --surface-2: #17191E;
-  --surface-3: #1F222899;
-  --ink: #EDEEF1;
-  --ink-2: #A5ABB5;
-  --ink-3: #71777F;
-  --rule: #23262C;
-  --rule-soft: #1A1D22;
-  --accent: #6E90FF;
-  --accent-soft: #161D33;
-  --accent-ink: #0A0C14;
+  --ground: #0A0E1A;
+  --surface: #101626;
+  --surface-2: #161D30;
+  --surface-3: #1D2540;
+  --ink: #EDEFF6;
+  --ink-2: #9BA3B8;
+  --ink-3: #6B7387;
+  --rule: #1E2536;
+  --rule-soft: #151A28;
+  /* Text and fill separate here: #1E40AF is 2.2:1 against this ground, so links
+     take a lighter step and the fill takes the deepest navy that still clears the
+     3:1 boundary rule for a control. */
+  --accent: #6B8AFF;
+  --accent-fill: #3B62E8;
+  --accent-soft: #141B33;
+  --accent-ink: #FFFFFF;
   --hot: #FF6B5E;
   --warm: #E8A33D;
   --cold: #6FA8C0;
@@ -137,17 +149,33 @@ code {
 
 /* ── shell ────────────────────────────────────────────────────────────────── */
 .app { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 100vh; }
-@media (max-width: 860px) { .app { grid-template-columns: 1fr; } }
+/* One column, and the nav row takes only the height it needs — a stretched grid row would
+   leave a screen-height gap above the page. */
+@media (max-width: 860px) { .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; } }
 
+/* No rule between the sidebar, the header and the page. One unbroken surface reads as a
+   single app; three panes stitched together with hairlines read as three. Structure comes
+   from the active pill, the type scale and whitespace instead. */
 .side {
-  border-right: 1px solid var(--rule);
   background: var(--ground);
   display: flex; flex-direction: column; gap: 2px;
   padding: 14px 10px;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
+/* Under the breakpoint the sidebar becomes one scrolling strip of the same items, rather
+   than a block of wrapped links that pushes the page half a screen down. */
 @media (max-width: 860px) {
-  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .side {
+    position: sticky; top: 0; height: auto; z-index: 21;
+    flex-direction: row; flex-wrap: nowrap; align-items: center;
+    overflow-x: auto; overflow-y: hidden; padding: 9px 14px;
+    scrollbar-width: none;
+  }
+  .side::-webkit-scrollbar { display: none; }
+  .side .group { display: none; }
+  .side a { white-space: nowrap; padding: 7px 11px; }
+  .side .brand { padding: 0 12px 0 0 !important; }
+  .side .foot { margin-top: 0; padding-top: 0; }
 }
 .side .group {
   font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .12em;
@@ -164,22 +192,32 @@ code {
   margin-left: auto; font-family: var(--font-mono), monospace; font-size: 11px;
   background: var(--warm-soft); color: var(--warm); padding: 1px 6px; border-radius: 999px;
 }
-.side .foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--rule-soft); }
+.side .foot { margin-top: auto; padding-top: 12px; }
+.side svg { flex: none; opacity: .8; }
+.side a[aria-current="page"] svg { opacity: 1; }
 
 .topbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 11px 22px; border-bottom: 1px solid var(--rule);
+  padding: 12px 26px;
   background: var(--ground); position: sticky; top: 0; z-index: 20;
 }
 .topbar .spacer { margin-left: auto; }
 .brand {
+  display: inline-flex; align-items: center;
   font-family: var(--font-display), sans-serif; font-variation-settings: "wdth" 90;
   font-weight: 800; letter-spacing: -.03em; font-size: 16px; color: var(--ink); text-decoration: none;
 }
+.side .brand svg { color: var(--accent); opacity: 1; }
 .brand:hover { text-decoration: none; }
 .crumb { color: var(--ink-3); }
 
-.page { padding: 26px 22px 80px; max-width: 1180px; }
+.app > div { min-width: 0; }
+.page { padding: 26px 26px 80px; max-width: 1180px; }
+@media (max-width: 860px) {
+  .page { padding: 20px 16px 60px; }
+  .topbar { padding: 10px 16px; }
+  .head { flex-wrap: wrap; }
+}
 
 /* ── surfaces ─────────────────────────────────────────────────────────────── */
 .card {
@@ -271,12 +309,27 @@ input[aria-invalid="true"] { border-color: var(--bad); }
 textarea { font-family: var(--font-mono), monospace; font-size: 12.5px; min-height: 92px; }
 
 button {
-  font: inherit; font-size: 14px; font-weight: 600; padding: 9px 16px;
-  border-radius: var(--r-sm); border: 1px solid var(--accent);
-  background: var(--accent); color: var(--accent-ink); cursor: pointer; align-self: flex-start;
+  font: inherit; font-size: 14px; font-weight: 600; padding: 9px 15px;
+  border-radius: var(--r-sm); border: 1px solid var(--accent-fill);
+  background: var(--accent-fill); color: var(--accent-ink); cursor: pointer; align-self: flex-start;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  white-space: nowrap; transition: background 90ms ease, color 90ms ease, filter 90ms ease;
 }
 button:hover { filter: brightness(1.06); }
 button:disabled { opacity: .55; cursor: default; filter: none; }
+/* A button waiting on the server must not look identical to one nobody has pressed. */
+button[aria-busy="true"] { opacity: .85; cursor: progress; }
+.spin { animation: spin 700ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Icon size is a property of the control, not of the call site. Every icon is passed as a
+   bare element and sized here, so no page has to remember a pixel value. */
+button svg, .btn svg, .tabs a svg { width: 15px; height: 15px; flex: none; }
+button.sm svg, .btn.sm svg { width: 13.5px; height: 13.5px; }
+.side a svg { width: 16px; height: 16px; }
+.status svg, .pill svg, .label svg, .sub svg, .claude-badge svg { flex: none; }
+.pill svg, .sub svg { width: 13px; height: 13px; }
+li.status { list-style: none; }
 button.ghost { background: transparent; color: var(--accent); }
 button.ghost:hover { background: var(--accent-soft); filter: none; }
 button.quiet { background: transparent; border-color: var(--rule); color: var(--ink-2); }
@@ -467,3 +520,493 @@ label.check input { width: auto; }
 
 /* Filters read as pills, so they must not look like inert labels. */
 a.pill:hover { text-decoration: none; filter: brightness(1.06); }
+
+/* ── shared page furniture ─────────────────────────────────────────────────── */
+
+/* Title on the left, the actions that belong to it on the right. Buttons scattered
+   down a page make it unclear which one applies to what. */
+.page-head { display: flex; gap: 18px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head h1 { margin: 0 0 4px; }
+.page-head .sub { margin: 0; }
+.page-head > .row { flex-shrink: 0; }
+
+.section-head { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 26px 0 4px; }
+.section-head h2 { margin: 0; }
+.section-head + .sub { margin-top: 0; }
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-bottom: 14px;
+  text-decoration: none;
+}
+.back:hover { color: var(--ink); text-decoration: none; }
+
+/* Identity line under a title: key, channel, scope. Reads as one sentence of facts. */
+.meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-3); margin: 0; }
+.meta > span:not(.pill)::before, .meta > a::before { content: "·"; margin-right: 8px; color: var(--rule); }
+.meta code { font-size: 12px; }
+
+.toolbar { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
+.toolbar label.inline { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink-3); margin: 0; }
+
+/* Two panes on a wide screen, stacked on a narrow one. The editor is unusable in one
+   column on a laptop and unusable in two on a phone. */
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; align-items: start; }
+@media (max-width: 1100px) { .split { grid-template-columns: minmax(0, 1fr); } }
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+
+.stat-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-3); margin: 10px 0 0; }
+
+.hint { display: block; font-size: 12px; color: var(--ink-3); margin-top: 4px; line-height: 1.45; font-weight: 400; }
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 6px; vertical-align: middle; }
+
+/* Anchors that must read as buttons beside real ones. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  border-radius: var(--r-sm);
+  padding: 7px 13px;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.btn:hover { filter: brightness(1.06); text-decoration: none; }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.ghost:hover { background: var(--accent-soft); filter: none; }
+.btn.sm { font-size: 12.5px; padding: 5px 10px; }
+
+/* ── tables ────────────────────────────────────────────────────────────────── */
+
+.strong-link { font-weight: 600; color: var(--ink); text-decoration: none; }
+.strong-link:hover { color: var(--accent); }
+.cell-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+.cell-wide { max-width: 380px; }
+.cell-wide strong { display: block; font-size: 13.5px; }
+
+.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* ── block stack ───────────────────────────────────────────────────────────── */
+
+.blocks { list-style: none; margin: 0 0 14px; padding: 0; border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
+
+.block-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--rule-soft);
+}
+.block-row:first-child { border-top: 0; }
+.block-row:hover { background: var(--surface-2); }
+
+.block-kind { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+/* One line, always. A block whose text wraps turns the stack into a wall and hides the
+   order, which is the one thing this list exists to show. */
+.block-summary { font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.block-actions { display: flex; gap: 2px; align-items: center; }
+.block-actions form { display: contents; }
+
+/* ── drawer internals ──────────────────────────────────────────────────────── */
+
+.drawer-foot { display: flex; gap: 8px; padding-top: 6px; position: sticky; bottom: 0; background: var(--surface); }
+
+/* The add-block menu: one tap target per type, each saying what it is for. */
+.pick { display: grid; gap: 6px; }
+.pick form { display: contents; }
+.pick-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+}
+.pick-label { font-weight: 600; color: var(--ink); font-size: 13.5px; }
+.pick-hint { font-size: 12px; color: var(--ink-3); font-weight: 400; }
+
+/* Radio group rendered as cards, so the choice is a click on the description rather than
+   on a 12px circle beside it. */
+.choices { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+.choices legend { font-size: 12.5px; color: var(--ink-3); margin-bottom: 6px; padding: 0; }
+.choice {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  padding: 11px 13px;
+  cursor: pointer;
+  margin: 0;
+}
+.choice:hover { background: var(--surface-2); }
+.choice.on { border-color: var(--accent); background: var(--accent-soft); }
+.choice input { width: auto; margin-top: 2px; }
+.choice-icon { color: var(--ink-3); margin-top: 1px; }
+.choice.on .choice-icon { color: var(--accent); }
+.choice strong { display: block; font-size: 13.5px; }
+
+/* ── preview ───────────────────────────────────────────────────────────────── */
+
+.preview-panel { display: block; }
+.preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+
+/* Segmented control. Switching preview mode is a view change, not navigation, so it must
+   not look like a link or cost a round trip. */
+.seg { display: inline-flex; gap: 2px; background: var(--surface-2); padding: 3px; border-radius: var(--r); }
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  padding: 5px 11px;
+  border-radius: var(--r-sm);
+}
+.seg button:hover:not(:disabled) { color: var(--ink); background: var(--surface-3); filter: none; }
+.seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+.seg button:disabled { opacity: .4; }
+
+.preview-frame { width: 100%; height: 620px; border: 0; display: block; background: #fff; }
+.preview-frame.tall { height: 700px; }
+.preview .preheader { font-size: 12.5px; margin-top: 3px; }
+
+/* ── brand ─────────────────────────────────────────────────────────────────── */
+
+.swatches { margin: 6px 0 14px; }
+.swatch { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); }
+.swatch .chip { width: 22px; height: 22px; border-radius: var(--r-sm); border: 1px solid var(--rule); display: inline-block; }
+
+.facts { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; margin: 0; }
+.facts > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; padding: 9px 13px; background: var(--surface); }
+.facts dt { font-size: 12.5px; color: var(--ink-3); }
+.facts dd { margin: 0; font-size: 13.5px; color: var(--ink); }
+
+.brand-cue { margin-bottom: 20px; }
+.brand-cue strong { display: block; color: var(--ink); margin-bottom: 5px; }
+.brand-cue p { margin: 0 0 10px; }
+
+/* ── tabs ─────────────────────────────────────────────────────────────────────
+   Sections of one page, not separate destinations. Pages that were split across the
+   sidebar purely because they were long are folded back together under these. */
+.tabs {
+  display: inline-flex; gap: 3px; flex-wrap: wrap;
+  background: var(--surface-2); padding: 4px; border-radius: var(--r);
+  margin: 0 0 26px;
+}
+.tabs a {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 15px; border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 500; line-height: 1.2;
+  color: var(--ink-2); text-decoration: none; white-space: nowrap;
+}
+.tabs a:hover { background: var(--surface-3); color: var(--ink); text-decoration: none; }
+.tabs a.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+.tabs a.on:hover { background: var(--surface); }
+.tabs a svg { width: 15px; height: 15px; flex: none; }
+.tab-count {
+  font-family: var(--font-mono), monospace; font-size: 11px;
+  background: var(--warm-soft); color: var(--warm); padding: 1px 7px; border-radius: 999px;
+}
+
+/* ── instructions ─────────────────────────────────────────────────────────────
+   Numbered setup that somebody follows with one hand on the keyboard. Steps need room
+   between them and full-strength text — a grey, tightly packed list reads as fine print
+   and gets skipped, which is how a routine ends up half configured. */
+.steps { counter-reset: step; list-style: none; margin: 0 0 22px; padding: 0; max-width: 74ch; }
+.steps > li {
+  counter-increment: step;
+  position: relative; padding: 0 0 0 38px; margin-bottom: 14px;
+  font-size: 14.5px; line-height: 1.6; color: var(--ink-2);
+}
+.steps > li:last-child { margin-bottom: 0; }
+.steps > li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 1px;
+  width: 24px; height: 24px; border-radius: 999px;
+  background: var(--surface-2); color: var(--ink-3);
+  font-family: var(--font-mono), monospace; font-size: 11.5px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+}
+.steps strong { color: var(--ink); }
+
+/* A row of conditions, each of which must be legible on its own. Wrapped inline text
+   runs them together into one sentence that reads as a single claim. */
+.checks { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 10px; }
+.checks .status { font-size: 13.5px; gap: 8px; }
+
+/* ── data visualisation ───────────────────────────────────────────────────────
+   One series hue, validated against both surfaces (light #2C5CFF, dark #3987e5 —
+   both clear the lightness band, chroma floor and 3:1 contrast). The status hues
+   stay reserved for status and are never spent on a series.
+
+   The funnel ramp is ordinal, not categorical: one hue, monotone lightness, and the
+   step nearest the surface still clears 2:1 — so intensity grows with the stage in
+   both modes rather than flipping meaning when the theme does. */
+:root {
+  --viz-1: #2B4CB8;
+  --viz-1-soft: #E6EBFA;
+  --viz-grid: #E6E9F2;
+  --viz-step-1: #93A9E6;
+  --viz-step-2: #6683D8;
+  --viz-step-3: #3B5CC4;
+  --viz-step-4: #223E92;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --viz-1: #4A6FF0;
+    --viz-1-soft: #121A33;
+    --viz-grid: #1B2233;
+    --viz-step-1: #2C4189;
+    --viz-step-2: #3D57AE;
+    --viz-step-3: #4F6FD6;
+    --viz-step-4: #6B8AFF;
+  }
+}
+:root[data-theme="dark"] {
+  --viz-1: #4A6FF0;
+  --viz-1-soft: #121A33;
+  --viz-grid: #1B2233;
+  --viz-step-1: #2C4189;
+  --viz-step-2: #3D57AE;
+  --viz-step-3: #4F6FD6;
+  --viz-step-4: #6B8AFF;
+}
+
+.viz { position: relative; width: 100%; }
+.viz svg { display: block; overflow: visible; }
+.viz-grid { stroke: var(--viz-grid); stroke-width: 1; stroke-dasharray: 2 4; }
+.viz-axis { stroke: var(--rule); stroke-width: 1; }
+.viz-bar { fill: var(--viz-1); opacity: .82; transition: opacity 90ms ease; }
+.viz-bar.on { opacity: 1; }
+/* Text wears text tokens; the mark beside it carries the identity. */
+.viz-peak {
+  fill: var(--ink-2); font-family: var(--font-mono), monospace;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.viz-tick {
+  fill: var(--ink-3); font-family: var(--font-mono), monospace;
+  font-size: 10.5px; letter-spacing: .04em;
+}
+.viz-tip {
+  position: absolute; top: -6px; transform: translateX(-50%);
+  background: var(--ink); color: var(--ground);
+  font-size: 12px; padding: 4px 9px; border-radius: var(--r-sm);
+  white-space: nowrap; pointer-events: none; z-index: 5;
+}
+.viz-tip strong { font-variant-numeric: tabular-nums; }
+.viz-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  margin: 0; font-size: 13px; color: var(--ink-3);
+}
+
+.spark { width: 100%; height: 30px; }
+.spark svg { display: block; }
+.spark-line { fill: none; stroke: var(--viz-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.spark-area { fill: var(--viz-1-soft); stroke: none; }
+.spark-dot { fill: var(--viz-1); }
+
+.funnel { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.funnel li { display: grid; grid-template-columns: 130px minmax(0, 1fr) 44px; gap: 12px; align-items: center; }
+.funnel-label { font-size: 13.5px; color: var(--ink); display: flex; flex-direction: column; }
+.funnel-hint { font-size: 11.5px; color: var(--ink-3); }
+.funnel-track { background: var(--surface-2); border-radius: 999px; height: 10px; overflow: hidden; }
+.funnel-fill { display: block; height: 100%; border-radius: 999px; }
+.funnel-value { font-size: 13.5px; color: var(--ink-2); text-align: right; }
+@media (max-width: 560px) { .funnel li { grid-template-columns: 96px minmax(0, 1fr) 36px; } }
+
+/* ── tooltip ──────────────────────────────────────────────────────────────── */
+.tip-wrap { position: relative; display: inline-flex; }
+.tip-trigger { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
+.tip {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 60;
+  background: var(--ink); color: var(--ground);
+  font-size: 12px; font-weight: 400; line-height: 1.45; letter-spacing: 0;
+  padding: 6px 10px; border-radius: var(--r-sm);
+  width: max-content; max-width: 240px; text-align: left; pointer-events: none;
+  text-transform: none;
+}
+.tip-top { bottom: calc(100% + 7px); }
+.tip-bottom { top: calc(100% + 7px); }
+
+/* ── popover ──────────────────────────────────────────────────────────────── */
+.pop-wrap { position: relative; display: inline-flex; }
+.pop-trigger {
+  background: none; border: 0; padding: 0; margin: 0; color: inherit; font: inherit;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 5px; align-self: auto;
+}
+.pop-trigger:hover { filter: none; color: var(--ink); }
+.pop {
+  position: absolute; top: calc(100% + 8px); z-index: 50;
+  background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r);
+  box-shadow: var(--shadow); padding: 13px 15px;
+  display: flex; flex-direction: column; gap: 7px;
+  font-size: 13px; font-weight: 400; color: var(--ink-2); line-height: 1.55; text-align: left;
+}
+.pop-start { left: 0; }
+.pop-end { right: 0; }
+.pop-title {
+  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.pop-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.pop-row .num { color: var(--ink); font-size: 13.5px; }
+
+/* ── toasts ───────────────────────────────────────────────────────────────── */
+.toasts {
+  position: fixed; bottom: 20px; right: 20px; z-index: 80;
+  display: flex; flex-direction: column; gap: 9px; max-width: 360px;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--ground); border: 1px solid var(--rule); border-left: 3px solid var(--ink-3);
+  border-radius: var(--r); box-shadow: var(--shadow);
+  padding: 12px 14px; font-size: 13.5px;
+  opacity: 1;
+  animation: toast-in 160ms ease-out;
+}
+/* Transform only. A tab that is throttled or occluded can freeze an animation on its
+   first frame, and a toast frozen at opacity 0 is a toast that never arrived. */
+@keyframes toast-in { from { transform: translateY(10px); } to { transform: none; } }
+.toast.good { border-left-color: var(--good); }
+.toast.good > svg { color: var(--good); }
+.toast.bad { border-left-color: var(--bad); }
+.toast.bad > svg { color: var(--bad); }
+.toast.info > svg { color: var(--accent); }
+.toast > svg { flex: none; margin-top: 1px; }
+.toast > div { flex: 1; min-width: 0; }
+.toast-body { color: var(--ink-3); font-size: 12.5px; margin-top: 1px; }
+.toast-close {
+  background: none; border: 0; padding: 2px; color: var(--ink-3); cursor: pointer;
+  align-self: flex-start;
+}
+.toast-close:hover { color: var(--ink); filter: none; background: none; }
+
+/* ── metric tile ──────────────────────────────────────────────────────────── */
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); margin-bottom: 22px; }
+.tile {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  padding: 14px 15px 10px; display: flex; flex-direction: column; gap: 2px;
+}
+.tile-top { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.tile-top .label { margin: 0; }
+.tile-top svg { color: var(--ink-3); }
+.tile-value {
+  font-family: var(--font-display), sans-serif; font-variation-settings: "wdth" 94;
+  font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.tile-foot { display: flex; align-items: flex-end; gap: 10px; margin-top: 2px; }
+.tile-delta {
+  font-family: var(--font-mono), monospace; font-size: 11.5px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 3px; padding-bottom: 4px;
+}
+.tile-delta.up { color: var(--good); }
+.tile-delta.down { color: var(--bad); }
+.tile-delta.flat { color: var(--ink-3); }
+.tile-foot .spark { flex: 1; min-width: 0; }
+
+/* ── panel ────────────────────────────────────────────────────────────────── */
+.panels { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; margin-bottom: 24px; }
+@media (max-width: 900px) { .panels { grid-template-columns: minmax(0, 1fr); } }
+.panel {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  padding: 15px 17px 13px;
+}
+.panel > header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.panel > header h3 { margin: 0; font-size: 14.5px; }
+.panel > header .spacer { margin-left: auto; }
+
+/* ── alerts ───────────────────────────────────────────────────────────────── */
+/* No overflow clip: a popover anchored inside a row has to be able to leave it. The
+   corners are rounded on the end rows instead. */
+.alerts { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: var(--r-lg); margin-bottom: 22px; }
+.alert-row:first-child { border-radius: 11px 11px 0 0; }
+.alert-row:last-child { border-radius: 0 0 11px 11px; }
+.alert-row:only-child { border-radius: 11px; }
+.alert-row { display: flex; align-items: center; gap: 11px; padding: 11px 15px; background: var(--surface); font-size: 13.5px; }
+.alert-row svg { flex: none; }
+.alert-row.warn svg { color: var(--warm); }
+.alert-row.bad svg { color: var(--bad); }
+.alert-row .spacer { margin-left: auto; }
+
+/* ── routines ──────────────────────────────────────────────────────────────── */
+
+.note.good { border-left-color: var(--good); }
+.note.warn { border-left-color: var(--warm); }
+.note .tight { margin: 8px 0 0; }
+.note > .tight:first-child { margin: 0; }
+
+.routine { margin-bottom: 14px; }
+.routine-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.routine-head h3 { margin: 0; font-size: 16px; }
+.routine-head .spacer { margin-left: auto; }
+.routine-state { font-size: 13.5px; margin-bottom: 12px; }
+.routine-state .muted { font-size: 13px; }
+.routine-state a { font-size: 13px; }
+.routine-job { margin: 0 0 12px; }
+
+/* What the routine actually did last Tuesday, in three lines. A paragraph describing
+   three cases reads as none of them, which is why this is a list. */
+.routine-example { background: var(--surface-2); border-radius: var(--r); padding: 12px 14px; margin-bottom: 12px; }
+.routine-example .label { margin: 0 0 6px; }
+.routine-example ul { margin: 0; padding-left: 18px; }
+.routine-example li { font-size: 13px; line-height: 1.6; color: var(--ink-2); margin-bottom: 4px; }
+.routine-example li:last-child { margin-bottom: 0; }
+
+.routine details summary { cursor: pointer; font-size: 13px; color: var(--ink-3); }
+.routine details summary:hover { color: var(--ink); }
+.prompt-box { margin-top: 10px; }
+.prompt-box pre { white-space: pre-wrap; margin-top: 8px; }
+
+.steps li .hint { margin-top: 2px; }
+
+/* ── add product ───────────────────────────────────────────────────────────── */
+
+.page.narrow { max-width: 880px; margin: 0 auto; }
+.topbar .email { font-size: 13px; }
+
+/* The recommended path, marked as one. Two options presented identically is a decision
+   the reader has to make with no information. */
+.lead-path {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--r);
+  padding: 14px;
+  margin-bottom: 18px;
+}
+.lead-path strong { display: block; font-size: 14px; }
+.lead-path .hint { margin-top: 3px; }
+.lead-icon { color: var(--accent); margin-top: 1px; }
+
+.manual-form { margin-top: 14px; }
+details > summary { cursor: pointer; font-size: 13px; color: var(--ink-3); }
+details > summary:hover { color: var(--ink); }

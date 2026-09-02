@@ -1,4 +1,6 @@
 import { createConnection, probeAuth, startOAuth } from "../../../../actions";
+import { Plug, Search, ShieldCheck } from "lucide-react";
+import { SubmitButton } from "../../../../ui/kit";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +33,7 @@ export default async function NewConnection({
           Server URL
           <input name="serverUrl" type="url" placeholder="https://mcp.teamgrid.ai/mcp" defaultValue={probed} required />
         </label>
-        <button type="submit" className="ghost">Check</button>
+        <SubmitButton variant="ghost" icon={<Search />} pendingLabel="Checking…">Check</SubmitButton>
       </form>
 
       {probed && (
@@ -83,7 +85,7 @@ export default async function NewConnection({
             Client secret <span className="muted">(only if the provider issued one)</span>
             <input name="clientSecret" type="password" placeholder="usually not needed" />
           </label>
-          <button type="submit">Authorise with OAuth</button>
+          <SubmitButton icon={<ShieldCheck />} pendingLabel="Redirecting…">Authorise with OAuth</SubmitButton>
         </form>
       </div>
 
@@ -100,7 +102,7 @@ export default async function NewConnection({
             <input name="serverUrl" type="url" defaultValue={probed} placeholder="https://mcp.teamgrid.ai/mcp" required />
           </label>
           <label>Access token<input name="token" type="password" placeholder="bearer token" required /></label>
-          <button type="submit">Connect with token</button>
+          <SubmitButton icon={<Plug />} pendingLabel="Connecting…">Connect with token</SubmitButton>
         </form>
       </div>
 

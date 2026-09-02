@@ -77,6 +77,24 @@ jobs:
 TICK_URL=https://your-app.vercel.app/api/cron/tick npm run scheduler
 ```
 
+## Testing a recurring input
+
+A spreadsheet arrives once and an MCP server carries live data, so the "API + token" input
+is the one kind that cannot be checked by hand: it only proves itself when people appear
+between two polls. `/api/test/leads` is a fake CRM that does exactly that — it releases one
+demo lead every `every` seconds, plus-addressed off one mailbox so real sends all land in
+your own inbox.
+
+```bash
+npm run dev
+npm run test:api -- --to=you@gmail.com --every=60   # wire the input, pull once
+npm run test:api -- --pull                          # a few minutes later: the new ones
+```
+
+The pull runs the same `runSource` the cron tick and the MCP tool call, so a green summary
+here means those paths are green too. `--reset` clears the demo people and starts over.
+Set `TEST_FEED_TOKEN` on any deployment — unset, the feed accepts any token.
+
 ## Two clocks, two jobs
 
 The engine clock above is deterministic and needs no model. Separately, an hourly Claude

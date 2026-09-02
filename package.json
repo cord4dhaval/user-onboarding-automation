@@ -14,6 +14,7 @@
     "start": "next start",
     "seed:teamgrid": "tsx --env-file=.env src/scripts/seed-teamgrid.ts",
     "test:live": "tsx --env-file=.env src/scripts/live-test.ts",
+    "test:api": "tsx --env-file=.env src/scripts/test-api-source.ts",
     "scheduler": "tsx --env-file=.env src/scripts/scheduler.ts",
     "seed:demo": "tsx --env-file=.env src/scripts/seed-demo.ts",
     "adopt": "tsx --env-file=.env src/scripts/adopt-connections.ts"
@@ -22,6 +23,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "lucide-react": "^1.39.0",
     "mongodb": "^6.10.0",
     "next": "^15.5.24",
     "nodemailer": "^9.1.0",

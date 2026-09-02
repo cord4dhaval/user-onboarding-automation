@@ -1,252 +1,172 @@
 # Branded HTML email
 
-Status: planned, not implemented. Written 2026-09-01.
+Status: built. Last updated 2026-09-01.
 
-HTML is the default rendering for email; plain text remains as the alternative part of
-the same message rather than a second code path. Making that worth doing requires the
-brand's actual visual identity — logo, palette, type scale, button shape — which the
-system does not hold today. This document describes where that data comes from, who
-renders it, and what Claude is allowed to touch.
+HTML is the default rendering for email; the plain-text part ships alongside it in the
+same message rather than as a second code path. Making that worth doing needs the tenant's
+actual visual identity — logo, palette, type scale, button shape — which the system now
+holds as a brand kit assembled from one or more sources.
 
-## What exists today
+Nothing here introduces a new mechanism. Brand is a third instance of the pattern the
+codebase already uses twice, for leads coming in and messages going out:
 
-- `OutboundMessage.bodyHtml` is already declared in `src/adapters/channel/types.ts` and
-  already passed through by `SmtpAdapter.send` (`src/adapters/channel/smtp.ts`). Nothing
-  ever sets it — `toOutbound` in `src/engine/compose.ts` returns text only.
-- `discover.ts` already infers an `html` capability from a send tool's argument names, so
-  the gate for "this channel cannot do HTML" is in place and unused.
-- Template blocks are semantic (`subject`, `text`, `slot`, `cta`, `asset`, `system`), with
-  no design information in them. This is correct and should stay that way — design comes
-  from the brand kit at render time, not from stored markup.
-- `product.config.voice` covers verbal brand. There is no equivalent for visual brand.
+| layer | leads in | messages out | brand in |
+| --- | --- | --- | --- |
+| auth | connection `direction: "in"` | `"out"` | `"brand"` |
+| transport | `SourceAdapter` | `ChannelAdapter` | `BrandAdapter` |
+| shape | `source.fieldMap` | `mcpBinding.bind` | `brandSource.tokenMap` |
+| resolve | `buildAdapter` in `runSource.ts` | `resolveChannelAdapter` | `buildAdapter` in `brand.ts` |
+| normalised store | `people` | `actions` | `brand_kits` |
+| clock | tick, `nextFetchAt` | tick, `fireDue` | tick, `nextFetchAt` |
 
-## 1. Brand as a third connection direction
+The engine contains no provider-aware code. A second brand provider is a row in
+`brand_sources` plus a token map, exactly as a second lead source is a row plus a field
+map.
 
-A brand provider is neither a lead source nor a send channel, so `directions` grows a
-third value:
+## Where the values come from
 
-```ts
-// src/schemas/connection.ts
-directions: z.array(z.enum(["in", "out", "brand"])).min(1),
-```
+`src/adapters/brand/` holds four adapters behind one interface:
 
-Discovery gets a matching verb so the existing binding machinery can find the tool
-whatever the provider happened to name it:
+| kind | input | who it serves |
+| --- | --- | --- |
+| `css_vars` | fetches a public page, reads custom properties, `theme-color`, fonts, touch icon | anyone with a website and no account anywhere |
+| `http_tokens` | GET JSON | Style Dictionary output, a W3C token file, an in-house brand API |
+| `mcp_brand` | `invoke(client, bind, "fetch_brand", …)` | any MCP server exposing a brand tool |
+| `manual` | typed into the overrides form | correcting one value, or a tenant with no machine-readable brand at all |
 
-```ts
-// src/mcp/discover.ts — candidatesFor patterns
-fetch_brand: /brand|style|identity|design.?token|palette|theme|kit/i,
-```
+`css_vars` is the one that makes the empty state honest. The product config already holds
+a website, so a tenant who has connected nothing still sends mail in their own colours; a
+dedicated brand provider is an upgrade on that, never a precondition for it.
 
-BrandGrid is the expected first provider (its `get_brand_style` tool returns the whole
-sheet in one call), but nothing in the engine names it. Any MCP server exposing a brand
-tool binds the same way, which keeps the "a new provider is data, not code" claim intact.
+Several sources coexist. Each stores its own resolved fragment on itself, and
+`rebuildKit` deep-merges them in ascending `precedence` over `DEFAULT_KIT`. So a palette
+can come from a provider while the logo comes from a CDN and one hex is corrected by hand,
+and a provider going down degrades its own contribution instead of blanking the brand.
+Hand-typed values sit at precedence 90, above anything fetched, so a refresh can never
+overwrite a decision somebody made on purpose.
 
-## 2. Cache the kit; never fetch it at send time
+### Token maps
 
-A first touch fires within seconds of a lead landing. It cannot wait on a third-party MCP
-round trip, and it must still render if that server is down. So the kit is snapshotted
-into its own collection on connect and on explicit refresh, and the send path reads only
-the snapshot.
-
-Add `brandKits: "brand_kits"` to `src/db/collections.ts`, and a schema:
-
-```ts
-// src/schemas/brand.ts (new)
-export const brandKit = z.object({
-  orgId: objectIdString,
-  productId: objectIdString,
-  /** Absent when the kit was entered by hand rather than pulled from a provider. */
-  connectionId: objectIdString.optional(),
-  source: z.enum(["mcp", "human", "default"]),
-  logo: z.object({
-    light: z.string().url(),
-    dark: z.string().url().optional(),
-    width: z.number().int().default(120),
-    alt: z.string(),
-  }).optional(),
-  color: z.object({
-    bg: z.string(),
-    surface: z.string(),
-    text: z.string(),
-    muted: z.string(),
-    border: z.string(),
-    accent: z.string(),
-    accentText: z.string(),
-    /** Two or three stops for a gradient CTA; empty means a flat accent button. */
-    gradient: z.array(z.string()).default([]),
-  }),
-  darkColor: z.object({ /* same keys */ }).partial().optional(),
-  font: z.object({
-    /** Both stacks must end in a websafe family — a web font is a bonus, never a dependency. */
-    headingStack: z.string(),
-    bodyStack: z.string(),
-    baseSize: z.number().default(16),
-    scale: z.array(z.number()).default([32, 24, 18, 16, 14]),
-  }),
-  shape: z.object({
-    radius: z.number().default(12),
-    buttonRadius: z.number().default(999),
-  }),
-  footer: z.object({
-    legalName: z.string(),
-    address: z.string().optional(),
-    social: z.array(z.object({ label: z.string(), url: z.string().url() })).default([]),
-    disclaimer: z.string().optional(),
-  }),
-  fetchedAt: z.date(),
-  toolsHash: z.string().optional(),
-});
-```
-
-Fetching reuses `invoke` from `src/mcp/binding.ts`, so there is no new transport code:
+`mapTokens` applies a source's map, resolving each right-hand side with `pluck` from
+`mcp/binding.ts` — brand payloads are nested where lead rows are flat, which is the only
+difference from `mapRecord` in ingest.
 
 ```ts
-// src/engine/brand.ts (new)
-const raw = await invoke(client, binding.bind, "fetch_brand", { productId });
-const kit = normalizeBrand(raw);
-await db.collection(C.brandKits).updateOne({ orgId, productId }, { $set: kit }, { upsert: true });
+// a brand MCP
+{ "color.accent": "$.brand.colors.primary", "logo.light": "$.brand.assets.logoLight.url" }
+// a W3C token file, same code
+{ "color.accent": "$.color.brand.500.$value", "font.headingStack": "$.font.display.$value" }
 ```
 
-`normalizeBrand` is the only provider-aware function in the system: it maps whatever the
-server returns (CSS custom properties, a design-token JSON file, a flat palette object)
-onto the schema above. A missing key falls back to the neutral default kit. It never
-throws and never blocks a send — an unbranded email is a worse email, not a failed one.
+A source with no map yet falls back to `guessKit`, which looks for the handful of names
+every brand system uses. That is what makes a provider useful on the first click, before
+Claude has written a map for it.
 
-## 3. Rendering
+Everything crossing that boundary is coerced per field: a colour that will not parse, a
+relative logo URL, a font stack containing markup — all dropped, with the default standing.
+A half-mapped provider produces a plainer email, never a schema error at send time. Font
+stacks additionally get `Helvetica, Arial, sans-serif` appended when they name no generic
+family, because mail clients have no webfonts.
 
-`renderTemplate` keeps its job: it produces the semantic `ComposedContent` that
-`validate()`, the word count, and the claim ledger all depend on. HTML is a second,
-purely additive pass over the same blocks.
+Reading a website is a server-side fetch of a user-supplied URL, so `assertPublicUrl`
+refuses loopback and private ranges before any request is made.
 
-```ts
-// src/engine/html.ts (new)
-export function renderHtml(
-  blocks: Block[],
-  vars: MergeVars,
-  brand: BrandKit,
-  content: ComposedContent,
-): string
-```
+## Rendering
 
-Constraints are enforced in this function rather than left to a model:
+`resolveBlocks` in `compose.ts` applies merge fields and composed copy and returns a list
+of resolved blocks. Both renderers read that list — `renderTemplate` joins it into the
+text part, `renderHtml` wraps it in tables — so the two parts of a message cannot drift.
+That matters because validation runs against the text.
 
-- 600px centred `<table role="presentation">` layout. No flex, no grid, no external
-  stylesheet. One `<head>` block only, for the dark-mode media query and the Outlook
-  conditional.
-- Every colour is inlined from `brand.color`. Nothing is hardcoded.
-- The CTA renders as a gradient `background-image` over a solid `background-color`, with a
-  VML fallback for Outlook. Outlook gets a flat accent button, which still looks
-  deliberate.
-- Font stacks always end in `Arial, sans-serif`.
-- `@media (prefers-color-scheme: dark)` swaps to `brand.darkColor` when it is present.
-- `opt_out_block` renders as a real footer built from `brand.footer` — legal name,
-  address, unsubscribe link. This is the CAN-SPAM and GDPR requirement, not decoration.
-- Total output stays under 100KB or Gmail clips the message.
+`src/engine/html.ts` holds the design decisions, fixed in code rather than left to a
+model: 600px centred table layout, one accent, a real type scale with tight display
+leading, generous vertical rhythm, a single button, a footer that says who is writing.
+Also: inline styles only, a `prefers-color-scheme` block with a derived dark palette when
+the brand supplies none, a VML `roundrect` so Outlook shows a real button, a gradient
+`background-image` over a solid `background-color`, and a hidden preheader with trailing
+filler so the client cannot pad the inbox preview with the greeting.
 
-### Block types to add later
+Everything is escaped before any markup is added, and only a small markdown subset —
+bold, italic, links, line breaks — is re-introduced. Nothing a model writes can emit a tag.
 
-The four existing content block types are enough to ship. Once the renderer is verified
-in real clients, the union can grow to cover the layouts marketing email actually uses.
-Every added type needs a plain-text degrade in `renderTemplate` so the markdown path stays
-honest.
+A representative message renders at roughly 9KB; Gmail clips past 102KB, and both the
+editor and `preview_template` report the size.
 
-```ts
-z.object({ type: z.literal("heading"), slot: z.string(), fallback: z.string().optional(), level: z.number().default(1) }),
-z.object({ type: z.literal("list"), style: z.enum(["bullet", "strike", "check"]), items: z.array(z.string()) }),
-z.object({ type: z.literal("card"), title: z.string().optional(), rows: z.array(z.object({ label: z.string(), value: z.string() })) }),
-z.object({ type: z.literal("divider") }),
-```
+### Blocks
 
-A `strike` list is the "we cannot do any of this for you" pattern; a `card` is the
-spec-sheet box. Both are structure, and both take their appearance from the kit.
+`subject`, `preheader`, `heading`, `text`, `slot`, `list` (bullet, tick, struck through),
+`card`, `callout`, `divider`, `image`, `cta`, `system`. Blocks carry no styling — that is
+what lets one template look right for every tenant and lets a brand refresh restyle every
+template without touching one of them. Every type degrades to text, so the markdown part
+stays honest.
 
-Preview text — the snippet the inbox shows next to the subject — is a hidden div
-immediately after `<body>`. It deserves its own slot block eventually; after the subject
-line it is the largest open-rate lever available.
+Slots may be named, which lets one template hold several independently written sections.
+An unnamed slot keeps the original behaviour of taking the composed body wholesale, and
+only the first one does.
 
-### Wiring it in
+### The freeze rule
 
-```ts
-// src/engine/compose.ts
-export function toOutbound(content, to, from?, html?: string): OutboundMessage {
-  return { to, from, subject: content.subject, bodyText: content.bodyMd, bodyHtml: html };
-}
-```
+`fireDue` ships an approved message exactly as it was reviewed. HTML derived at send time
+would break that: a brand refreshed between approval and send would change the message
+after a human signed off on it. So `bodyHtml` is rendered at the moment the text is, stored
+inside `action.content`, and reused thereafter. The kit is loaded once per run rather than
+once per recipient.
 
-```ts
-// src/engine/fireDue.ts — after validate(), before adapter.send()
-const caps = channel.capabilities as { html?: boolean } | undefined;
-const brand = await loadBrandKit(opts.orgId, opts.productId);
-const html =
-  caps?.html !== false && String(action.channel) === "email"
-    ? renderHtml(template.blocks as Block[], vars, brand, content)
-    : undefined;
-const outbound = toOutbound(content, email, channel.from as string | undefined, html);
-```
+`capabilities.html` gates the whole thing. A channel whose send tool has no HTML argument
+is inferred as `html: false` by `discover.ts` and gets text only, with no configuration.
 
-Text is always sent alongside. Nodemailer already emits `text` and `html` as a multipart
-alternative, so "plain text as an option" costs nothing and needs no separate path. An MCP
-channel whose send tool has no HTML argument is inferred as `html: false` by
-`discover.ts` and degrades automatically.
-
-## 4. What Claude does, and what it must not
+## What Claude does, and what it must not
 
 **Claude never writes HTML.** It writes structure and copy; the engine writes the markup.
-That boundary removes the injection surface, keeps Outlook from breaking, and makes brand
-drift impossible.
+That removes the injection surface, keeps Outlook from breaking, and makes brand drift
+impossible.
 
-Three tools to add to `src/mcp/server/tools.ts`:
-
-| Tool | Purpose |
+| tool | purpose |
 | --- | --- |
-| `get_brand` | Returns the cached kit, so copy is written to fit the design — a short headline because the heading scale starts at 32px, an offer that reads against the accent colour. |
-| `upsert_template` | Creates and versions block arrays. The comment at the top of `src/engine/templates.ts` already promises this tool exists; it does not yet. |
-| `preview_template` | Renders blocks plus brand to HTML and returns a signed preview URL, so Claude can check its own work before a human sees it. |
+| `get_brand` | The resolved kit and where each value came from, including whether the product is branded at all. A headline written for a 34px display face is a different sentence from one written for a paragraph. |
+| `upsert_template` | Creates or replaces a template. Blocks are validated against the schema at the tool boundary, so a malformed block fails here rather than per-message hours later. Replacing blocks bumps the version — the old numbers were collected against different words. |
+| `preview_template` | Renders exactly as the engine would, for a real person or a sample one, and returns validation plus the HTML size. |
 
-`compose_batch` is unchanged. Its `body` argument stays markdown, filling the `slot`
-blocks; layout continues to come from the template. That separation is what lets Claude
-improve copy on every sweep without touching the design.
+`compose_batch` is unchanged: `body` stays markdown and fills the slots, so Claude improves
+copy on every sweep without touching layout. The improvement loop then closes on machinery
+that already existed — `template.stats` carries alpha/beta, `report` exposes the outcome,
+`upsert_template` writes the next version, and the `product_default` → `segment` →
+`person_override` cascade routes it.
 
-The improvement loop then closes on machinery that already exists: `template.stats`
-carries `alpha`/`beta`, `report` exposes the outcome, `upsert_template` writes a v2, and
-the existing `product_default` → `segment` → `person_override` cascade routes it.
+## The interface
 
-## 5. Surfacing the missing kit
-
-An account with no brand connection is not broken, it is not set up yet — the same
-distinction `ClaudeBadge` exists to draw. A `BrandBadge` in `app/ui/brand-badge.tsx`
-mirrors it: when a kit is present it shows the source, and when it is absent it explains
-that mail is going out unstyled and offers the two steps to fix it — create a BrandGrid
-account, then connect the MCP server.
-
-`app/products/[id]/connections/new/page.tsx` already reads a probed URL out of
-`searchParams` and uses it as the field's `defaultValue`, so the badge can link straight
-there with `?serverUrl=…` prefilled and connecting becomes Check, then authorise.
-
-The badge belongs on the templates page, the channels page, and the product overview.
-
-## Implementation order
-
-1. `src/schemas/brand.ts`, `brandKits` in `collections.ts`, the `"brand"` direction, and
-   the `fetch_brand` pattern in `discover.ts`.
-2. `src/engine/brand.ts` — `loadBrandKit`, `refreshBrandKit`, `DEFAULT_KIT`, `normalizeBrand`.
-3. `src/engine/html.ts`, supporting the four existing content block types only. Ship it and
-   verify in Gmail, Outlook, and Apple Mail before going further.
-4. Wire `fireDue` and `toOutbound`, gated on `capabilities.html`.
-5. Extend the block union with `heading`, `list`, `card`, `divider`, each with a text degrade.
-6. Add `get_brand`, `upsert_template`, `preview_template`.
-7. Add `BrandBadge` and a "Refresh brand" server action beside it.
-
-Steps 1–4 alone put brand-coloured HTML on every send. Steps 5–7 are what let Claude
-design rather than only write.
+- **Brand** (`/products/[id]/brand`) — live preview of a sample message in the resolved
+  kit, the palette with provenance, the source list with health, forms for each source
+  kind, and the overrides form.
+- **Templates** — create, duplicate and delete, with each row linking to its editor.
+- **Template editor** (`/products/[id]/templates/[tid]`) — per-block forms, reorder,
+  add and remove, a live HTML preview beside a plain-text toggle, validation, and the
+  constraint settings. New templates start as drafts; a draft is never picked by the
+  cascade.
+- **`BrandBadge`** — the same job `ClaudeBadge` does for queued work: the difference
+  between "broken" and "not set up yet". With no kit it offers reading the website first,
+  then a provider account, then the generic connect-an-MCP route. The suggested provider
+  is configuration (`BRAND_PROVIDER_NAME`, `BRAND_PROVIDER_SIGNUP_URL`,
+  `BRAND_PROVIDER_MCP_URL`), so an unset deployment advertises nothing.
 
 ## Things that will bite
 
-- The logo must be an absolute hosted URL. Gmail strips both CID attachments and data
-  URIs. If the brand provider hosts the asset, use its URL directly.
+- The logo must be an absolute hosted URL. Gmail strips CID attachments and data URIs
+  alike, and the coercion drops anything relative rather than sending a broken image.
+- A website guess deliberately never uses `og:image` as a logo — that is a 1200×630 social
+  card, and putting one at the top of an email looks like a mistake. A square touch icon is
+  used when present; otherwise the renderer sets the legal name as a wordmark.
 - `validate()` runs against markdown, not HTML. Keep it that way — word counts and claim
-  checks stay meaningful only against the semantic form.
-- A brand refresh must version templates, never mutate mail already sent. `action.content`
-  is frozen at send time today, so the history stays accurate as long as the HTML pass
-  remains derived rather than stored.
+  checks are only meaningful against the semantic form.
+- Deleting a template is refused while a touch is still queued against it, because queued
+  mail renders from its template at send time.
+- A brand refresh must never mutate mail already sent. It does not: `action.content` is
+  frozen at send time and now carries its own HTML.
+
+## Not built
+
+- Per-brand webfont delivery. Deliberate — mail clients do not load them reliably and the
+  fallback stack is what actually renders.
+- A visual block designer with drag and drop. The editor reorders with buttons, which
+  works without client-side state.
+- Litmus-style client screenshots. Worth adding once a real tenant is sending volume.

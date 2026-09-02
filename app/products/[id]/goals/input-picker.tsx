@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Globe, Plug, Upload, Users } from "lucide-react";
+import type { ReactNode } from "react";
 
 export interface ToolChoice {
   value: string;
@@ -8,13 +10,6 @@ export interface ToolChoice {
   likely: boolean;
 }
 
-type InputType = "audience" | "mcp" | "api" | "file" | "none";
-
-/**
- * Only the fields belonging to the chosen input are rendered. Showing all three at once
- * asks the reader to work out which ones apply, and leaves empty fields in the payload
- * that look like they were skipped rather than never asked for.
- */
 export interface AudienceChoice {
   id: string;
   name: string;
@@ -22,6 +17,20 @@ export interface AudienceChoice {
   kind: string;
 }
 
+type InputType = "audience" | "mcp" | "api" | "file";
+
+const SOURCES: Array<{ key: InputType; label: string; icon: ReactNode }> = [
+  { key: "audience", label: "Audience", icon: <Users /> },
+  { key: "mcp", label: "MCP tool", icon: <Plug /> },
+  { key: "api", label: "API", icon: <Globe /> },
+  { key: "file", label: "File", icon: <Upload /> },
+];
+
+/**
+ * Only the fields belonging to the chosen input are rendered. Showing all four at once
+ * asks the reader to work out which ones apply, and leaves empty fields in the payload
+ * that look like they were skipped rather than never asked for.
+ */
 export default function InputPicker({
   productId,
   toolChoices,
@@ -33,32 +42,26 @@ export default function InputPicker({
 }) {
   const [type, setType] = useState<InputType>(audiences.length ? "audience" : "mcp");
   // An audience is re-checked on a schedule just like a pull, so it needs an interval.
-  const recurring = type === "mcp" || type === "api" || type === "audience";
+  const recurring = type !== "file";
 
   return (
     <>
-      <h3 style={{ fontSize: 15, margin: "20px 0 0" }}>Where leads come from</h3>
-      <p className="sub" style={{ margin: "2px 0 0" }}>
-        A file arrives once. An MCP tool or an API is polled on an interval you set.
-      </p>
-
-      <label>
-        Input
-        <select name="inputType" value={type} onChange={(e) => setType(e.target.value as InputType)}>
-          <option value="audience">Audience from the library</option>
-          <option value="mcp">MCP tool — recurring</option>
-          <option value="api">API endpoint + token — recurring</option>
-          <option value="file">Spreadsheet upload — one off</option>
-          <option value="none">None for now</option>
-        </select>
-      </label>
-
-      {type !== "none" && (
-        <label>
-          Input name
-          <input name="inputName" placeholder="TeamGrid CRM leads" />
-        </label>
-      )}
+      <div>
+        <div className="label" style={{ marginBottom: 6 }}>Who comes in</div>
+        <input type="hidden" name="inputType" value={type} />
+        <div className="segmented">
+          {SOURCES.map((src) => (
+            <button
+              key={src.key}
+              type="button"
+              className={type === src.key ? "on" : undefined}
+              onClick={() => setType(src.key)}
+            >
+              {src.icon} {src.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {type === "audience" && (
         <label>
@@ -71,15 +74,15 @@ export default function InputPicker({
               </option>
             ))}
           </select>
-          {audiences.length === 0 ? (
-            <span className="muted" style={{ fontSize: 13 }}>
-              <a href={`/products/${productId}/audiences`}>Build one</a> from your library first.
-            </span>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>
-              A dynamic audience keeps feeding this campaign as people become eligible.
-            </span>
-          )}
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            {audiences.length === 0 ? (
+              <>
+                <a href={`/products/${productId}/library?tab=audiences`}>Build one</a> from your library first.
+              </>
+            ) : (
+              "A dynamic audience keeps feeding this campaign as people become eligible."
+            )}
+          </span>
         </label>
       )}
 
@@ -90,12 +93,12 @@ export default function InputPicker({
             {toolChoices.length === 0 && <option value="">— no discovered tools —</option>}
             {toolChoices.map((t) => (
               <option key={t.value} value={t.value}>
-                {t.likely ? `${t.label}  ★` : t.label}
+                {t.likely ? `★ ${t.label}` : t.label}
               </option>
             ))}
           </select>
           {toolChoices.length === 0 && (
-            <span className="muted" style={{ fontSize: 13 }}>
+            <span className="muted" style={{ fontSize: 12.5 }}>
               <a href={`/products/${productId}/connections`}>Connect a server</a> and run Discover tools first.
             </span>
           )}
@@ -112,40 +115,27 @@ export default function InputPicker({
             Bearer token
             <input name="apiToken" type="password" placeholder="token" />
           </label>
-          <label>
-            Cursor parameter <span className="muted">(optional — how it resumes)</span>
-            <input name="cursorParam" placeholder="updated_since" />
-          </label>
         </>
       )}
 
       {type === "file" && (
         <label>
-          File <span className="muted">(.xlsx or .csv — columns are read from the header row)</span>
+          Spreadsheet <span className="muted">— .xlsx or .csv, columns read from the header row</span>
           <input name="file" type="file" accept=".xlsx,.xls,.csv" />
         </label>
       )}
 
       {recurring && (
-        <div className="grid">
-          <label>
-            Check every
-            <select name="fetchEverySec" defaultValue="600">
-              <option value="300">5 minutes</option>
-              <option value="600">10 minutes</option>
-              <option value="1800">30 minutes</option>
-              <option value="3600">1 hour</option>
-              <option value="86400">1 day</option>
-            </select>
-          </label>
-          <label>
-            Urgency
-            <select name="triggerMode" defaultValue="batch">
-              <option value="realtime">Real time — first message goes out immediately</option>
-              <option value="batch">Batch — wait for a civil hour where they are</option>
-            </select>
-          </label>
-        </div>
+        <label>
+          Check for new people
+          <select name="fetchEverySec" defaultValue="600">
+            <option value="300">Every 5 minutes</option>
+            <option value="600">Every 10 minutes</option>
+            <option value="1800">Every 30 minutes</option>
+            <option value="3600">Every hour</option>
+            <option value="86400">Once a day</option>
+          </select>
+        </label>
       )}
     </>
   );

@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
+import { LogOut, Settings, Zap } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { getProduct, requireSession } from "../../tenant";
 import { logOut } from "../../auth-actions";
 import ThemeToggle from "../../theme";
 import Notifications from "../../ui/notifications";
+import { SubmitButton } from "../../ui/kit";
+import { ToastProvider } from "../../ui/toast";
 import Nav from "./nav";
 
 export const dynamic = "force-dynamic";
@@ -39,12 +42,17 @@ export default async function ProductLayout({
   ]);
 
   return (
+    <ToastProvider>
     <div className="app">
       <aside className="side">
-        <a className="brand" href="/products" style={{ padding: "4px 10px 12px" }}>Engine</a>
+        <a className="brand" href="/products" style={{ padding: "4px 10px 14px", gap: 8 }}>
+          <Zap size={17} strokeWidth={2.5} /> Engine
+        </a>
         <Nav productId={id} counts={{ review }} />
         <div className="foot">
-          <a href={`/products/${id}/settings`}>Settings</a>
+          <a href={`/products/${id}/settings`}>
+            <Settings size={16} /> Settings
+          </a>
         </div>
       </aside>
 
@@ -68,12 +76,13 @@ export default async function ProductLayout({
           <ThemeToggle />
           <span className="muted" style={{ fontSize: 13 }}>{session.email}</span>
           <form action={logOut}>
-            <button className="quiet sm" type="submit">Sign out</button>
+            <SubmitButton variant="quiet" size="sm" icon={<LogOut />} aria-label="Sign out" />
           </form>
         </header>
 
         <main className="page">{children}</main>
       </div>
     </div>
+    </ToastProvider>
   );
 }

@@ -31,6 +31,39 @@ export interface VerifySummary {
   skipped: Array<{ campaign: string; reason: string }>;
 }
 
+/**
+ * Whether the tool answered about what we asked about.
+ *
+ * Providers routinely accept a scoping argument, ignore it, and answer about the caller's
+ * own account instead — usually because the parameter needs a privilege the token does not
+ * have. The response says so, by echoing back the scope it actually used. Nobody was
+ * reading it, so a check meant to ask "is this lead in their own org" quietly asked "does
+ * my org have anyone in it" and passed for everybody.
+ *
+ * A mismatch is recorded as evidence rather than treated as a failure: a provider that
+ * resolves a name to an id also echoes something different, and that one is fine.
+ */
+export function scopeEchoMismatches(
+  sent: Record<string, unknown>,
+  payload: unknown,
+): Array<{ arg: string; sent: string; echoed: string }> {
+  if (!payload || typeof payload !== "object") return [];
+  const top = payload as Record<string, unknown>;
+  const out: Array<{ arg: string; sent: string; echoed: string }> = [];
+
+  for (const [name, value] of Object.entries(sent)) {
+    const echoed = top[name];
+    if (echoed === undefined || echoed === null) continue;
+    const a = String(value).trim().toLowerCase();
+    const b = String(echoed).trim().toLowerCase();
+    if (!a || a === b) continue;
+    // One containing the other is a provider tidying our input, not ignoring it.
+    if (a.includes(b) || b.includes(a)) continue;
+    out.push({ arg: name, sent: String(value), echoed: String(echoed) });
+  }
+  return out;
+}
+
 /** Resolves "$person.email" style references against the person being checked. */
 function resolveArgs(args: Record<string, string>, person: Document, since: Date): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -192,8 +225,10 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
 
       const token = await resolveSecret(orgId, check.connectionId, "engine.verify");
       const client = new McpClient(String(connection.serverUrl), token, await schemasFor(check.connectionId));
-      const payload = await client.callTool(check.tool, resolveArgs(check.args, person, since));
+      const sentArgs = resolveArgs(check.args, person, since);
+      const payload = await client.callTool(check.tool, sentArgs);
 
+      const mismatches = scopeEchoMismatches(sentArgs, payload);
       const passed = evaluateAssertion(check.assert, payload);
       ranAny = true;
 
@@ -203,9 +238,25 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
         tool: check.tool,
         at: new Date(),
         engineReading: passed,
+        // What we asked for, so a reader can see the scope alongside the answer.
+        args: sentArgs,
+        ...(mismatches.length ? { scopeMismatch: mismatches } : {}),
         // Trimmed: a probe is evidence, not an archive, and some tools return a lot.
         response: JSON.parse(JSON.stringify(payload ?? null)),
       };
+
+      if (mismatches.length) {
+        await db.collection(C.events).insertOne({
+          _id: new ObjectId(),
+          orgId,
+          productId: String(instance.productId),
+          personId: String(instance.personId),
+          source: "system",
+          type: "check_scope_mismatch",
+          payload: { check: check.key, tool: check.tool, mismatches },
+          ts: new Date(),
+        });
+      }
 
       if (passed === null) {
         // Ambiguous. Recorded so a person or Claude can look, never guessed either way.

@@ -8,6 +8,7 @@ import { verifyDue } from "@/engine/verify.js";
 import { resolveChannelAdapter } from "@/engine/adapters.js";
 import { closeIdleRuns, recordEngineRun } from "@/engine/runlog.js";
 import { checkRoutineHealth } from "@/engine/routines.js";
+import { refreshBrandSource } from "@/engine/brand.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -52,6 +53,27 @@ export async function GET(request: NextRequest) {
         .collection(C.sources)
         .updateOne({ _id: source._id }, { $set: { health: { status: "degraded", error: message } } });
       report.push({ source: String(source.name), error: message });
+    }
+  }
+
+  // Brand refresh rides the same clock but on its own interval — a palette changes a few
+  // times a year, so a due check that almost always finds nothing costs almost nothing.
+  const dueBrand = await db
+    .collection(C.brandSources)
+    .find({
+      enabled: true,
+      $or: [{ nextFetchAt: { $lte: now } }, { nextFetchAt: { $exists: false } }],
+    })
+    .limit(5)
+    .toArray();
+
+  for (const source of dueBrand) {
+    try {
+      await refreshBrandSource(String(source._id));
+    } catch (err) {
+      // A brand provider being down means today's mail looks plainer. It is never a
+      // reason to fail the tick that also sends it.
+      report.push({ brandSource: String(source.name), error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -102,5 +124,5 @@ export async function GET(request: NextRequest) {
   // A routine that finished two minutes ago should not still read as running.
   const closed = await closeIdleRuns(now);
 
-  return NextResponse.json({ at: now.toISOString(), dueSources: due.length, runsClosed: closed, report });
+  return NextResponse.json({ at: now.toISOString(), dueSources: due.length, dueBrandSources: dueBrand.length, runsClosed: closed, report });
 }

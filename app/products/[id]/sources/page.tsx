@@ -3,6 +3,8 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { createSource, deleteSource, runSourceNow, toggleSource } from "../../../actions";
 import ConfirmButton from "../../../ui/confirm";
 import {scope, requireSession} from "../../../tenant";
+import { Pause, Play, Plus } from "lucide-react";
+import { SubmitButton } from "../../../ui/kit";
 
 export const dynamic = "force-dynamic";
 
@@ -83,13 +85,13 @@ export default async function Sources({ params }: { params: Promise<{ id: string
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     <form action={runSourceNow.bind(null, id, String(src._id))} style={{ display: "inline" }}>
-                      <button className="ghost" type="submit">Run now</button>
+                      <SubmitButton variant="ghost" size="sm" icon={<Play />} pendingLabel="Running…">Run now</SubmitButton>
                     </form>
                     <form
                       action={toggleSource.bind(null, id, String(src._id), !src.enabled)}
                       style={{ display: "inline" }}
                     >
-                      <button className="ghost" type="submit">{src.enabled ? "Pause" : "Resume"}</button>
+                      <SubmitButton variant="ghost" size="sm" icon={src.enabled ? <Pause /> : <Play />}>{src.enabled ? "Pause" : "Resume"}</SubmitButton>
                     </form>
                     <ConfirmButton
                       title={`Delete "${String(src.name)}"?`}
@@ -151,7 +153,7 @@ export default async function Sources({ params }: { params: Promise<{ id: string
             <textarea name="fieldMap" defaultValue={'{"email":"email","name":"name","role":"title"}'} />
           </label>
           <label>Dedupe key<input name="dedupeKey" defaultValue="email" /></label>
-          <button type="submit">Create source</button>
+          <SubmitButton icon={<Plus />} pendingLabel="Creating…">Create source</SubmitButton>
         </form>
       )}
     </main>

@@ -35,7 +35,7 @@ export function resolveRef(ref: string, ctx: CallContext): unknown {
   return cursor;
 }
 
-function pluck(payload: unknown, path: string): unknown {
+export function pluck(payload: unknown, path: string): unknown {
   const parts = path.replace(/^\$\.?/, "").split(".");
   let cursor: unknown = payload;
   for (const part of parts) {

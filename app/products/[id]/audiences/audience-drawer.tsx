@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, Plus } from "lucide-react";
 import Drawer from "../../../ui/drawer";
+import { Button, SubmitButton } from "../../../ui/kit";
 
 const STATES = ["new", "active", "cooling", "dormant"] as const;
 const TEMPS = ["hot", "warm", "cold", "dead"] as const;
@@ -9,7 +11,7 @@ const TEMPS = ["hot", "warm", "cold", "dead"] as const;
 export default function AudienceDrawer({
   productId,
   action,
-  label = "New audience",
+  label = "New group",
   existing,
 }: {
   productId: string;
@@ -29,14 +31,20 @@ export default function AudienceDrawer({
 
   return (
     <>
-      <button type="button" className={existing ? "quiet sm" : ""} onClick={() => setOpen(true)}>
-        {label}
-      </button>
+      <Button
+        variant={existing ? "quiet" : "primary"}
+        size={existing ? "sm" : "md"}
+        icon={existing ? <Pencil /> : <Plus />}
+        onClick={() => setOpen(true)}
+        aria-label={existing ? "Edit group" : undefined}
+      >
+        {existing ? null : label}
+      </Button>
 
       <Drawer
         open={open}
         onClose={() => setOpen(false)}
-        title={existing ? `Edit ${existing.name}` : "New audience"}
+        title={existing ? `Edit ${existing.name}` : "New group"}
         description="A group of people from the library, ready to point a campaign at."
       >
         <form action={action} className="stack">
@@ -125,7 +133,9 @@ export default function AudienceDrawer({
             </p>
           )}
 
-          <button type="submit">{existing ? "Save audience" : "Create audience"}</button>
+          <SubmitButton pendingLabel={existing ? "Saving…" : "Creating…"}>
+            {existing ? "Save group" : "Create group"}
+          </SubmitButton>
         </form>
       </Drawer>
     </>

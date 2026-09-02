@@ -5,6 +5,8 @@ import { candidatesFor, type Capability } from "@/mcp/discover.js";
 import type { McpTool } from "@/mcp/client.js";
 import { discoverTools, saveBinding } from "../../../../actions";
 import { requireSession} from "../../../../tenant";
+import { RefreshCw, Save } from "lucide-react";
+import { SubmitButton } from "../../../../ui/kit";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +64,9 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
       ) : null}
 
       <form action={discoverTools.bind(null, id, cid)}>
-        <button type="submit" className="ghost">{tools.length ? "Re-discover tools" : "Discover tools"}</button>
+        <SubmitButton variant="ghost" icon={<RefreshCw />} pendingLabel="Discovering…">
+          {tools.length ? "Re-discover tools" : "Discover tools"}
+        </SubmitButton>
       </form>
 
       {tools.length > 0 && (
@@ -142,7 +146,7 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
                       <input name="returnMessageId" defaultValue="$.id" />
                     </label>
                   )}
-                  <button type="submit">Save binding</button>
+                  <SubmitButton icon={<Save />} pendingLabel="Saving…">Save binding</SubmitButton>
                 </form>
               </div>
             );

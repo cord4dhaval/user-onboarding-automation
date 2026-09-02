@@ -1,17 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
 import { signUp } from "../auth-actions";
 import type { FormState } from "../auth-actions";
+import { UserPlus } from "lucide-react";
+import { SubmitButton } from "../ui/kit";
 
 function Submit() {
-  const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending}>
-      {pending ? "Creating account…" : "Create account"}
-    </button>
-  );
+  return <SubmitButton icon={<UserPlus />} pendingLabel="Creating account…">Create account</SubmitButton>;
 }
 
 export default function SignUpForm() {

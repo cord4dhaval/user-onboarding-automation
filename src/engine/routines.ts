@@ -20,7 +20,8 @@ export interface RoutineDef {
   cron: string;
   human: string;
   job: string;
-  example: string;
+  /** One line each. A paragraph describing three cases reads as none of them. */
+  example: string[];
   prompt: string;
   essential: boolean;
 }
@@ -34,6 +35,9 @@ export const DEFAULT_CRONS: Record<RoutineKey, string> = {
   monitor: "5 * * * *",
   plan: "20 * * * *",
   compose: "35 * * * *",
+  // Setup gaps are a day-scale problem, not an hour-scale one. Hourly would mean
+  // twenty-four notifications about the same missing lead source.
+  groom: "50 7 * * *",
 };
 
 /**
@@ -59,8 +63,11 @@ finds out.`;
       human: "every hour, at :05",
       essential: true,
       job: "Every person in an active campaign: where are they, are they done, and what happens next. Verification and monitoring are the same question about the same person, so they are answered in one pass.",
-      example:
-        "Priya's probes show an account and two sessions — marked succeeded, her two queued messages cancelled, the next campaign opened. Rahul has not moved in nine days and the profitability angle failed twice, so his remaining steps are replaced with the surveillance objection. Deepa replied \"ask in Q3\" — campaign closed, cooling until July, her reason recorded for whoever picks her up then.",
+      example: [
+        "Priya's probes show an account and two sessions — marked succeeded, her two queued messages cancelled.",
+        "Rahul has not moved in nine days and the profitability angle failed twice, so his remaining steps are replaced with the surveillance objection.",
+        "Deepa replied \"ask in Q3\" — campaign closed, cooling until July, her reason kept for whoever picks her up then.",
+      ],
       prompt: `${preamble}
 
 ${registration("monitor")}
@@ -74,16 +81,25 @@ Every run:
      failed     a real ending: they said no, or the budget and deadline are
                 spent. Never because a check has simply not passed yet.
      continue   still running. Say in one line where they are.
-   Submit them together with mark_state.
+   Submit them together with mark_state. It refuses "succeeded" unless every
+   check the campaign defines has actually passed, so if it refuses, the answer
+   is to repair the check — never to route around it.
 4. Where someone is off-plan — stalled, or a signal the plan did not expect —
    call plan_goal with a new version and say why the old one is being replaced.
 5. For each reply: read it, then record_reply with a grounded answer. Never
    invent a capability to close someone.
 6. For each undetermined check: verify_person, read the raw response, and
    resolve_check only if it plainly supports the verdict.
-7. On your first run of the day, also look at verification_looks_wrong. Those
-   campaigns have run two weeks with nothing passing, which usually means a
-   check is bound to the wrong tool. Use verifiers and set_checks to fix it.`,
+7. On your first run of the day, look at both verification lists.
+   verification_looks_wrong is two weeks with nothing passing — usually a check
+   bound to the wrong tool.
+   verification_too_easy is the more dangerous one: a check that has passed for
+   everybody it has ever run on. That is not evidence, it is a constant, and it
+   ends campaigns for people who have done nothing. Read one probe, compare the
+   scope the args asked for against the scope the response says it used — a
+   provider that ignores an argument it does not have the privilege for will
+   answer about your own account instead. Repair both with verifiers and
+   set_checks.`,
     },
     {
       key: "plan",
@@ -92,8 +108,11 @@ Every run:
       human: "every hour, at :20",
       essential: true,
       job: "New people get understood and given a pipeline. New campaigns get a verification plan — which can only happen here, because the browser that created them cannot call Claude.",
-      example:
-        "Twelve leads arrive overnight. Priya reads as an engineering leader whose problem is no honest view of where the team's time goes, so her pipeline opens by showing the product. Deepa in HR gets a different one entirely, opening on audit-ready attendance.",
+      example: [
+        "Twelve leads arrive overnight and none of them mean anything yet.",
+        "Priya reads as an engineering leader with no honest view of where the team's time goes, so her sequence opens by showing exactly that.",
+        "Deepa in HR gets a different one entirely, opening on audit-ready attendance.",
+      ],
       prompt: `${preamble}
 
 ${registration("plan")}
@@ -106,6 +125,14 @@ Every run:
    connection_id, read the tools it exposes, and work out which answer the
    success sentence. Respect any hint. Then set_checks. Until this exists the
    campaign cannot mark anyone as succeeded.
+   Every check needs an argument that identifies the person — $person.email,
+   $person.id, something they alone match. set_checks tries each check against
+   two different people and refuses any that answers identically for both,
+   because a check that cannot tell two people apart will pass for everyone.
+   Beware arguments a provider accepts and then ignores: many scoping parameters
+   need an admin privilege, and without it the tool answers about your own
+   account and echoes the scope it really used back in the response. Read that
+   echo before trusting a check.
 4. Classify unclassified people in batches — lead_card for context, then submit
    them all in one classify call.
 5. For each campaign under need_plan: lead_card, then plan_goal.
@@ -129,8 +156,11 @@ Every run:
       human: "every hour, at :35",
       essential: false,
       job: "Write the messages about to go out — in the shape of the channel each one is going on. Only the next two days' worth.",
-      example:
-        "Rahul's replanned step is due Thursday on email: subject line, around 140 words, a link, an opt-out. His step after that is WhatsApp: about 45 words, no link, and outside the 24-hour window it has to use an approved template. Same angle, two different pieces of writing.",
+      example: [
+        "Rahul's replanned step is due Thursday on email: subject line, around 140 words, a link, an opt-out.",
+        "His step after that is WhatsApp: about 45 words, no link, and outside the 24-hour window an approved template.",
+        "Same angle, two different pieces of writing — because the channel decides the shape.",
+      ],
       prompt: `${preamble}
 
 ${registration("compose")}
@@ -156,6 +186,42 @@ Every run:
    licenses a false claim: no invented capability, no number the product cannot
    back, nothing the voice rules forbid.
 7. Stop after 30 touches.`,
+    },
+    {
+      key: "groom",
+      name: "Groom",
+      cron: DEFAULT_CRONS.groom,
+      human: "once a day, 07:50",
+      essential: false,
+      job: "Finishes what setup left half-done, and asks for the rest exactly once. A product with a brand kit but no day-three template, or four campaigns still drafted a week after they were written, is not broken — it is waiting on somebody, and nothing else in the system says so.",
+      example: [
+        "Priya's product has a welcome and nothing after it, so the day-three nudge and the last call get written in her brand voice and left as drafts.",
+        "Her four campaigns have sat unstarted for six days — one notification says so, naming the lead source they are all waiting on.",
+        "Tomorrow it stays quiet about the same four, because it already asked.",
+      ],
+      prompt: `${preamble}
+
+${registration("groom")}
+
+This runs once a day. It finishes setup nobody came back to, and it asks for
+what only a person can give — once, not daily.
+
+Every run:
+1. setup_gaps with product_id "${productId}". It returns what is missing and
+   what is merely unfinished. If gaps is empty, stop and say "setup is complete".
+2. Fill what you can yourself:
+   - Missing templates in the ladder: get_brand first so the copy suits the
+     design, then upsert_template for each, always status "draft". Check each
+     one with preview_template before moving on.
+   - A campaign with no plan: plan_goal, as the Plan routine would.
+   Everything you write stays a draft. This routine never activates anything —
+   a campaign that starts sending because a scheduled session decided it was
+   ready is the worst possible surprise.
+3. For what only a person can supply — a lead source, a send channel, a real
+   trial link, a brand nobody has confirmed — call notify_owner once, with all
+   of it in one message. It is deduped for seven days, so repeating yourself
+   costs you nothing and gains them nothing.
+4. Say plainly what you drafted and what you are waiting on.`,
     },
   ];
 }

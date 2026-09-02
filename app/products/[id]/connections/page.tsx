@@ -1,3 +1,4 @@
+import { Plus, Settings2 } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { deleteConnection } from "../../../actions";
@@ -15,21 +16,29 @@ export default async function Connections({ params }: { params: Promise<{ id: st
   const boundBy = new Map(bindings.map((b) => [String(b.connectionId), Object.keys((b.bind ?? {}) as object)]));
 
   return (
-    <main>
-      <h1>Connections</h1>
-      <p className="sub">
-        Authentication plus discovered capability. One connection can feed leads in and send messages out —
-        for a product with its own MCP, that is a single setup covering both directions.
-      </p>
+    <>
+      <div className="head">
+        <div>
+          <h1>Connections</h1>
+          <p className="sub" style={{ marginBottom: 0 }}>
+            Authentication plus discovered capability. One connection can feed leads in and send messages out —
+            for a product with its own MCP, that is a single setup covering both directions.
+          </p>
+        </div>
+        <div className="spacer" />
+        <a className="btn" href={`/products/${id}/connections/new`}><Plus /> New connection</a>
+      </div>
 
       {rows.length === 0 ? (
-        <p className="empty">
-          None yet. <a href={`/products/${id}/connections/new`}>Add an MCP server</a>.
-        </p>
+        <div className="empty">
+          <strong>Nothing connected</strong>
+          A connection is where leads come from, where messages go, and what answers whether someone
+          succeeded. <a href={`/products/${id}/connections/new`}>Add an MCP server</a>.
+        </div>
       ) : (
         <div className="tw">
           <table>
-            <thead><tr><th>Provider</th><th>Server</th><th>Bound actions</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Provider</th><th>Server</th><th>Bound actions</th><th>Status</th><th /></tr></thead>
             <tbody>
               {rows.map((c) => {
                 const bound = boundBy.get(String(c._id)) ?? [];
@@ -44,13 +53,17 @@ export default async function Connections({ params }: { params: Promise<{ id: st
                     </td>
                     <td><span className={`pill ${c.status === "healthy" ? "ok" : "warn"}`}>{String(c.status)}</span></td>
                     <td>
-                      <a href={`/products/${id}/connections/${String(c._id)}`}>Configure</a>
-                      <ConfirmButton
-                        title={`Disconnect ${String(c.provider)}?`}
-                        body="The stored credential and the tool bindings go with it. Reconnecting means authorising again from scratch."
-                        confirmLabel="Disconnect"
-                        action={deleteConnection.bind(null, id, String(c._id))}
-                      />
+                      <div className="row" style={{ flexWrap: "nowrap", justifyContent: "flex-end" }}>
+                        <a className="btn ghost sm" href={`/products/${id}/connections/${String(c._id)}`}>
+                          <Settings2 /> Configure
+                        </a>
+                        <ConfirmButton
+                          title={`Disconnect ${String(c.provider)}?`}
+                          body="The stored credential and the tool bindings go with it. Reconnecting means authorising again from scratch."
+                          confirmLabel="Disconnect"
+                          action={deleteConnection.bind(null, id, String(c._id))}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );
@@ -60,7 +73,6 @@ export default async function Connections({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      <p style={{ marginTop: 20 }}><a href={`/products/${id}/connections/new`}>+ New connection</a></p>
-    </main>
+    </>
   );
 }

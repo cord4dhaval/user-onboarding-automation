@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { X } from "lucide-react";
+import { Button } from "./kit";
 
 /**
  * A side panel for anything that used to be an inline form.
@@ -62,7 +64,7 @@ export default function Drawer({
             <h2>{title}</h2>
             {description && <p className="sub" style={{ margin: "2px 0 0" }}>{description}</p>}
           </div>
-          <button type="button" className="quiet sm" onClick={onClose} aria-label="Close">Close</button>
+          <Button variant="quiet" size="sm" icon={<X />} onClick={onClose} aria-label="Close" />
         </header>
         <div className="drawer-body">{children}</div>
       </div>

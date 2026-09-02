@@ -2,6 +2,8 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { getProduct, requireSession } from "../../../tenant";
 import { saveProductConfig } from "../../../actions";
+import { Save } from "lucide-react";
+import { SubmitButton } from "../../../ui/kit";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,7 @@ export default async function Settings({ params }: { params: Promise<{ id: strin
       <form action={saveProductConfig} className="stack" style={{ maxWidth: "100%" }}>
         <input type="hidden" name="productId" value={id} />
         <textarea name="config" defaultValue={JSON.stringify(product.config, null, 2)} style={{ minHeight: 380 }} />
-        <button type="submit">Save config</button>
+        <SubmitButton icon={<Save />} pendingLabel="Saving…">Save config</SubmitButton>
       </form>
 
       <h2>Safety</h2>

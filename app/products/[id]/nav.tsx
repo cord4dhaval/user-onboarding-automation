@@ -1,6 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { FileText, Home, Inbox, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
+import type { ReactNode } from "react";
 
 export interface NavCounts {
   review: number;
@@ -8,31 +10,31 @@ export interface NavCounts {
 
 /**
  * Daily work sits above the rule, setup below it. Tabs implied the sections were equals;
- * they are not — you live in Goals and visit Channels twice.
+ * they are not — you live in Campaigns and visit Channels twice.
+ *
+ * Library and Audiences are one destination, and so are Claude, Routines and Logs: those
+ * were never separate places, only separate scrolls of the same subject.
  */
 const WORK = [
-  { href: "", label: "Home" },
-  { href: "/goals", label: "Campaigns" },
-  { href: "/library", label: "Library" },
-  { href: "/audiences", label: "Audiences" },
-  { href: "/review", label: "Review", counter: "review" as const },
+  { href: "", label: "Home", icon: <Home /> },
+  { href: "/goals", label: "Campaigns", icon: <Target /> },
+  { href: "/library", label: "Audience", icon: <Users /> },
+  { href: "/review", label: "Review", icon: <Inbox />, counter: "review" as const },
 ];
 
 const SETUP = [
-  { href: "/templates", label: "Templates" },
-  { href: "/channels", label: "Channels" },
-  { href: "/connections", label: "Connections" },
-  { href: "/providers", label: "Providers" },
-  { href: "/claude", label: "Connect Claude" },
-  { href: "/routines", label: "Routines" },
-  { href: "/logs", label: "Logs" },
+  { href: "/templates", label: "Templates", icon: <FileText /> },
+  { href: "/brand", label: "Brand", icon: <Palette /> },
+  { href: "/channels", label: "Channels", icon: <Send /> },
+  { href: "/connections", label: "Connections", icon: <Plug /> },
+  { href: "/claude", label: "Claude", icon: <Sparkles /> },
 ];
 
 export default function Nav({ productId, counts }: { productId: string; counts: NavCounts }) {
   const pathname = usePathname();
   const base = `/products/${productId}`;
 
-  function item(entry: { href: string; label: string; counter?: "review" }) {
+  function item(entry: { href: string; label: string; icon: ReactNode; counter?: "review" }) {
     const href = `${base}${entry.href}`;
     // The home tab would otherwise match every child route.
     const active = entry.href === "" ? pathname === base : pathname.startsWith(href);
@@ -40,6 +42,7 @@ export default function Nav({ productId, counts }: { productId: string; counts: 
 
     return (
       <a key={entry.href} href={href} aria-current={active ? "page" : undefined}>
+        {entry.icon}
         {entry.label}
         {count > 0 && <span className="count">{count}</span>}
       </a>

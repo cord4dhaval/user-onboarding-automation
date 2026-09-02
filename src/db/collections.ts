@@ -17,6 +17,9 @@ export const COLLECTIONS = {
   actions: "actions",
   templates: "templates",
 
+  brandKits: "brand_kits",
+  brandSources: "brand_sources",
+
   routines: "routines",
   routineRuns: "routine_runs",
   routineCalls: "routine_calls",

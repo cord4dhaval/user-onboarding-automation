@@ -16,7 +16,7 @@ export const connection = z.object({
   protocolVersion: z.string().optional(),
   scopes: z.array(z.string()).default([]),
   status: connectionStatus.default("pending"),
-  directions: z.array(z.enum(["in", "out"])).min(1),
+  directions: z.array(z.enum(["in", "out", "brand"])).min(1),
   lastVerifiedAt: z.date().optional(),
   createdBy: objectIdString,
   createdAt: z.date(),

@@ -37,6 +37,10 @@ export async function runSource(sourceId: string, pushedRows?: RawRecord[]): Pro
         lastRunAt: new Date(),
         nextFetchAt: new Date(Date.now() + interval * 1000),
         health: { status: summary.errors.length ? "degraded" : "healthy" },
+        // A source that returns a position wants to be asked for what came after it.
+        // Dropping it meant every poll re-read the endpoint from the beginning: the
+        // people deduped, but each one collected another arrival on every single poll.
+        ...(summary.nextCursor ? { cursor: summary.nextCursor } : {}),
       },
     },
   );

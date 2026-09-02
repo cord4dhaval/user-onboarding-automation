@@ -3,6 +3,7 @@ import { suppressPerson } from "../../../../actions";
 import { requireSession } from "../../../../tenant";
 import ConfirmButton from "../../../../ui/confirm";
 import ClaudeBadge from "../../../../ui/claude-badge";
+import { Ban } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ export default async function PersonPage({
           {temp && <span className={`pill ${temp.band}`}>{temp.band} {Math.round(temp.score)}</span>}
           {person.lifecycle !== "suppressed" && (
             <ConfirmButton
+              icon={<Ban />}
               label="Never contact"
               title="Never contact this person again?"
               body="Any campaign they are in stops, anything queued is cancelled, and no future import or audience can pick them up. This cannot be undone from here."

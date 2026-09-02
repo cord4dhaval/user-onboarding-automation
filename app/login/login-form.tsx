@@ -1,17 +1,13 @@
 "use client";
 
 import { useActionState, useRef } from "react";
-import { useFormStatus } from "react-dom";
 import { logIn } from "../auth-actions";
 import type { FormState } from "../auth-actions";
+import { LogIn, Wand2 } from "lucide-react";
+import { Button, SubmitButton } from "../ui/kit";
 
 function Submit() {
-  const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending}>
-      {pending ? "Signing in…" : "Sign in"}
-    </button>
-  );
+  return <SubmitButton icon={<LogIn />} pendingLabel="Signing in…">Sign in</SubmitButton>;
 }
 
 export interface DemoAccount {
@@ -81,9 +77,9 @@ export default function LoginForm({ next, demo }: { next: string; demo?: DemoAcc
               </tr>
             </tbody>
           </table>
-          <button type="button" className="ghost" onClick={useDemo} style={{ marginTop: 10 }}>
+          <Button variant="ghost" icon={<Wand2 />} onClick={useDemo} style={{ marginTop: 10 }}>
             Fill and sign in
-          </button>
+          </Button>
         </div>
       )}
     </>

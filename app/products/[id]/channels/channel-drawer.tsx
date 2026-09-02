@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Drawer from "../../../ui/drawer";
+import { Globe, Mail, Plug, Plus } from "lucide-react";
+import { Button, SubmitButton } from "../../../ui/kit";
 
 export interface ConnectionTools {
   id: string;
@@ -108,7 +110,7 @@ export default function ChannelDrawer({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}>Add channel</button>
+      <Button icon={<Plus />} onClick={() => setOpen(true)}>Add channel</Button>
 
       <Drawer
         open={open}
@@ -119,13 +121,13 @@ export default function ChannelDrawer({
       >
         <div className="segmented" role="tablist" aria-label="Connection type">
           <button type="button" className={kind === "mcp" ? "on" : ""} onClick={() => setKind("mcp")}>
-            MCP tool
+            <Plug /> MCP tool
           </button>
           <button type="button" className={kind === "smtp" ? "on" : ""} onClick={() => setKind("smtp")}>
-            SMTP
+            <Mail /> SMTP
           </button>
           <button type="button" className={kind === "http" ? "on" : ""} onClick={() => setKind("http")}>
-            API endpoint
+            <Globe /> API endpoint
           </button>
         </div>
 
@@ -200,7 +202,7 @@ export default function ChannelDrawer({
                   <input name="replyTo" placeholder="hello@teamgrid.ai" />
                 </label>
                 {limits}
-                <button type="submit">Create channel</button>
+                <SubmitButton pendingLabel="Creating…">Create channel</SubmitButton>
               </form>
             )}
           </>
@@ -222,7 +224,7 @@ export default function ChannelDrawer({
             <label>Password<input name="pass" type="password" placeholder="app password" required /></label>
             <label>From<input name="from" placeholder="TeamGrid <hi@yourdomain.com>" required /></label>
             <label>Daily cap<input name="dailyCap" type="number" defaultValue={50} min={1} /></label>
-            <button type="submit">Create email channel</button>
+            <SubmitButton pendingLabel="Creating…">Create email channel</SubmitButton>
           </form>
         )}
 
@@ -253,7 +255,7 @@ export default function ChannelDrawer({
             </div>
             <label>From<input name="from" placeholder="TeamGrid <hi@yourdomain.com>" /></label>
             {limits}
-            <button type="submit">Create channel</button>
+            <SubmitButton pendingLabel="Creating…">Create channel</SubmitButton>
           </form>
         )}
       </Drawer>

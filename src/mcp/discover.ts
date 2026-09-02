@@ -59,6 +59,7 @@ export function inferCapabilities(tools: McpTool[]): Record<string, Capability> 
       0.7,
     ),
     idempotencySupported: mark(hasArg(sendTool, /idempot|request_id|dedupe/i), 0.7),
+    brand: mark(has(tools, /brand|palette|design_?token|styleguide/i), 0.7),
   };
 }
 
@@ -70,7 +71,7 @@ export function inferCapabilities(tools: McpTool[]): Record<string, Capability> 
  * A name match therefore outranks a description match, and for verbs that act on the world
  * the obvious readers are excluded outright — get_email_tokens is never a way to send one.
  */
-export type Verb = "send" | "send_status" | "fetch_leads" | "poll_inbound" | "health";
+export type Verb = "send" | "send_status" | "fetch_leads" | "poll_inbound" | "health" | "fetch_brand";
 
 const PATTERNS: Record<Verb, { name: RegExp; description?: RegExp; excludeReaders?: boolean }> = {
   send: {
@@ -90,6 +91,14 @@ const PATTERNS: Record<Verb, { name: RegExp; description?: RegExp; excludeReader
   },
   health: {
     name: /(^|_)(health|quota|status|ping|limits?|settings)(_|$)/i,
+  },
+  /**
+   * A brand sheet is read, not sent, so the reader exclusion that protects `send` would
+   * throw away exactly the tool wanted here — get_brand_style is the archetype.
+   */
+  fetch_brand: {
+    name: /(^|_)(brand|branding|style|styles|identity|theme|palette|design_?tokens?|styleguide|brandkit)(_|$)/i,
+    description: /\b(brand|palette|design tokens?|style guide)\b/i,
   },
 };
 

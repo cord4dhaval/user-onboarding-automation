@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NotificationRow } from "@/engine/notify.js";
+import { Bell, CheckCheck, X } from "lucide-react";
+import { Button } from "./kit";
 
 const POLL_MS = 15000;
 
@@ -85,7 +87,7 @@ export default function Notifications({ productId }: { productId: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-label={items.length ? `${items.length} notifications` : "No notifications"}
       >
-        <span aria-hidden="true">◉</span>
+        <Bell size={15} />
         {items.length > 0 && <span className="bell-count">{items.length}</span>}
       </button>
 
@@ -94,7 +96,7 @@ export default function Notifications({ productId }: { productId: string }) {
           <header>
             <strong>Notifications</strong>
             {items.length > 0 && (
-              <button type="button" className="quiet sm" onClick={dismissAll}>Mark all read</button>
+              <Button variant="quiet" size="sm" icon={<CheckCheck />} onClick={dismissAll}>Mark all read</Button>
             )}
           </header>
 
@@ -113,7 +115,7 @@ export default function Notifications({ productId }: { productId: string }) {
                     {n.body && <p className="sub" style={{ margin: "2px 0 0" }}>{n.body}</p>}
                     {n.href && <a href={n.href}>Open</a>}
                   </div>
-                  <button type="button" className="quiet sm" onClick={() => dismiss(n.id)} aria-label="Dismiss">×</button>
+                  <Button variant="quiet" size="sm" icon={<X />} onClick={() => dismiss(n.id)} aria-label="Dismiss" />
                 </li>
               ))}
             </ul>

@@ -1,9 +1,13 @@
-import { queryLibrary } from "@/engine/library.js";
+import { Filter, Layers, Search, Users } from "lucide-react";
+import { audienceCount, queryLibrary } from "@/engine/library.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { importPeople } from "../../../actions";
+import { deleteAudience, importPeople, saveAudience } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ClaudeBadge from "../../../ui/claude-badge";
+import ConfirmButton from "../../../ui/confirm";
+import { SubmitButton, Tabs } from "../../../ui/kit";
+import AudienceDrawer from "../audiences/audience-drawer";
 import ImportDrawer from "./import-drawer";
 
 export const dynamic = "force-dynamic";
@@ -18,120 +22,228 @@ const LIFECYCLE_COPY: Record<string, string> = {
   suppressed: "said no — permanent",
 };
 
-export default async function Library({
+/** Reads a saved filter back as the sentence it stands for. */
+function describe(filter: Record<string, unknown> | undefined): string {
+  if (!filter) return "everyone";
+  const parts: string[] = [];
+  if (filter.silentDays) parts.push(`not messaged for ${String(filter.silentDays)}d`);
+  if (filter.quietDays) parts.push(`quiet for ${String(filter.quietDays)}d`);
+  if ((filter.lifecycle as string[])?.length) parts.push((filter.lifecycle as string[]).join(" or "));
+  if ((filter.temperature as string[])?.length) parts.push((filter.temperature as string[]).join(" or "));
+  if (filter.everEngaged) parts.push("has engaged before");
+  if (filter.minIcpFit) parts.push(`fit ≥ ${String(filter.minIcpFit)}`);
+  return parts.length ? parts.join(" · ") : "everyone, minus anyone who said no";
+}
+
+/**
+ * People and the groups built from them are one subject, so they are one page. They were
+ * split only because each list was long, which is a scrolling problem and not a
+ * navigation one.
+ */
+export default async function Audience({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string; state?: string }>;
+  searchParams: Promise<{ q?: string; state?: string; tab?: string }>;
 }) {
   const { id } = await params;
-  const { q, state } = await searchParams;
+  const { q, state, tab } = await searchParams;
+  const current = tab === "audiences" ? "audiences" : "people";
   const { orgId } = await requireSession();
-  const s = scope(orgId, id);
-
-  const { rows, total } = await queryLibrary(orgId, id, {
-    search: q,
-    lifecycle: state ? [state] : undefined,
-    limit: 100,
-  });
-
   const db = await getDb();
+  const s = scope(orgId, id);
+  const base = `/products/${id}/library`;
+
+  const [{ rows, total }, everyone, audienceDocs] = await Promise.all([
+    queryLibrary(orgId, id, { search: q, lifecycle: state ? [state] : undefined, limit: 100 }),
+    db.collection(C.people).countDocuments(s),
+    db.collection(C.audiences).find(s).sort({ createdAt: -1 }).toArray(),
+  ]);
+
   const counts = Object.fromEntries(
     await Promise.all(
       STATES.map(async (st) => [st, await db.collection(C.people).countDocuments({ ...s, lifecycle: st })] as const),
     ),
   );
-  const everyone = await db.collection(C.people).countDocuments(s);
+  const sized = await Promise.all(
+    audienceDocs.map(async (a) => ({ audience: a, size: await audienceCount(orgId, id, a) })),
+  );
 
   return (
     <>
       <div className="head">
         <div>
-          <h1>Library</h1>
+          <h1>Audience</h1>
           <p className="sub" style={{ marginBottom: 0 }}>
-            Everyone this product has ever touched. Campaigns write people in as they arrive; audiences read
-            them back out. Nobody is ever deleted — someone who says no is suppressed, so they can never be
-            picked up again by accident.
+            Everyone this product has ever touched, and the groups built from them. Nobody is ever deleted —
+            someone who says no is suppressed, so they can never be picked up again by accident.
           </p>
         </div>
         <div className="spacer" />
-        <ImportDrawer productId={id} action={importPeople} />
+        {current === "people" ? (
+          <ImportDrawer productId={id} action={importPeople} />
+        ) : (
+          <AudienceDrawer productId={id} action={saveAudience} />
+        )}
       </div>
 
-      <form method="get" className="row" style={{ marginBottom: 18 }}>
-        <input name="q" defaultValue={q ?? ""} placeholder="Search name, email or company" style={{ maxWidth: 320 }} />
-        <select name="state" defaultValue={state ?? ""} style={{ maxWidth: 200 }}>
-          <option value="">Everyone ({everyone})</option>
-          {STATES.map((st) => (
-            <option key={st} value={st}>{st} ({counts[st] ?? 0})</option>
-          ))}
-        </select>
-        <button className="quiet" type="submit">Filter</button>
-      </form>
+      <Tabs
+        current={current}
+        tabs={[
+          { key: "people", label: "People", href: base, icon: <Users />, count: everyone },
+          {
+            key: "audiences",
+            label: "Groups",
+            href: `${base}?tab=audiences`,
+            icon: <Layers />,
+            count: sized.length,
+          },
+        ]}
+      />
 
-      {state && (
-        <p className="sub" style={{ marginTop: -8 }}>
-          <strong>{state}</strong> — {LIFECYCLE_COPY[state]}
-        </p>
-      )}
+      {current === "people" ? (
+        <>
+          <form method="get" className="row" style={{ marginBottom: 18 }}>
+            <div style={{ position: "relative", flex: "0 1 320px" }}>
+              <Search
+                size={15}
+                style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", opacity: .5 }}
+              />
+              <input
+                name="q"
+                defaultValue={q ?? ""}
+                placeholder="Search name, email or company"
+                style={{ paddingLeft: 33 }}
+              />
+            </div>
+            <select name="state" defaultValue={state ?? ""} style={{ maxWidth: 200 }}>
+              <option value="">Everyone ({everyone})</option>
+              {STATES.map((st) => (
+                <option key={st} value={st}>{st} ({counts[st] ?? 0})</option>
+              ))}
+            </select>
+            <SubmitButton variant="quiet" icon={<Filter />} pendingLabel="Filtering…">Filter</SubmitButton>
+          </form>
 
-      {rows.length === 0 ? (
+          {state && (
+            <p className="sub" style={{ marginTop: -8 }}>
+              <strong>{state}</strong> — {LIFECYCLE_COPY[state]}
+            </p>
+          )}
+
+          {rows.length === 0 ? (
+            <div className="empty">
+              <strong>{everyone === 0 ? "Nobody here yet" : "Nobody matches that"}</strong>
+              {everyone === 0
+                ? "Add people directly, or run a campaign — everyone it touches lands here automatically."
+                : "Try a different search or state."}
+            </div>
+          ) : (
+            <>
+              <div className="tw scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Person</th><th>State</th><th>Segment</th>
+                      <th className="num">Attempts</th><th className="num">Invested</th><th>Last contacted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((p) => {
+                      const belief = p.belief as { segment?: string } | undefined;
+                      const inv = (p.investment ?? {}) as { messages?: number; usd?: number };
+                      const life = String(p.lifecycle ?? "new");
+                      return (
+                        <tr key={String(p._id)}>
+                          <td>
+                            <a href={`${base}/${String(p._id)}`}>
+                              <strong>{String(p.name ?? p.primaryEmail)}</strong>
+                            </a>
+                            <div className="muted" style={{ fontSize: 12.5 }}>{String(p.primaryEmail ?? "")}</div>
+                          </td>
+                          <td>
+                            <span className={`pill ${life === "suppressed" ? "bad" : life === "active" ? "ok" : ""}`}>
+                              {life}
+                            </span>
+                          </td>
+                          <td>{belief?.segment ?? <ClaudeBadge note="next run" />}</td>
+                          <td className="num">{Number(p.attempts ?? 0)}</td>
+                          <td className="num">
+                            {Number(inv.messages ?? 0)} msg
+                            <div className="muted">${Number(inv.usd ?? 0).toFixed(2)}</div>
+                          </td>
+                          <td className="muted num">
+                            {p.lastContactedAt
+                              ? new Date(String(p.lastContactedAt)).toISOString().slice(0, 10)
+                              : "never"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="sub">{rows.length} of {total} shown.</p>
+            </>
+          )}
+        </>
+      ) : sized.length === 0 ? (
         <div className="empty">
-          <strong>{everyone === 0 ? "Nobody here yet" : "Nobody matches that"}</strong>
-          {everyone === 0
-            ? "Add people directly, or run a campaign — everyone it touches lands here automatically."
-            : "Try a different search or state."}
+          <strong>No groups yet</strong>
+          A group is a filter over the people tab — a static one is a list you picked, a dynamic one keeps
+          re-evaluating so a campaign never runs out.
         </div>
       ) : (
         <div className="tw scroll">
           <table>
             <thead>
-              <tr>
-                <th>Person</th><th>State</th><th>Segment</th><th>Attempts</th>
-                <th>Invested</th><th>Last contacted</th>
-              </tr>
+              <tr><th>Group</th><th>Kind</th><th>Who is in it</th><th className="num">People</th><th /></tr>
             </thead>
             <tbody>
-              {rows.map((p) => {
-                const belief = p.belief as { segment?: string } | undefined;
-                const inv = (p.investment ?? {}) as { messages?: number; usd?: number };
-                const life = String(p.lifecycle ?? "new");
-                return (
-                  <tr key={String(p._id)}>
-                    <td>
-                      <a href={`/products/${id}/library/${String(p._id)}`}>
-                        <strong>{String(p.name ?? p.primaryEmail)}</strong>
-                      </a>
-                      <div className="muted" style={{ fontSize: 12.5 }}>{String(p.primaryEmail ?? "")}</div>
-                    </td>
-                    <td>
-                      <span className={`pill ${life === "suppressed" ? "bad" : life === "active" ? "ok" : ""}`}>
-                        {life}
-                      </span>
-                    </td>
-                    <td>
-                      {belief?.segment ?? <ClaudeBadge note="next run" />}
-                    </td>
-                    <td className="num">{Number(p.attempts ?? 0)}</td>
-                    <td className="num">
-                      {Number(inv.messages ?? 0)} msg
-                      <div className="muted">${Number(inv.usd ?? 0).toFixed(2)}</div>
-                    </td>
-                    <td className="muted num">
-                      {p.lastContactedAt
-                        ? new Date(String(p.lastContactedAt)).toISOString().slice(0, 10)
-                        : "never"}
-                    </td>
-                  </tr>
-                );
-              })}
+              {sized.map(({ audience, size }) => (
+                <tr key={String(audience._id)}>
+                  <td>
+                    <strong>{String(audience.name)}</strong>
+                    {audience.description ? (
+                      <div className="muted" style={{ fontSize: 12.5 }}>{String(audience.description)}</div>
+                    ) : null}
+                  </td>
+                  <td>
+                    <span className={`pill ${audience.kind === "dynamic" ? "accent" : ""}`}>
+                      {String(audience.kind)}
+                    </span>
+                  </td>
+                  <td className="muted">{describe(audience.filter as Record<string, unknown> | undefined)}</td>
+                  <td className="num">{size}</td>
+                  <td>
+                    <div className="row" style={{ flexWrap: "nowrap", justifyContent: "flex-end" }}>
+                      <AudienceDrawer
+                        productId={id}
+                        action={saveAudience}
+                        label="Edit"
+                        existing={{
+                          id: String(audience._id),
+                          name: String(audience.name),
+                          description: audience.description ? String(audience.description) : undefined,
+                          kind: String(audience.kind),
+                          filter: audience.filter as Record<string, unknown> | undefined,
+                        }}
+                      />
+                      <ConfirmButton
+                        title={`Delete "${String(audience.name)}"?`}
+                        body="The group goes; the people in it stay. Any campaign pointed at it loses its input."
+                        confirmLabel="Delete group"
+                        action={deleteAudience.bind(null, id, String(audience._id))}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
-
-      <p className="sub">{rows.length} of {total} shown.</p>
     </>
   );
 }

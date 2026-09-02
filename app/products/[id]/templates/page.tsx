@@ -1,11 +1,16 @@
 import { ObjectId } from "mongodb";
+import { RefreshCw } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
+import { loadBrandKit } from "@/engine/brand.js";
 import { renderTemplate, type MergeVars } from "@/engine/compose.js";
 import { validate } from "@/engine/validate.js";
-import { generateTemplates } from "../../../actions";
+import { createTemplate, generateTemplates } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
+import BrandBadge from "../../../ui/brand-badge";
 import ClaudeBadge from "../../../ui/claude-badge";
+import { ActionButton } from "../../../ui/kit";
+import TemplateDrawer from "./template-drawer";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +35,12 @@ export default async function Templates({
   const db = await getDb();
   const s = scope(orgId, id);
 
-  const [templates, product, people] = await Promise.all([
+  const [templates, product, people, kit, brandSources] = await Promise.all([
     db.collection(C.templates).find(s).sort({ channel: 1, scope: 1 }).toArray(),
     db.collection(C.products).findOne({ _id: new ObjectId(id), orgId }),
     db.collection(C.people).find(s).sort({ createdAt: -1 }).limit(25).toArray(),
+    loadBrandKit(orgId, id),
+    db.collection(C.brandSources).countDocuments(s),
   ]);
 
   const selected =
@@ -42,131 +49,142 @@ export default async function Templates({
     SAMPLE;
 
   const name = String(selected.name ?? "");
-  const trialTemplate = String(
-    (product?.config as { trialLinkTemplate?: string })?.trialLinkTemplate ?? "https://example.com/start",
-  );
+  const config = (product?.config ?? {}) as {
+    website?: string;
+    trialLinkTemplate?: string;
+    segments?: Array<{ key: string }>;
+  };
   const personId = String(selected._id);
-
-  const site = String((product?.config as { website?: string })?.website ?? "https://example.com").replace(/\/$/, "");
+  const site = (config.website ?? "https://example.com").replace(/\/$/, "");
   const vars: MergeVars = {
     first_name: name.split(" ")[0] || "there",
     full_name: name,
     company: String(selected.companyDomain ?? "").split(".")[0] || "your team",
     person_id: personId,
-    trial_link: trialTemplate.replace("{{person_id}}", personId),
+    trial_link: (config.trialLinkTemplate ?? `${site}/start?p={{person_id}}`).replace("{{person_id}}", personId),
     opt_out_url: `${site}/unsubscribe?p=${personId}`,
   };
 
+  const branded = Object.keys(kit.provenance ?? {}).length > 0;
+
   return (
     <main>
-      <h1>Templates</h1>
-      <p className="sub">
-        Skeletons with slots, not stored copy. Fixed blocks are yours and never touched; slots are written per
-        person, falling back to deterministic text when a touch must fire before any session has run.
-      </p>
+      <header className="page-head">
+        <div>
+          <h1>Templates</h1>
+          <p className="sub">
+            Skeletons with slots, not stored copy. Fixed blocks are yours and never touched; slots are written
+            per person. Appearance comes from the <a href={`/products/${id}/brand`}>brand kit</a> at render time,
+            so one palette change restyles every template here.
+          </p>
+        </div>
+        <div className="row">
+          <ActionButton
+            variant="quiet"
+            icon={<RefreshCw />}
+            action={generateTemplates.bind(null, id)}
+            pendingLabel="Generating"
+          >
+            {templates.length ? "Regenerate defaults" : "Generate defaults"}
+          </ActionButton>
+          <TemplateDrawer
+            productId={id}
+            action={createTemplate}
+            segmentKeys={(config.segments ?? []).map((segment) => segment.key)}
+          />
+        </div>
+      </header>
 
-      <form method="get" className="stack" style={{ maxWidth: 420, marginBottom: 20 }}>
-        <label>
-          Preview against
-          <select name="lead" defaultValue={personId}>
-            <option value="sample">Sample lead — Priya Nair</option>
-            {people.map((p) => (
-              <option key={String(p._id)} value={String(p._id)}>
-                {String(p.name ?? p.primaryEmail)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="ghost" type="submit">Preview</button>
-      </form>
+      {!branded && <BrandBadge productId={id} state={{ branded, sources: brandSources }} />}
 
-      <form action={generateTemplates.bind(null, id)}>
-        <button className="ghost" type="submit">
-          {templates.length ? "Regenerate defaults from config" : "Generate defaults from config"}
-        </button>
-      </form>
+      {templates.length === 0 ? (
+        <p className="empty">
+          <strong>No templates yet.</strong>
+          Generate the starter set from the product config, or write one from scratch.
+        </p>
+      ) : (
+        <>
+          <form method="get" className="toolbar">
+            <label className="inline">
+              Preview against
+              <select name="lead" defaultValue={personId}>
+                <option value="sample">Sample lead — Priya Nair</option>
+                {people.map((p) => (
+                  <option key={String(p._id)} value={String(p._id)}>
+                    {String(p.name ?? p.primaryEmail)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="quiet sm">
+              Apply
+            </button>
+          </form>
 
-      <div style={{ marginTop: 24 }}>
-        {templates.length === 0 ? (
-          <p className="empty">None yet.</p>
-        ) : (
-          templates.map((t) => {
-            const blocks = t.blocks as Array<Record<string, unknown>>;
-            // Exactly what the engine would produce for this person, fallbacks included.
-            const rendered = renderTemplate(blocks, vars);
-            const constraints = t.constraints as { maxWords?: number; noClaims?: string[] } | undefined;
-            const check = validate(rendered, {
-              channelKey: String(t.channel),
-              maxWords: constraints?.maxWords,
-              noClaims: constraints?.noClaims,
-            });
+          <div className="tw">
+            <table>
+              <thead>
+                <tr>
+                  <th>Template</th>
+                  <th>Channel</th>
+                  <th>Sends as</th>
+                  <th>Scope</th>
+                  <th>Preview</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map((t) => {
+                  const blocks = t.blocks as Array<Record<string, unknown>>;
+                  // Exactly what the engine would produce for this person, fallbacks included.
+                  const rendered = renderTemplate(blocks, vars);
+                  const constraints = t.constraints as { maxWords?: number; noClaims?: string[] } | undefined;
+                  const chk = validate(rendered, {
+                    channelKey: String(t.channel),
+                    maxWords: constraints?.maxWords,
+                    noClaims: constraints?.noClaims,
+                  });
+                  const sendsHtml =
+                    String(t.channel) === "email" && String(t.format ?? "html") !== "text";
 
-            return (
-              <div className="card" key={String(t._id)} style={{ marginBottom: 20 }}>
-                <div className="row" style={{ marginBottom: 10 }}>
-                  <span className="label" style={{ margin: 0 }}>
-                    {String(t.key)} · {String(t.channel)} · {String(t.scope)}
-                    {t.segmentKey ? ` · ${String(t.segmentKey)}` : ""}
-                  </span>
-                  {t.createdBy === "claude" && <ClaudeBadge note="drafted" />}
-                </div>
-
-                <h3 style={{ margin: "10px 0 6px", fontSize: 14 }}>Preview</h3>
-                <div className="preview">
-                  <div className="preview-head">
-                    <span className="muted">To</span> {String(selected.primaryEmail ?? "—")}
-                  </div>
-                  {rendered.subject && (
-                    <div className="preview-head">
-                      <span className="muted">Subject</span> <strong>{rendered.subject}</strong>
-                    </div>
-                  )}
-                  <div className="preview-body">{rendered.bodyMd}</div>
-                </div>
-
-                <p className="sub" style={{ margin: "8px 0 0" }}>
-                  {rendered.wordCount} words ·{" "}
-                  {check.ok ? (
-                    <span className="pill ok">would send</span>
-                  ) : (
-                    <span className="pill err">blocked: {check.hardFails.join("; ")}</span>
-                  )}
-                  {check.softFails.length > 0 && (
-                    <> · <span className="pill warn">{check.softFails.join("; ")}</span></>
-                  )}
-                </p>
-
-                <details style={{ marginTop: 12 }}>
-                  <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }}>Blocks</summary>
-                  <table style={{ marginTop: 8 }}>
-                    <tbody>
-                      {blocks.map((b, i) => (
-                        <tr key={i}>
-                          <th style={{ width: 90 }}>{String(b.type)}</th>
-                          <td>
-                            {b.fixed ? (
-                              <span>{String(b.fixed)}</span>
-                            ) : (
-                              <>
-                                <span className="muted">{String(b.slot ?? b.instruct ?? "")}</span>
-                                {b.fallback ? (
-                                  <div style={{ marginTop: 4 }}>
-                                    <span className="pill">fallback</span> {String(b.fallback)}
-                                  </div>
-                                ) : null}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </details>
-              </div>
-            );
-          })
-        )}
-      </div>
+                  return (
+                    <tr key={String(t._id)}>
+                      <td>
+                        <a href={`/products/${id}/templates/${String(t._id)}`} className="strong-link">
+                          {String(t.name ?? t.key)}
+                        </a>
+                        <span className="cell-sub">
+                          <code>{String(t.key)}</code>
+                          {t.createdBy === "claude" && <ClaudeBadge note="drafted" />}
+                        </span>
+                      </td>
+                      <td>{String(t.channel)}</td>
+                      <td>
+                        <span className="pill accent">{sendsHtml ? "HTML" : "text"}</span>
+                      </td>
+                      <td>
+                        {String(t.scope)}
+                        {t.segmentKey ? <span className="cell-sub">{String(t.segmentKey)}</span> : null}
+                      </td>
+                      <td className="cell-wide">
+                        {rendered.subject && <strong>{rendered.subject}</strong>}
+                        <span className="clamp">{rendered.bodyMd.replace(/\n+/g, " ")}</span>
+                        <span className="cell-sub">
+                          {blocks.length} blocks · {rendered.wordCount} words
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`pill ${t.status === "active" ? "ok" : ""}`}>{String(t.status)}</span>
+                        {!chk.ok && <span className="pill bad">blocked</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </main>
   );
 }

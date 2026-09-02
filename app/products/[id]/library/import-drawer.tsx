@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { UserPlus } from "lucide-react";
 import Drawer from "../../../ui/drawer";
+import { Button, SubmitButton } from "../../../ui/kit";
 
 export default function ImportDrawer({
   productId,
@@ -15,7 +17,7 @@ export default function ImportDrawer({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}>Add people</button>
+      <Button icon={<UserPlus />} onClick={() => setOpen(true)}>Add people</Button>
 
       <Drawer
         open={open}
@@ -55,7 +57,7 @@ export default function ImportDrawer({
             skipped and stays that way.
           </p>
 
-          <button type="submit">Add to library</button>
+          <SubmitButton pendingLabel="Adding…">Add to library</SubmitButton>
         </form>
       </Drawer>
     </>

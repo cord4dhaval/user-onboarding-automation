@@ -1,21 +1,25 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { Trash2 } from "lucide-react";
+import { Button, SubmitButton } from "./kit";
 
 /**
  * Destructive actions get a modal that names what will be destroyed. A delete button that
  * fires on first click is how people lose work they cannot get back.
  *
- * Wraps a server action: the form posts normally once confirmed.
+ * Wraps a server action: the form posts normally once confirmed, and the confirm button
+ * spins until the server comes back rather than sitting there looking unpressed.
  */
 export default function ConfirmButton({
-  label = "Delete",
+  label,
   title,
   body,
   confirmLabel = "Delete",
   action,
   hidden,
-  className = "danger sm",
+  variant = "danger",
+  icon = <Trash2 />,
 }: {
   label?: string;
   title: string;
@@ -27,7 +31,8 @@ export default function ConfirmButton({
    */
   action: (formData: FormData) => void | Promise<void>;
   hidden?: Record<string, string>;
-  className?: string;
+  variant?: "danger" | "quiet";
+  icon?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -42,7 +47,16 @@ export default function ConfirmButton({
 
   return (
     <>
-      <button type="button" className={className} onClick={() => setOpen(true)}>{label}</button>
+      <Button
+        variant={variant}
+        size="sm"
+        icon={icon}
+        onClick={() => setOpen(true)}
+        aria-label={label ?? title}
+        title={label ?? "Delete"}
+      >
+        {label}
+      </Button>
 
       {open && (
         <div className="scrim center" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
@@ -54,9 +68,11 @@ export default function ConfirmButton({
                 {Object.entries(hidden ?? {}).map(([k, v]) => (
                   <input key={k} type="hidden" name={k} value={v} />
                 ))}
-                <button type="submit" className="destructive">{confirmLabel}</button>
+                <SubmitButton className="destructive" pendingLabel="Deleting…">
+                  {confirmLabel}
+                </SubmitButton>
               </form>
-              <button type="button" className="quiet" onClick={() => setOpen(false)}>Cancel</button>
+              <Button variant="quiet" onClick={() => setOpen(false)}>Cancel</Button>
             </div>
           </div>
         </div>
