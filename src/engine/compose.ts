@@ -15,6 +15,13 @@ export interface ComposedContent {
   personalizationUsed: string[];
   claimsMade: string[];
   wordCount: number;
+  /**
+   * True when bodyMd is this template's own blocks rendered to text, rather than copy a
+   * session wrote. Rendering the same message a second time — a held message re-rendered
+   * once the channel could carry HTML — otherwise fed that whole body back into the
+   * template's open slot, and the recipient got the heading and greeting twice.
+   */
+  fromBlocks?: boolean;
 }
 
 type Block = Record<string, unknown>;
@@ -107,7 +114,7 @@ export function resolveBlocks(
       const name = typeof block.name === "string" ? block.name : undefined;
       const named = name ? precomposed?.slots?.[name] : undefined;
       let filled = named;
-      if (!filled && !name && !bodyUsed && precomposed?.bodyMd) {
+      if (!filled && !name && !bodyUsed && precomposed?.bodyMd && !precomposed.fromBlocks) {
         filled = precomposed.bodyMd;
         bodyUsed = true;
       }
@@ -253,6 +260,9 @@ export function renderTemplate(
     personalizationUsed,
     claimsMade: precomposed?.claimsMade ?? [],
     wordCount: bodyMd.split(/\s+/).filter(Boolean).length,
+    // Copy a session wrote keeps its provenance; blocks read back to text declare theirs,
+    // so a later render can tell the two apart.
+    fromBlocks: precomposed?.bodyMd ? precomposed.fromBlocks : true,
   };
 }
 

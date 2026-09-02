@@ -3,8 +3,9 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { requireSession, scope } from "../../../tenant";
 import { decide } from "../../../actions";
-import { Check, CheckCheck, X } from "lucide-react";
+import { CheckCheck } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
+import MessageCard from "./message-card";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,11 @@ export default async function Review({
       action: a,
       person: await db.collection(C.people).findOne({ _id: new ObjectId(String(a.personId)) }),
       run: await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(a.goalInstanceId)) }),
+      // Whether the designed version is even an option is the channel's business, not
+      // the template's, so the card is told rather than left to guess.
+      channel: a.channelId
+        ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(a.channelId)) })
+        : null,
     })),
   );
 
@@ -126,56 +132,23 @@ export default async function Review({
             : "Messages appear here once a campaign set to hold each one has something to send."}
         </div>
       ) : (
-        rows.map(({ action, person, run }) => {
+        rows.map(({ action, person, run, channel }) => {
           const content = (action.content ?? {}) as { subject?: string; bodyMd?: string; bodyHtml?: string };
+          const caps = (channel?.capabilities ?? {}) as { html?: boolean };
           return (
-            <div className="card" key={String(action._id)} style={{ marginBottom: 16 }}>
-              <div className="head" style={{ marginBottom: 12 }}>
-                <div>
-                  <strong>{String(person?.name ?? person?.primaryEmail ?? "Unknown")}</strong>{" "}
-                  <span className="muted">{String(person?.primaryEmail ?? "")}</span>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    {String(run?.goalKey ?? "—")} · {String(action.channel)} · angle {String(action.angle)}
-                  </div>
-                </div>
-                <span className="spacer" />
-                <form action={decide} className="row">
-                  <input type="hidden" name="productId" value={id} />
-                  <input type="hidden" name="ids" value={String(action._id)} />
-                  {/* Designed mail is the default; plain text is a per-message escape
-                      hatch for a recipient the HTML would not serve. */}
-                  <select name="format" defaultValue="html" aria-label="Send as">
-                    <option value="html">Designed email</option>
-                    <option value="text">Plain text</option>
-                  </select>
-                  <SubmitButton name="decision" value="approve" size="sm" icon={<Check />} pendingLabel="Sending…">Approve</SubmitButton>
-                  <SubmitButton name="decision" value="reject" variant="quiet" size="sm" icon={<X />}>Reject</SubmitButton>
-                </form>
-              </div>
-
-              <div className="preview">
-                {content.subject && (
-                  <div className="preview-head"><span className="k">Subject</span> <strong>{content.subject}</strong></div>
-                )}
-                {/* Approving sends this exact mail, so show the mail — the markdown behind
-                    it reads nothing like what lands in the inbox. */}
-                {content.bodyHtml ? (
-                  <iframe
-                    title={`Message to ${String(person?.primaryEmail ?? "this person")}`}
-                    srcDoc={content.bodyHtml}
-                    className="preview-frame"
-                  />
-                ) : (
-                  <div className="preview-body">{content.bodyMd}</div>
-                )}
-              </div>
-
-              {action.rationale ? (
-                <p className="muted" style={{ fontSize: 13, margin: "10px 0 0" }}>
-                  Why this: {String(action.rationale)}
-                </p>
-              ) : null}
-            </div>
+            <MessageCard
+              key={String(action._id)}
+              productId={id}
+              actionId={String(action._id)}
+              personName={String(person?.name ?? person?.primaryEmail ?? "Unknown")}
+              personEmail={String(person?.primaryEmail ?? "")}
+              meta={`${String(run?.goalKey ?? "—")} · ${String(action.channel)} · angle ${String(action.angle)}`}
+              subject={content.subject}
+              bodyHtml={content.bodyHtml}
+              bodyText={content.bodyMd}
+              rationale={action.rationale ? String(action.rationale) : undefined}
+              canHtml={caps.html !== false}
+            />
           );
         })
       )}

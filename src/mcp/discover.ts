@@ -27,43 +27,6 @@ const hasArg = (tool: McpTool | undefined, re: RegExp) =>
   tool ? argNames(tool).some((a) => re.test(a)) : false;
 
 /**
- * Derives most of a channel's capability sheet from the tool list alone, so a product
- * that never publishes a capability document still gets correct planner behaviour.
- */
-export function inferCapabilities(tools: McpTool[]): Record<string, Capability> {
-  const now = new Date();
-  const sendTool = tools.find((t) => /send|deliver|dispatch|message|mail/i.test(t.name));
-  const mark = (value: boolean | string, confidence = 0.7): Capability => ({
-    value,
-    source: "inferred",
-    confidence,
-    verifiedAt: now,
-  });
-
-  return {
-    send: mark(Boolean(sendTool), sendTool ? 0.9 : 0.9),
-    html: mark(hasArg(sendTool, /html|body_html|content_html/i)),
-    attachments: mark(hasArg(sendTool, /attach|file|media/i)),
-    trackingOpens: mark(
-      hasArg(sendTool, /track_open|open_tracking/i) || has(tools, /open|engagement/i),
-      0.6,
-    ),
-    trackingClicks: mark(
-      hasArg(sendTool, /track_click|click_tracking/i) || has(tools, /click/i),
-      0.6,
-    ),
-    bounceWebhook: mark(has(tools, /bounce|suppress|complaint/i), 0.6),
-    inboundReplies: mark(has(tools, /inbound|repl(y|ies)|receive|messages_list/i), 0.6),
-    fromDomain: mark(
-      hasArg(sendTool, /^from/i) ? "caller_controlled" : "controlled_by_provider",
-      0.7,
-    ),
-    idempotencySupported: mark(hasArg(sendTool, /idempot|request_id|dedupe/i), 0.7),
-    brand: mark(has(tools, /brand|palette|design_?token|styleguide/i), 0.7),
-  };
-}
-
-/**
  * Candidate tools for each adapter verb, best first.
  *
  * Matching on the description alone is worse than useless here: "mail" appears inside
@@ -119,4 +82,45 @@ export function candidatesFor(verb: Verb, tools: McpTool[]): McpTool[] {
   }
 
   return scored.sort((a, b) => b.score - a.score).map((entry) => entry.tool);
+}
+
+/**
+ * Derives most of a channel's capability sheet from the tool list alone, so a product
+ * that never publishes a capability document still gets correct planner behaviour.
+ */
+export function inferCapabilities(tools: McpTool[]): Record<string, Capability> {
+  const now = new Date();
+  // The same ranked resolution the binding uses, rather than the first tool whose name
+  // happens to contain "mail". get_mail_send_status matched that way on one server, and
+  // every capability was then read off a status reader: html false on a server whose
+  // send_mail takes html, so every email went out as plain text and nothing said why.
+  const sendTool = candidatesFor("send", tools)[0];
+  const mark = (value: boolean | string, confidence = 0.7): Capability => ({
+    value,
+    source: "inferred",
+    confidence,
+    verifiedAt: now,
+  });
+
+  return {
+    send: mark(Boolean(sendTool), sendTool ? 0.9 : 0.9),
+    html: mark(hasArg(sendTool, /html|body_html|content_html/i)),
+    attachments: mark(hasArg(sendTool, /attach|file|media/i)),
+    trackingOpens: mark(
+      hasArg(sendTool, /track_open|open_tracking/i) || has(tools, /open|engagement/i),
+      0.6,
+    ),
+    trackingClicks: mark(
+      hasArg(sendTool, /track_click|click_tracking/i) || has(tools, /click/i),
+      0.6,
+    ),
+    bounceWebhook: mark(has(tools, /bounce|suppress|complaint/i), 0.6),
+    inboundReplies: mark(has(tools, /inbound|repl(y|ies)|receive|messages_list/i), 0.6),
+    fromDomain: mark(
+      hasArg(sendTool, /^from/i) ? "caller_controlled" : "controlled_by_provider",
+      0.7,
+    ),
+    idempotencySupported: mark(hasArg(sendTool, /idempot|request_id|dedupe/i), 0.7),
+    brand: mark(has(tools, /brand|palette|design_?token|styleguide/i), 0.7),
+  };
 }

@@ -129,8 +129,12 @@ export async function generateDefaultTemplates(
       });
       // Three concrete steps read as a plan; a paragraph describing them reads as
       // marketing. Only on the opener, and only where there is something to list.
+      //
+      // The opening paragraph already leads on the first value prop, so the list starts
+      // at the second. Repeating it put the same sentence twice in one short email, once
+      // as prose and once as a tick.
       if (!isShortForm && rung.key === "welcome" && config.valueProps.length > 1) {
-        blocks.push({ type: "list", style: "check", items: config.valueProps.slice(0, 3).map(sentence) });
+        blocks.push({ type: "list", style: "check", items: config.valueProps.slice(1, 4).map(sentence) });
       }
       blocks.push({ type: "cta", fixed: rung.key === "last_call" ? "Pick up where you left off" : "Get started", url: config.trialLinkTemplate });
       if (!isShortForm) blocks.push({ type: "system", fixed: "opt_out_block" });

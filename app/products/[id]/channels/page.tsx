@@ -1,9 +1,10 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
-import { createChannel, createHttpChannel, createSmtpChannel, deleteChannel } from "../../../actions";
+import { createChannel, createHttpChannel, createSmtpChannel, deleteChannel, setChannelHtml } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
+import { SubmitButton } from "../../../ui/kit";
 import ChannelDrawer from "./channel-drawer";
 
 export const dynamic = "force-dynamic";
@@ -96,7 +97,7 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
         <div className="tw scroll">
           <table>
             <thead>
-              <tr><th>Channel</th><th>Through</th><th>Today</th><th>Reports back</th><th>Status</th><th /></tr>
+              <tr><th>Channel</th><th>Through</th><th>Today</th><th>Reports back</th><th>Sends</th><th>Status</th><th /></tr>
             </thead>
             <tbody>
               {channels.map((c) => {
@@ -117,6 +118,20 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
                     <td className="muted" style={{ fontSize: 12.5 }}>
                       {caps.trackingOpens ? "opens" : "no opens"} · {caps.inboundReplies ? "replies" : "no replies"}
                       {caps.asyncDelivery ? <div>queued, reconciled</div> : null}
+                    </td>
+                    <td>
+                      {/* Whether a channel can carry a designed email decides what every
+                          campaign on it sends, so it is worth being able to correct by
+                          hand rather than only by rediscovery. */}
+                      <form action={setChannelHtml.bind(null, id, String(c._id))} className="row">
+                        <input type="hidden" name="html" value={caps.html ? "false" : "true"} />
+                        <span className={`pill ${caps.html ? "ok" : ""}`}>
+                          {caps.html ? "designed email" : "plain text"}
+                        </span>
+                        <SubmitButton variant="ghost" size="sm" pendingLabel="Saving…">
+                          {caps.html ? "Send as plain text" : "Allow designed email"}
+                        </SubmitButton>
+                      </form>
                     </td>
                     <td>
                       <span className="status">

@@ -817,6 +817,28 @@ export async function createSmtpChannel(formData: FormData) {
   revalidatePath(`/products/${productId}/channels`);
 }
 
+/**
+ * Turns the designed-HTML capability on or off by hand.
+ *
+ * Discovery reads capabilities off the send tool's arguments, which is a guess — a good
+ * one, but a guess a person can be certain about. Marking it by hand records that
+ * certainty, and nothing rediscovers over it, because a human reading the provider's docs
+ * outranks a regular expression reading its schema.
+ */
+export async function setChannelHtml(productId: string, channelId: string, formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const html = String(formData.get("html")) === "true";
+
+  await db.collection(C.channels).updateOne(
+    { _id: new ObjectId(channelId), orgId, productId },
+    { $set: { "capabilities.html": html, "capabilities.htmlSource": "human" } },
+  );
+
+  revalidatePath(`/products/${productId}/channels`);
+  revalidatePath(`/products/${productId}/review`, "layout");
+}
+
 export async function deleteChannel(productId: string, channelId: string, _formData?: FormData) {
   const db = await getDb();
   await db.collection(C.channels).deleteOne({ _id: new ObjectId(channelId), orgId: (await currentOrg()) });
