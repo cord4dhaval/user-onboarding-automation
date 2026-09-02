@@ -627,9 +627,54 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 .block-actions { display: flex; gap: 2px; align-items: center; }
 .block-actions form { display: contents; }
 
+/* ── loading a page of a list ──────────────────────────────────────────────────
+   The old rows stay put under the veil. Replacing them with a skeleton loses the
+   reader's place, and they are still the truth until the next page lands. */
+
+.busy { position: relative; }
+.busy-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  /* Not `center`: a hundred rows are taller than the window, so the middle of the block is
+     off screen. The spinner sticks near the middle of the view instead, wherever you are
+     in the list, and stays inside the veil's bounds. */
+  align-items: flex-start;
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--ground) 55%, transparent);
+  backdrop-filter: blur(1px);
+  animation: fade 120ms ease-out;
+  z-index: 2;
+}
+.busy-spin {
+  position: sticky;
+  top: calc(50vh - 40px);
+  display: inline-flex;
+  padding: 14px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+
 /* ── drawer internals ──────────────────────────────────────────────────────── */
 
 .drawer-foot { display: flex; gap: 8px; padding-top: 6px; position: sticky; bottom: 0; background: var(--surface); }
+
+/* What a channel has already spent against each of its limits, shown above the fields
+   that change them: a cap only means something next to the spend it is capping. */
+.usage {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.usage-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.usage p.muted { margin: 4px 0 0; font-size: 12.5px; }
 
 /* The add-block menu: one tap target per type, each saying what it is for. */
 .pick { display: grid; gap: 6px; }
@@ -676,7 +721,9 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 /* Segmented control. Switching preview mode is a view change, not navigation, so it must
    not look like a link or cost a round trip. */
 .seg { display: inline-flex; gap: 2px; background: var(--surface-2); padding: 3px; border-radius: var(--r); }
-.seg button {
+/* Links here where the choice is a filter the URL has to carry, buttons where it is a
+   local view change. They must look identical either way. */
+.seg button, .seg a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -687,8 +734,8 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
   padding: 5px 11px;
   border-radius: var(--r-sm);
 }
-.seg button:hover:not(:disabled) { color: var(--ink); background: var(--surface-3); filter: none; }
-.seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+.seg button:hover:not(:disabled), .seg a:hover { color: var(--ink); background: var(--surface-3); filter: none; text-decoration: none; }
+.seg button.on, .seg a.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
 .seg button:disabled { opacity: .4; }
 
 .preview-frame { width: 100%; height: 620px; border: 0; display: block; background: #fff; }

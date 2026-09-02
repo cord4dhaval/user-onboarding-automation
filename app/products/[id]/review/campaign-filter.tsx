@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
+import { BusyLink } from "../../../ui/busy";
 
 export interface CampaignOption {
   key: string;
@@ -86,23 +87,29 @@ export default function CampaignFilter({
           </div>
 
           <div className="combo-list">
-            <a href={allHref} className={`combo-item ${!current ? "on" : ""}`} role="option" aria-selected={!current}>
+            <BusyLink
+              href={allHref}
+              className={`combo-item ${!current ? "on" : ""}`}
+              role="option"
+              aria-selected={!current}
+            >
               {!current ? <Check size={14} /> : <span className="combo-tick" />}
               <span className="combo-name">All campaigns</span>
               <span className="muted num">{allCount}</span>
-            </a>
+            </BusyLink>
             {shown.map((o) => (
-              <a
+              <BusyLink
                 key={o.key}
                 href={o.href}
                 className={`combo-item ${current === o.key ? "on" : ""}`}
                 role="option"
                 aria-selected={current === o.key}
+                onClick={() => setOpen(false)}
               >
                 {current === o.key ? <Check size={14} /> : <span className="combo-tick" />}
                 <span className="combo-name">{o.name}</span>
                 <span className="muted num">{o.count}</span>
-              </a>
+              </BusyLink>
             ))}
             {shown.length === 0 && <p className="muted combo-none">No campaign matches that.</p>}
           </div>

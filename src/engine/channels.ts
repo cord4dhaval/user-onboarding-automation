@@ -59,8 +59,10 @@ export function pickChannelFrom(
     const policy = channel.policy as { audience?: string[] } | undefined;
     if (policy?.audience && !policy.audience.includes(audience)) continue;
 
-    const governor = channel.governor as { dailyCap: number; sentToday: number } | undefined;
-    if (governor && governor.sentToday >= governor.dailyCap) continue;
+    // The cap is deliberately not checked here. `governor.sentToday` is incremented on
+    // send and reset by nothing, so it only ever climbs — a channel that had sent its cap
+    // once would be passed over forever, and planning would silently stop. The real limit
+    // is enforced at send time in fireDue, counted from rows that actually went out.
 
     return { channelId: String(channel._id), key: key as ChannelKey, reason: "first healthy channel in chain" };
   }

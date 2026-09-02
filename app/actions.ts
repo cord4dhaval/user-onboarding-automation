@@ -238,6 +238,40 @@ export async function saveBinding(formData: FormData) {
 // ── channels ──────────────────────────────────────────────────────────────────
 
 /**
+ * Blank means "no limit", which is not the same number as zero — and zero on a daily cap
+ * means nothing may ever send. Read them apart rather than letting `Number("")` decide.
+ */
+function optionalNumber(formData: FormData, name: string): number | undefined {
+  const raw = String(formData.get(name) ?? "").trim();
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
+/** The provider's limits, read the same way whichever kind of channel is being created. */
+function governorFrom(formData: FormData) {
+  return {
+    dailyCap: Math.max(0, Math.floor(Number(formData.get("dailyCap") ?? 50))),
+    perMinute: optionalNumber(formData, "perMinute"),
+    perHour: optionalNumber(formData, "perHour"),
+    warmupDay: 1,
+    sentToday: 0,
+    windowStartedAt: new Date(),
+  };
+}
+
+/**
+ * Designed email or plain text, recorded as a human decision.
+ *
+ * `htmlSource: "human"` is what stops capability rediscovery from quietly overwriting it
+ * the next time the connection's tools are listed.
+ */
+function formatCapsFrom(formData: FormData) {
+  return { html: String(formData.get("format") ?? "html") !== "text", htmlSource: "human" };
+}
+
+
+/**
  * Creates an MCP channel and binds its send tool in the same step.
  *
  * Previously these were two screens: bind the tool on Connections, then come here. Since
@@ -281,17 +315,11 @@ export async function createChannel(formData: FormData) {
     replyTo: String(formData.get("replyTo") ?? "") || undefined,
     capabilities: {
       ...(await capabilitiesFor(connectionId)),
-      maxSubjectLength: Number(formData.get("maxSubjectLength") ?? 0) || undefined,
-      maxBodyLength: Number(formData.get("maxBodyLength") ?? 0) || undefined,
+      ...formatCapsFrom(formData),
+      maxSubjectLength: optionalNumber(formData, "maxSubjectLength"),
+      maxBodyLength: optionalNumber(formData, "maxBodyLength"),
     },
-    governor: {
-      dailyCap: Number(formData.get("dailyCap") ?? 50),
-      perMinute: Number(formData.get("perMinute") ?? 0) || undefined,
-      perHour: Number(formData.get("perHour") ?? 0) || undefined,
-      warmupDay: 1,
-      sentToday: 0,
-      windowStartedAt: new Date(),
-    },
+    governor: governorFrom(formData),
     policy: { audience: ["cold", "warm_lead", "existing_user"] },
     status: "healthy",
     enabled: true,
@@ -811,24 +839,22 @@ export async function createSmtpChannel(formData: FormData) {
     key: "email",
     kind: "native",
     from,
+    replyTo: String(formData.get("replyTo") ?? "").trim() || undefined,
     // SMTP delivers but reports nothing back. Declaring that honestly makes the planner
     // drop open-rate-dependent angles instead of scoring every lead as never-opened.
     capabilities: {
       send: true,
-      html: true,
+      ...formatCapsFrom(formData),
       trackingOpens: false,
       trackingClicks: false,
       bounceWebhook: false,
       inboundReplies: false,
       consentRequired: false,
       fromDomain: "caller_controlled",
+      maxSubjectLength: optionalNumber(formData, "maxSubjectLength"),
+      maxBodyLength: optionalNumber(formData, "maxBodyLength"),
     },
-    governor: {
-      dailyCap: Number(formData.get("dailyCap") ?? 50),
-      warmupDay: 1,
-      sentToday: 0,
-      windowStartedAt: new Date(),
-    },
+    governor: governorFrom(formData),
     policy: { audience: ["cold", "warm_lead", "existing_user"] },
     status: "healthy",
     enabled: true,
@@ -845,17 +871,85 @@ export async function createSmtpChannel(formData: FormData) {
  * certainty, and nothing rediscovers over it, because a human reading the provider's docs
  * outranks a regular expression reading its schema.
  */
-export async function setChannelHtml(productId: string, channelId: string, formData: FormData) {
+/**
+ * Everything about a live channel that is worth correcting without rebuilding it.
+ *
+ * These were create-only fields, which meant a daily cap typed once — or left at the form
+ * default — could never be changed again except by writing to the database by hand. A cap
+ * is the single most consequential number here: campaigns are planned against it, and the
+ * messages it stops are approved ones.
+ */
+export async function updateChannel(productId: string, channelId: string, formData: FormData) {
   const db = await getDb();
   const orgId = await currentOrg();
-  const html = String(formData.get("html")) === "true";
+  const channel = await db.collection(C.channels).findOne({ _id: new ObjectId(channelId), orgId, productId });
+  if (!channel) throw new Error("channel not found");
+
+  const status = String(formData.get("status") ?? "healthy");
+  const format = formatCapsFrom(formData);
+  const governor = governorFrom(formData);
+
+  const fields: Record<string, unknown> = {
+    key: String(formData.get("key") ?? channel.key),
+    "governor.dailyCap": governor.dailyCap,
+    // The stale counter is zeroed on every save rather than left to drift further.
+    // Nothing reads it for a decision any more, but a wrong number on a screen is still
+    // a number someone will plan around.
+    "governor.sentToday": 0,
+    "governor.windowStartedAt": new Date(),
+    "capabilities.html": format.html,
+    "capabilities.htmlSource": format.htmlSource,
+    status,
+    // A paused channel must stop being picked for new touches too, not merely refuse at
+    // send time — otherwise every campaign keeps planning into a dead end.
+    enabled: status === "healthy",
+  };
+  // The driver is built with ignoreUndefined, so an emptied field has to be unset by name:
+  // setting it to undefined would silently leave the old limit in place.
+  const cleared: Record<string, ""> = {};
+  const put = (path: string, value: number | string | undefined) => {
+    if (value === undefined || value === "") cleared[path] = "";
+    else fields[path] = value;
+  };
+  put("governor.perMinute", governor.perMinute);
+  put("governor.perHour", governor.perHour);
+  put("capabilities.maxSubjectLength", optionalNumber(formData, "maxSubjectLength"));
+  put("capabilities.maxBodyLength", optionalNumber(formData, "maxBodyLength"));
+  put("from", String(formData.get("from") ?? "").trim());
+  put("replyTo", String(formData.get("replyTo") ?? "").trim());
+
+  // Rebinding the send tool. Only MCP channels have one, and the binding lives on the
+  // connection rather than the channel — so this is also how a channel is moved to a
+  // different server, and why the drawer says which connection it belongs to.
+  const sendTool = String(formData.get("sendTool") ?? "").trim();
+  if (sendTool) {
+    const [connectionId, tool] = sendTool.split("::");
+    if (!connectionId || !tool) throw new Error("Pick which tool sends the message.");
+
+    const args: Record<string, string> = {};
+    for (const [field, value] of formData.entries()) {
+      if (field.startsWith("arg:") && String(value).trim()) args[field.slice(4)] = String(value).trim();
+    }
+    await assertRequiredArgsMapped(orgId, connectionId, tool, args);
+
+    const returnPath = String(formData.get("returnMessageId") ?? "").trim();
+    const spec: Record<string, unknown> = { tool, args };
+    if (returnPath) spec.returns = { message_id: returnPath };
+
+    await db
+      .collection(C.mcpBindings)
+      .updateOne({ orgId, connectionId }, { $set: { "bind.send": spec } }, { upsert: true });
+    fields.connectionId = connectionId;
+  }
 
   await db.collection(C.channels).updateOne(
     { _id: new ObjectId(channelId), orgId, productId },
-    { $set: { "capabilities.html": html, "capabilities.htmlSource": "human" } },
+    { $set: fields, ...(Object.keys(cleared).length ? { $unset: cleared } : {}) },
   );
 
   revalidatePath(`/products/${productId}/channels`);
+  // What a channel can carry decides what every campaign on it composes, so the pages that
+  // render a message have to be rebuilt with it.
   revalidatePath(`/products/${productId}/review`, "layout");
 }
 
@@ -929,7 +1023,41 @@ export async function decide(formData: FormData) {
   revalidatePath(`/products/${productId}/review`, "layout");
 }
 
-/** What a held message actually says, fetched only when a reviewer opens it. */
+/**
+ * Puts messages that were approved but never sent back in front of a reviewer.
+ *
+ * A cap that fills mid-batch used to be the end of those messages: `skipped` is terminal,
+ * nothing retries it, and raising the cap afterwards does not bring them back. They are
+ * still perfectly good — approved, composed, frozen — so this returns them to the review
+ * queue rather than making anyone rebuild the campaign.
+ *
+ * Only messages the engine stopped are eligible. A rejection has no `skipReason`, and
+ * resurrecting something a human turned down is not a recovery, it is an override.
+ */
+export async function returnToReview(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const ids = formData.getAll("ids").map((v) => new ObjectId(String(v)));
+  if (ids.length === 0) return;
+
+  await db.collection(C.actions).updateMany(
+    { _id: { $in: ids }, orgId, productId, status: "skipped", skipReason: { $exists: true } },
+    {
+      // `reviewedAt` is deliberately kept. The sender reuses stored content for a message
+      // that has been reviewed, so what goes out is the text that was approved, not a
+      // fresh render of a template that may have changed since.
+      $set: { status: "awaiting_approval" },
+      // The old reason describes a window that has since moved; leaving it would label a
+      // message in the review queue with a block that no longer applies.
+      $unset: { skipReason: "", deferReason: "" },
+    },
+  );
+
+  revalidatePath(`/products/${productId}/review`, "layout");
+}
+
+/** What a message actually says, fetched only when a reviewer opens it. */
 export interface HeldMessage {
   subject?: string;
   bodyHtml?: string;
@@ -937,21 +1065,29 @@ export interface HeldMessage {
   rationale?: string;
   /** False when the channel cannot carry HTML, so the designed version is not on offer. */
   canHtml: boolean;
+  /** The action's own status, so the drawer knows whether a decision is still on offer. */
+  status: string;
+  /** Why a message that was approved never went out — a cap, a suppression, an error. */
+  skipReason?: string;
+  sentAt?: string;
+  reviewedAt?: string;
 }
 
 /**
- * The body of one held message.
+ * The body of one message in the review list.
  *
  * The review list is a table now, and a page of 500 rows carrying a rendered email each is
  * megabytes of HTML to show six columns of metadata. The body is read when the drawer
  * opens instead.
+ *
+ * Any status is readable, not only the ones still waiting: "what exactly did we send that
+ * person" is the question asked most often, and it is unanswerable if the record disappears
+ * from view the moment it is approved.
  */
 export async function heldMessage(actionId: string): Promise<HeldMessage | null> {
   const db = await getDb();
   const orgId = await currentOrg();
-  const action = await db
-    .collection(C.actions)
-    .findOne({ _id: new ObjectId(actionId), orgId, status: "awaiting_approval" });
+  const action = await db.collection(C.actions).findOne({ _id: new ObjectId(actionId), orgId });
   if (!action) return null;
 
   const content = (action.content ?? {}) as { subject?: string; bodyMd?: string; bodyHtml?: string };
@@ -968,6 +1104,10 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     bodyText: content.bodyMd,
     rationale: action.rationale ? String(action.rationale) : undefined,
     canHtml: caps.html !== false,
+    status: String(action.status),
+    skipReason: action.skipReason ? String(action.skipReason) : action.error ? String(action.error) : undefined,
+    sentAt: action.sentAt ? new Date(String(action.sentAt)).toISOString() : undefined,
+    reviewedAt: action.reviewedAt ? new Date(String(action.reviewedAt)).toISOString() : undefined,
   };
 }
 
@@ -1229,24 +1369,17 @@ export async function createHttpChannel(formData: FormData) {
     // reaching for angles that depend on open rates.
     capabilities: {
       send: true,
-      html: true,
+      ...formatCapsFrom(formData),
       trackingOpens: false,
       trackingClicks: false,
       bounceWebhook: false,
       inboundReplies: false,
       consentRequired: false,
       fromDomain: "caller_controlled",
-      maxSubjectLength: Number(formData.get("maxSubjectLength") ?? 0) || undefined,
-      maxBodyLength: Number(formData.get("maxBodyLength") ?? 0) || undefined,
+      maxSubjectLength: optionalNumber(formData, "maxSubjectLength"),
+      maxBodyLength: optionalNumber(formData, "maxBodyLength"),
     },
-    governor: {
-      dailyCap: Number(formData.get("dailyCap") ?? 50),
-      perMinute: Number(formData.get("perMinute") ?? 0) || undefined,
-      perHour: Number(formData.get("perHour") ?? 0) || undefined,
-      warmupDay: 1,
-      sentToday: 0,
-      windowStartedAt: new Date(),
-    },
+    governor: governorFrom(formData),
     policy: { audience: ["cold", "warm_lead", "existing_user"] },
     status: "healthy",
     enabled: true,

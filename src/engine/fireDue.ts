@@ -8,7 +8,7 @@ import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
 import { ConsoleAdapter } from "../adapters/channel/console.js";
-import { limitsFor, rateCheck } from "./governor.js";
+import { limitsFor, rateBlock } from "./governor.js";
 
 export interface FireSummary {
   claimed: number;
@@ -19,6 +19,13 @@ export interface FireSummary {
   blocked: Array<{ person: string; reason: string }>;
   failed: Array<{ person: string; error: string }>;
 }
+
+/**
+ * How long a claim may sit before a later run treats the claiming process as dead. Long
+ * enough that no live send is ever interrupted — the slowest provider call here is seconds
+ * — and short enough that a crash costs minutes rather than the message.
+ */
+const STALE_CLAIM_MS = 15 * 60_000;
 
 export interface FireOptions {
   orgId: string;
@@ -57,17 +64,37 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
   const due = await db
     .collection(C.actions)
-    .find({ orgId: opts.orgId, productId: opts.productId, status: "queued", dueAt: { $lte: now } })
+    .find({
+      orgId: opts.orgId,
+      productId: opts.productId,
+      $or: [
+        { status: "queued", dueAt: { $lte: now } },
+        // A claim is a lease, and a process killed mid-send never released it. Without
+        // this the action is invisible to every later run — no status it can reach, and no
+        // query that finds it — so it simply never sends. Only claims with no provider id
+        // are reclaimed: one that got as far as the provider may already be delivered, and
+        // sending it twice is worse than leaving it for a human to look at.
+        {
+          status: "sending",
+          claimedAt: { $lte: new Date(now.getTime() - STALE_CLAIM_MS) },
+          providerMessageId: { $exists: false },
+        },
+      ],
+    })
     .limit(opts.limit ?? 100)
     .toArray();
 
   for (const action of due) {
     // Claim it. The status transition is the lease: a second concurrent run finds nothing
-    // to update and moves on, so the same touch cannot be sent twice.
-    const claim = await db.collection(C.actions).findOneAndUpdate(
-      { _id: action._id, status: "queued" },
-      { $set: { status: "sending", claimedAt: now } },
-    );
+    // to update and moves on, so the same touch cannot be sent twice. A reclaim matches on
+    // the stale claim time as well, so a run that got there first keeps it.
+    const lease =
+      action.status === "sending"
+        ? { _id: action._id, status: "sending", claimedAt: action.claimedAt }
+        : { _id: action._id, status: "queued" };
+    const claim = await db.collection(C.actions).findOneAndUpdate(lease, {
+      $set: { status: "sending", claimedAt: now },
+    });
     if (!claim) continue;
     summary.claimed++;
 
@@ -99,8 +126,22 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         now,
       });
       if (block) {
-        await release(action._id, "skipped", { skipReason: block });
-        summary.blocked.push({ person: name || label, reason: block });
+        if (block.retryAt) {
+          // Back to the queue at the moment the window frees, exactly like provider
+          // back-pressure below. The message keeps its approval and its frozen content, so
+          // it goes out later as the words a human already read.
+          await db.collection(C.actions).updateOne(
+            { _id: action._id },
+            {
+              $set: { status: "queued", dueAt: block.retryAt, deferReason: block.reason },
+              $unset: { claimedAt: "" },
+            },
+          );
+          summary.deferred++;
+          continue;
+        }
+        await release(action._id, "skipped", { skipReason: block.reason });
+        summary.blocked.push({ person: name || label, reason: block.reason });
         continue;
       }
 
@@ -216,6 +257,8 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             providerMessageId: result.providerMessageId,
             dryRun,
           },
+          // It waited for a window and then went out; the note about waiting is history now.
+          $unset: { deferReason: "" },
         },
       );
 
@@ -262,31 +305,48 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
   }
 }
 
+/**
+ * Why a message may not go out, and whether that is a verdict or a delay.
+ *
+ * The difference is the whole point. Suppression, a passed deadline and a spent budget are
+ * decisions: the message should never be sent, and marking it skipped is correct. A rate
+ * limit is a clock — the same message is perfectly sendable half an hour later. Treating
+ * the second like the first is what silently destroyed 85 approved messages when a daily
+ * cap filled up mid-batch.
+ */
+interface Blocked {
+  reason: string;
+  /** Set only for a temporary block: when to try this message again. */
+  retryAt?: Date;
+}
+
 async function blockedReason(args: {
   orgId: string;
   email: string;
   goalInstance: Record<string, unknown>;
   channel: Record<string, unknown>;
   now: Date;
-}): Promise<string | null> {
-  if (await isSuppressed(args.orgId, [args.email])) return "on the suppression list";
+}): Promise<Blocked | null> {
+  if (await isSuppressed(args.orgId, [args.email])) return { reason: "on the suppression list" };
 
   const gi = args.goalInstance as { status: string; deadline: Date; spent: { touches: number }; goalKey: string };
-  if (gi.status !== "active") return `goal instance is ${gi.status}`;
-  if (new Date(gi.deadline) < args.now) return "goal deadline passed";
+  if (gi.status !== "active") return { reason: `goal instance is ${gi.status}` };
+  if (new Date(gi.deadline) < args.now) return { reason: "goal deadline passed" };
 
   const db = await getDb();
   const goal = await db.collection(C.goals).findOne({ orgId: args.orgId, key: gi.goalKey });
   const budget = goal?.budget as { touches: number } | undefined;
-  if (budget && gi.spent.touches >= budget.touches) return "touch budget exhausted";
+  if (budget && gi.spent.touches >= budget.touches) return { reason: "touch budget exhausted" };
 
-  if (args.channel.status !== "healthy") return `channel is ${String(args.channel.status)}`;
+  // A channel someone paused is a decision; one the engine marked degraded is a fault that
+  // may clear. Neither is a clock, so both wait for a human rather than a timer.
+  if (args.channel.status !== "healthy") return { reason: `channel is ${String(args.channel.status)}` };
 
   // Provider limits are enforced here, in code, from what was actually sent.
   const channelId = String(args.channel._id);
   const limits = await limitsFor(args.orgId, channelId);
-  const rateBlock = await rateCheck(args.orgId, channelId, limits, args.now);
-  if (rateBlock) return rateBlock;
+  const rate = await rateBlock(args.orgId, channelId, limits, args.now);
+  if (rate) return { reason: rate.reason, retryAt: rate.retryAt };
 
   return null;
 }

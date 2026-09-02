@@ -1,11 +1,19 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
+import { channelUsage, limitsFor } from "@/engine/governor.js";
 import type { McpTool } from "@/mcp/client.js";
-import { createChannel, createHttpChannel, createSmtpChannel, deleteChannel, setChannelHtml } from "../../../actions";
+import {
+  createChannel,
+  createHttpChannel,
+  createSmtpChannel,
+  deleteChannel,
+  updateChannel,
+} from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
-import { SubmitButton } from "../../../ui/kit";
 import ChannelDrawer from "./channel-drawer";
+import ChannelSettingsDrawer from "./channel-settings";
+import { WINDOW_LABEL, windowTime, type UsageWindow } from "./windows";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +69,33 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
     })
     .filter((c) => c.tools.length > 0);
 
+  // One flat list of every tool on every connected server, built once: the add drawer picks
+  // from it, and so does each row's edit drawer.
+  const toolChoices = connectionTools.flatMap((c) =>
+    c.tools.map((t) => ({
+      value: `${c.id}::${t.name}`,
+      label: `${c.provider} → ${t.name}`,
+      description: t.description,
+      args: t.args,
+    })),
+  );
+
+  // Counted the same way the send path counts it, rather than read off `governor.sentToday`
+  // — that counter is incremented on send and reset by nothing, so the old "23/50" on this
+  // page drifted further from the truth every day and was the number people planned around.
+  const usageByChannel = new Map<string, UsageWindow[]>(
+    await Promise.all(
+      channels.map(async (c) => {
+        const channelId = String(c._id);
+        const windows = await channelUsage(orgId, channelId, await limitsFor(orgId, channelId));
+        return [
+          channelId,
+          windows.map((w) => ({ ...w, freesAt: w.freesAt?.toISOString() })),
+        ] as [string, UsageWindow[]];
+      }),
+    ),
+  );
+
   return (
     <>
       <div className="head">
@@ -97,13 +132,26 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
         <div className="tw scroll">
           <table>
             <thead>
-              <tr><th>Channel</th><th>Through</th><th>Today</th><th>Reports back</th><th>Sends</th><th>Status</th><th /></tr>
+              <tr><th>Channel</th><th>Through</th><th>Used</th><th>Reports back</th><th>Sends</th><th>Status</th><th /></tr>
             </thead>
             <tbody>
               {channels.map((c) => {
                 const caps = (c.capabilities ?? {}) as Record<string, unknown>;
-                const gov = (c.governor ?? {}) as { sentToday?: number; dailyCap?: number };
+                const gov = (c.governor ?? {}) as {
+                  dailyCap?: number;
+                  perMinute?: number;
+                  perHour?: number;
+                };
                 const connection = connections.find((x) => String(x._id) === String(c.connectionId));
+                // What this channel is bound to send with today, so the drawer opens on the
+                // real mapping rather than on a fresh guess at it.
+                const send = (bindingFor(String(c.connectionId))?.bind as
+                  | { send?: { tool?: string; args?: Record<string, string>; returns?: { message_id?: string } } }
+                  | undefined)?.send;
+                const usage = usageByChannel.get(String(c._id)) ?? [];
+                const daily = usage.find((w) => w.label === "daily");
+                // The first limit with nothing left is the one currently stopping sends.
+                const blocked = usage.find((w) => w.free === 0);
                 return (
                   <tr key={String(c._id)}>
                     <td>
@@ -114,24 +162,39 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
                       {String(connection?.provider ?? c.kind)}
                       <div className="muted" style={{ fontSize: 12.5 }}>{String(c.kind)}</div>
                     </td>
-                    <td className="num">{gov.sentToday ?? 0}/{gov.dailyCap ?? "—"}</td>
+                    <td>
+                      {daily ? (
+                        <>
+                          <span className={`pill ${blocked ? "bad" : "ok"}`}>
+                            {daily.used}/{daily.limit}
+                          </span>
+                          {/* What the number means, not what it counts. "47/50" alone reads
+                              as a calendar-day tally, and this one is a rolling window that
+                              refills a slot at a time — so the row says how many can go out
+                              now and when the next one frees. */}
+                          <div className="muted" style={{ fontSize: 12.5 }}>
+                            {blocked
+                              ? `${WINDOW_LABEL[blocked.label] ?? blocked.label} full${
+                                  blocked.freesAt ? ` · frees ${windowTime(blocked.freesAt)}` : ""
+                                }`
+                              : `${daily.free} can send now`}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="muted">no cap</span>
+                      )}
+                    </td>
                     <td className="muted" style={{ fontSize: 12.5 }}>
                       {caps.trackingOpens ? "opens" : "no opens"} · {caps.inboundReplies ? "replies" : "no replies"}
                       {caps.asyncDelivery ? <div>queued, reconciled</div> : null}
                     </td>
                     <td>
-                      {/* Whether a channel can carry a designed email decides what every
-                          campaign on it sends, so it is worth being able to correct by
-                          hand rather than only by rediscovery. */}
-                      <form action={setChannelHtml.bind(null, id, String(c._id))} className="row">
-                        <input type="hidden" name="html" value={caps.html ? "false" : "true"} />
-                        <span className={`pill ${caps.html ? "ok" : ""}`}>
-                          {caps.html ? "designed email" : "plain text"}
-                        </span>
-                        <SubmitButton variant="ghost" size="sm" pendingLabel="Saving…">
-                          {caps.html ? "Send as plain text" : "Allow designed email"}
-                        </SubmitButton>
-                      </form>
+                      {/* Read-only here. What a channel can carry decides what every campaign
+                          on it composes, so the choice lives with the rest of the channel's
+                          settings rather than as a one-click toggle on a list. */}
+                      <span className={`pill ${caps.html ? "ok" : ""}`}>
+                        {caps.html ? "designed email" : "plain text"}
+                      </span>
                     </td>
                     <td>
                       <span className="status">
@@ -140,12 +203,37 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
                       </span>
                     </td>
                     <td>
-                      <ConfirmButton
-                        title={`Remove the ${String(c.key)} channel?`}
-                        body="Campaigns that send on it will have nowhere to deliver until another is connected. Messages already sent are kept."
-                        confirmLabel="Remove channel"
-                        action={deleteChannel.bind(null, id, String(c._id))}
-                      />
+                      <div className="row-actions">
+                        <ChannelSettingsDrawer
+                          channel={{
+                            id: String(c._id),
+                            key: String(c.key),
+                            kind: String(c.kind),
+                            through: connection ? String(connection.provider) : undefined,
+                            from: c.from ? String(c.from) : undefined,
+                            replyTo: c.replyTo ? String(c.replyTo) : undefined,
+                            status: String(c.status),
+                            html: Boolean(caps.html),
+                            dailyCap: Number(gov.dailyCap ?? 0),
+                            perMinute: gov.perMinute ?? undefined,
+                            perHour: gov.perHour ?? undefined,
+                            maxSubjectLength: (caps.maxSubjectLength as number | undefined) ?? undefined,
+                            maxBodyLength: (caps.maxBodyLength as number | undefined) ?? undefined,
+                            sendTool: send ? `${String(c.connectionId)}::${send.tool}` : undefined,
+                            sendArgs: send?.args,
+                            returnMessageId: send?.returns?.message_id,
+                          }}
+                          usage={usage}
+                          toolChoices={toolChoices}
+                          action={updateChannel.bind(null, id, String(c._id))}
+                        />
+                        <ConfirmButton
+                          title={`Remove the ${String(c.key)} channel?`}
+                          body="Campaigns that send on it will have nowhere to deliver until another is connected. Messages already sent are kept."
+                          confirmLabel="Remove channel"
+                          action={deleteChannel.bind(null, id, String(c._id))}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );

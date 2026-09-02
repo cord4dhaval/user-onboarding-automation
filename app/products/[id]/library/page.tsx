@@ -1,5 +1,5 @@
 import { Filter, Layers, Search, Users } from "lucide-react";
-import { audienceCount, queryLibrary } from "@/engine/library.js";
+import { audienceCount, queryLibrary, type DeliveryState } from "@/engine/library.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { deleteAudience, importPeople, saveAudience } from "../../../actions";
@@ -13,6 +13,13 @@ import ImportDrawer from "./import-drawer";
 export const dynamic = "force-dynamic";
 
 const STATES = ["new", "active", "cooling", "dormant", "suppressed"] as const;
+
+const DELIVERY: Array<{ key: DeliveryState; label: string }> = [
+  { key: "sent", label: "sent — handed to the provider" },
+  { key: "delivered", label: "delivered — provider confirmed" },
+  { key: "failed", label: "failed" },
+  { key: "pending", label: "not sent yet" },
+];
 
 const LIFECYCLE_COPY: Record<string, string> = {
   new: "never contacted",
@@ -45,20 +52,28 @@ export default async function Audience({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string; state?: string; tab?: string }>;
+  searchParams: Promise<{ q?: string; state?: string; campaign?: string; delivery?: string; tab?: string }>;
 }) {
   const { id } = await params;
-  const { q, state, tab } = await searchParams;
+  const { q, state, campaign, delivery, tab } = await searchParams;
+  const deliveryKey = DELIVERY.find((d) => d.key === delivery)?.key;
   const current = tab === "audiences" ? "audiences" : "people";
   const { orgId } = await requireSession();
   const db = await getDb();
   const s = scope(orgId, id);
   const base = `/products/${id}/library`;
 
-  const [{ rows, total }, everyone, audienceDocs] = await Promise.all([
-    queryLibrary(orgId, id, { search: q, lifecycle: state ? [state] : undefined, limit: 100 }),
+  const [{ rows, total }, everyone, audienceDocs, goals] = await Promise.all([
+    queryLibrary(orgId, id, {
+      search: q,
+      lifecycle: state ? [state] : undefined,
+      campaign: campaign || undefined,
+      delivery: deliveryKey,
+      limit: 100,
+    }),
     db.collection(C.people).countDocuments(s),
     db.collection(C.audiences).find(s).sort({ createdAt: -1 }).toArray(),
+    db.collection(C.goals).find(s).project({ key: 1, name: 1 }).toArray(),
   ]);
 
   const counts = Object.fromEntries(
@@ -123,6 +138,19 @@ export default async function Audience({
                 <option key={st} value={st}>{st} ({counts[st] ?? 0})</option>
               ))}
             </select>
+            <select name="campaign" defaultValue={campaign ?? ""} style={{ maxWidth: 220 }}>
+              <option value="">Any campaign</option>
+              {goals.map((g) => (
+                <option key={String(g.key)} value={String(g.key)}>{String(g.name ?? g.key)}</option>
+              ))}
+            </select>
+            <select name="delivery" defaultValue={deliveryKey ?? ""} style={{ maxWidth: 220 }}>
+              <option value="">Any delivery</option>
+              {DELIVERY.map((d) => (
+                <option key={d.key} value={d.key}>{d.label}</option>
+              ))}
+            </select>
+            {tab && <input type="hidden" name="tab" value={tab} />}
             <SubmitButton variant="quiet" icon={<Filter />} pendingLabel="Filtering…">Filter</SubmitButton>
           </form>
 
@@ -137,7 +165,7 @@ export default async function Audience({
               <strong>{everyone === 0 ? "Nobody here yet" : "Nobody matches that"}</strong>
               {everyone === 0
                 ? "Add people directly, or run a campaign — everyone it touches lands here automatically."
-                : "Try a different search or state."}
+                : "Try a different search, state, campaign or delivery."}
             </div>
           ) : (
             <>

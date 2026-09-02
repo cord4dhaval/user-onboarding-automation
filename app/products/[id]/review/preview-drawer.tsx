@@ -48,6 +48,9 @@ export default function PreviewDrawer({
   }
 
   const designed = Boolean(message?.canHtml && message.bodyHtml);
+  // A decision is only on offer while the message is still waiting. Everything else opens
+  // read-only: the point of showing it is the record, not a second chance to approve it.
+  const waiting = message?.status === "awaiting_approval";
 
   return (
     <>
@@ -66,8 +69,8 @@ export default function PreviewDrawer({
           <p className="muted row"><Spinner /> Loading the message…</p>
         ) : !message ? (
           <div className="empty">
-            <strong>Already reviewed</strong>
-            This message left the queue while the list was open.
+            <strong>Message not found</strong>
+            It was deleted while the list was open.
           </div>
         ) : (
           <>
@@ -93,13 +96,15 @@ export default function PreviewDrawer({
                 </button>
               </div>
               <p className="muted">
-                {designed
-                  ? format === "html"
-                    ? "Approving sends this designed version."
-                    : "Approving sends the text below instead — this message only."
-                  : message.canHtml
-                    ? "No designed version was rendered for this message."
-                    : "This channel sends plain text only."}
+                {!waiting
+                  ? outcomeLine(message)
+                  : designed
+                    ? format === "html"
+                      ? "Approving sends this designed version."
+                      : "Approving sends the text below instead — this message only."
+                    : message.canHtml
+                      ? "No designed version was rendered for this message."
+                      : "This channel sends plain text only."}
               </p>
             </div>
 
@@ -126,20 +131,44 @@ export default function PreviewDrawer({
 
             {/* Sticky, because the decision must stay reachable without scrolling back up
                 past a full-height rendered email. */}
-            <form action={decide} className="drawer-foot">
-              <input type="hidden" name="productId" value={productId} />
-              <input type="hidden" name="ids" value={actionId} />
-              <input type="hidden" name="format" value={format} />
-              <SubmitButton name="decision" value="approve" icon={<Check />} pendingLabel="Sending…">
-                Approve
-              </SubmitButton>
-              <SubmitButton name="decision" value="reject" variant="quiet" icon={<X />}>
-                Reject
-              </SubmitButton>
-            </form>
+            {waiting && (
+              <form action={decide} className="drawer-foot">
+                <input type="hidden" name="productId" value={productId} />
+                <input type="hidden" name="ids" value={actionId} />
+                <input type="hidden" name="format" value={format} />
+                <SubmitButton name="decision" value="approve" icon={<Check />} pendingLabel="Sending…">
+                  Approve
+                </SubmitButton>
+                <SubmitButton name="decision" value="reject" variant="quiet" icon={<X />}>
+                  Reject
+                </SubmitButton>
+              </form>
+            )}
           </>
         )}
       </Drawer>
     </>
   );
+}
+
+/** One line saying what became of a message that is no longer waiting. */
+function outcomeLine(message: HeldMessage): string {
+  const when = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 16).replace("T", " ") : "");
+  switch (message.status) {
+    case "sent":
+      return `Sent ${when(message.sentAt)}. This is the message that arrived.`;
+    case "dispatched":
+      return "Handed to the provider — waiting on delivery confirmation.";
+    case "sending":
+    case "queued":
+      return "Approved and in the send queue.";
+    case "failed":
+      return message.skipReason ? `Failed: ${message.skipReason}` : "Failed on send.";
+    case "skipped":
+      return message.skipReason
+        ? `Approved but never sent — ${message.skipReason}.`
+        : `Rejected ${when(message.reviewedAt)}. Nothing was sent.`;
+    default:
+      return `Status: ${message.status}.`;
+  }
 }

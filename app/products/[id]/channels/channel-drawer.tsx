@@ -4,6 +4,7 @@ import { useState } from "react";
 import Drawer from "../../../ui/drawer";
 import { Globe, Mail, Plug, Plus } from "lucide-react";
 import { Button, SubmitButton } from "../../../ui/kit";
+import { FormatChoice, SendToolFields } from "./channel-fields";
 
 export interface ConnectionTools {
   id: string;
@@ -23,18 +24,6 @@ const EXAMPLE_PAYLOAD = JSON.stringify(
   null,
   2,
 );
-
-/** A first guess only — every field stays editable, and nothing is filtered out. */
-function guessRef(argName: string): string {
-  const n = argName.toLowerCase();
-  if (/^(to|recipient|email|to_email|address)$/.test(n)) return "$person.email";
-  if (/subject|title/.test(n)) return "$content.subject";
-  if (/html/.test(n)) return "$content.bodyHtml";
-  if (/^(text|body|message|content)$/.test(n)) return "$content.body";
-  if (/^from/.test(n)) return "$channel.from";
-  if (/replyto|reply_to/.test(n)) return "$channel.replyTo";
-  return "";
-}
 
 type Kind = "mcp" | "smtp" | "http";
 
@@ -70,13 +59,10 @@ export default function ChannelDrawer({
     })),
   );
 
-  const [picked, setPicked] = useState(
-    () =>
-      choices.find((c) => connections.some((k) => c.value === `${k.id}::${k.boundSendTool}`))?.value ??
-      choices[0]?.value ??
-      "",
-  );
-  const selected = choices.find((c) => c.value === picked);
+  // A tool already bound as Send on the connections page is the obvious first offer.
+  const suggested =
+    choices.find((c) => connections.some((k) => c.value === `${k.id}::${k.boundSendTool}`))?.value ??
+    choices[0]?.value;
 
   const channelSelect = (
     <label>
@@ -144,55 +130,10 @@ export default function ChannelDrawer({
               <form action={mcpAction} className="stack" style={{ marginTop: 18 }}>
                 <input type="hidden" name="productId" value={productId} />
 
-                <label>
-                  Which tool sends the message
-                  <select name="sendTool" value={picked} onChange={(e) => setPicked(e.target.value)}>
-                    {choices.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                  </select>
-                  <span className="muted" style={{ fontSize: 13 }}>
-                    {selected?.description
-                      ? selected.description.slice(0, 180)
-                      : "Every tool on every connected server. Pick the one that actually sends."}
-                  </span>
-                </label>
-
-                {selected && selected.args.length > 0 && (
-                  <>
-                    <p className="sub" style={{ margin: 0 }}>
-                      What to pass it. Values starting with <code>$</code> are filled in per person; anything
-                      else is sent as written. Optional fields can be left blank; the ones this tool marks
-                      required have to be mapped, or it will refuse every message.
-                    </p>
-                    {selected.args.map((arg) => (
-                      <label key={arg.name}>
-                        <span>
-                          Argument <code>{arg.name}</code>{" "}
-                          <span className="muted">
-                            {arg.required ? "required" : "optional"}
-                            {arg.type ? ` · ${arg.type}` : ""}
-                          </span>
-                        </span>
-                        <input
-                          name={`arg:${arg.name}`}
-                          defaultValue={guessRef(arg.name)}
-                          placeholder="$person.email"
-                          required={arg.required}
-                        />
-                        {arg.description ? (
-                          <span className="muted">{arg.description.slice(0, 140)}</span>
-                        ) : null}
-                      </label>
-                    ))}
-                    <label>
-                      Where their message id lives <span className="muted">(optional)</span>
-                      <input name="returnMessageId" placeholder="$.batchId" />
-                    </label>
-                  </>
-                )}
+                <SendToolFields choices={choices} defaultValue={suggested} />
 
                 {channelSelect}
+                <FormatChoice />
                 <label>
                   From <span className="muted">(leave blank if the provider controls it)</span>
                   <input name="from" placeholder="TeamGrid <hi@teamgrid.ai>" />
@@ -223,7 +164,12 @@ export default function ChannelDrawer({
             <label>Username<input name="user" placeholder="you@yourdomain.com" required /></label>
             <label>Password<input name="pass" type="password" placeholder="app password" required /></label>
             <label>From<input name="from" placeholder="TeamGrid <hi@yourdomain.com>" required /></label>
-            <label>Daily cap<input name="dailyCap" type="number" defaultValue={50} min={1} /></label>
+            <label>
+              Reply-To <span className="muted">(where replies land)</span>
+              <input name="replyTo" placeholder="hello@yourdomain.com" />
+            </label>
+            <FormatChoice />
+            {limits}
             <SubmitButton pendingLabel="Creating…">Create email channel</SubmitButton>
           </form>
         )}
@@ -254,6 +200,11 @@ export default function ChannelDrawer({
               </label>
             </div>
             <label>From<input name="from" placeholder="TeamGrid <hi@yourdomain.com>" /></label>
+            <label>
+              Reply-To <span className="muted">(where replies land)</span>
+              <input name="replyTo" placeholder="hello@yourdomain.com" />
+            </label>
+            <FormatChoice />
             {limits}
             <SubmitButton pendingLabel="Creating…">Create channel</SubmitButton>
           </form>

@@ -14,9 +14,27 @@ export interface LibraryQuery {
   lifecycle?: string[];
   segment?: string;
   hasCampaign?: boolean;
+  /** A goal key — narrows to people some instance of that campaign has run on. */
+  campaign?: string;
+  /** How far a message to them got: "sent" is handed off, "delivered" is confirmed. */
+  delivery?: DeliveryState;
   limit?: number;
   skip?: number;
 }
+
+export type DeliveryState = "sent" | "delivered" | "failed" | "pending";
+
+/**
+ * Delivery lives on actions, not on people, because one person can hold several messages
+ * in different states. Asking "who has a sent message" is therefore a question about
+ * actions answered as a list of people.
+ */
+const DELIVERY_MATCH: Record<DeliveryState, Filter<Document>> = {
+  sent: { status: "sent" },
+  delivered: { status: "sent", confirmedAt: { $exists: true } },
+  failed: { status: "failed" },
+  pending: { status: { $in: ["queued", "held", "awaiting_approval", "sending", "dispatched"] } },
+};
 
 export async function queryLibrary(orgId: string, productId: string, q: LibraryQuery = {}) {
   const db = await getDb();
@@ -28,6 +46,26 @@ export async function queryLibrary(orgId: string, productId: string, q: LibraryQ
   }
   if (q.lifecycle?.length) filter.lifecycle = { $in: q.lifecycle };
   if (q.segment) filter["belief.segment"] = q.segment;
+
+  // Campaign and delivery are both facts about other collections, so each resolves to a
+  // list of people first and the lists are intersected — two narrowings, not two queries
+  // that quietly widen each other.
+  const narrowings: string[][] = [];
+  if (q.campaign) {
+    narrowings.push(
+      (await db.collection(C.goalInstances).distinct("personId", { orgId, productId, goalKey: q.campaign })).map(String),
+    );
+  }
+  if (q.delivery) {
+    narrowings.push(
+      (await db.collection(C.actions).distinct("personId", { orgId, productId, ...DELIVERY_MATCH[q.delivery] }))
+        .map(String),
+    );
+  }
+  if (narrowings.length > 0) {
+    const ids = narrowings.reduce((a, b) => a.filter((id) => b.includes(id)));
+    filter._id = { $in: ids.filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id)) };
+  }
 
   const [rows, total] = await Promise.all([
     db.collection(C.people).find(filter).sort({ createdAt: -1 }).skip(q.skip ?? 0).limit(q.limit ?? 50).toArray(),
