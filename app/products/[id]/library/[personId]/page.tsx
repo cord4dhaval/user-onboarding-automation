@@ -183,7 +183,7 @@ export default async function PersonPage({
               <span>
                 <strong>{content?.subject ?? `Message on ${String(a.channel)}`}</strong>
                 <div className="muted" style={{ fontSize: 12.5 }}>
-                  angle {String(a.angle)} · {String(a.status)}
+                  angle {String(a.angle)} · {deliveryLabel(a)}
                   {outcome?.grade ? ` · graded ${outcome.grade}` : ""}
                 </div>
                 {a.rationale ? <div className="muted" style={{ fontSize: 12.5 }}>Why: {String(a.rationale)}</div> : null}
@@ -252,4 +252,20 @@ export default async function PersonPage({
       )}
     </>
   );
+}
+
+/**
+ * What happened to a message, in the words a person would use.
+ *
+ * "sent" covered three different states — handed to a queue, confirmed by the provider,
+ * and assumed because the provider never says — and a campaign reporting delivery it
+ * cannot confirm is worse than one admitting it does not know.
+ */
+function deliveryLabel(action: Record<string, unknown>): string {
+  const status = String(action.status);
+  if (status === "dispatched") return "with the provider, not confirmed yet";
+  if (status === "failed") return `failed${action.error ? `: ${String(action.error)}` : ""}`;
+  if (status !== "sent") return status;
+  if (action.confirmedAt) return "delivered — confirmed by the provider";
+  return action.providerMessageId ? "sent, awaiting confirmation" : "sent — the provider reports no status";
 }

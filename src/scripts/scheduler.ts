@@ -4,7 +4,7 @@
  *
  *   npm run scheduler
  */
-const url = process.env.TICK_URL ?? "http://localhost:3000/api/cron/tick";
+const url = process.env.TICK_URL ?? "http://localhost:3001/api/cron/tick";
 const everyMs = Number(process.env.TICK_INTERVAL_MS ?? 60_000);
 const secret = process.env.CRON_SECRET;
 

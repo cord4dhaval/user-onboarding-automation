@@ -616,10 +616,30 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       fieldMap: rawMap ? fieldMap : { ...fieldMap, ...guessed },
       uploadedRows: rows.length,
       uploadedFile: file.name,
+      // Read by the goals list while the import is still running, so an upload that takes
+      // two ticks to finish looks like progress rather than like nothing having happened.
+      progress: { done: 0, total: rows.length },
     });
 
-    const { runSource } = await import("@/engine/runSource.js");
-    await runSource(String(sourceId), rows);
+    // The rows are handed to the background queue rather than ingested here. Ingesting a
+    // hundred of them inline held this submit for three minutes, and the platform kills a
+    // request at sixty seconds, so a larger file did not merely feel slow — it failed
+    // half-imported.
+    //
+    // The chunk is sized so one of them finishes well inside a single tick. Ingest issues
+    // a fixed handful of queries per chunk rather than per row, so this is bounded by the
+    // document size a chunk carries, not by the time it takes.
+    const { enqueue } = await import("@/engine/queue.js");
+    const CHUNK = 500;
+    const chunks = Math.ceil(rows.length / CHUNK);
+    for (let i = 0; i < chunks; i++) {
+      await enqueue(await currentOrg(), "ingest_rows", {
+        sourceId: String(sourceId),
+        rows: rows.slice(i * CHUNK, (i + 1) * CHUNK),
+        chunk: i + 1,
+        ofChunks: chunks,
+      });
+    }
   }
 }
 
@@ -907,6 +927,48 @@ export async function decide(formData: FormData) {
   );
 
   revalidatePath(`/products/${productId}/review`, "layout");
+}
+
+/** What a held message actually says, fetched only when a reviewer opens it. */
+export interface HeldMessage {
+  subject?: string;
+  bodyHtml?: string;
+  bodyText?: string;
+  rationale?: string;
+  /** False when the channel cannot carry HTML, so the designed version is not on offer. */
+  canHtml: boolean;
+}
+
+/**
+ * The body of one held message.
+ *
+ * The review list is a table now, and a page of 500 rows carrying a rendered email each is
+ * megabytes of HTML to show six columns of metadata. The body is read when the drawer
+ * opens instead.
+ */
+export async function heldMessage(actionId: string): Promise<HeldMessage | null> {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const action = await db
+    .collection(C.actions)
+    .findOne({ _id: new ObjectId(actionId), orgId, status: "awaiting_approval" });
+  if (!action) return null;
+
+  const content = (action.content ?? {}) as { subject?: string; bodyMd?: string; bodyHtml?: string };
+  // Whether the designed version is even an option is the channel's business, not the
+  // template's, so the drawer is told rather than left to guess.
+  const channel = action.channelId
+    ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(action.channelId)) })
+    : null;
+  const caps = (channel?.capabilities ?? {}) as { html?: boolean };
+
+  return {
+    subject: content.subject,
+    bodyHtml: content.bodyHtml,
+    bodyText: content.bodyMd,
+    rationale: action.rationale ? String(action.rationale) : undefined,
+    canHtml: caps.html !== false,
+  };
 }
 
 // ── library ───────────────────────────────────────────────────────────────────

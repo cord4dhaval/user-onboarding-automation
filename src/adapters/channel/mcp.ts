@@ -41,8 +41,27 @@ export class McpChannelAdapter implements ChannelAdapter {
       throw err;
     }
 
+    // A binding with no `returns` map hands back the provider's whole reply under `raw`,
+    // so every id lookup here missed and every send was recorded with no provider id at
+    // all — nothing to reconcile against, and no way to ask the provider what happened.
+    const payload = (mapped.raw && typeof mapped.raw === "object" ? mapped.raw : mapped) as Record<string, unknown>;
+    const fields = { ...payload, ...mapped };
+
+    // The call succeeding is not the mail being accepted. A provider that refuses a
+    // recipient says so in the body it returns, and treating that as sent leaves a
+    // campaign reporting delivery it never made.
+    const refusal = refusalIn(fields);
+    if (refusal) throw new Error(`provider refused the message: ${refusal}`);
+
+    const jobs = fields.jobIds ?? fields.job_ids;
     const id =
-      mapped.message_id ?? mapped.messageId ?? mapped.batchId ?? mapped.batch_id ?? mapped.id ?? mapped.jobId;
+      fields.message_id ??
+      fields.messageId ??
+      fields.batchId ??
+      fields.batch_id ??
+      fields.id ??
+      fields.jobId ??
+      (Array.isArray(jobs) ? jobs[0] : undefined);
 
     return {
       accepted: true,
@@ -62,4 +81,21 @@ export class McpChannelAdapter implements ChannelAdapter {
     if (/sending|processing|in_progress/.test(raw)) return "sending";
     return "queued";
   }
+}
+
+/**
+ * An explicit refusal in a provider's reply, or nothing.
+ *
+ * Only fields that plainly carry a verdict are read. Scanning the whole body for the word
+ * "error" would fail a send whose reply happens to describe an error count of zero.
+ */
+function refusalIn(fields: Record<string, unknown>): string | undefined {
+  if (fields.ok === false || fields.success === false || fields.sent === false) {
+    return String(fields.message ?? fields.error ?? fields.reason ?? "the provider reported failure");
+  }
+  const status = typeof fields.status === "string" ? fields.status : undefined;
+  if (status && /fail|error|reject|refus|bounce|blocked/i.test(status)) return status;
+  const error = fields.error ?? fields.errorMessage ?? fields.error_message;
+  if (typeof error === "string" && error.trim()) return error;
+  return undefined;
 }

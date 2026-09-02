@@ -7,6 +7,7 @@ import { createGoal, deleteGoal, toggleGoal, updateGoal } from "../../../actions
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
 import ClaudeBadge from "../../../ui/claude-badge";
+import AutoRefresh from "../../../ui/auto-refresh";
 import { ActionButton } from "../../../ui/kit";
 import GoalDrawer from "./goal-drawer";
 
@@ -74,12 +75,39 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
   const templateKeys = [...new Set(templates.map((t) => String(t.key)))];
   const channelKeys = [...new Set(channels.map((c) => String(c.key)))];
 
+  // An upload is ingested by the clock, not by the request that uploaded it, so a source
+  // can be part-way through. One grouped read answers it for every source on the page.
+  const pendingChunks = await db
+    .collection(C.workQueue)
+    .aggregate([
+      { $match: { orgId, kind: "ingest_rows", status: { $in: ["queued", "running"] } } },
+      { $group: { _id: "$payload.sourceId", chunks: { $sum: 1 } } },
+    ])
+    .toArray();
+  const queuedFor = new Map(pendingChunks.map((c) => [String(c._id), Number(c.chunks)]));
+
+  /**
+   * Three states, not two. A source with rows outstanding and nothing left in the queue is
+   * not importing — it is an import that stopped, and saying "importing" forever would
+   * hide that.
+   */
+  const importOf = (src: Record<string, unknown>) => {
+    const progress = src.progress as { done?: number; total?: number } | undefined;
+    const total = Number(progress?.total ?? 0);
+    const done = Number(progress?.done ?? 0);
+    if (total === 0 || done >= total) return null;
+    return { done, total, stalled: !queuedFor.has(String(src._id)) };
+  };
+
   const rows = await Promise.all(
     goals.map(async (g) => ({
       goal: g,
       active: await db.collection(C.goalInstances).countDocuments({ ...s, goalKey: g.key, status: "active" }),
       done: await db.collection(C.goalInstances).countDocuments({ ...s, goalKey: g.key, status: "succeeded" }),
       feeding: sources.filter((src) => String(src.defaultGoalKey) === String(g.key)),
+      importing: sources
+        .filter((src) => String(src.defaultGoalKey) === String(g.key))
+        .some((src) => importOf(src)?.stalled === false),
     })),
   );
 
@@ -87,6 +115,8 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
 
   return (
     <>
+      <AutoRefresh active={rows.some((r) => r.importing)} />
+
       <div className="head">
         <div>
           <h1>Campaigns</h1>
@@ -136,7 +166,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ goal, active, done, feeding }) => {
+              {rows.map(({ goal, active, done, feeding, importing }) => {
                 const sch = goal.schedule as { fetchEverySec: number; approvalMode: string };
                 const budget = goal.budget as { touches: number; days: number };
                 const ft = goal.firstTouch as { templateKey: string; channels: string[] };
@@ -163,6 +193,10 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                         <span className="status"><span className="dot bad" /> No channel</span>
                       ) : feeding.length === 0 ? (
                         <span className="status"><span className="dot bad" /> No input</span>
+                      ) : importing ? (
+                        <span className="status" title="Rows from the upload are still being brought in.">
+                          <span className="dot ok" /> Importing
+                        </span>
                       ) : active > 0 ? (
                         <span className="status"><span className="dot ok" /> Running</span>
                       ) : done > 0 ? (
@@ -188,6 +222,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                           const health = src.health as { status?: string; error?: string } | undefined;
                           // A paused feed and a failing one both used to render as plain
                           // text, so a dead input sat here looking like a working one.
+                          const progress = importOf(src);
                           const state = !src.enabled
                             ? { label: "paused", tone: "" }
                             : health?.status === "degraded"
@@ -202,6 +237,15 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                                   ? `every ${Math.round(Number(src.effectiveIntervalSec ?? 600) / 60)}m`
                                   : "one off"}
                               </div>
+                              {progress && (
+                                <div className="import">
+                                  <progress value={progress.done} max={progress.total} />
+                                  <span className="muted">
+                                    {progress.done} of {progress.total} imported
+                                    {progress.stalled ? " — stopped early" : ""}
+                                  </span>
+                                </div>
+                              )}
                               {health?.error && (
                                 <div className="muted" style={{ fontSize: 12 }}>{String(health.error)}</div>
                               )}

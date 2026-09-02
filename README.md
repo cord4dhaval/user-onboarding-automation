@@ -71,11 +71,16 @@ jobs:
             "${{ secrets.APP_URL }}/api/cron/tick"
 ```
 
-**Local, for testing** — works while your machine is on.
+**Local, for testing** — works while your machine is on. Nothing queued runs without it:
+an uploaded spreadsheet is ingested by the tick, not by the upload, so with no clock the
+rows sit in `work_queue` and the import never starts.
 
 ```bash
-TICK_URL=https://your-app.vercel.app/api/cron/tick npm run scheduler
+npm run dev
+npm run scheduler          # defaults to http://localhost:3001/api/cron/tick
 ```
+
+Point it elsewhere with `TICK_URL` — at a deployed app, or at a different port.
 
 ## Testing a recurring input
 

@@ -1,3 +1,4 @@
+import { ObjectId } from "mongodb";
 import { NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
@@ -9,6 +10,7 @@ import { resolveChannelAdapter } from "@/engine/adapters.js";
 import { closeIdleRuns, recordEngineRun } from "@/engine/runlog.js";
 import { checkRoutineHealth } from "@/engine/routines.js";
 import { refreshBrandSource } from "@/engine/brand.js";
+import { claim, complete, fail, orgsWithWork } from "@/engine/queue.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -30,6 +32,10 @@ export async function GET(request: NextRequest) {
   const db = await getDb();
   const now = new Date();
   const report: Record<string, unknown>[] = [];
+  // Everything below shares one budget. The platform kills this request at sixty seconds,
+  // so the queue drain stops well short of that and leaves the rest for the next minute.
+  const started = Date.now();
+  const BUDGET_MS = 45_000;
 
   // Only pollable kinds. An uploaded spreadsheet and a webhook push both arrive on their
   // own; putting them in the poll loop would fail on every tick, forever.
@@ -120,6 +126,43 @@ export async function GET(request: NextRequest) {
 
     await checkRoutineHealth(orgId, productId);
   }
+
+  // Background work last, on whatever is left of the budget. Sending is time-critical and
+  // an import is not, so an import must never be the reason a due message misses its tick.
+  //
+  // Draining by org rather than inside the product loop matters: two products under one
+  // org would otherwise each open their own drain and spend the budget twice over.
+  let drained = 0;
+  let rowsIngested = 0;
+  for (const orgId of await orgsWithWork("ingest_rows", now)) {
+    while (Date.now() - started < BUDGET_MS) {
+      const job = await claim<{ sourceId: string; rows: Record<string, unknown>[] }>(
+        orgId,
+        "ingest_rows",
+      );
+      if (!job) break;
+
+      try {
+        await runSource(job.payload.sourceId, job.payload.rows as never);
+        await complete(job._id);
+        drained++;
+        rowsIngested += job.payload.rows.length;
+        // Counted after the rows are committed, so the number on screen is one nobody has
+        // to qualify: those people exist.
+        await db
+          .collection(C.sources)
+          .updateOne(
+            { _id: new ObjectId(job.payload.sourceId) },
+            { $inc: { "progress.done": job.payload.rows.length } },
+          );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await fail(job._id, message);
+        report.push({ job: String(job._id), error: message });
+      }
+    }
+  }
+  if (drained) report.push({ queue: { chunks: drained, rows: rowsIngested } });
 
   // A routine that finished two minutes ago should not still read as running.
   const closed = await closeIdleRuns(now);
