@@ -23,7 +23,18 @@ export class HttpSourceAdapter implements SourceAdapter {
     // Error bodies from APIs routinely echo the token back; report the status only.
     if (!res.ok) throw new Error(`source fetch failed: HTTP ${res.status}`);
 
-    const body = (await res.json()) as unknown;
+    // A URL missing its path returns the site's own HTML, and JSON.parse then reports a
+    // stray "<" — which reads as a broken API rather than the wrong address it is.
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("json")) {
+      throw new Error(
+        `source returned ${contentType.split(";")[0] || "an unknown type"}, not JSON — check the endpoint URL`,
+      );
+    }
+
+    const body = (await res.json().catch(() => {
+      throw new Error("source returned a body that is not valid JSON");
+    })) as unknown;
     return { records: extractRecords(body), nextCursor: extractCursor(body) };
   }
 }

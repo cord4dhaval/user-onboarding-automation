@@ -184,16 +184,30 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                       {feeding.length === 0 ? (
                         <span className="muted">nothing yet</span>
                       ) : (
-                        feeding.map((src) => (
-                          <div key={String(src._id)} style={{ marginBottom: 3 }}>
-                            <strong style={{ fontSize: 13.5 }}>{String(src.name)}</strong>
-                            <div className="muted" style={{ fontSize: 12 }}>
-                              {["mcp_source", "api_pull", "crm_sync", "audience"].includes(String(src.kind))
-                                ? `every ${Math.round(Number(src.effectiveIntervalSec ?? 600) / 60)}m`
-                                : "one off"}
+                        feeding.map((src) => {
+                          const health = src.health as { status?: string; error?: string } | undefined;
+                          // A paused feed and a failing one both used to render as plain
+                          // text, so a dead input sat here looking like a working one.
+                          const state = !src.enabled
+                            ? { label: "paused", tone: "" }
+                            : health?.status === "degraded"
+                              ? { label: "failing", tone: "bad" }
+                              : null;
+                          return (
+                            <div key={String(src._id)} style={{ marginBottom: 3 }}>
+                              <strong style={{ fontSize: 13.5 }}>{String(src.name)}</strong>{" "}
+                              {state && <span className={`pill ${state.tone}`}>{state.label}</span>}
+                              <div className="muted" style={{ fontSize: 12 }}>
+                                {["mcp_source", "api_pull", "crm_sync", "audience"].includes(String(src.kind))
+                                  ? `every ${Math.round(Number(src.effectiveIntervalSec ?? 600) / 60)}m`
+                                  : "one off"}
+                              </div>
+                              {health?.error && (
+                                <div className="muted" style={{ fontSize: 12 }}>{String(health.error)}</div>
+                              )}
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </td>
 

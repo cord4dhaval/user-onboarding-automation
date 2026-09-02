@@ -450,6 +450,31 @@ export async function createGoal(formData: FormData) {
   revalidatePath(`/products/${productId}/sources`);
 }
 
+/**
+ * A campaign has one input of each kind, so saving the form again corrects the input it
+ * already has rather than stacking a second one beside it. Three saves used to mean three
+ * feeds polling the same endpoint, three arrivals per person, and two dead rows that read
+ * exactly like the live one.
+ *
+ * Re-enabling matters as much as the dedupe: deleting a campaign pauses its inputs, and
+ * a person re-creating that campaign is asking for it to run again.
+ */
+async function saveInput(
+  productId: string,
+  goalKey: string,
+  kind: string,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  const db = await getDb();
+  const orgId = await currentOrg();
+
+  await db.collection(C.sources).updateOne(
+    { orgId, productId, defaultGoalKey: goalKey, kind },
+    { $set: { ...fields, kind, enabled: true }, $unset: { health: "", cursor: "" } },
+    { upsert: true },
+  );
+}
+
 /** Creates whichever input the goal form selected, if any. */
 async function attachInput(formData: FormData, productId: string, goalKey: string): Promise<void> {
   const db = await getDb();
@@ -493,11 +518,9 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
     const audienceId = String(formData.get("audienceId") ?? "");
     if (!audienceId) throw new Error("Pick which audience this campaign draws from");
 
-    await db.collection(C.sources).insertOne({
-      _id: new ObjectId(),
+    await saveInput(productId, goalKey, "audience", {
       ...base,
       connectionId: "",
-      kind: "audience",
       audienceId,
       // The library already holds our own field names, so no mapping is needed.
       fieldMap: { email: "email", name: "name", role: "role", company_domain: "company_domain", timezone: "timezone" },
@@ -519,12 +542,7 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
         { upsert: true },
       );
 
-    await db.collection(C.sources).insertOne({
-      _id: new ObjectId(),
-      ...base,
-      connectionId,
-      kind: "mcp_source",
-    });
+    await saveInput(productId, goalKey, "mcp_source", { ...base, connectionId });
     return;
   }
 
@@ -556,11 +574,9 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       ...sealSecret(token),
       status: "verified",
     });
-    await db.collection(C.sources).insertOne({
-      _id: new ObjectId(),
+    await saveInput(productId, goalKey, "api_pull", {
       ...base,
       connectionId: String(connectionId),
-      kind: "api_pull",
       cursorParam: String(formData.get("cursorParam") ?? "") || undefined,
     });
     return;

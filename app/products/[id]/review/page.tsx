@@ -127,7 +127,7 @@ export default async function Review({
         </div>
       ) : (
         rows.map(({ action, person, run }) => {
-          const content = (action.content ?? {}) as { subject?: string; bodyMd?: string };
+          const content = (action.content ?? {}) as { subject?: string; bodyMd?: string; bodyHtml?: string };
           return (
             <div className="card" key={String(action._id)} style={{ marginBottom: 16 }}>
               <div className="head" style={{ marginBottom: 12 }}>
@@ -151,7 +151,17 @@ export default async function Review({
                 {content.subject && (
                   <div className="preview-head"><span className="k">Subject</span> <strong>{content.subject}</strong></div>
                 )}
-                <div className="preview-body">{content.bodyMd}</div>
+                {/* Approving sends this exact mail, so show the mail — the markdown behind
+                    it reads nothing like what lands in the inbox. */}
+                {content.bodyHtml ? (
+                  <iframe
+                    title={`Message to ${String(person?.primaryEmail ?? "this person")}`}
+                    srcDoc={content.bodyHtml}
+                    className="preview-frame"
+                  />
+                ) : (
+                  <div className="preview-body">{content.bodyMd}</div>
+                )}
               </div>
 
               {action.rationale ? (
