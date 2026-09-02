@@ -7,6 +7,7 @@ import { decide, heldMessage, returnToReview } from "../../../actions";
 import { Check, CheckCheck, RotateCcw, X } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { BusyArea, BusyLink, BusyProvider, BusySelect } from "../../../ui/busy";
+import { ist, istLong } from "../../../ui/time";
 import CampaignFilter, { type CampaignOption } from "./campaign-filter";
 import PreviewDrawer from "./preview-drawer";
 
@@ -72,14 +73,22 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
   switch (status) {
     case "awaiting_approval":
       return { label: "waiting", tone: "" };
-    case "queued":
+    case "queued": {
+      // A message waiting out a full window is not the same as one about to go, and the
+      // difference is the only thing anyone wants to know from this row. The date it is
+      // waiting for matters as much as the reason: the reason is a snapshot of the limit
+      // that stopped it, so without the date a raised cap looks like it did nothing.
+      const until = action.dueAt ? new Date(String(action.dueAt)) : undefined;
+      if (!action.deferReason) return { label: "approved", tone: "accent", detail: "in the send queue" };
       return {
         label: "approved",
         tone: "accent",
-        // A message waiting out a full window is not the same as one about to go, and the
-        // difference is the only thing anyone wants to know from this row.
-        detail: action.deferReason ? `waiting — ${String(action.deferReason)}` : "in the send queue",
+        detail:
+          until && until > new Date()
+            ? `held until ${ist(until)} — ${String(action.deferReason)} when it was held`
+            : `due now — was held by ${String(action.deferReason)}`,
       };
+    }
     case "sending":
       return { label: "sending", tone: "accent", detail: "claimed by a send run" };
     case "dispatched":
@@ -356,8 +365,8 @@ export default async function Review({
                     <th>Campaign</th>
                     <th>Subject</th>
                     <th>Channel</th>
-                    <th>{waiting ? "Due" : "State"}</th>
-                    <th>{waiting ? "Decision" : "When"}</th>
+                    <th>{waiting ? "Due (IST)" : "State"}</th>
+                    <th>{waiting ? "Decision" : "When (IST)"}</th>
                     {!waiting && <th />}
                   </tr>
                 </thead>
@@ -386,10 +395,8 @@ export default async function Review({
                         <td><span className="pill">{String(action.channel)}</span></td>
 
                         {waiting ? (
-                          <td className="muted num">
-                            {action.dueAt
-                              ? new Date(String(action.dueAt)).toISOString().slice(0, 16).replace("T", " ")
-                              : "—"}
+                          <td className="muted num" title={istLong(action.dueAt as string)}>
+                            {ist(action.dueAt as string)}
                           </td>
                         ) : (
                           <td>
@@ -431,8 +438,8 @@ export default async function Review({
                           </td>
                         ) : (
                           <>
-                            <td className="muted num">
-                              {when ? new Date(String(when)).toISOString().slice(0, 16).replace("T", " ") : "—"}
+                            <td className="muted num" title={istLong(when as string)}>
+                              {ist(when as string)}
                             </td>
                             <td>
                               <div className="row-actions">

@@ -21,6 +21,7 @@ import Popover from "../../ui/popover";
 import Tooltip from "../../ui/tooltip";
 import { ActionButton } from "../../ui/kit";
 import { BarChart, Funnel, Sparkline } from "../../ui/charts";
+import { istAxisDay, istDay } from "../../ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ interface Alert {
   why: string;
 }
 
-const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+const dayKey = (d: Date) => istDay(d);
 
 /** A dense day axis: every day in the window is present, including the empty ones. */
 function emptyDays(from: Date, days: number): Map<string, number> {
@@ -56,8 +57,7 @@ function tally(dates: Array<Date | undefined | null>, from: Date, days: number):
   return [...buckets.values()];
 }
 
-const shortDay = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const shortDay = (iso: string) => istAxisDay(iso);
 
 export default async function ProductHome({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

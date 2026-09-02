@@ -5,6 +5,7 @@ import { Check, Eye, X } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, Spinner, SubmitButton } from "../../../ui/kit";
 import { decide, type HeldMessage } from "../../../actions";
+import { ist } from "../../../ui/time";
 
 /**
  * One held message, previewed as it will actually arrive.
@@ -153,7 +154,7 @@ export default function PreviewDrawer({
 
 /** One line saying what became of a message that is no longer waiting. */
 function outcomeLine(message: HeldMessage): string {
-  const when = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 16).replace("T", " ") : "");
+  const when = (iso?: string) => (iso ? ist(iso) : "");
   switch (message.status) {
     case "sent":
       return `Sent ${when(message.sentAt)}. This is the message that arrived.`;

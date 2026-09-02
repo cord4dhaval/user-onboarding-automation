@@ -6,9 +6,10 @@ import { describeCounters, latestRuns } from "@/engine/runlog.js";
 import { scope } from "../../../tenant";
 import ClaudeBadge from "../../../ui/claude-badge";
 import CopyButton from "./copy-button";
+import { ist } from "../../../ui/time";
 
 function stamp(at: Date): string {
-  return at.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  return ist(at);
 }
 
 /**

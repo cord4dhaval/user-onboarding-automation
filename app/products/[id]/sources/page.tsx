@@ -5,6 +5,7 @@ import ConfirmButton from "../../../ui/confirm";
 import {scope, requireSession} from "../../../tenant";
 import { Pause, Play, Plus } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
+import { istShort } from "../../../ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,7 @@ const POLLABLE = new Set(["mcp_source", "api_pull", "crm_sync"]);
 
 /** Short, sortable timestamps — the table is scanned, not read. */
 function stamp(value: unknown): string {
-  if (!value) return "—";
-  return new Date(String(value)).toISOString().slice(5, 16).replace("T", " ");
+  return istShort(value as string);
 }
 
 export default async function Sources({ params }: { params: Promise<{ id: string }> }) {

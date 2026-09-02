@@ -947,6 +947,18 @@ export async function updateChannel(productId: string, channelId: string, formDa
     { $set: fields, ...(Object.keys(cleared).length ? { $unset: cleared } : {}) },
   );
 
+  // Anything this channel's own limits were holding back is released to be re-judged now.
+  //
+  // A deferred message carries a `dueAt` computed from the limit in force when it was
+  // deferred. Raise the cap afterwards and it stays parked at the old refill time — 78
+  // free slots and twelve messages waiting until tomorrow morning for a cap that no longer
+  // exists. Lowering a limit is handled by the same line: they come due, fireDue re-checks
+  // the real limit, and defers them again with an honest date.
+  await db.collection(C.actions).updateMany(
+    { orgId, productId, channelId, status: "queued", deferReason: { $exists: true } },
+    { $set: { dueAt: new Date() }, $unset: { deferReason: "" } },
+  );
+
   revalidatePath(`/products/${productId}/channels`);
   // What a channel can carry decides what every campaign on it composes, so the pages that
   // render a message have to be rebuilt with it.

@@ -1,3 +1,5 @@
+import { ist } from "../../../ui/time";
+
 /**
  * How a send window is described on screen. Shared by the channels list, which renders on
  * the server, and the settings drawer, which renders on the client — so it cannot live in
@@ -26,10 +28,9 @@ export const WINDOW_LABEL: Record<string, string> = {
 };
 
 /**
- * UTC, not the reader's locale: this string is rendered on the server and hydrated on the
- * client, and a formatter that consults the local timezone produces two different strings
- * for the same instant.
+ * Window boundaries are computed in UTC and shown in IST, like every other time in the
+ * console. See `app/ui/time.ts` for why the zone is pinned rather than read off the host.
  */
 export function windowTime(iso: string): string {
-  return `${new Date(iso).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  return `${ist(iso)} IST`;
 }

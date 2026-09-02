@@ -9,6 +9,7 @@ import ConfirmButton from "../../../ui/confirm";
 import { SubmitButton, Tabs } from "../../../ui/kit";
 import AudienceDrawer from "../audiences/audience-drawer";
 import ImportDrawer from "./import-drawer";
+import { istDay } from "../../../ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -202,9 +203,7 @@ export default async function Audience({
                             <div className="muted">${Number(inv.usd ?? 0).toFixed(2)}</div>
                           </td>
                           <td className="muted num">
-                            {p.lastContactedAt
-                              ? new Date(String(p.lastContactedAt)).toISOString().slice(0, 10)
-                              : "never"}
+                            {istDay(p.lastContactedAt as string, "never")}
                           </td>
                         </tr>
                       );

@@ -10,6 +10,7 @@ import {
   type RunRow,
 } from "@/engine/runlog.js";
 import { ActionButton } from "../../../ui/kit";
+import { ist } from "../../../ui/time";
 import RunDrawer from "./run-drawer";
 
 const FILTERS: Array<{ key: string; label: string }> = [
@@ -50,7 +51,7 @@ function until(to: Date, now: Date): string {
 }
 
 function stamp(at: Date): string {
-  return at.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  return ist(at);
 }
 
 function took(ms: number): string {
@@ -120,30 +121,28 @@ export default async function LogsPanel({
 
   return (
     <>
-      <div className="grid">
+      <div className="grid routine-grid">
         {health.map((h) => {
           const last = latest[h.key];
           return (
             <div className="card" key={h.key}>
-              <div className="row" style={{ marginBottom: 6 }}>
+              <div className="row routine-head">
                 <span className="status">{healthDot(h)}<strong>{h.name}</strong></span>
-                <span className="spacer" />
-                <code>{h.cron}</code>
               </div>
-              <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{healthWord(h)}</div>
+              <div className="routine-state"><code>{h.cron}</code> · {healthWord(h)}</div>
 
               {last ? (
                 <>
-                  <div style={{ fontSize: 13.5 }}>Last ran {ago(new Date(last.startedAt), now)} · {took(last.ms)}</div>
-                  <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+                  <div className="routine-last">Last ran {ago(new Date(last.startedAt), now)} · {took(last.ms)}</div>
+                  <div className="routine-detail">
                     {describeCounters(last.counters) || "nothing to do"}
                   </div>
                 </>
               ) : (
-                <div className="muted" style={{ fontSize: 13.5 }}>No run recorded yet.</div>
+                <div className="routine-last muted">No run recorded yet.</div>
               )}
 
-              <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+              <div className="routine-next">
                 {h.registered ? (
                   h.nextRunAt ? <>Next {until(h.nextRunAt, now)} · {stamp(h.nextRunAt)}</> : "Schedule unreadable"
                 ) : (
@@ -152,7 +151,7 @@ export default async function LogsPanel({
               </div>
 
               {h.registered && (h.state === "late" || h.state === "never" || h.state === "paused") ? (
-                <div style={{ marginTop: 10 }}>
+                <div className="routine-act">
                   <ActionButton
                     variant="quiet"
                     size="sm"
@@ -167,24 +166,22 @@ export default async function LogsPanel({
         })}
 
         <div className="card">
-          <div className="row" style={{ marginBottom: 6 }}>
+          <div className="row routine-head">
             <span className="status">
               <span className={engine && now.getTime() - new Date(engine.startedAt).getTime() < 3_600_000 ? "dot ok" : "dot"} />
               <strong>Engine</strong>
             </span>
-            <span className="spacer" />
-            <code>every minute</code>
           </div>
-          <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-            The clock. Needs no AI, and only the ticks that did something are logged.
+          <div className="routine-state">
+            <code>every minute</code> · the clock. No AI, and only ticks that did something are logged.
           </div>
           {engine ? (
             <>
-              <div style={{ fontSize: 13.5 }}>Last did work {ago(new Date(engine.startedAt), now)}</div>
-              <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>{describeCounters(engine.counters)}</div>
+              <div className="routine-last">Last did work {ago(new Date(engine.startedAt), now)}</div>
+              <div className="routine-detail">{describeCounters(engine.counters)}</div>
             </>
           ) : (
-            <div className="muted" style={{ fontSize: 13.5 }}>
+            <div className="routine-last muted">
               No tick has had anything to do yet. Normal on a quiet product, a problem if messages are queued.
             </div>
           )}
@@ -192,15 +189,15 @@ export default async function LogsPanel({
       </div>
 
       {todayTotals ? (
-        <div className="note" style={{ marginTop: 18 }}>
-          <p style={{ margin: 0 }}>
+        <div className="note runs-note">
+          <p className="tight">
             <strong>Last 24 hours.</strong> {todayTotals}, across {today.length} run{today.length === 1 ? "" : "s"}.
           </p>
         </div>
       ) : null}
 
       <h2>Runs</h2>
-      <div className="row" style={{ marginBottom: 12 }}>
+      <div className="row runs-filters">
         {FILTERS.map((f) => (
           <a
             key={f.key}
@@ -220,7 +217,16 @@ export default async function LogsPanel({
         </div>
       ) : (
         <div className="tw scroll">
-          <table>
+          <table className="runs-table">
+            <colgroup>
+              <col className="c-when" />
+              <col className="c-routine" />
+              <col />
+              <col className="c-calls" />
+              <col className="c-took" />
+              <col className="c-result" />
+              <col className="c-open" />
+            </colgroup>
             <thead>
               <tr>
                 <th>When</th><th>Routine</th><th>What it did</th>
@@ -232,19 +238,19 @@ export default async function LogsPanel({
                 const startedAt = new Date(run.startedAt);
                 return (
                   <tr key={run.id}>
-                    <td>
+                    <td className="run-when">
                       <strong>{ago(startedAt, now)}</strong>
-                      <div className="muted num" style={{ fontSize: 12.5 }}>{stamp(startedAt)}</div>
+                      <div className="run-stamp num">{stamp(startedAt)}</div>
                     </td>
                     <td><span className="pill">{KIND_LABELS[run.routine] ?? run.routine}</span></td>
-                    <td className="muted">
+                    <td className="run-did">
                       {describeCounters(run.counters) || "nothing to do"}
-                      {run.firstError ? <div style={{ fontSize: 12.5, marginTop: 3 }}>{run.firstError}</div> : null}
+                      {run.firstError ? <div className="run-error">{run.firstError}</div> : null}
                     </td>
                     <td className="num">{run.calls}</td>
                     <td className="num">{took(run.ms)}</td>
                     <td>{statusPill(run)}</td>
-                    <td>
+                    <td className="run-open">
                       <RunDrawer
                         runId={run.id}
                         label="Detail"

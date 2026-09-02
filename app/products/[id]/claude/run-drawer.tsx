@@ -5,6 +5,7 @@ import { Eye } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, Spinner } from "../../../ui/kit";
 import type { CallRow } from "@/engine/runlog.js";
+import { istClock } from "../../../ui/time";
 
 /**
  * A run's summary is what you read; its raw calls are what you read when the summary looks
@@ -58,7 +59,7 @@ export default function RunDrawer({
                   <span className="spacer" />
                   <span className="muted num" style={{ fontSize: 12.5 }}>{call.ms} ms</span>
                   <span className="muted num" style={{ fontSize: 12.5 }}>
-                    {new Date(call.ts).toISOString().slice(11, 19)}
+                    {istClock(call.ts)}
                   </span>
                 </div>
                 {call.error ? <pre className="bad-pre">{call.error}</pre> : null}
