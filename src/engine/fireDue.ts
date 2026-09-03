@@ -13,6 +13,7 @@ import { applyTracking, trackingAllowed } from "./tracking.js";
 import { unsubscribeUrl } from "./unsubscribe.js";
 import { bumpPrior } from "./outcomes.js";
 import { localHour } from "./time.js";
+import { greetingName } from "./names.js";
 
 export interface FireSummary {
   claimed: number;
@@ -162,7 +163,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
       const origin = process.env.APP_URL?.replace(/\/$/, "") ?? "";
       const vars: MergeVars = {
-        first_name: name.split(" ")[0] || "there",
+        first_name: greetingName(name),
         full_name: name,
         company: String(person.companyDomain ?? "").split(".")[0] || "your team",
         person_id: personId,

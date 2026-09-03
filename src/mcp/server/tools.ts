@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
 import { anglePerformance, anglesTriedOn, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
+import { greetingName } from "../../engine/names.js";
 import { suppress } from "../../engine/suppression.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue } from "../../engine/fireDue.js";
@@ -1693,7 +1694,7 @@ TOOLS.push({
     const id = person ? String(person._id) : "sample";
 
     const vars = {
-      first_name: name.split(" ")[0] || "there",
+      first_name: greetingName(name),
       full_name: name,
       company: String(person?.companyDomain ?? "cloudnine.dev").split(".")[0] || "your team",
       person_id: id,

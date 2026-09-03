@@ -27,12 +27,18 @@ const PER_PAGE = [10, 50, 100, 500] as const;
 const VIEWS = {
   waiting: {
     label: "Waiting",
-    match: { status: "awaiting_approval" },
+    // Both halves are undecided: one has reached the gate, the other has not been claimed
+    // yet. Counting only the first understated the number nobody had looked at.
+    match: {
+      $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
+    },
     blurb: "Nothing has been decided on these yet.",
   },
   approved: {
     label: "Approved",
-    match: { status: { $in: ["queued", "sending", "dispatched"] } },
+    // reviewedAt, not status. A queued message is queued whether or not anyone released
+    // it, and this tab is the one people read as permission having been given.
+    match: { status: { $in: ["queued", "sending", "dispatched"] }, reviewedAt: { $exists: true } },
     blurb: "Approved and on their way out. They still pass every guardrail at the moment they send.",
   },
   sent: {
@@ -74,6 +80,15 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
     case "awaiting_approval":
       return { label: "waiting", tone: "" };
     case "queued": {
+      // "queued" is where every message starts, not only where an approved one waits. A
+      // row that nobody has looked at read as "approved · in the send queue", which is the
+      // most dangerous thing this screen could say: it claims a human released mail to a
+      // stranger when no human has seen it. The gate runs when a send run claims the
+      // message, so there is always a window where both meanings share one status, and
+      // reviewedAt is the only thing that tells them apart.
+      if (!action.reviewedAt) {
+        return { label: "not reviewed", tone: "", detail: "queued — the gate has not reached it yet" };
+      }
       // A message waiting out a full window is not the same as one about to go, and the
       // difference is the only thing anyone wants to know from this row. The date it is
       // waiting for matters as much as the reason: the reason is a snapshot of the limit
@@ -155,7 +170,9 @@ export default async function Review({
     ...(instanceIds ? { goalInstanceId: { $in: instanceIds } } : {}),
     ...(channelKey ? { channel: channelKey } : {}),
   };
-  const query: Filter<Document> = { ...base, ...VIEWS[view].match };
+  // The literal VIEWS object infers its $or as a readonly tuple, which the driver's
+  // Filter type will not take. The shape is right; only its mutability is not.
+  const query: Filter<Document> = { ...base, ...(VIEWS[view].match as Filter<Document>) };
 
   const matching = await db.collection(C.actions).countDocuments(query);
   const pages = Math.max(1, Math.ceil(matching / per));
@@ -178,7 +195,7 @@ export default async function Review({
     await Promise.all(
       VIEW_KEYS.map(async (key) => [
         key,
-        await db.collection(C.actions).countDocuments({ ...base, ...VIEWS[key].match }),
+        await db.collection(C.actions).countDocuments({ ...base, ...(VIEWS[key].match as Filter<Document>) }),
       ]),
     ),
   ) as Record<ViewKey, number>;
@@ -193,7 +210,7 @@ export default async function Review({
         ...s,
         ...(channelKey ? { channel: channelKey } : {}),
         goalInstanceId: { $in: await runsFor(String(g.key)) },
-        ...VIEWS[view].match,
+        ...(VIEWS[view].match as Filter<Document>),
       }),
     })),
   );
