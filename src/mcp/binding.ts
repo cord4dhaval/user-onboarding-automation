@@ -7,8 +7,11 @@ import type { McpClient } from "./client.js";
  */
 export interface VerbBinding {
   tool: string;
-  /** Values are either literals or "$path" references resolved against the call context. */
-  args: Record<string, string>;
+  /**
+   * Either literals or "$path" references resolved against the call context. Literals keep
+   * whatever JSON type they were written as — a number stays a number.
+   */
+  args: Record<string, unknown>;
   returns?: Record<string, string>;
   healthyIf?: string;
 }
@@ -23,9 +26,15 @@ export interface CallContext {
   [key: string]: unknown;
 }
 
-/** Reads "$person.email" or "$content.subject" out of the context; anything else is a literal. */
-export function resolveRef(ref: string, ctx: CallContext): unknown {
-  if (!ref.startsWith("$")) return ref;
+/**
+ * Reads "$person.email" or "$content.subject" out of the context; anything else is a literal.
+ *
+ * A literal is not necessarily a string. Bindings are written from JSON, so a tool that
+ * wants `limit: 200` or `livePageRead: false` arrives here as a number or a boolean, and
+ * treating every value as text threw before the call was ever made.
+ */
+export function resolveRef(ref: unknown, ctx: CallContext): unknown {
+  if (typeof ref !== "string" || !ref.startsWith("$")) return ref;
   const parts = ref.slice(1).split(".");
   let cursor: unknown = ctx;
   for (const part of parts) {

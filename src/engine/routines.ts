@@ -86,6 +86,15 @@ Every run:
    is to repair the check — never to route around it.
 4. Where someone is off-plan — stalled, or a signal the plan did not expect —
    call plan_goal with a new version and say why the old one is being replaced.
+   Call what_works first, once per run: replacing a plan with different wording of
+   the same losing angle is the most expensive way to do nothing. Their lead_card
+   carries angles_tried — every angle already spent on them, whether they clicked
+   and how the campaign ended. plan_goal refuses one they were sent and ignored, so
+   read it first rather than being refused. An angle they clicked is not spent: it
+   reached them and the ask was wrong, so keep the angle and change what you ask.
+   A person whose temperature reads hot has clicked something recently. That is
+   the strongest signal a non-replier ever gives: tighten their sequence and open
+   on whatever they clicked, rather than continuing the schedule as written.
 5. For each reply: read it, then record_reply with a grounded answer. Never
    invent a capability to close someone.
 6. For each undetermined check: verify_person, read the raw response, and
@@ -134,8 +143,24 @@ Every run:
    account and echoes the scope it really used back in the response. Read that
    echo before trusting a check.
 4. Classify unclassified people in batches — lead_card for context, then submit
-   them all in one classify call.
-5. For each campaign under need_plan: lead_card, then plan_goal.
+   them all in one classify call. Where email_kind is "personal" there is no company
+   to research: the only signal is arrivals — which source, how they came, how many
+   times. Read fit off that, and set fit_known false rather than inventing an
+   employer. A lead nobody can read is not a bad lead, and the first message to one
+   should be short and ask something, because their answer is the only enrichment
+   available.
+5. Once per run, before any planning: what_works with product_id "${productId}".
+   It returns every segment and angle with what was sent, what came back and what
+   converted. Plan against that rather than against taste. Read it carefully:
+   a rate over trackable sends is evidence, a null rate means those messages could
+   never report and prove nothing either way, and an angle marked "untested" has
+   too few sends to have failed — it has not been tried. Retiring one of those is
+   how a product locks onto whatever won first and stops learning, so plan_goal
+   refuses a plan that spends every step on the proven angles: around a third of
+   the steps have to go somewhere unproven. Choose those deliberately rather than
+   discovering the rule by being refused — an untested angle placed where it can
+   actually be judged is worth more than one bolted onto the end.
+6. For each campaign under need_plan: lead_card, then plan_goal.
    Everyone gets a real sequence. Spend the campaign's touch budget, not a
    cautious fraction of it — an unspent budget converts nobody.
    Low confidence means try harder, not go quiet. Someone you read at 5% fit
@@ -147,7 +172,7 @@ Every run:
    what each can carry. Stay inside the budget, the weekly cap and the cadence
    band for that temperature. Those are the guardrails — work at their edge, not
    half-way inside them.
-6. Stop after 40 people and leave the rest for the next run.`,
+7. Stop after 40 people and leave the rest for the next run.`,
     },
     {
       key: "compose",

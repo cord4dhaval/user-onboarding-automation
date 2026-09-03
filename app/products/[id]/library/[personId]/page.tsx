@@ -1,4 +1,6 @@
+import type { Document } from "mongodb";
 import { personHistory } from "@/engine/library.js";
+import { explainTemp } from "@/engine/temp.js";
 import { suppressPerson } from "../../../../actions";
 import { requireSession } from "../../../../tenant";
 import ConfirmButton from "../../../../ui/confirm";
@@ -55,7 +57,14 @@ export default async function PersonPage({
           <span className={`pill ${person.lifecycle === "suppressed" ? "bad" : person.lifecycle === "active" ? "ok" : ""}`}>
             {String(person.lifecycle ?? "new")}
           </span>
-          {temp && <span className={`pill ${temp.band}`}>{temp.band} {Math.round(temp.score)}</span>}
+          {/* The reading alone invites the wrong reading: "cold" from a guess and "cold"
+              from measured silence call for opposite responses. */}
+          {temp && (
+            <span className={`pill ${temp.band}`} title={explainTemp(person.temp as Document)}>
+              {temp.band} {Math.round(temp.score)}
+            </span>
+          )}
+          {temp && <span className="muted" style={{ fontSize: 12.5 }}>{explainTemp(person.temp as Document)}</span>}
           {person.lifecycle !== "suppressed" && (
             <ConfirmButton
               icon={<Ban />}
@@ -147,8 +156,15 @@ export default async function PersonPage({
                     </td>
                     <td className="num">{spent?.touches ?? 0} msg</td>
                     <td>
-                      <span className={`pill ${c.status === "succeeded" ? "ok" : c.status === "active" ? "" : "bad"}`}>
-                        {String(c.status)}
+                      {/* "already met" is neither a win nor a failure — it is a campaign
+                          that was correctly not run. Painting it red would read as
+                          something having gone wrong. */}
+                      <span
+                        className={`pill ${
+                          c.status === "succeeded" ? "ok" : c.status === "active" || c.status === "already_met" ? "" : "bad"
+                        }`}
+                      >
+                        {String(c.status).replace(/_/g, " ")}
                       </span>
                       {c.outcome ? <div className="muted" style={{ fontSize: 12.5 }}>{String(c.outcome)}</div> : null}
                     </td>
@@ -183,7 +199,7 @@ export default async function PersonPage({
               <span>
                 <strong>{content?.subject ?? `Message on ${String(a.channel)}`}</strong>
                 <div className="muted" style={{ fontSize: 12.5 }}>
-                  angle {String(a.angle)} · {deliveryLabel(a)}
+                  angle {String(a.angle)} · {deliveryLabel(a)} · {engagementLabel(a)}
                   {outcome?.grade ? ` · graded ${outcome.grade}` : ""}
                 </div>
                 {a.rationale ? <div className="muted" style={{ fontSize: 12.5 }}>Why: {String(a.rationale)}</div> : null}
@@ -261,6 +277,25 @@ export default async function PersonPage({
  * and assumed because the provider never says — and a campaign reporting delivery it
  * cannot confirm is worse than one admitting it does not know.
  */
+/**
+ * What the recipient did, and — just as importantly — whether we could have known.
+ *
+ * A message sent before tracking existed, or to someone who never consented to it, is
+ * silent for a reason that has nothing to do with the angle. Saying "not tracked" rather
+ * than "no click" is the difference between an honest row and one that quietly blames the
+ * copy for a missing pixel.
+ *
+ * Opens are reported but never leant on: mail clients that prefetch images fire the pixel
+ * whether or not a human looked, so the label says so.
+ */
+function engagementLabel(action: Record<string, unknown>): string {
+  const tracking = (action.tracking ?? {}) as { opens?: boolean; clicks?: boolean };
+  if (action.firstClickedAt) return `clicked ${when(action.firstClickedAt)}`;
+  if (action.firstOpenedAt) return "opened (unreliable — clients prefetch images)";
+  if (tracking.clicks) return "no click yet";
+  return "not tracked";
+}
+
 function deliveryLabel(action: Record<string, unknown>): string {
   const status = String(action.status);
   if (status === "dispatched") return "with the provider, not confirmed yet";

@@ -14,6 +14,12 @@ export const belief = z.object({
   objectionsLikely: z.array(z.string()).default([]),
   blocker: z.string().optional(),
   icpFit: z.number().min(0).max(1),
+  /**
+   * False when nothing was known well enough to judge fit — a bare personal address, no
+   * company, no role. A low icpFit then means "we cannot tell", not "poor prospect", and
+   * the two deserve different copy and different budget even though both read as cold.
+   */
+  fitKnown: z.boolean().default(true),
   intentScore: z.number(),
   reasoning: z.string(),
   source: z.enum(["system", "human"]).default("system"),
@@ -43,6 +49,17 @@ export const arrival = z.object({
   kind: z.string(),
   at: z.date(),
   detail: z.string().optional(),
+  /**
+   * Identifies the row this arrival came from — its id at the source, its timestamp, or a
+   * digest of its fields. A polling source with no cursor hands back the same rows every
+   * run, and without this each pass recorded them all as fresh arrivals: one record
+   * reached 229 copies of a single event, which turned "keeps circling" from a signal into
+   * a measure of how long the poller had been running.
+   *
+   * Absent on arrivals recorded before this existed, and on uploads, where a repeat really
+   * is a person arriving again.
+   */
+  fingerprint: z.string().optional(),
 });
 
 /**
@@ -76,7 +93,15 @@ export const person = z.object({
   name: z.string().optional(),
   role: z.string().optional(),
   companyDomain: z.string().optional(),
+  /**
+   * Whether the address belongs to a company or to a free mailbox. A personal address
+   * leaves companyDomain unset, and the two facts have to be told apart: "no company to
+   * research" leads somewhere different from "company we have not looked up yet".
+   */
+  emailKind: z.enum(["work", "personal", "unknown"]).default("unknown"),
   enrichment: z.record(z.string(), z.unknown()).optional(),
+  /** When enrichment last ran. Absent means never, which is stale by the same rule. */
+  lastEnrichedAt: z.date().optional(),
   timezone: z.string().default("UTC"),
   language: z.string().default("en"),
   stage: lifecycleStage.default("lead"),

@@ -12,6 +12,9 @@ export async function ensureIndexes(): Promise<void> {
     { key: { orgId: 1, productId: 1, "identities.value": 1 }, name: "identity_lookup" },
     { key: { orgId: 1, productId: 1, needsClassification: 1 }, name: "classification_backlog" },
     { key: { orgId: 1, companyDomain: 1 }, name: "by_company" },
+    // Drives the stale sweep: who has not been looked at lately, cheapest first. Sparse,
+    // because a person never enriched has no value here and is found by its absence.
+    { key: { orgId: 1, productId: 1, lastEnrichedAt: 1 }, name: "enrichment_age" },
   ]);
 
   await db.collection(C.goalInstances).createIndexes([
@@ -37,7 +40,20 @@ export async function ensureIndexes(): Promise<void> {
     // Rate limiting counts real sends in a rolling window rather than trusting a counter.
     { key: { orgId: 1, channelId: 1, sentAt: -1 }, name: "rate_window" },
     { key: { orgId: 1, productId: 1, status: 1, providerMessageId: 1 }, name: "reconcile_queue" },
+    // Rolls up what worked. Only sends that could report anything belong in a rate, so
+    // the tracking flag is part of the key rather than a filter applied afterwards.
+    { key: { orgId: 1, productId: 1, "variant.segment": 1, angle: 1, "tracking.clicks": 1 }, name: "outcome_rollup" },
+    // What one person has already been shown. Read on every lead_card and before every
+    // plan, so it must not be a scan of the whole product's history.
+    { key: { orgId: 1, productId: 1, personId: 1, angle: 1 }, name: "angles_tried" },
   ]);
+
+  // One document per {channel, step, hour}. Unique because two rows for the same bucket
+  // would split a count that only means anything whole.
+  await db.collection(C.outcomePriors).createIndex(
+    { channel: 1, stepIndex: 1, hourLocal: 1 },
+    { name: "prior_key", unique: true },
+  );
 
   await db.collection(C.templates).createIndex(
     { orgId: 1, productId: 1, channel: 1, stage: 1, scope: 1, segmentKey: 1 },

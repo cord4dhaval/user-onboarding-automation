@@ -347,11 +347,11 @@ export async function createSource(formData: FormData) {
   const productId = String(formData.get("productId"));
   const intervalSec = Number(formData.get("intervalSec") ?? 600);
 
-  let fieldMap: Record<string, string> = { email: "email", name: "name" };
+  let fieldMap: Record<string, string | string[]> = { email: "email", name: "name" };
   const raw = String(formData.get("fieldMap") ?? "").trim();
   if (raw) {
     try {
-      fieldMap = JSON.parse(raw) as Record<string, string>;
+      fieldMap = JSON.parse(raw) as Record<string, string | string[]>;
     } catch {
       throw new Error('Field map must be valid JSON, for example {"email":"Email"}');
     }
@@ -517,11 +517,12 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
   const triggerMode = String(formData.get("triggerMode") ?? "batch");
   const dedupeKey = String(formData.get("dedupeKey") ?? "email");
 
-  let fieldMap: Record<string, string> = { email: "email", name: "name" };
+  // Values may be a name, a dotted path, or a list of either tried in order.
+  let fieldMap: Record<string, string | string[]> = { email: "email", name: "name" };
   const rawMap = String(formData.get("fieldMap") ?? "").trim();
   if (rawMap) {
     try {
-      fieldMap = JSON.parse(rawMap) as Record<string, string>;
+      fieldMap = JSON.parse(rawMap) as Record<string, string | string[]>;
     } catch {
       throw new Error('Field map must be valid JSON, for example {"email":"Email"}');
     }
@@ -562,11 +563,23 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
     const [connectionId, tool] = String(formData.get("mcpTool") ?? "").split("::");
     if (!connectionId || !tool) throw new Error("Pick which MCP tool returns the leads");
 
+    // Anything not starting with "$" is passed to the tool as a literal, so a fixed
+    // argument needs no special handling beyond somewhere to type it.
+    let fixed: Record<string, string> = {};
+    const rawArgs = String(formData.get("mcpArgs") ?? "").trim();
+    if (rawArgs) {
+      try {
+        fixed = JSON.parse(rawArgs) as Record<string, string>;
+      } catch {
+        throw new Error('Fixed arguments must be valid JSON, for example {"brandId":"..."}');
+      }
+    }
+
     await db
       .collection(C.mcpBindings)
       .updateOne(
         { orgId: (await currentOrg()), connectionId },
-        { $set: { "bind.fetch_leads": { tool, args: { cursor: "$cursor" } } } },
+        { $set: { "bind.fetch_leads": { tool, args: { ...fixed, cursor: "$cursor" } } } },
         { upsert: true },
       );
 

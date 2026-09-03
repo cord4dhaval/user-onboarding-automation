@@ -109,7 +109,14 @@ export const goalInstance = z.object({
   productId: objectIdString,
   personId: objectIdString,
   goalKey: z.string(),
-  status: z.enum(["active", "succeeded", "failed", "recycled", "paused"]).default("active"),
+  /**
+   * "already_met" is a campaign that was never worth running: its success conditions were
+   * true before it started, because an earlier campaign for the same goal had already
+   * reached them. It is recorded rather than skipped silently — a person who was not
+   * mailed has to be as answerable as one who was — and it is deliberately not "succeeded",
+   * so nothing downstream credits an angle with a win it had no part in.
+   */
+  status: z.enum(["active", "succeeded", "failed", "recycled", "paused", "already_met"]).default("active"),
   spent: z.object({
     touches: z.number().int().nonnegative().default(0),
     usd: z.number().nonnegative().default(0),

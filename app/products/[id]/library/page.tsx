@@ -176,6 +176,7 @@ export default async function Audience({
                     <tr>
                       <th>Person</th><th>State</th><th>Segment</th>
                       <th className="num">Attempts</th><th className="num">Invested</th><th>Last contacted</th>
+                      <th>Last engaged</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -204,6 +205,11 @@ export default async function Audience({
                           </td>
                           <td className="muted num">
                             {istDay(p.lastContactedAt as string, "never")}
+                          </td>
+                          {/* What they did back, as against what we did to them. The two
+                              columns side by side are the whole read on a lead. */}
+                          <td className="muted num">
+                            {istDay(p.lastSignalAt as string, "never")}
                           </td>
                         </tr>
                       );

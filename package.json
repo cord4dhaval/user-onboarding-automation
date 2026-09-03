@@ -17,7 +17,11 @@
     "test:api": "tsx --env-file=.env src/scripts/test-api-source.ts",
     "scheduler": "tsx --env-file=.env src/scripts/scheduler.ts",
     "seed:demo": "tsx --env-file=.env src/scripts/seed-demo.ts",
-    "adopt": "tsx --env-file=.env src/scripts/adopt-connections.ts"
+    "adopt": "tsx --env-file=.env src/scripts/adopt-connections.ts",
+    "backfill:mailbox": "tsx --env-file=.env src/scripts/backfill-mailbox.ts",
+    "backfill:outcomes": "tsx --env-file=.env src/scripts/backfill-outcomes.ts",
+    "test:track": "tsx --env-file=.env src/scripts/test-tracking.ts",
+    "dedupe:arrivals": "tsx --env-file=.env src/scripts/dedupe-arrivals.ts"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",

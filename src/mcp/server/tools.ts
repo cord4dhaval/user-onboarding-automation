@@ -1,6 +1,8 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
+import { anglePerformance, anglesTriedOn, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
+import { suppress } from "../../engine/suppression.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue } from "../../engine/fireDue.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
@@ -554,6 +556,14 @@ export const TOOLS: ToolDef[] = [
           name: person.name,
           role: person.role,
           company_domain: person.companyDomain,
+          // Absent company plus a personal address means there is nothing on the web to
+          // find. The only signal such a lead carries is how they arrived.
+          email_kind: person.emailKind ?? "unknown",
+          arrivals: person.arrivals ?? [],
+          last_enriched_at: person.lastEnrichedAt ?? null,
+          // Every angle already spent on this human. plan_goal refuses the ones they
+          // ignored, so reading this first is cheaper than being refused.
+          angles_tried: await anglesTriedOn(orgId, productId, String(person._id)),
           timezone: person.timezone,
           stage: person.stage,
           consent: person.consent,
@@ -612,7 +622,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "classify",
     description:
-      "Store the belief you formed about one or more people: segment, confidence, pain hypothesis, likely objections, ICP fit. Clears their needs-classification flag.",
+      "Store the belief you formed about one or more people: segment, confidence, pain hypothesis, likely objections, ICP fit. Clears their needs-classification flag. Set fit_known false where there was nothing to judge fit on — a bare personal address with no company and no role. Guessing low there is not the same as knowing they are a poor prospect, and the two get different messages.",
     inputSchema: {
       type: "object",
       properties: {
@@ -630,6 +640,11 @@ export const TOOLS: ToolDef[] = [
               pain_hypothesis: { type: "string" },
               objections_likely: { type: "array", items: { type: "string" } },
               icp_fit: { type: "number" },
+              fit_known: {
+                type: "boolean",
+                description:
+                  "False when the record carried nothing to judge fit on. Defaults to true.",
+              },
               reasoning: { type: "string" },
             },
             required: ["person_id", "segment", "confidence", "icp_fit", "reasoning"],
@@ -646,6 +661,7 @@ export const TOOLS: ToolDef[] = [
 
       for (const r of results) {
         const icpFit = Number(r.icp_fit ?? 0);
+        const fitKnown = r.fit_known !== false;
         await db.collection(C.people).updateOne(
           { _id: new ObjectId(String(r.person_id)), orgId: ctx.orgId },
           {
@@ -657,17 +673,22 @@ export const TOOLS: ToolDef[] = [
                 painHypothesis: r.pain_hypothesis ?? undefined,
                 objectionsLikely: r.objections_likely ?? [],
                 icpFit,
+                fitKnown,
                 intentScore: 0,
                 reasoning: String(r.reasoning),
                 source: "system",
                 updatedAt: new Date(),
               },
               // Fit is known before any engagement, so temperature starts from fit alone.
+              // An unknown fit still lands in the cold band, and that is deliberate: the
+              // cadence there is the tightest, which is what someone we cannot read needs.
+              // termsUsed records that the number came from a guess, so nothing downstream
+              // mistakes it for a measurement.
               temp: {
                 score: Math.round(icpFit * 40),
                 band: icpFit >= 0.7 ? "warm" : "cold",
                 computedAt: new Date(),
-                termsUsed: ["fit"],
+                termsUsed: [fitKnown ? "fit" : "fit_unknown"],
               },
               needsClassification: false,
             },
@@ -682,7 +703,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "plan_goal",
     description:
-      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Every channel must be one the campaign allows — lead_card lists what is connected and what each can carry. Stored as a new version; the previous plan is kept with your rationale for replacing it.",
+      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Every channel must be one the campaign allows — lead_card lists what is connected and what each can carry. Around a third of the steps must use an angle that is not already proven for this segment, and a plan of three or more steps may not use one angle throughout; both are refused rather than warned about, because spending every step on the current favourite is how the untested angles never get the sends that would prove them. Stored as a new version; the previous plan is kept with your rationale for replacing it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -729,6 +750,32 @@ export const TOOLS: ToolDef[] = [
             `This campaign may only use ${allowed.join(", ")}. The plan asks for ${[...new Set(stray)].join(", ")}.`,
           );
         }
+      }
+
+      // The exploration floor. Refused rather than warned about, for the same reason the
+      // channel check above is: a plan that spends every step on the current favourite is
+      // the one way this system stops learning, and it is the plan a model most wants to
+      // write.
+      const person = await db
+        .collection(C.people)
+        .findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { belief: 1 } });
+      const segment = (person?.belief as { segment?: string } | undefined)?.segment;
+      const angles = ((args.steps ?? []) as Array<{ angle?: string }>).map((st) => String(st.angle));
+      const block = await explorationBlock(ctx.orgId, String(instance.productId), segment, angles);
+      if (block) throw new Error(block);
+
+      // What this person has already ignored. Attempt two opening on the line that lost
+      // attempt one is the cheapest mistake in the system and the easiest to make: the
+      // table says the angle works, and for this human it demonstrably does not.
+      const tried = await anglesTriedOn(ctx.orgId, String(instance.productId), String(instance.personId));
+      const spent = spentAngles(tried);
+      const repeats = [...new Set(angles.filter((a) => spent.has(a)))];
+      if (repeats.length > 0) {
+        throw new Error(
+          `This person has already been sent ${repeats.join(", ")} and did not act on it. ` +
+            `Reusing it means saying the thing that already failed on them, more loudly. ` +
+            `lead_card lists every angle they have seen — pick one they have not.`,
+        );
       }
 
       const previous = await db
@@ -1299,6 +1346,10 @@ TOOLS.push({
         { orgId, goalInstanceId: String(instance._id), status: { $in: ["queued", "awaiting_approval"] } },
         { $set: { status: "skipped", skipReason: `campaign ${state}` } },
       );
+
+      // The verdict is attributed to the messages that earned it, so the angles that
+      // actually moved this person are visible to whoever plans the next campaign.
+      await stampGoalOutcome(orgId, String(instance._id), state === "succeeded" ? "won" : "lost");
 
       const coolingDays = typeof v.cooling_days === "number" ? v.cooling_days : 90;
       const personUpdate: Record<string, unknown> = {
@@ -2064,5 +2115,279 @@ TOOLS.push({
     );
 
     return { key, name, enabled: false, needs };
+  },
+});
+
+/**
+ * Where research is written down.
+ *
+ * Without this, everything a session learns about a person survives only as prose inside
+ * belief.reasoning — readable by a human, comparable by nothing. The next run starts from
+ * the same blank page and cannot tell what has changed since, which is the whole point of
+ * looking again.
+ */
+TOOLS.push({
+  name: "save_enrichment",
+  description:
+    "Store what you found out about a person from outside the system — company, size, role, hiring, funding, anything researched. Facts as fields, not a paragraph: a later run compares against these to see what moved. Call it even when nothing changed and omit facts, so the person is not looked up again tomorrow.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      person_id: { type: "string" },
+      facts: {
+        type: "object",
+        description:
+          "Merged over what is already stored. Omit entirely to record that you checked and found nothing new.",
+        additionalProperties: true,
+      },
+      source: {
+        type: "string",
+        description: "Where it came from: company_site, search, reply, human, or a provider name.",
+      },
+    },
+    required: ["product_id", "person_id", "source"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const filter = { _id: new ObjectId(String(args.person_id)), orgId, productId };
+
+    const person = await db.collection(C.people).findOne(filter, { projection: { enrichment: 1 } });
+    if (!person) throw new Error("person not found");
+
+    const now = new Date();
+    const incoming = (args.facts ?? null) as Record<string, unknown> | null;
+    const set: Record<string, unknown> = { lastEnrichedAt: now };
+
+    if (incoming && Object.keys(incoming).length > 0) {
+      // Merged rather than replaced. A run that only checked one thing must not erase what
+      // an earlier, broader run found.
+      const existing = (person.enrichment ?? {}) as Record<string, unknown>;
+      set.enrichment = { ...existing, ...incoming, _source: String(args.source), _at: now };
+    }
+
+    await db.collection(C.people).updateOne(filter, {
+      $set: set,
+      $inc: { "investment.enrichmentCalls": 1 },
+    });
+
+    return {
+      person_id: String(args.person_id),
+      stored: incoming ? Object.keys(incoming) : [],
+      last_enriched_at: now.toISOString(),
+      note: incoming
+        ? "Merged. lead_card returns the whole picture on the next read."
+        : "Nothing changed; the clock was stamped so this person is not re-checked tomorrow.",
+    };
+  },
+});
+
+/**
+ * What the planner reads before it writes a sequence.
+ *
+ * The counts are deliberately raw rather than a ranking. With forty leads there is no
+ * statistical power for a bandit, but "twelve sent, five clicked, two won" against "thirty
+ * sent, nothing" is a judgement a reader makes correctly in a second — and can explain
+ * afterwards, which a posterior distribution cannot.
+ *
+ * Rates are over trackable sends, never over all of them. A message that could not report
+ * a click is not evidence that the angle failed.
+ */
+TOOLS.push({
+  name: "what_works",
+  description:
+    "What has actually worked for this product: every segment and angle with what it was sent to, what came back and what converted, plus the cross-product timing priors. Read this before plan_goal. An angle with few sends is untested, not losing — say so rather than abandoning it.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      segment: { type: "string", description: "Narrow to one segment. Omit for all of them." },
+    },
+    required: ["product_id"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const segment = args.segment ? String(args.segment) : undefined;
+
+    const [angles, priors] = await Promise.all([anglePerformance(orgId, productId, segment), summarisePriors()]);
+
+    const totalSent = angles.reduce((n, a) => n + a.sent, 0);
+    const totalTrackable = angles.reduce((n, a) => n + a.trackable, 0);
+
+    return {
+      angles: angles.map((a) => ({
+        ...a,
+        // Null rather than zero where nothing could report. Zero reads as "nobody clicked",
+        // which is a different and much stronger claim.
+        click_rate: a.trackable > 0 ? Number((a.clicked / a.trackable).toFixed(3)) : null,
+        win_rate: a.sent > 0 ? Number((a.won / a.sent).toFixed(3)) : null,
+        verdict:
+          a.sent < MIN_SAMPLE
+            ? "untested"
+            : a.won > 0
+              ? "working"
+              : a.clicked > 0
+                ? "interest, no conversion"
+                : "no signal",
+      })),
+      // Shared across products and carrying nothing that identifies one: hours and step
+      // positions only. It is what a product with no history of its own starts from.
+      timing_priors: priors,
+      totals: {
+        sent: totalSent,
+        trackable: totalTrackable,
+        untracked: totalSent - totalTrackable,
+      },
+      note:
+        totalSent === 0
+          ? "This product has sent nothing yet. Its own table is empty, so start from timing_priors — the hours and step positions that work across products — and treat every angle as untested."
+          : totalTrackable === 0
+            ? "Nothing sent so far could report a click. Silence here says nothing about any angle — plan on judgement, and check that APP_URL is set."
+            : "Rates are over trackable sends only. Spend the budget on what has won; keep trying what is merely untested.",
+    };
+  },
+});
+
+/**
+ * Where a reply becomes something the system knows.
+ *
+ * Monitor's prompt has always told it to call this, and until now the tool did not exist —
+ * so replies reached a person's inbox, were read by a session, and vanished. They are the
+ * strongest signal anyone ever sends us and the only one that arrives in words.
+ *
+ * The boundary with mark_state is deliberate: this records what was said and attributes it
+ * to the message that provoked it. What it means for the campaign — succeeded, failed,
+ * still running — stays with mark_state, which is gated on evidence. The exception is an
+ * unsubscribe, which is not a judgement call.
+ */
+TOOLS.push({
+  name: "record_reply",
+  description:
+    "Record that a person replied, what they said and what it means. Attributes the reply to the message it answers, so what_works can tell an angle that started a conversation from one that was ignored. Recording is not deciding: use mark_state for the campaign's verdict. An intent of unsubscribe suppresses them immediately and permanently.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      person_id: { type: "string" },
+      text: {
+        type: "string",
+        description: "What they actually wrote, verbatim. Not your summary of it — a later run reads this.",
+      },
+      intent: {
+        type: "string",
+        enum: ["interested", "question", "objection", "not_now", "no", "wrong_person", "unsubscribe"],
+      },
+      objection: {
+        type: "string",
+        description: "The objection in one line, if there is one. Kept on the person and carried into every later campaign.",
+      },
+      answer: {
+        type: "string",
+        description: "What you are replying, grounded in what the product actually does. Never invent a capability to close someone.",
+      },
+      event_id: { type: "string", description: "The replies_waiting id from sweep, so it stops being returned." },
+      at: { type: "string", description: "When they replied, ISO 8601. Defaults to now." },
+    },
+    required: ["product_id", "person_id", "text", "intent"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const personId = String(args.person_id);
+    const person = await db
+      .collection(C.people)
+      .findOne({ _id: new ObjectId(personId), orgId, productId }, { projection: { primaryEmail: 1 } });
+    if (!person) throw new Error("person not found");
+
+    const at = args.at ? new Date(String(args.at)) : new Date();
+    const intent = String(args.intent);
+    const actionId = await attributeReply(orgId, productId, personId, at);
+
+    await db.collection(C.people).updateOne({ _id: new ObjectId(personId) }, { $set: { lastSignalAt: at } });
+
+    // Sends them to the front of the recompute queue. Guarded on temp already existing:
+    // a dotted $set against a person who has never been classified would mint a temp with
+    // a timestamp and no band, and every reader of that field expects a band.
+    if (intent !== "no" && intent !== "unsubscribe") {
+      await db
+        .collection(C.people)
+        .updateOne(
+          { _id: new ObjectId(personId), temp: { $exists: true } },
+          { $set: { "temp.computedAt": new Date(0) } },
+        );
+    }
+
+    if (args.objection) {
+      await db.collection(C.people).updateOne(
+        { _id: new ObjectId(personId) },
+        { $push: { objections: { text: String(args.objection), at, source: "reply" } } as never },
+      );
+    }
+
+    // Not a verdict and not negotiable. Someone who asks to be left alone is suppressed
+    // before anything else reads their record.
+    let suppressed = false;
+    if (intent === "unsubscribe" && person.primaryEmail) {
+      await suppress(orgId, String(person.primaryEmail), "unsubscribed by reply");
+      await db.collection(C.people).updateOne(
+        { _id: new ObjectId(personId) },
+        {
+          $set: {
+            lifecycle: "suppressed",
+            suppressedAt: at,
+            "consent.state": "withdrawn",
+            "consent.capturedAt": at,
+            "consent.evidence": "reply: unsubscribe",
+          },
+        },
+      );
+      await db
+        .collection(C.goalInstances)
+        .updateMany(
+          { orgId, productId, personId, status: "active" },
+          { $set: { status: "failed", outcome: "unsubscribed", endedAt: at } },
+        );
+      await db.collection(C.actions).updateMany(
+        { orgId, productId, personId, status: { $in: ["queued", "awaiting_approval", "held"] } },
+        { $set: { status: "skipped", skipReason: "unsubscribed" } },
+      );
+      suppressed = true;
+    }
+
+    // The words themselves, kept whole. Everything above is derived from them, and a later
+    // reader disagreeing with the reading needs the original to disagree with.
+    await db.collection(C.events).insertOne({
+      orgId,
+      productId,
+      personId,
+      type: "reply_recorded",
+      ts: at,
+      payload: {
+        intent,
+        text: String(args.text),
+        answer: args.answer ? String(args.answer) : null,
+        actionId,
+      },
+    });
+
+    if (args.event_id && ObjectId.isValid(String(args.event_id))) {
+      await db
+        .collection(C.events)
+        .updateOne({ _id: new ObjectId(String(args.event_id)), orgId }, { $set: { handled: true, handledAt: at } });
+    }
+
+    return {
+      person_id: personId,
+      intent,
+      attributed_to_action: actionId,
+      suppressed,
+      note: actionId
+        ? "Attributed to their most recent send, so the angle that started this conversation gets the credit."
+        : "No unanswered send to attribute this to — recorded against the person only.",
+    };
   },
 });

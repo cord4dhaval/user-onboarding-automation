@@ -9,6 +9,10 @@ import { isSuppressed } from "./suppression.js";
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
 import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, rateBlock } from "./governor.js";
+import { applyTracking, trackingAllowed } from "./tracking.js";
+import { unsubscribeUrl } from "./unsubscribe.js";
+import { bumpPrior } from "./outcomes.js";
+import { localHour } from "./time.js";
 
 export interface FireSummary {
   claimed: number;
@@ -156,13 +160,20 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const personId = String(person._id);
       const site = (config.website ?? "https://example.com").replace(/\/$/, "");
 
+      const origin = process.env.APP_URL?.replace(/\/$/, "") ?? "";
       const vars: MergeVars = {
         first_name: name.split(" ")[0] || "there",
         full_name: name,
         company: String(person.companyDomain ?? "").split(".")[0] || "your team",
         person_id: personId,
         trial_link: (config.trialLinkTemplate ?? `${site}/start?p={{person_id}}`).replace("{{person_id}}", personId),
-        opt_out_url: `${site}/unsubscribe?p=${personId}`,
+        // Points at this app, not the product's website. The marketing site has no access
+        // to this database, so a link there is a door painted on a wall: the reader
+        // believes they have left and the mail keeps coming. Falls back to the old form
+        // only when APP_URL is unset, where nothing here could work anyway.
+        opt_out_url: origin
+          ? unsubscribeUrl(origin, personId)
+          : `${site}/unsubscribe?p=${personId}`,
       };
 
       const prior = action.content as Partial<ComposedContent> | undefined;
@@ -191,6 +202,27 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
           await brandKit(),
         );
       }
+      // Tracking is wrapped in at send rather than at compose. What a reviewer approved is
+      // the words, and a redirect does not change them — but a draft that never goes out
+      // should not carry live tracking links either.
+      const trackChoice = trackingAllowed((person.consent as { state?: string } | undefined)?.state);
+      let trackingApplied = { opens: false, clicks: false };
+      // A rehearsal is never tracked. Nothing can click a message that was printed to a
+      // console, so recording it as trackable would enter a guaranteed non-click into
+      // every rate the planner reads.
+      if (content.bodyHtml && !dryRun) {
+        const wrapped = applyTracking(content.bodyHtml, {
+          actionId: String(action._id),
+          origin,
+          choice: trackChoice,
+          // An unsubscribe that depends on our signing key still verifying is an
+          // unsubscribe that can break. It goes direct.
+          neverTrack: [vars.opt_out_url],
+        });
+        content.bodyHtml = wrapped.html;
+        trackingApplied = wrapped.applied;
+      }
+
       const check = validate(content, {
         channelKey: String(action.channel),
         maxWords: constraints?.maxWords,
@@ -246,6 +278,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
       // A queued message is not a sent message. It waits at "dispatched" until the
       // reconciler confirms it with the provider.
+      const variant = variantOf(person, action);
       const queued = result.disposition === "queued" && !dryRun;
       await db.collection(C.actions).updateOne(
         { _id: action._id },
@@ -256,6 +289,12 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             sentAt: new Date(),
             providerMessageId: result.providerMessageId,
             dryRun,
+            // Copied rather than joined later: segment and fit both move as we learn more,
+            // and a rollup keyed on today's values would rewrite what past sends meant.
+            variant,
+            // Records what this message could report back, so silence from an untracked
+            // send is never counted against the angle.
+            tracking: trackingApplied,
           },
           // It waited for a window and then went out; the note about waiting is history now.
           $unset: { deferReason: "" },
@@ -285,6 +324,13 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         .collection(C.channels)
         .updateOne({ _id: channel._id }, { $inc: { "governor.sentToday": 1 } });
 
+      // The shared prior: which step, which hour, which channel. Nothing identifying goes
+      // in, so a product that has never sent anything can still start on real mechanics.
+      //
+      // Never on a dry run. This collection is read by every other tenant, and a rehearsal
+      // counted as a send would push a real product towards an hour nobody was mailed at.
+      if (!dryRun) await bumpPrior({ channel: action.channel, variant }, "sent");
+
       if (queued) summary.queuedRemotely++;
       else summary.sent++;
     } catch (err) {
@@ -297,6 +343,22 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
   function productIdOf(action: Record<string, unknown>): string {
     return String(action.productId);
+  }
+
+  /** The dimensions this send will be judged on, frozen at the moment it goes out. */
+  function variantOf(person: Record<string, unknown>, action: Record<string, unknown>) {
+    const belief = person.belief as { segment?: string; fitKnown?: boolean } | undefined;
+    const variant: Record<string, unknown> = {
+      // People sent to before anyone read them are a real bucket, not a missing value.
+      segment: belief?.segment ?? "unclassified",
+      hourLocal: localHour(new Date(), String(person.timezone ?? "UTC")),
+      fitKnown: belief?.fitKnown !== false,
+    };
+    // A first touch queued by ingest carries no plan step — it precedes any plan. It is
+    // still step one, and saying so is what lets the most common message in the system
+    // contribute to the shared timing priors instead of being dropped for want of a key.
+    variant.stepIndex = typeof action.planStepId === "number" ? action.planStepId : 1;
+    return variant;
   }
 
   async function release(id: ObjectId, status: string, extra: Record<string, unknown>) {

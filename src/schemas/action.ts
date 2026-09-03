@@ -77,7 +77,40 @@ export const action = z.object({
   providerMessageId: z.string().optional(),
   cost: z.number().nonnegative().default(0),
 
+  /**
+   * The dimensions an outcome is attributed to later.
+   *
+   * angle and channel already sit on the action; segment, step and hour are copied here at
+   * send time because they all move afterwards. A rollup keyed on the person's segment as
+   * it reads today would quietly rewrite the history of every message sent before they
+   * were reclassified.
+   */
+  variant: z
+    .object({
+      segment: z.string().optional(),
+      stepIndex: z.number().int().nonnegative().optional(),
+      hourLocal: z.number().int().min(0).max(23).optional(),
+      fitKnown: z.boolean().optional(),
+    })
+    .optional(),
+
+  /**
+   * Whether this message could report anything back.
+   *
+   * Without it, an untracked send and an ignored one are the same document, and the angle
+   * gets blamed for silence that was really a missing pixel. Only messages that could have
+   * reported a click belong in a click-rate.
+   */
+  tracking: z
+    .object({ opens: z.boolean(), clicks: z.boolean() })
+    .default({ opens: false, clicks: false }),
+
   signals: z.array(z.object({ type: z.string(), at: z.date() })).default([]),
+  /** Denormalised from signals so "who clicked" is an index hit rather than an array scan. */
+  firstOpenedAt: z.date().optional(),
+  firstClickedAt: z.date().optional(),
+  /** The strongest signal of all, and the only one that arrives in words. */
+  firstRepliedAt: z.date().optional(),
   outcome: z.object({
     grade: z.enum(["good", "ok", "bad", "kill"]),
     brier: z.number().optional(),

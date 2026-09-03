@@ -105,6 +105,19 @@ export default function InputPicker({
         </label>
       )}
 
+      {/* Most lead tools need something fixed alongside the cursor — which brand, which
+          list, which pipeline. Without somewhere to put it the call is rejected for a
+          missing argument, and the source polls forever returning nothing. */}
+      {type === "mcp" && (
+        <label>
+          Fixed arguments <span className="muted">(optional JSON, sent on every call)</span>
+          <input name="mcpArgs" placeholder='{"brandId": "fe4479cc-ee44-4f4f-865f-8e4ca211f963"}' />
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            The cursor is always sent. Add anything else the tool marks as required.
+          </span>
+        </label>
+      )}
+
       {type === "api" && (
         <>
           <label>
@@ -122,6 +135,26 @@ export default function InputPicker({
         <label>
           Spreadsheet <span className="muted">— .xlsx or .csv, columns read from the header row</span>
           <input name="file" type="file" accept=".xlsx,.xls,.csv" />
+        </label>
+      )}
+
+      {/* Every input except an audience arrives in someone else's shape. Without this the
+          map silently defaulted to {email, name}, which finds nothing in a provider that
+          nests its answers — and a source that maps nothing looks exactly like a source
+          with no new leads. */}
+      {type !== "audience" && (
+        <label>
+          Field map <span className="muted">— where to find each field in their rows</span>
+          <textarea
+            name="fieldMap"
+            rows={4}
+            defaultValue={'{"email": "email", "name": "name"}'}
+            spellCheck={false}
+          />
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            Dots go into nested objects, and a list is tried in order — useful when several
+            lead forms feed one campaign under different names.
+          </span>
         </label>
       )}
 

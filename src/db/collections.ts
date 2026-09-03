@@ -25,6 +25,8 @@ export const COLLECTIONS = {
   routineCalls: "routine_calls",
 
   events: "events",
+  /** Cross-tenant structural priors. Carries no org, no angle, no person — see outcomes.ts. */
+  outcomePriors: "outcome_priors",
   workQueue: "work_queue",
   suppressions: "suppressions",
   audit: "audit",

@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { ObjectId, type AnyBulkWriteOperation, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
 import { loadChannels, pickChannelFrom } from "./channels.js";
 import { nextSendableAt } from "./time.js";
+import { mailboxFields } from "./mailbox.js";
 import type { ChannelKey } from "../schemas/common.js";
 
 export interface IngestSummary {
@@ -13,6 +15,10 @@ export interface IngestSummary {
   suppressed: number;
   filteredOut: number;
   firstTouchesQueued: number;
+  /** People who had already reached this goal, so nothing was sent to them again. */
+  alreadyMet: number;
+  /** Rows a poll returned that had already been recorded. High and steady means no cursor. */
+  arrivalsSkipped: number;
   errors: string[];
   /** Where the source got to. Persisted by the caller once the batch is committed. */
   nextCursor?: string;
@@ -24,7 +30,7 @@ interface SourceDoc {
   productId: string;
   kind: string;
   triggerMode: "realtime" | "batch";
-  fieldMap: Record<string, string>;
+  fieldMap: FieldMap;
   dedupeKey: string;
   cursor?: string;
   defaultGoalKey: string;
@@ -41,22 +47,60 @@ interface GoalDoc {
 }
 
 /**
+ * How one of our fields is found in a provider's row: a name, a dotted path into a nested
+ * object, or a list of either to try in order.
+ */
+export type FieldMap = Record<string, string | string[]>;
+
+/**
  * Applies the source's field map, so arbitrary column names land in our own shape.
  *
  * Falls back to a case-insensitive match on the column name. Exports differ on
  * capitalisation constantly — "Email" one week, "email" the next — and a mapping that is
  * right except for a capital letter should not silently drop every row.
  */
-function mapRecord(raw: RawRecord, fieldMap: Record<string, string>): Record<string, unknown> {
-  const lowered = new Map(Object.keys(raw).map((key) => [key.toLowerCase().trim(), key]));
+export function mapRecord(raw: RawRecord, fieldMap: FieldMap): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
 
   for (const [ours, theirs] of Object.entries(fieldMap)) {
-    const key = theirs in raw ? theirs : lowered.get(theirs.toLowerCase().trim());
-    const value = key === undefined ? undefined : raw[key];
-    if (value !== undefined && value !== null && value !== "") mapped[ours] = value;
+    // Alternatives, tried in order. One form asks for "Email", the next for "Work email"
+    // and the third for "work_email_address" — all three feeding the same campaign. A
+    // single name would carry most of the leads and drop the rest with no error anywhere,
+    // which is the worst way for a source to be wrong.
+    for (const candidate of Array.isArray(theirs) ? theirs : [theirs]) {
+      const value = readPath(raw, candidate);
+      if (value !== undefined && value !== null && value !== "") {
+        mapped[ours] = value;
+        break;
+      }
+    }
   }
   return mapped;
+}
+
+/**
+ * One field, by name or by dotted path.
+ *
+ * Providers nest: a lead-form submission arrives with its answers under `fields`, so the
+ * address is at `fields.Email` rather than at the top level. Each segment is matched
+ * case-insensitively for the same reason the flat lookup always was — a spreadsheet that
+ * says "Email" one week and "email" the next should not silently stop working.
+ */
+function readPath(row: RawRecord, path: string): unknown {
+  let cursor: unknown = row;
+  for (const segment of path.split(".")) {
+    if (cursor === null || typeof cursor !== "object") return undefined;
+    const record = cursor as Record<string, unknown>;
+    if (segment in record) {
+      cursor = record[segment];
+      continue;
+    }
+    const wanted = segment.toLowerCase().trim();
+    const hit = Object.keys(record).find((k) => k.toLowerCase().trim() === wanted);
+    if (hit === undefined) return undefined;
+    cursor = record[hit];
+  }
+  return cursor;
 }
 
 /** A duplicate key is the unique index doing its job. Anything else is a real failure. */
@@ -90,6 +134,8 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     suppressed: 0,
     filteredOut: 0,
     firstTouchesQueued: 0,
+    alreadyMet: 0,
+    arrivalsSkipped: 0,
     errors: [],
   };
 
@@ -150,6 +196,9 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
   }
 
   const arrival = { sourceId: String(source._id), kind: String(source.kind), at: now };
+  // A poll is the only thing that re-reads its own results. An upload that happens twice
+  // is a person genuinely arriving twice, so repeats there are kept.
+  const isPoll = String(source.kind) !== "excel_upload";
   const newPeople: Document[] = [];
   const attachments: AnyBulkWriteOperation<Document>[] = [];
   const entries: { personId: ObjectId; person: Document }[] = [];
@@ -157,14 +206,34 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
   for (const [value, rows] of groups) {
     const found = byValue.get(value);
     if (found) {
-      // A returning person gets another arrival rather than a second record.
-      attachments.push({
-        updateOne: {
-          filter: { _id: found._id },
-          update: { $push: { arrivals: { $each: rows.map(() => arrival) } } } as never,
-        },
-      });
+      // A returning person gets another arrival rather than a second record — but only for
+      // rows we have not already recorded. A cursorless poll returns its whole result set
+      // every run, and counting each pass as an arrival buries the real ones.
+      const seen = new Set(
+        ((found.arrivals ?? []) as Array<{ sourceId?: unknown; fingerprint?: unknown }>)
+          .filter((a) => String(a.sourceId ?? "") === String(source._id) && a.fingerprint)
+          .map((a) => String(a.fingerprint)),
+      );
+      const fresh = rows
+        .map((row) => ({ ...arrival, fingerprint: fingerprintOf(row) }))
+        .filter((a) => {
+          if (!isPoll || !a.fingerprint) return true;
+          if (seen.has(a.fingerprint)) return false;
+          // Within one batch too: the same row twice in one response is still one arrival.
+          seen.add(a.fingerprint);
+          return true;
+        });
+
+      if (fresh.length > 0) {
+        attachments.push({
+          updateOne: {
+            filter: { _id: found._id },
+            update: { $push: { arrivals: { $each: fresh } } } as never,
+          },
+        });
+      }
       summary.attachedToExisting += rows.length;
+      summary.arrivalsSkipped += rows.length - fresh.length;
       entries.push({ personId: found._id as ObjectId, person: found });
       continue;
     }
@@ -179,7 +248,9 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       primaryEmail: mapped.email ?? value,
       name: mapped.name,
       role: mapped.role,
-      companyDomain: typeof mapped.company_domain === "string" ? mapped.company_domain : value.split("@")[1],
+      // A free mailbox has no company in it. mailboxFields leaves companyDomain off rather
+      // than naming the mail host as the employer.
+      ...mailboxFields(value, typeof mapped.company_domain === "string" ? mapped.company_domain : undefined),
       timezone: typeof mapped.timezone === "string" ? mapped.timezone : "UTC",
       language: "en",
       stage: "lead",
@@ -191,7 +262,7 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       needsClassification: true,
       sourceId: String(source._id),
       // Every arrival is kept, so someone who keeps circling is visible as such.
-      arrivals: rows.map(() => arrival),
+      arrivals: rows.map((row) => ({ ...arrival, fingerprint: fingerprintOf(row) })),
       lifecycle: "new",
       attempts: 0,
       objections: [],
@@ -218,11 +289,60 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     .toArray();
   const alreadyOpen = new Set(openGoals.map((g) => String(g.personId)));
 
+  // People who already reached this goal once. Re-running it on them would send a message
+  // whose success conditions are true before it lands: the checks ask what the person has
+  // done, not what this campaign achieved, so it would verify instantly and hand the angle
+  // a win it had no part in. That is a lie the planner would then act on.
+  const metBefore = await db
+    .collection(C.goalInstances)
+    .find({
+      orgId: source.orgId,
+      productId: source.productId,
+      personId: { $in: personIds },
+      goalKey: goal.key,
+      status: "succeeded",
+    })
+    .project({ personId: 1, endedAt: 1 })
+    .toArray();
+  const metAt = new Map(metBefore.map((g) => [String(g.personId), g.endedAt as Date | undefined]));
+
   // The instance id is minted with the entry rather than read back off a parallel array,
   // so the first touch cannot be attributed to the person standing next to its owner.
-  const starting = entries
+  const candidates = entries
     .filter((e) => !alreadyOpen.has(String(e.personId)))
     .map((e) => ({ ...e, goalInstanceId: new ObjectId() }));
+
+  // Recorded, not skipped. Someone who was not mailed has to be as answerable as someone
+  // who was, so the campaign is written with its reason and closed in the same breath.
+  const alreadyMet = candidates.filter((e) => metAt.has(String(e.personId)));
+  if (alreadyMet.length > 0) {
+    const when = (id: string) => metAt.get(id);
+    await db.collection(C.goalInstances).insertMany(
+      alreadyMet.map((e) => ({
+        _id: e.goalInstanceId,
+        orgId: source.orgId,
+        productId: source.productId,
+        personId: String(e.personId),
+        goalKey: goal.key,
+        status: "already_met",
+        spent: { touches: 0, usd: 0 },
+        deadline: new Date(now.getTime() + goal.budget.days * 86_400_000),
+        nextTickAt: new Date(now.getTime() + goal.schedule.tickEverySec * 1000),
+        startedAt: now,
+        endedAt: now,
+        outcome: (() => {
+          const at = when(String(e.personId));
+          return at
+            ? `already met on ${new Date(at).toISOString().slice(0, 10)} — not re-run`
+            : "already met by an earlier campaign — not re-run";
+        })(),
+      })),
+      { ordered: false },
+    );
+    summary.alreadyMet += alreadyMet.length;
+  }
+
+  const starting = candidates.filter((e) => !metAt.has(String(e.personId)));
   if (starting.length === 0) return summary;
 
   const instances = starting.map((e) => ({
@@ -349,4 +469,30 @@ async function queueFirstTouches(args: {
     if (inserted === null) throw err;
     summary.firstTouchesQueued += inserted;
   }
+}
+
+/**
+ * What identifies one row at its source.
+ *
+ * An id is best, a timestamp next, and a digest of the row's own values is the fallback for
+ * feeds that carry neither. The digest is over sorted key/value pairs, so a provider
+ * reordering its keys does not present itself as a new event.
+ *
+ * Returns undefined only for an empty row, which nothing downstream can act on anyway.
+ */
+function fingerprintOf(row: Record<string, unknown>): string | undefined {
+  for (const key of ["id", "lead_id", "leadId", "external_id", "externalId", "uid", "record_id"]) {
+    const value = row[key];
+    if (typeof value === "string" || typeof value === "number") return `id:${value}`;
+  }
+  for (const key of ["created_at", "createdAt", "updated_at", "updatedAt", "timestamp"]) {
+    const value = row[key];
+    if (typeof value === "string" || typeof value === "number") return `at:${value}`;
+  }
+  const values = Object.keys(row)
+    .sort()
+    .map((k) => `${k}=${String(row[k] ?? "")}`)
+    .join(" ");
+  if (!values) return undefined;
+  return `h:${createHash("sha1").update(values).digest("hex").slice(0, 16)}`;
 }

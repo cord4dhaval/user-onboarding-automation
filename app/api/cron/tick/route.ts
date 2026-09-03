@@ -6,6 +6,8 @@ import { runSource } from "@/engine/runSource.js";
 import { fireDue } from "@/engine/fireDue.js";
 import { reconcileDispatched } from "@/engine/reconcile.js";
 import { verifyDue } from "@/engine/verify.js";
+import { recomputeTemps } from "@/engine/temp.js";
+import { pollReplies } from "@/engine/inbound.js";
 import { resolveChannelAdapter } from "@/engine/adapters.js";
 import { closeIdleRuns, recordEngineRun } from "@/engine/runlog.js";
 import { checkRoutineHealth } from "@/engine/routines.js";
@@ -101,8 +103,23 @@ export async function GET(request: NextRequest) {
     // Verification runs on the same clock as sending: a campaign that has succeeded should
     // stop chasing someone within a minute, not on the next hourly Claude pass.
     const verified = await verifyDue(orgId, productId, 25);
-    if (sent.claimed || reconciled.checked || verified.succeeded || verified.failed) {
-      const work = { product: String(product.name), sent, reconciled, verified };
+    // Half of temperature is decay, and nothing happens when a person goes quiet — a clock
+    // is the only thing that can notice. It rides here rather than in a Claude routine
+    // because it is arithmetic over signals already recorded.
+    const temps = await recomputeTemps(orgId, productId, 100);
+    // Replies come last because they are the only step that can end a campaign outright:
+    // someone who wrote "stop" is suppressed here, and anything queued for them in this
+    // same tick has already been claimed and will find them suppressed before it sends.
+    const replies = await pollReplies(orgId, productId, 40);
+    if (
+      sent.claimed ||
+      reconciled.checked ||
+      verified.succeeded ||
+      verified.failed ||
+      temps.changed ||
+      replies.recorded
+    ) {
+      const work = { product: String(product.name), sent, reconciled, verified, temps, replies };
       report.push(work);
       // Only ticks that did something are kept. A row a minute, mostly empty, would bury
       // the ones worth reading under 1,400 that say nothing.
@@ -119,6 +136,9 @@ export async function GET(request: NextRequest) {
           reconciled: reconciled.checked ?? 0,
           succeeded: verified.succeeded ?? 0,
           failed: verified.failed ?? 0,
+          reheated: temps.changed ?? 0,
+          replies: replies.recorded ?? 0,
+          unsubscribed: replies.unsubscribed ?? 0,
         },
         report: work,
       });

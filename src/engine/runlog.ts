@@ -275,8 +275,10 @@ async function adopt(run: Document, argProductId: string): Promise<{ runId: Obje
 const ALWAYS_ALLOWED = ["register_routine", "routine_status", "sweep", "lead_card", "report", "list_products"];
 
 const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
-  monitor: [...ALWAYS_ALLOWED, "mark_state", "plan_goal", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
-  plan: [...ALWAYS_ALLOWED, "verifiers", "set_checks", "classify", "plan_goal"],
+  // Monitor replans people who have gone off-plan, so it reads the same evidence Plan does.
+  monitor: [...ALWAYS_ALLOWED, "mark_state", "plan_goal", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply", "what_works"],
+  // Plan researches a person before it reads them, so it writes what it found.
+  plan: [...ALWAYS_ALLOWED, "verifiers", "set_checks", "classify", "plan_goal", "save_enrichment", "what_works"],
   compose: [...ALWAYS_ALLOWED, "compose_batch"],
   // Groom finishes setup, so it writes templates and campaigns — and raises the one
   // notification for the parts only a human can supply.

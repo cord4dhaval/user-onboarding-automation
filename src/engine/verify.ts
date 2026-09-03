@@ -1,6 +1,7 @@
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { stampGoalOutcome } from "./outcomes.js";
 import { McpClient } from "../mcp/client.js";
 import { schemasFor } from "../mcp/schemas.js";
 import { resolveSecret } from "../crypto/broker.js";
@@ -316,6 +317,9 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
       { orgId, goalInstanceId, status: { $in: ["queued", "awaiting_approval"] } },
       { $set: { status: "skipped", skipReason: "campaign already succeeded" } },
     );
+    // The win is attributed to the messages that produced it. Without this the outcome
+    // lives only on the campaign, and no angle is ever credited with anything.
+    await stampGoalOutcome(orgId, goalInstanceId, "won");
     await db
       .collection(C.people)
       .updateOne({ _id: person._id }, { $set: { lifecycle: "cooling", lastSignalAt: now } });
@@ -344,6 +348,7 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
       { orgId, goalInstanceId, status: { $in: ["queued", "awaiting_approval"] } },
       { $set: { status: "skipped", skipReason: "campaign ended" } },
     );
+    await stampGoalOutcome(orgId, goalInstanceId, "lost");
     // They stay in the library with their whole history, and may be approached again once
     // the cooling period passes.
     await db.collection(C.people).updateOne(
