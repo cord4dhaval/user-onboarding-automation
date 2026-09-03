@@ -46,21 +46,23 @@ const VIEWS = {
     match: { status: "sent" },
     blurb: "These reached the provider. The message shown is the one that went.",
   },
-  blocked: {
-    label: "Never sent",
-    match: { status: "skipped", skipReason: { $exists: true } },
+  failed: {
+    label: "Failed",
+    // Two statuses, one question. `skipped` with a reason is one of our own limits stopping
+    // an approved message; `failed` is the send itself erroring. Both mean nobody received
+    // it, so a reviewer asking "what never reached anyone" was checking two tabs for one
+    // answer — and only one of the two offered a way back. They are one list now, with the
+    // side that stopped each message written on its row.
+    match: {
+      $or: [{ status: "skipped", skipReason: { $exists: true } }, { status: "failed" }],
+    },
     blurb:
-      "Approved, then stopped on the way out — a cap, a suppression, a closed campaign. Nothing retries these on its own.",
+      "Never reached anyone — stopped by one of our limits, or the send itself errored. Nothing retries these on its own; returning one to review puts it back in front of you.",
   },
   rejected: {
     label: "Rejected",
     match: { status: "skipped", skipReason: { $exists: false } },
     blurb: "Turned down in review. Nothing was sent.",
-  },
-  failed: {
-    label: "Failed",
-    match: { status: "failed" },
-    blurb: "The send itself errored. The reason is on each row.",
   },
   all: {
     label: "All",
@@ -72,8 +74,38 @@ const VIEWS = {
 type ViewKey = keyof typeof VIEWS;
 const VIEW_KEYS = Object.keys(VIEWS) as ViewKey[];
 
+/**
+ * Which side of the line a message died on.
+ *
+ * The two failure tabs are one now, and the distinction they carried still matters: ours is
+ * a setting somebody here can change, theirs is a wait or a support ticket. Saying it on the
+ * row is what keeps merging the tabs from losing it.
+ */
+type Origin = "ours" | "theirs";
+
+const ORIGIN_LABEL: Record<Origin, string> = { ours: "stopped here", theirs: "provider error" };
+
+function failureOrigin(action: Document): Origin {
+  // A rule of ours held it: a cap, a suppression, a campaign that had already closed.
+  if (String(action.status) === "skipped") return "ours";
+  const validation = action.validation as { hardFails?: string[] } | undefined;
+  // Our own content check refused to let it out.
+  if (validation?.hardFails?.length) return "ours";
+  // A message missing its person, channel or template is our bookkeeping, not a refusal
+  // from anybody's provider.
+  return /^missing /.test(String(action.error ?? "")) ? "ours" : "theirs";
+}
+
+/** Whether this message can be put back in front of a reviewer rather than being the end. */
+function recoverable(action: Document): boolean {
+  const status = String(action.status);
+  // A rejection is deliberately not in here. Reviving something a human turned down is an
+  // override, not a recovery.
+  return status === "failed" || (status === "skipped" && Boolean(action.skipReason));
+}
+
 /** How each row's state reads, and whether it is worth alarm. */
-function statusOf(action: Document): { label: string; tone: string; detail?: string } {
+function statusOf(action: Document): { label: string; tone: string; detail?: string; origin?: Origin } {
   const status = String(action.status);
   const validation = action.validation as { hardFails?: string[] } | undefined;
   switch (status) {
@@ -115,10 +147,14 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
         label: "failed",
         tone: "bad",
         detail: action.error ? String(action.error) : validation?.hardFails?.join("; "),
+        origin: failureOrigin(action),
       };
     case "skipped":
+      // One word for both halves of the failed list. A message a cap stopped and one the
+      // provider refused are the same fact to the person reading — nobody got it — and the
+      // origin pill beside this says which of the two it was.
       return action.skipReason
-        ? { label: "never sent", tone: "bad", detail: String(action.skipReason) }
+        ? { label: "failed", tone: "bad", detail: String(action.skipReason), origin: "ours" }
         : { label: "rejected", tone: "", detail: "turned down in review" };
     default:
       return { label: status, tone: "" };
@@ -144,7 +180,10 @@ export default async function Review({
   const db = await getDb();
   const s = scope(orgId, id);
 
-  const view: ViewKey = VIEW_KEYS.includes(viewParam as ViewKey) ? (viewParam as ViewKey) : "waiting";
+  // "Never sent" and "Failed" used to be separate tabs. A bookmark, a notification or a
+  // browser's back button can still ask for the old one by name.
+  const asked = viewParam === "blocked" ? "failed" : viewParam;
+  const view: ViewKey = VIEW_KEYS.includes(asked as ViewKey) ? (asked as ViewKey) : "waiting";
   const per = PER_PAGE.includes(Number(perParam) as (typeof PER_PAGE)[number])
     ? Number(perParam)
     : PER_PAGE[0];
@@ -271,12 +310,12 @@ export default async function Review({
                 : VIEWS[view].blurb}
           </p>
         </div>
-        {view === "blocked" && held.length > 0 && (
+        {view === "failed" && held.length > 0 && (
           <>
             <div className="spacer" />
-            {/* Returns them to review rather than sending them: they were stopped by a
-                limit that may still be in force, and the reviewer is the one who decides
-                whether the thing that stopped them has actually been dealt with. */}
+            {/* Returns them to review rather than resending them: whatever stopped them —
+                our limit or the provider's refusal — may still be in force, and the
+                reviewer is the one who decides whether it has actually been dealt with. */}
             <form action={returnToReview}>
               <input type="hidden" name="productId" value={id} />
               {held.map((a) => (
@@ -417,9 +456,19 @@ export default async function Review({
                           </td>
                         ) : (
                           <td>
-                            <span className={`pill ${state.tone}`}>{state.label}</span>
+                            <div className="state-pills">
+                              <span className={`pill ${state.tone}`}>{state.label}</span>
+                              {/* Which side stopped it. The two used to be two tabs; now the
+                                  row carries the difference the tabs did. */}
+                              {state.origin ? (
+                                <span className="pill">{ORIGIN_LABEL[state.origin]}</span>
+                              ) : null}
+                            </div>
+                            {/* A provider error is a line of JSON. Fifty of them printed in
+                                full turned the list into a wall nobody could read down, so
+                                it is clamped and the whole thing is in the tooltip. */}
                             {state.detail ? (
-                              <div className="muted" style={{ fontSize: 12.5 }}>{state.detail}</div>
+                              <div className="state-why" title={state.detail}>{state.detail}</div>
                             ) : null}
                           </td>
                         )}
@@ -468,7 +517,7 @@ export default async function Review({
                                   meta={meta}
                                   fetchMessage={heldMessage}
                                 />
-                                {action.status === "skipped" && action.skipReason ? (
+                                {recoverable(action) ? (
                                   <form action={returnToReview}>
                                     <input type="hidden" name="productId" value={id} />
                                     <input type="hidden" name="ids" value={String(action._id)} />

@@ -5,6 +5,8 @@ import { resolveSecret } from "../crypto/broker.js";
 import { McpClient } from "../mcp/client.js";
 import { schemasFor } from "../mcp/schemas.js";
 import { unsubscribePerson } from "./unsubscribe.js";
+import { suppress } from "./suppression.js";
+import { grantedCapabilities } from "../auth/google.js";
 
 /**
  * Reads replies.
@@ -34,6 +36,8 @@ export interface InboundSummary {
   matched: number;
   recorded: number;
   unsubscribed: number;
+  /** Hard bounces found and suppressed. Soft ones are counted nowhere: they mean nothing yet. */
+  bounced: number;
   errors: string[];
 }
 
@@ -105,6 +109,15 @@ function headerOf(payload: unknown, name: string): string {
   return hit ? String(hit.value ?? "") : "";
 }
 
+/** The whole header block as text, for the few headers worth matching by pattern. */
+function allHeaders(payload: unknown): string {
+  const headers = ((payload as { headers?: unknown } | null)?.headers ?? []) as Array<{
+    name?: unknown;
+    value?: unknown;
+  }>;
+  return headers.map((h) => `${String(h.name ?? "")}: ${String(h.value ?? "")}`).join("\n");
+}
+
 /** "Priya Nair <priya@acme.com>" and "priya@acme.com" both have to resolve to the address. */
 function addressIn(value: string): string {
   const angled = value.match(/<([^>]+)>/);
@@ -168,6 +181,108 @@ async function gmail(path: string, token: string): Promise<Record<string, unknow
 }
 
 /**
+ * Mailboxes this deployment holds tokens for directly.
+ *
+ * Read scope is checked rather than assumed: a customer who unticked it on the consent
+ * screen has a mailbox that sends perfectly well and cannot be read, and calling Gmail
+ * anyway would spend a request to be told 403 on every tick forever.
+ */
+async function nativeMailboxes(
+  orgId: string,
+  channels: Array<Record<string, unknown>>,
+  summary: InboundSummary,
+): Promise<Mailbox[]> {
+  const db = await getDb();
+  const out: Mailbox[] = [];
+
+  for (const channel of channels) {
+    const connection = await db
+      .collection(C.connections)
+      .findOne({ _id: new ObjectId(String(channel.connectionId)), authType: "oauth2", provider: "google" });
+    if (!connection) continue;
+    if (!grantedCapabilities((connection.scopes ?? []) as string[]).read) continue;
+
+    const email = String(connection.accountEmail ?? channel.from ?? "");
+    if (!email) continue;
+
+    try {
+      // The broker hands back a token it has already refreshed if it was near expiry, so a
+      // poll never fails on an hour-old token.
+      out.push({ email, token: await resolveSecret(orgId, String(connection._id), "engine.inbound") });
+    } catch (err) {
+      summary.errors.push(`${email}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Mailboxes whose tokens belong to somebody else's MCP server, fetched through its
+ * `get_email_tokens` tool.
+ *
+ * Kept for products connected before native Google existed. The tool's own description
+ * invites the calling AI to query Gmail with what it returns; that happens here in the
+ * engine instead, because a token in a model's context is a token in a transcript.
+ */
+async function mcpMailboxes(
+  orgId: string,
+  channels: Array<Record<string, unknown>>,
+  summary: InboundSummary,
+): Promise<Mailbox[]> {
+  const db = await getDb();
+  const channel = channels.find((c) => c.kind === "mcp");
+  if (!channel) return [];
+
+  const connectionId = String(channel.connectionId);
+  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
+  if (!connection?.serverUrl) return [];
+
+  // Nothing is attempted unless the provider actually offers the tool. A connection that
+  // cannot hand out tokens is not an error, it is a product without reply reading.
+  const binding = await db.collection(C.mcpBindings).findOne({ orgId, connectionId });
+  const tools = ((binding?.discoveredTools ?? []) as Array<{ name?: unknown }>).map((t) => String(t.name));
+  if (!tools.includes("get_email_tokens")) return [];
+
+  try {
+    const secret = await resolveSecret(orgId, connectionId, "engine.inbound");
+    const client = new McpClient(String(connection.serverUrl), secret, await schemasFor(connectionId));
+    return readMailboxes(await client.callTool("get_email_tokens", {}));
+  } catch (err) {
+    summary.errors.push(`token fetch: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+/**
+ * Who a bounce was about, and whether it is final.
+ *
+ * Gmail returns a delivery failure as ordinary mail from mailer-daemon, so without this
+ * every bounce reads as an unmatched message from a stranger and a dead address keeps being
+ * mailed until the campaign gives up on silence. Only permanent failures count: a full
+ * mailbox or a greylisting is a 4xx and means try again, and suppressing on one would lose
+ * a real lead for good.
+ */
+export function parseBounce(headers: string, body: string): { recipient: string; permanent: boolean } | null {
+  const failed = /^X-Failed-Recipients:\s*(.+)$/im.exec(headers)?.[1];
+  const quoted =
+    failed ??
+    /(?:wasn'?t delivered to|Delivery to the following recipient failed permanently:|Final-Recipient:\s*rfc822;)\s*([^\s<>,]+@[^\s<>,]+)/i.exec(
+      body,
+    )?.[1];
+  if (!quoted) return null;
+
+  const recipient = addressIn(quoted.split(",")[0] ?? quoted);
+  if (!recipient.includes("@")) return null;
+
+  // Status first, response code second: a DSN carries a machine-readable 5.x.x, and the
+  // human sentence underneath it is the fallback for servers that omit one.
+  const status = /Status:\s*([245])\.\d+\.\d+/i.exec(body)?.[1];
+  const code = /\b(4\d\d|5\d\d)\b(?=[^\n]*(?:error|response|said|reason))/i.exec(body)?.[1];
+  const permanent = status ? status === "5" : code ? code.startsWith("5") : /permanently|does not exist|no such user/i.test(body);
+  return { recipient, permanent };
+}
+
+/**
  * One pass over every connected mailbox in the product's org.
  *
  * Bounded by `limit` and by a lookback window rather than a cursor: a message id we have
@@ -186,38 +301,38 @@ export async function pollReplies(
     matched: 0,
     recorded: 0,
     unsubscribed: 0,
+    bounced: 0,
     errors: [],
   };
   const db = await getDb();
 
-  const channel = await db
+  // Mailboxes come from two places now. A natively connected Google account is the
+  // preferred one: the token is ours, the customer granted it on Google's own screen, and
+  // reading replies does not depend on somebody else's MCP server staying up. The borrowed
+  // path is kept because products already connected that way still work.
+  const channels = await db
     .collection(C.channels)
-    .findOne({ orgId, productId, kind: "mcp", enabled: true });
-  if (!channel) return summary;
+    .find({ orgId, productId, enabled: true })
+    .toArray();
+  if (channels.length === 0) return summary;
 
-  const connectionId = String(channel.connectionId);
-  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
-  if (!connection?.serverUrl) return summary;
-
-  // Nothing is attempted unless the provider actually offers the tool. A connection that
-  // cannot hand out tokens is not an error, it is a product without reply reading.
-  const binding = await db.collection(C.mcpBindings).findOne({ orgId, connectionId });
-  const tools = ((binding?.discoveredTools ?? []) as Array<{ name?: unknown }>).map((t) => String(t.name));
-  if (!tools.includes("get_email_tokens")) return summary;
-
-  let mailboxes: Mailbox[];
-  try {
-    const secret = await resolveSecret(orgId, connectionId, "engine.inbound");
-    const client = new McpClient(String(connection.serverUrl), secret, await schemasFor(connectionId));
-    mailboxes = readMailboxes(await client.callTool("get_email_tokens", {}));
-  } catch (err) {
-    summary.errors.push(`token fetch: ${err instanceof Error ? err.message : String(err)}`);
-    return summary;
+  const mailboxes: Mailbox[] = [];
+  for (const source of [nativeMailboxes, mcpMailboxes]) {
+    try {
+      mailboxes.push(...(await source(orgId, channels, summary)));
+    } catch (err) {
+      summary.errors.push(`mailboxes: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
   summary.mailboxes = mailboxes.length;
   if (mailboxes.length === 0) return summary;
 
-  const since = channel.lastInboundPollAt as Date | undefined;
+  // The oldest stamp across the polled channels, so a channel added yesterday does not
+  // shorten the window for one that has been reading since last month.
+  const since = channels
+    .map((c) => c.lastInboundPollAt as Date | undefined)
+    .filter((d): d is Date => Boolean(d))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
   // A day of overlap on the first run, and an hour of it afterwards. Overlap is harmless
   // because ids are deduped, and it covers a tick that failed or a clock that drifted.
   const after = Math.floor(
@@ -262,6 +377,13 @@ export async function pollReplies(
       const from = addressIn(headerOf(message.payload, "From"));
       if (!from) continue;
 
+      // A delivery failure arrives as mail from the postmaster, not as a webhook. Handled
+      // before the person lookup because the sender is a daemon and would never match one.
+      if (/mailer-daemon@|postmaster@/i.test(from)) {
+        await handleBounce(orgId, productId, message, mailbox.email, id, summary);
+        continue;
+      }
+
       const person = await db
         .collection(C.people)
         .findOne(
@@ -304,7 +426,72 @@ export async function pollReplies(
 
   await db
     .collection(C.channels)
-    .updateOne({ _id: channel._id }, { $set: { lastInboundPollAt: new Date() } });
+    .updateMany(
+      { _id: { $in: channels.map((c) => c._id) } },
+      { $set: { lastInboundPollAt: new Date() } },
+    );
 
   return summary;
+}
+
+/**
+ * Records a permanent delivery failure and stops mailing the address.
+ *
+ * Deliberately in code rather than left to a routine, for the same reason an unsubscribe
+ * is: an address that does not exist will not start existing because a scheduled session
+ * has not run yet, and every further send to it is reputation spent on nobody.
+ *
+ * Soft failures return false and change nothing. A mailbox that was full on Tuesday is a
+ * lead, not a dead address.
+ */
+async function handleBounce(
+  orgId: string,
+  productId: string,
+  message: Record<string, unknown>,
+  mailbox: string,
+  messageId: string,
+  summary: InboundSummary,
+): Promise<boolean> {
+  const db = await getDb();
+  const parsed = parseBounce(allHeaders(message.payload), bodyOf(message));
+  if (!parsed || !parsed.permanent) return false;
+
+  const person = await db
+    .collection(C.people)
+    .findOne({ orgId, productId, "identities.value": parsed.recipient }, { projection: { _id: 1 } });
+
+  await suppress(orgId, parsed.recipient, "hard bounce");
+  await db.collection(C.events).insertOne({
+    orgId,
+    productId,
+    personId: person ? String(person._id) : undefined,
+    type: "bounce_received",
+    ts: message.internalDate ? new Date(Number(message.internalDate)) : new Date(),
+    // Nothing here needs a model's reading: the address is gone and the record says so.
+    handled: true,
+    payload: { messageId, mailbox, recipient: parsed.recipient, subject: headerOf(message.payload, "Subject") },
+  });
+  summary.bounced++;
+
+  if (!person) return true;
+  const personId = String(person._id);
+
+  await Promise.all([
+    db
+      .collection(C.people)
+      .updateOne({ _id: person._id }, { $set: { lifecycle: "suppressed", suppressedAt: new Date() } }),
+    db
+      .collection(C.actions)
+      .updateMany(
+        { orgId, productId, personId, status: { $in: ["queued", "awaiting_approval", "held"] } },
+        { $set: { status: "skipped", skipReason: "hard_bounce" } },
+      ),
+    db
+      .collection(C.goalInstances)
+      .updateMany(
+        { orgId, productId, personId, status: "active" },
+        { $set: { status: "failed", outcome: "hard_bounce", endedAt: new Date() } },
+      ),
+  ]);
+  return true;
 }

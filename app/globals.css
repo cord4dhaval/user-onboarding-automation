@@ -135,6 +135,8 @@ h2 { font-size: 19px; font-weight: 700; letter-spacing: -.022em; margin: 30px 0 
 h3 { font-size: 15.5px; font-weight: 700; letter-spacing: -.015em; margin: 22px 0 8px; }
 p { margin: 0 0 14px; }
 .sub { color: var(--ink-3); font-size: 14px; margin: 4px 0 22px; max-width: 68ch; }
+/* Why a row is in the state it is in, said on the row itself. */
+.reason { color: var(--ink-3); font-size: 12.5px; margin-top: 4px; max-width: 46ch; }
 .muted { color: var(--ink-3); }
 strong { font-weight: 600; }
 
@@ -1058,6 +1060,21 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 details > summary { cursor: pointer; font-size: 13px; color: var(--ink-3); }
 details > summary:hover { color: var(--ink); }
 
+/* ── a message's state, in one cell ───────────────────────────────────────── */
+
+/* What happened, then which side it happened on: two pills, never wrapped apart from the
+   reason underneath them. */
+.state-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* The reason a send failed is often a line of the provider's JSON. Printed in full it ran
+   to three lines a row, and fifty of those is a wall rather than a list — so it is clamped
+   to two and the whole string stays in the tooltip. */
+.state-why {
+  margin-top: 4px; font-size: 12.5px; color: var(--ink-3);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+
 /* ── searchable filter menu ────────────────────────────────────────────────── */
 
 /* A row of pills is fine for four campaigns and unusable for forty — it wraps over the
@@ -1194,3 +1211,23 @@ details > summary:hover { color: var(--ink); }
 @media (max-width: 860px) {
   .runs-table { table-layout: auto; min-width: 720px; }
 }
+
+/* ── channel picker ───────────────────────────────────────────────────────── */
+/* A grid of what can be connected, including what cannot yet. The unavailable ones stay
+   on screen rather than being hidden: a customer who needs WhatsApp should find that out
+   here, not after connecting email and waiting. */
+.picker { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.picker button {
+  display: block; width: 100%; text-align: left; background: var(--surface);
+  border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 13px 14px;
+  color: var(--ink); font: inherit; cursor: pointer;
+}
+.picker button:hover:not(:disabled) { border-color: var(--accent); filter: none; }
+.picker button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.picker button:disabled { cursor: default; background: var(--surface-2); color: var(--ink-3); }
+.picker-top { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.picker-top svg { width: 15px; height: 15px; color: var(--ink-3); }
+.picker-top strong { font-size: 14px; font-weight: 600; }
+.picker-top .pill { margin-left: auto; }
+.picker p { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+.picker + .segmented, .picker + .empty, .picker + form { margin-top: 16px; }

@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { openSecret, sealSecret, type SealedSecret } from "./envelope.js";
 import { refreshToken, type AuthServerMetadata } from "../mcp/oauth.js";
+import { googleClient, refreshGoogleToken } from "../auth/google.js";
 
 /**
  * The only path to a plaintext secret. Callers are engine-side adapters running in a
@@ -53,19 +54,33 @@ async function refreshIfExpiring(
 
   const db = await getDb();
   const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
-  const oauth = connection?.oauth as
+  if (!connection) return null;
+
+  const oauth = connection.oauth as
     | { metadata: AuthServerMetadata; clientId: string; clientSecret?: string }
     | undefined;
-  if (!oauth?.metadata || !connection?.serverUrl) return null;
+
+  // Two OAuth shapes reach this function. An MCP server renews against whatever
+  // authorization server it discovered; a provider mailbox renews against a fixed endpoint
+  // with this deployment's own client. Branching here rather than in two copies of the
+  // function keeps one audit path and one place where a dead refresh downgrades a channel.
+  const isProvider = connection.authType === "oauth2";
+  if (!isProvider && (!oauth?.metadata || !connection.serverUrl)) return null;
+  if (isProvider && connection.provider !== "google") return null;
 
   try {
-    const tokens = await refreshToken({
-      metadata: oauth.metadata,
-      clientId: oauth.clientId,
-      clientSecret: oauth.clientSecret,
-      refreshToken: openSecret(sealedRefresh),
-      resource: String(connection.serverUrl),
-    });
+    const tokens = isProvider
+      ? await refreshGoogleToken({
+          client: googleClient(),
+          refreshToken: openSecret(sealedRefresh),
+        })
+      : await refreshToken({
+          metadata: oauth!.metadata,
+          clientId: oauth!.clientId,
+          clientSecret: oauth!.clientSecret,
+          refreshToken: openSecret(sealedRefresh),
+          resource: String(connection.serverUrl),
+        });
     const expiresAt = tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : undefined;
 
     await db.collection(C.credentials).updateOne(
@@ -88,7 +103,11 @@ async function refreshIfExpiring(
     await db
       .collection(C.connections)
       .updateOne({ _id: new ObjectId(connectionId) }, { $set: { status: "degraded" } });
-    throw new Error("OAuth token expired and refresh failed — reconnect this server");
+    throw new Error(
+      isProvider
+        ? "Google refused the refresh token — reconnect this mailbox"
+        : "OAuth token expired and refresh failed — reconnect this server",
+    );
   }
 }
 

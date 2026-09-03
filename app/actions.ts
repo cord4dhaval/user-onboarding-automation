@@ -7,10 +7,14 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { sealSecret } from "@/crypto/envelope.js";
-import { resolveSecret } from "@/crypto/broker.js";
-import { McpClient, hashTools } from "@/mcp/client.js";
-import { inferCapabilities } from "@/mcp/discover.js";
+import { reverifyConnection } from "@/mcp/reverify.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
+import {
+  buildGoogleAuthorizeUrl,
+  configuredScopes,
+  googleClient,
+  startGoogleFlow,
+} from "@/auth/google.js";
 import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
 import { notify, refreshDerived } from "@/engine/notify.js";
@@ -105,6 +109,7 @@ export async function createConnection(formData: FormData) {
   const serverUrl = String(formData.get("serverUrl") ?? "").trim();
   const token = String(formData.get("token") ?? "").trim();
   const provider = String(formData.get("provider") ?? "").trim() || "mcp";
+  const account = String(formData.get("account") ?? "").trim();
   if (!serverUrl || !token) throw new Error("Server URL and token are both required");
 
   const connectionId = new ObjectId();
@@ -114,6 +119,8 @@ export async function createConnection(formData: FormData) {
     productId,
     key: provider,
     provider,
+    // Which account this is authorised as, so switching later has a before and an after.
+    ...(account ? { account } : {}),
     authType: "mcp_bearer",
     serverUrl,
     scopes: [],
@@ -135,51 +142,152 @@ export async function createConnection(formData: FormData) {
   redirect(`/products/${productId}/connections/${String(connectionId)}`);
 }
 
-/** Lists the server's tools and records what can be inferred. Never binds automatically. */
-export async function discoverTools(productId: string, connectionId: string) {
+/**
+ * Swaps the account behind an existing connection instead of standing up a second one.
+ *
+ * Channels, sources and tool bindings all point at the connection id, so re-authorising in
+ * place keeps every one of them wired up. Creating a fresh connection for the new account
+ * would leave them addressed to the old account's credential — which is precisely the
+ * silent breakage this exists to avoid.
+ */
+export async function reconnectWithToken(formData: FormData) {
   const db = await getDb();
-  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
-  if (!connection?.serverUrl) throw new Error("connection not found");
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const connectionId = String(formData.get("connectionId"));
+  const token = String(formData.get("token") ?? "").trim();
+  const account = String(formData.get("account") ?? "").trim();
+  if (!token) throw new Error("An access token is required");
 
-  const token = await resolveSecret((await currentOrg()), connectionId, "ui.discover");
-  const client = new McpClient(String(connection.serverUrl), token);
+  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId), orgId });
+  if (!connection) throw new Error("connection not found");
+  const previousAccount = connection.account ? String(connection.account) : undefined;
 
-  let tools;
-  try {
-    tools = await client.listTools();
-  } catch (err) {
-    // Surface the failure on the connection rather than throwing a crash page — a server
-    // that speaks a dialect we cannot read is a normal thing to have to diagnose.
-    const message = err instanceof Error ? err.message : String(err);
-    await db
-      .collection(C.connections)
-      .updateOne({ _id: new ObjectId(connectionId) }, { $set: { status: "degraded", lastError: message } });
-    revalidatePath(`/products/${productId}/connections/${connectionId}`);
-    return;
-  }
-
-  await db.collection(C.mcpBindings).updateOne(
-    { orgId: (await currentOrg()), connectionId },
+  await db.collection(C.credentials).updateOne(
+    { orgId, connectionId },
     {
       $set: {
-        orgId: (await currentOrg()),
+        orgId,
         connectionId,
-        discoveredTools: tools,
-        capabilities: inferCapabilities(tools),
-        toolsHash: hashTools(tools),
-        discoveredAt: new Date(),
+        authType: "mcp_bearer",
+        ...sealSecret(token),
+        status: "verified",
+        rotatedAt: new Date(),
       },
-      $setOnInsert: { bind: {} },
+      // The old account's refresh token and expiry must not outlive the account itself,
+      // or the broker would quietly refresh its way back to the wrong identity.
+      $unset: { refreshTokenEnc: "", expiresAt: "", refreshAfter: "", lastUsedAt: "" },
     },
     { upsert: true },
   );
-  await db
-    .collection(C.connections)
-    .updateOne(
-      { _id: new ObjectId(connectionId) },
-      { $set: { status: "verifying", lastVerifiedAt: new Date() }, $unset: { lastError: "" } },
-    );
 
+  await db.collection(C.connections).updateOne(
+    { _id: new ObjectId(connectionId) },
+    {
+      $set: {
+        authType: "mcp_bearer",
+        status: "verifying",
+        reconnectedAt: new Date(),
+        ...(account ? { account } : {}),
+      },
+      $unset: { oauth: "", lastError: "" },
+    },
+  );
+
+  await recordReconnect(productId, connectionId, previousAccount, account || undefined, "token");
+  await reverifyConnection(orgId, connectionId);
+  revalidatePath(`/products/${productId}/connections`);
+  revalidatePath(`/products/${productId}/connections/${connectionId}`);
+}
+
+/**
+ * The OAuth half of the same swap. The connection document is reused, so the callback —
+ * which finds it by state and upserts the credential by connection id — needs no special
+ * case for a re-authorisation.
+ */
+export async function startReauthOAuth(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const connectionId = String(formData.get("connectionId"));
+  const account = String(formData.get("account") ?? "").trim();
+
+  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId), orgId });
+  if (!connection?.serverUrl) throw new Error("connection not found");
+  const serverUrl = String(connection.serverUrl);
+
+  const metadata = await discoverAuthServer(serverUrl);
+  if (!metadata?.authorization_endpoint) {
+    throw new Error("This server does not publish OAuth metadata. Reconnect it with an access token instead.");
+  }
+
+  const redirectUri = `${await appOrigin()}/api/oauth/callback`;
+  const existing = connection.oauth as { clientId?: string; clientSecret?: string } | undefined;
+  let clientId = String(formData.get("clientId") ?? "").trim() || existing?.clientId || "";
+  let clientSecret = String(formData.get("clientSecret") ?? "").trim() || existing?.clientSecret;
+
+  if (!clientId) {
+    const registered = await registerClient(metadata, redirectUri, "Conversion Engine");
+    if (!registered) {
+      throw new Error(
+        "This server does not support dynamic client registration. Enter a client ID issued by the provider.",
+      );
+    }
+    clientId = registered.client_id;
+    clientSecret = registered.client_secret;
+  }
+
+  const { verifier, challenge } = createPkce();
+  const state = randomState();
+
+  await db.collection(C.connections).updateOne(
+    { _id: new ObjectId(connectionId) },
+    {
+      $set: {
+        authType: "mcp_oauth",
+        status: "pending",
+        oauth: { metadata, clientId, clientSecret, verifier, state, redirectUri },
+        // Applied by the callback only once the exchange succeeds, so a cancelled consent
+        // screen leaves the connection describing the account it still holds.
+        pendingAccount: account || undefined,
+        reauth: true,
+      },
+      $unset: { lastError: "" },
+    },
+  );
+
+  redirect(
+    // "login" forces the provider to ask who is signing in. Without it the consent screen
+    // reuses the session already open and hands back the same account's token, so the
+    // switch looks like it worked and changes nothing.
+    buildAuthorizeUrl({ metadata, clientId, redirectUri, challenge, state, resource: serverUrl, prompt: "login" }),
+  );
+}
+
+/** Reconnects are the kind of change someone asks about weeks later; leave a row saying so. */
+async function recordReconnect(
+  productId: string,
+  connectionId: string,
+  fromAccount: string | undefined,
+  toAccount: string | undefined,
+  via: "token" | "oauth",
+) {
+  const db = await getDb();
+  await db.collection(C.audit).insertOne({
+    _id: new ObjectId(),
+    orgId: await currentOrg(),
+    productId,
+    actorType: "user",
+    action: "connection.reconnect",
+    target: connectionId,
+    detail: { via, fromAccount, toAccount },
+    at: new Date(),
+  });
+}
+
+/** Lists the server's tools and records what can be inferred. Never binds automatically. */
+export async function discoverTools(productId: string, connectionId: string) {
+  await reverifyConnection(await currentOrg(), connectionId);
   revalidatePath(`/products/${productId}/connections/${connectionId}`);
 }
 
@@ -704,6 +812,7 @@ export async function startOAuth(formData: FormData) {
   const productId = String(formData.get("productId"));
   const serverUrl = String(formData.get("serverUrl") ?? "").trim();
   const provider = String(formData.get("provider") ?? "").trim() || "mcp";
+  const account = String(formData.get("account") ?? "").trim();
   if (!serverUrl) throw new Error("Server URL is required");
 
   const metadata = await discoverAuthServer(serverUrl);
@@ -745,6 +854,9 @@ export async function startOAuth(formData: FormData) {
     directions: ["in", "out"],
     // Held only until the callback consumes them.
     oauth: { metadata, clientId, clientSecret, verifier, state, redirectUri },
+    // Applied by the callback, so an abandoned consent screen leaves no claim about
+    // which account this is.
+    pendingAccount: account || undefined,
     createdBy: (await currentOrg()),
     createdAt: new Date(),
   });
@@ -754,16 +866,71 @@ export async function startOAuth(formData: FormData) {
   );
 }
 
-/** Reports whether a server can be connected by OAuth, before anyone commits to a path. */
-export async function probeAuth(formData: FormData): Promise<void> {
-  const serverUrl = String(formData.get("serverUrl") ?? "").trim();
+/**
+ * Starts a Gmail connect.
+ *
+ * Nothing is probed first the way the MCP flow probes for metadata: Google's endpoints are
+ * fixed, and the only thing that can be misconfigured is our own client, which fails here
+ * with a readable message rather than on a consent screen the customer is already looking
+ * at.
+ */
+export async function startGoogleOAuth(formData: FormData) {
+  const db = await getDb();
   const productId = String(formData.get("productId"));
-  const metadata = await discoverAuthServer(serverUrl);
-  const supported = Boolean(metadata?.authorization_endpoint);
-  const dcr = Boolean(metadata?.registration_endpoint);
+  const orgId = await currentOrg();
+  const client = googleClient();
+  const scopes = configuredScopes();
+  const { verifier, challenge, state } = startGoogleFlow();
+  const redirectUri = `${await appOrigin()}/api/oauth/google/callback`;
+
+  await db.collection(C.connections).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    productId,
+    key: "email",
+    provider: "google",
+    authType: "oauth2",
+    scopes: [],
+    status: "pending",
+    directions: ["out", "in"],
+    // Held only until the callback consumes them. The scopes asked for are kept too, so a
+    // customer who unticks one on the consent screen can be told what they actually gave.
+    oauth: { verifier, state, redirectUri, scopes },
+    createdBy: orgId,
+    createdAt: new Date(),
+  });
+
   redirect(
-    `/products/${productId}/connections/new?probed=${encodeURIComponent(serverUrl)}&oauth=${supported}&dcr=${dcr}`,
+    buildGoogleAuthorizeUrl({
+      clientId: client.clientId,
+      redirectUri,
+      scopes,
+      state,
+      challenge,
+      loginHint: String(formData.get("loginHint") ?? "").trim() || undefined,
+    }),
   );
+}
+
+/**
+ * Reports whether a server can be connected by OAuth, before anyone commits to a path.
+ *
+ * Returns the answer rather than redirecting with it: the question is asked from inside the
+ * connection drawer, and a redirect would close the drawer to say one line.
+ */
+export async function probeServer(serverUrl: string): Promise<{ oauth: boolean; dcr: boolean; error?: string }> {
+  await requireSession();
+  const url = serverUrl.trim();
+  if (!url) return { oauth: false, dcr: false, error: "Enter a server URL first." };
+  try {
+    const metadata = await discoverAuthServer(url);
+    return {
+      oauth: Boolean(metadata?.authorization_endpoint),
+      dcr: Boolean(metadata?.registration_endpoint),
+    };
+  } catch (err) {
+    return { oauth: false, dcr: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /**
@@ -776,13 +943,29 @@ export async function probeAuth(formData: FormData): Promise<void> {
 export async function deleteConnection(productId: string, connectionId: string, _formData?: FormData) {
   const db = await getDb();
 
-  const [channels, sources] = await Promise.all([
-    db.collection(C.channels).countDocuments({ orgId: (await currentOrg()), connectionId }),
-    db.collection(C.sources).countDocuments({ orgId: (await currentOrg()), connectionId }),
+  const orgId = await currentOrg();
+  // Everything that addresses a connection by id, not only the two most obvious. A brand
+  // source or a goal check left pointing at a deleted connection fails at fetch time, in
+  // the provider's own words, long after anyone connects the two events.
+  const [channels, sources, brandSources, goals] = await Promise.all([
+    db.collection(C.channels).countDocuments({ orgId, connectionId }),
+    db.collection(C.sources).countDocuments({ orgId, connectionId }),
+    db.collection(C.brandSources).countDocuments({ orgId, connectionId }),
+    db.collection(C.goals).countDocuments({
+      orgId,
+      $or: [{ verifyConnectionId: connectionId }, { "checks.connectionId": connectionId }],
+    }),
   ]);
-  if (channels > 0 || sources > 0) {
+  const inUse = [
+    channels && `${channels} channel(s)`,
+    sources && `${sources} source(s)`,
+    brandSources && `${brandSources} brand source(s)`,
+    goals && `${goals} campaign(s) verifying against it`,
+  ].filter(Boolean);
+  if (inUse.length > 0) {
     throw new Error(
-      `In use by ${channels} channel(s) and ${sources} source(s). Remove those first.`,
+      `In use by ${inUse.join(", ")}. Remove those first — or, to hand this connection to a different account, ` +
+        `use Switch account, which keeps every one of them pointed here.`,
     );
   }
 
@@ -1049,14 +1232,15 @@ export async function decide(formData: FormData) {
 }
 
 /**
- * Puts messages that were approved but never sent back in front of a reviewer.
+ * Puts messages that never reached anyone back in front of a reviewer.
  *
  * A cap that fills mid-batch used to be the end of those messages: `skipped` is terminal,
- * nothing retries it, and raising the cap afterwards does not bring them back. They are
- * still perfectly good — approved, composed, frozen — so this returns them to the review
- * queue rather than making anyone rebuild the campaign.
+ * nothing retries it, and raising the cap afterwards does not bring them back. The same was
+ * true of a send the provider refused — an hourly cap on their side left fifty perfectly
+ * good messages `failed` with no way out of that screen. They are still approved, composed
+ * and frozen, so both kinds come back here rather than making anyone rebuild the campaign.
  *
- * Only messages the engine stopped are eligible. A rejection has no `skipReason`, and
+ * Only messages the machine stopped are eligible. A rejection has no `skipReason`, and
  * resurrecting something a human turned down is not a recovery, it is an override.
  */
 export async function returnToReview(formData: FormData) {
@@ -1067,19 +1251,28 @@ export async function returnToReview(formData: FormData) {
   if (ids.length === 0) return;
 
   await db.collection(C.actions).updateMany(
-    { _id: { $in: ids }, orgId, productId, status: "skipped", skipReason: { $exists: true } },
+    {
+      _id: { $in: ids },
+      orgId,
+      productId,
+      $or: [{ status: "skipped", skipReason: { $exists: true } }, { status: "failed" }],
+    },
     {
       // `reviewedAt` is deliberately kept. The sender reuses stored content for a message
       // that has been reviewed, so what goes out is the text that was approved, not a
       // fresh render of a template that may have changed since.
       $set: { status: "awaiting_approval" },
-      // The old reason describes a window that has since moved; leaving it would label a
-      // message in the review queue with a block that no longer applies.
-      $unset: { skipReason: "", deferReason: "" },
+      // Every one of these describes a moment that has passed — an hour's cap, a provider
+      // that was refusing at the time. Leaving them would label a message in the review
+      // queue with a block that no longer applies.
+      $unset: { skipReason: "", deferReason: "", error: "" },
     },
   );
 
   revalidatePath(`/products/${productId}/review`, "layout");
+  // The dashboard counts these in its "failed to send" alert, so it is stale the moment
+  // any of them move.
+  revalidatePath(`/products/${productId}`);
 }
 
 /** What a message actually says, fetched only when a reviewer opens it. */

@@ -80,7 +80,7 @@ export function AddSourceDrawer({
                 </select>
               ) : (
                 <span className="hint">
-                  No connections yet. <a href={`/products/${productId}/connections/new`}>Add an MCP server</a> first.
+                  No connections yet. <a href={`/products/${productId}/connections?connect=1`}>Add an MCP server</a> first.
                 </span>
               )}
             </label>

@@ -89,7 +89,11 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
     db.collection(C.goalInstances).find(s).sort({ startedAt: -1 }).limit(300).toArray(),
     db
       .collection(C.actions)
-      .find(s, { projection: { status: 1, sentAt: 1, personId: 1, goalInstanceId: 1, channel: 1 } })
+      // skipReason is what separates a message one of our limits stopped from one a human
+      // turned down. Both are `skipped`, and only the first belongs in the failed alert.
+      .find(s, {
+        projection: { status: 1, sentAt: 1, personId: 1, goalInstanceId: 1, channel: 1, skipReason: 1 },
+      })
       .sort({ dueAt: -1 })
       .limit(1000)
       .toArray(),
@@ -101,7 +105,10 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
 
   const byStatus = (status: string) => actions.filter((a) => String(a.status) === status);
   const held = byStatus("awaiting_approval");
-  const failed = byStatus("failed");
+  // Everything that never reached anyone, on either side of the line: our own limits
+  // stopping an approved message, and sends the provider refused. One alert, because the
+  // question behind it — who did not get their mail — does not care which.
+  const failed = [...byStatus("failed"), ...byStatus("skipped").filter((a) => a.skipReason)];
   const queued = byStatus("queued");
   const sent = byStatus("sent");
 
@@ -170,10 +177,12 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
   if (failed.length > 0) {
     alerts.push({
       text: `${failed.length} message${failed.length === 1 ? "" : "s"} failed to send`,
-      href: `${base}/library`,
+      // Straight to the list of exactly these messages, with the reason on every row and
+      // the way back to the review queue beside it.
+      href: `${base}/review?view=failed`,
       action: "Inspect",
       tone: "bad",
-      why: "The provider rejected these. Until the cause is fixed the same address keeps failing on every retry.",
+      why: "Either one of our own limits stopped them or the provider refused. Nothing retries them on its own — the reason is on each row, and you can return them to the review queue from there.",
     });
   }
   const unverifiable = goals.filter(

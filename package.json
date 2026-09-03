@@ -21,7 +21,10 @@
     "backfill:mailbox": "tsx --env-file=.env src/scripts/backfill-mailbox.ts",
     "backfill:outcomes": "tsx --env-file=.env src/scripts/backfill-outcomes.ts",
     "test:track": "tsx --env-file=.env src/scripts/test-tracking.ts",
-    "dedupe:arrivals": "tsx --env-file=.env src/scripts/dedupe-arrivals.ts"
+    "dedupe:arrivals": "tsx --env-file=.env src/scripts/dedupe-arrivals.ts",
+    "recompose": "tsx --env-file=.env src/scripts/recompose-held.ts",
+    "test:signals": "tsx --env-file=.env src/scripts/signal-test.ts",
+    "gmail:check": "tsx --env-file=.env src/scripts/gmail-check.ts"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",

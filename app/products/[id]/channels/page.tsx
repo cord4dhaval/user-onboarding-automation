@@ -1,12 +1,14 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { channelUsage, limitsFor } from "@/engine/governor.js";
+import { channelLabel } from "@/channels/catalog.js";
 import type { McpTool } from "@/mcp/client.js";
 import {
   createChannel,
   createHttpChannel,
   createSmtpChannel,
   deleteChannel,
+  startGoogleOAuth,
   updateChannel,
 } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
@@ -25,7 +27,9 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
 
   const [channels, connections, bindings] = await Promise.all([
     db.collection(C.channels).find(s).toArray(),
-    db.collection(C.connections).find({ ...s, serverUrl: { $exists: true } }).toArray(),
+    // Every connection, not just MCP servers: a Gmail one has no server URL, and filtering
+    // it out here was what left its row saying "native" under Through instead of naming it.
+    db.collection(C.connections).find(s).toArray(),
     db.collection(C.mcpBindings).find({ orgId }).toArray(),
   ]);
 
@@ -102,9 +106,8 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
         <div>
           <h1>Channels</h1>
           <p className="sub" style={{ marginBottom: 0 }}>
-            How messages leave. Three ways, and any channel type can use whichever fits: your own mail account
-            over SMTP, an MCP connection whose send tool you bound, or any provider with an HTTP endpoint and a
-            token.
+            How messages leave. Gmail connects in one click; WhatsApp and SMS are on the way. Already running your
+            own sending — SMTP, an HTTP endpoint, an MCP send tool — connect that instead, on any of them.
           </p>
         </div>
         <div className="spacer" />
@@ -114,6 +117,8 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
           smtpAction={createSmtpChannel}
           mcpAction={createChannel}
           httpAction={createHttpChannel}
+          googleAction={startGoogleOAuth}
+          googleReady={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
         />
       </div>
 
@@ -155,12 +160,14 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
                 return (
                   <tr key={String(c._id)}>
                     <td>
-                      <strong>{String(c.key)}</strong>
+                      {/* The catalogue's name for it, not the raw key. "Gmail" is what the
+                          customer chose; "email" is what the engine routes on. */}
+                      <strong>{channelLabel(String(c.key), connection ? String(connection.provider) : undefined)}</strong>
                       <div className="muted" style={{ fontSize: 12.5 }}>{String(c.from ?? "provider default")}</div>
                     </td>
                     <td>
                       {String(connection?.provider ?? c.kind)}
-                      <div className="muted" style={{ fontSize: 12.5 }}>{String(c.kind)}</div>
+                      <div className="muted" style={{ fontSize: 12.5 }}>{String(c.key)} · {String(c.kind)}</div>
                     </td>
                     <td>
                       {daily ? (

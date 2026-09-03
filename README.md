@@ -36,6 +36,11 @@ npm run db:indexes
 `MASTER_KEY_B64` in an environment variable is a launch compromise. Move to a managed KMS
 before a second tenant's credentials are stored.
 
+To let customers connect their own Gmail mailbox in one click, add `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` — [docs/google-oauth-setup.md](docs/google-oauth-setup.md) walks
+through the Cloud console, the scopes and what verification costs. Without them the Gmail
+tab explains itself and SMTP, MCP and HTTP channels work as before.
+
 ## The clock
 
 The engine needs something to hit `/api/cron/tick` roughly every minute: it fetches due

@@ -42,6 +42,23 @@ export interface Precomposed extends Partial<ComposedContent> {
   slots?: Record<string, string>;
 }
 
+/**
+ * Removes a name from the subject when there was no name.
+ *
+ * "Hi there," is a perfectly ordinary way to open a message. "there, your workspace is
+ * ready" in an inbox is not — it reads as a mail merge that failed, which is exactly the
+ * impression a first message cannot afford. The body keeps its greeting; only the subject,
+ * where the name carries no warmth and all the risk, drops the clause.
+ */
+function tidySubject(subject: string | undefined, vars: MergeVars): string | undefined {
+  const fallback = vars.first_name;
+  if (!subject || !fallback || fallback !== "there") return subject;
+
+  const stripped = subject.replace(new RegExp(`^${fallback}\\s*[,:—-]\\s*`, "i"), "");
+  if (stripped === subject) return subject;
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
 export function merge(text: string, vars: MergeVars): string {
   return text.replace(/\{\{(\w+)\}\}/g, (whole, key: string) => vars[key] ?? whole);
 }
@@ -193,7 +210,7 @@ export function resolveBlocks(
     }
   }
 
-  return { subject, blocks: out };
+  return { subject: tidySubject(subject, vars), blocks: out };
 }
 
 /** The plain-text part, and the form every guardrail is checked against. */

@@ -117,7 +117,10 @@ export async function GET(request: NextRequest) {
       verified.succeeded ||
       verified.failed ||
       temps.changed ||
-      replies.recorded
+      replies.recorded ||
+      // A tick that found only a dead address still did something worth a row: it is the
+      // reason a campaign stopped, and a run log that omits it makes that look unexplained.
+      replies.bounced
     ) {
       const work = { product: String(product.name), sent, reconciled, verified, temps, replies };
       report.push(work);

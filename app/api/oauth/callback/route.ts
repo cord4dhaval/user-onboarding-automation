@@ -4,6 +4,7 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { sealSecret } from "@/crypto/envelope.js";
 import { exchangeCode, type AuthServerMetadata } from "@/mcp/oauth.js";
+import { reverifyConnection } from "@/mcp/reverify.js";
 import { requireSession } from "../../../tenant";
 
 /**
@@ -61,15 +62,25 @@ export async function GET(request: NextRequest) {
           connectionId: String(connection._id),
           authType: "mcp_oauth",
           ...sealSecret(tokens.access_token),
-          refreshTokenEnc: tokens.refresh_token ? sealSecret(tokens.refresh_token) : undefined,
-          expiresAt,
-          // Refresh ahead of expiry rather than on failure, so a send never waits on it.
-          refreshAfter: expiresAt ? new Date(expiresAt.getTime() - 120_000) : undefined,
+          ...(tokens.refresh_token ? { refreshTokenEnc: sealSecret(tokens.refresh_token) } : {}),
+          ...(expiresAt ? { expiresAt, refreshAfter: new Date(expiresAt.getTime() - 120_000) } : {}),
           status: "verified",
+          rotatedAt: new Date(),
+        },
+        // On a re-authorisation the row already holds the previous account's refresh token
+        // and expiry. Anything this grant did not replace is cleared rather than inherited,
+        // or the broker could refresh its way back to the account we just left.
+        $unset: {
+          ...(tokens.refresh_token ? {} : { refreshTokenEnc: "" }),
+          ...(expiresAt ? {} : { expiresAt: "", refreshAfter: "" }),
+          lastUsedAt: "",
         },
       },
       { upsert: true },
     );
+
+    const reauth = connection.reauth === true;
+    const pendingAccount = connection.pendingAccount ? String(connection.pendingAccount) : undefined;
 
     await db.collection(C.connections).updateOne(
       { _id: connection._id },
@@ -78,11 +89,36 @@ export async function GET(request: NextRequest) {
           status: "verifying",
           scopes: tokens.scope ? tokens.scope.split(" ") : [],
           lastVerifiedAt: new Date(),
+          // The label only becomes true once the exchange succeeds — a cancelled consent
+          // screen must leave the connection describing the account it still holds.
+          ...(pendingAccount ? { account: pendingAccount } : {}),
+          ...(reauth ? { reconnectedAt: new Date() } : {}),
         },
         // The verifier and state are single-use.
-        $unset: { "oauth.verifier": "", "oauth.state": "" },
+        $unset: { "oauth.verifier": "", "oauth.state": "", pendingAccount: "", reauth: "", lastError: "" },
       },
     );
+
+    if (reauth) {
+      await db.collection(C.audit).insertOne({
+        _id: new ObjectId(),
+        orgId: ORG_ID,
+        productId: String(connection.productId),
+        actorType: "user",
+        action: "connection.reconnect",
+        target: String(connection._id),
+        detail: {
+          via: "oauth",
+          fromAccount: connection.account ? String(connection.account) : undefined,
+          toAccount: pendingAccount,
+        },
+        at: new Date(),
+      });
+    }
+
+    // The bindings were saved against the previous account's tool list. Check the new one
+    // can still reach them before the connection is reported as working.
+    await reverifyConnection(ORG_ID, String(connection._id));
 
     return NextResponse.redirect(
       new URL(`/products/${String(connection.productId)}/connections/${String(connection._id)}`, request.url),

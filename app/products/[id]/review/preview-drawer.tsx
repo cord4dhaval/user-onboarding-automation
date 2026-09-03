@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Eye, X } from "lucide-react";
+import { Check, Eye, RotateCcw, X } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, Spinner, SubmitButton } from "../../../ui/kit";
-import { decide, type HeldMessage } from "../../../actions";
+import { decide, returnToReview, type HeldMessage } from "../../../actions";
 import { ist } from "../../../ui/time";
 
 /**
@@ -52,6 +52,10 @@ export default function PreviewDrawer({
   // A decision is only on offer while the message is still waiting. Everything else opens
   // read-only: the point of showing it is the record, not a second chance to approve it.
   const waiting = message?.status === "awaiting_approval";
+  // A message nobody received is not finished with — whatever stopped it may be gone by
+  // now. The way back belongs here, next to the reason it stopped, and not only on the row.
+  const recoverable =
+    message?.status === "failed" || (message?.status === "skipped" && Boolean(message.skipReason));
 
   return (
     <>
@@ -145,6 +149,18 @@ export default function PreviewDrawer({
                 </SubmitButton>
               </form>
             )}
+
+            {/* Returned to the queue rather than resent: the thing that stopped it may
+                still be in force, so a human looks at it again before it goes out. */}
+            {!waiting && recoverable && (
+              <form action={returnToReview} className="drawer-foot">
+                <input type="hidden" name="productId" value={productId} />
+                <input type="hidden" name="ids" value={actionId} />
+                <SubmitButton variant="quiet" icon={<RotateCcw />} pendingLabel="Returning…">
+                  Return to review
+                </SubmitButton>
+              </form>
+            )}
           </>
         )}
       </Drawer>
@@ -164,10 +180,12 @@ function outcomeLine(message: HeldMessage): string {
     case "queued":
       return "Approved and in the send queue.";
     case "failed":
-      return message.skipReason ? `Failed: ${message.skipReason}` : "Failed on send.";
+      return message.skipReason
+        ? `Never reached anyone — the send errored: ${message.skipReason}`
+        : "Never reached anyone — the send errored.";
     case "skipped":
       return message.skipReason
-        ? `Approved but never sent — ${message.skipReason}.`
+        ? `Never reached anyone — one of our limits stopped it: ${message.skipReason}.`
         : `Rejected ${when(message.reviewedAt)}. Nothing was sent.`;
     default:
       return `Status: ${message.status}.`;

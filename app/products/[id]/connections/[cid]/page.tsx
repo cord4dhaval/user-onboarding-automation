@@ -3,10 +3,18 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { candidatesFor, type Capability } from "@/mcp/discover.js";
 import type { McpTool } from "@/mcp/client.js";
-import { discoverTools, saveBinding } from "../../../../actions";
+import {
+  discoverTools,
+  probeServer,
+  reconnectWithToken,
+  saveBinding,
+  startReauthOAuth,
+} from "../../../../actions";
+import ConnectionDrawer from "../connection-drawer";
 import { requireSession} from "../../../../tenant";
 import { RefreshCw, Save } from "lucide-react";
 import { SubmitButton } from "../../../../ui/kit";
+import { ist } from "../../../../ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +52,12 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
   if (!connection) return <main><h1>Not found</h1></main>;
 
   const binding = await db.collection(C.mcpBindings).findOne({ orgId: orgId, connectionId: cid });
+  // Named on the page because it is the whole reason to reconnect rather than re-create.
+  const [channels, sources] = await Promise.all([
+    db.collection(C.channels).countDocuments({ orgId, connectionId: cid }),
+    db.collection(C.sources).countDocuments({ orgId, connectionId: cid }),
+  ]);
+  const inUse = { channels, sources };
   const tools = (binding?.discoveredTools ?? []) as McpTool[];
   const capabilities = (binding?.capabilities ?? {}) as Record<string, Capability>;
   const bound = (binding?.bind ?? {}) as Record<string, { tool: string }>;
@@ -58,10 +72,34 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
 
       {connection.lastError ? (
         <div className="note warn-note">
-          <strong>Discovery failed</strong>
+          <strong>This connection needs attention</strong>
           <p style={{ margin: "6px 0 0" }}>{String(connection.lastError)}</p>
         </div>
       ) : null}
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="label">Account</div>
+        <p className="sub" style={{ margin: "0 0 12px" }}>
+          Authorised as <strong>{connection.account ? String(connection.account) : "an unlabelled account"}</strong>
+          {connection.reconnectedAt ? ` · reconnected ${ist(connection.reconnectedAt as Date)}` : null}. Moving
+          this connection to a different account replaces the credential in place, so the{" "}
+          {inUse.channels} channel(s) and {inUse.sources} source(s) already pointed at it keep working.
+        </p>
+        <ConnectionDrawer
+          productId={id}
+          mode="reconnect"
+          connectionId={cid}
+          provider={String(connection.provider)}
+          serverUrl={String(connection.serverUrl)}
+          account={connection.account ? String(connection.account) : undefined}
+          authType={connection.authType ? String(connection.authType) : undefined}
+          oauthAction={startReauthOAuth}
+          tokenAction={reconnectWithToken}
+          probeAction={probeServer}
+          size="md"
+          label="Switch to another account"
+        />
+      </div>
 
       <form action={discoverTools.bind(null, id, cid)}>
         <SubmitButton variant="ghost" icon={<RefreshCw />} pendingLabel="Discovering…">

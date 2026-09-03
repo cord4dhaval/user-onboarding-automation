@@ -50,9 +50,10 @@ export default function BrandBadge({
   }
 
   const p = provider();
+  // Opens the connect panel on the connections list, prefilled where we know the URL.
   const connectHref = p?.mcpUrl
-    ? `/products/${productId}/connections/new?serverUrl=${encodeURIComponent(p.mcpUrl)}`
-    : `/products/${productId}/connections/new`;
+    ? `/products/${productId}/connections?connect=1&serverUrl=${encodeURIComponent(p.mcpUrl)}`
+    : `/products/${productId}/connections?connect=1`;
 
   return (
     <div className="note brand-cue">

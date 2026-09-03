@@ -103,6 +103,12 @@ export function buildAuthorizeUrl(args: {
   scopes?: string[];
   /** RFC 8707 — binds the issued token to this specific MCP server. */
   resource: string;
+  /**
+   * OpenID `prompt`. Re-authorising to switch accounts passes "login": without it the
+   * provider silently reuses the session already signed in, and the switch appears to
+   * succeed while handing back the same account's token.
+   */
+  prompt?: "login" | "consent" | "select_account";
 }): string {
   const url = new URL(args.metadata.authorization_endpoint);
   url.searchParams.set("response_type", "code");
@@ -115,6 +121,7 @@ export function buildAuthorizeUrl(args: {
   // Least privilege: ask only for what the adapters actually call.
   const scopes = args.scopes ?? args.metadata.scopes_supported;
   if (scopes?.length) url.searchParams.set("scope", scopes.join(" "));
+  if (args.prompt) url.searchParams.set("prompt", args.prompt);
   return url.toString();
 }
 

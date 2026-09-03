@@ -7,6 +7,7 @@ import type { Binding } from "../mcp/binding.js";
 import { schemasFor } from "../mcp/schemas.js";
 import { McpChannelAdapter } from "../adapters/channel/mcp.js";
 import { SmtpAdapter } from "../adapters/channel/smtp.js";
+import { GmailAdapter } from "../adapters/channel/gmail.js";
 import { HttpChannelAdapter, type HttpChannelConfig } from "../adapters/channel/http.js";
 import type { ChannelAdapter } from "../adapters/channel/types.js";
 
@@ -31,6 +32,16 @@ export async function resolveChannelAdapter(orgId: string, channelId: string): P
     return new SmtpAdapter(
       { host: cfg.host, port: cfg.port, secure: cfg.port === 465, user: cfg.user, pass: secret },
       String(channel.from ?? cfg.user),
+    );
+  }
+
+  // A provider mailbox: the secret the broker just handed back is a live access token it
+  // refreshed if it was close to expiring, so the adapter can use it without checking.
+  if (connection.authType === "oauth2" && connection.provider === "google") {
+    return new GmailAdapter(
+      String(channel.key),
+      secret,
+      String(channel.from ?? connection.accountEmail ?? ""),
     );
   }
 
