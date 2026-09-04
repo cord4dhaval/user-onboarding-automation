@@ -1,6 +1,8 @@
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { dueAtFor, type CadenceBand } from "./cadence.js";
+import { detectMovement } from "./detect.js";
 
 /**
  * Temperature, recomputed from what a person actually did.
@@ -96,6 +98,10 @@ export interface RecomputeSummary {
   examined: number;
   changed: number;
   bands: Record<string, number>;
+  /** Queued messages whose date moved because the person's band did. */
+  rescheduled: number;
+  /** People who went hot and were handed to a session to react to. */
+  escalated: number;
 }
 
 /**
@@ -108,9 +114,10 @@ export async function recomputeTemps(
   orgId: string,
   productId: string,
   limit = 100,
+  now = new Date(),
 ): Promise<RecomputeSummary> {
   const db = await getDb();
-  const summary: RecomputeSummary = { examined: 0, changed: 0, bands: {} };
+  const summary: RecomputeSummary = { examined: 0, changed: 0, bands: {}, rescheduled: 0, escalated: 0 };
 
   const instances = await db
     .collection(C.goalInstances)
@@ -177,6 +184,9 @@ export async function recomputeTemps(
   const goalByPerson = new Map<string, string>(
     instances.map((i) => [String(i.personId), String(i.goalKey)]),
   );
+  const instanceByPerson = new Map<string, string>(
+    instances.map((i) => [String(i.personId), String(i._id)]),
+  );
 
   for (const person of people) {
     const personId = String(person._id);
@@ -209,9 +219,87 @@ export async function recomputeTemps(
 
     await db.collection(C.people).updateOne({ _id: person._id }, { $set: { temp: next } });
     summary.changed++;
+
+    // A band change that stops here changes nothing the recipient can see. Their next
+    // message keeps whatever date it was given when the plan was written, so a click at two
+    // o'clock moved a score, a band and a colour on a screen, and the person still waited
+    // four days for the message that click had earned.
+    const moved = await rescheduleFor(orgId, productId, personId, next.band, now);
+    summary.rescheduled += moved;
+
+    // Going hot is the one transition worth a session's attention. It means they clicked
+    // recently, which is the strongest signal a non-replier ever gives.
+    if (next.band === "hot" && current?.band !== "hot") {
+      await detectMovement(orgId, productId, {
+        personId,
+        goalInstanceId: instanceByPerson.get(personId),
+        campaignKey: goalByPerson.get(personId),
+        reason: "temperature rose to hot",
+      });
+      summary.escalated++;
+    }
   }
 
   return summary;
+}
+
+/**
+ * Moves a person's unsent messages to the pace their new temperature deserves.
+ *
+ * Only messages nobody has approved and nothing has claimed. A message a human read and
+ * signed off ships when they expected it to, and one already in the send path is past the
+ * point where its date means anything.
+ */
+async function rescheduleFor(
+  orgId: string,
+  productId: string,
+  personId: string,
+  band: string,
+  now: Date,
+): Promise<number> {
+  const db = await getDb();
+  const queued = await db
+    .collection(C.actions)
+    .find({ orgId, productId, personId, status: "queued", reviewedAt: { $exists: false } })
+    .toArray();
+  if (queued.length === 0) return 0;
+
+  const instance = await db
+    .collection(C.goalInstances)
+    .findOne({ orgId, productId, personId, status: "active" }, { projection: { goalKey: 1 } });
+  const goal = instance
+    ? await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) })
+    : null;
+  const person = await db
+    .collection(C.people)
+    .findOne({ _id: new ObjectId(personId) }, { projection: { lastContactedAt: 1 } });
+
+  let moved = 0;
+  for (const action of queued) {
+    const wanted = dueAtFor({
+      // What remains of the gap the plan asked for, measured from the last contact rather
+      // than from when the plan was written.
+      offsetDays: gapDaysOf(action, person?.lastContactedAt as Date | undefined),
+      band,
+      lastContactedAt: person?.lastContactedAt as Date | undefined,
+      configured: goal?.cadenceByTemp as Record<string, CadenceBand> | undefined,
+      now,
+    });
+    const current = new Date(String(action.dueAt));
+    // Only worth a write if it actually moves the message by more than an hour; rewriting
+    // a date by four minutes on every tick is churn, not responsiveness.
+    if (Math.abs(wanted.getTime() - current.getTime()) < 3_600_000) continue;
+    await db.collection(C.actions).updateOne({ _id: action._id }, { $set: { dueAt: wanted } });
+    moved++;
+  }
+  return moved;
+}
+
+/** The gap this message was originally asking for, in days. */
+function gapDaysOf(action: Document, lastContactedAt?: Date): number {
+  const due = new Date(String(action.dueAt)).getTime();
+  const from = lastContactedAt ? new Date(lastContactedAt).getTime() : due;
+  return Math.max(0, (due - from) / DAY);
 }
 
 /** Exposed for the person page, which shows why a reading is what it is. */

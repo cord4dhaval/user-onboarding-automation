@@ -48,7 +48,9 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
   const { id, cid } = await params;
   const { orgId } = await requireSession();
   const db = await getDb();
-  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(cid) });
+  // A hand-typed or stale URL must land on Not found, not a BSON crash.
+  if (!ObjectId.isValid(cid)) return <main><h1>Not found</h1></main>;
+  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(cid), orgId });
   if (!connection) return <main><h1>Not found</h1></main>;
 
   const binding = await db.collection(C.mcpBindings).findOne({ orgId: orgId, connectionId: cid });

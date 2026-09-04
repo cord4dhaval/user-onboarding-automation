@@ -1,4 +1,4 @@
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { ProductConfig } from "../schemas/product.js";
@@ -87,6 +87,60 @@ const LADDER: Rung[] = [
       "If it is not useful, that is a fair answer and this is the last you will hear about it.\n\nIf it is, the link below picks up exactly where you left off.",
   },
 ];
+
+/** The ladder as plain keys, in the order a sequence climbs them. */
+export const LADDER_KEYS = LADDER.map((rung) => rung.key);
+
+export interface TemplatePick {
+  orgId: string;
+  productId: string;
+  /** Channel key the action is going out on. A template for another channel is no use. */
+  channel: string;
+  /** Prefers a segment-scoped variant where the person has a segment and one exists. */
+  segment?: string;
+  /**
+   * How many touches this campaign has already spent on this person. The Nth message
+   * climbs to the Nth rung, which is the only reading of "which stage" that holds when a
+   * plan numbers its own steps however it likes.
+   */
+  touchesSpent?: number;
+}
+
+/**
+ * The template a touch should render through, for actions that do not name one.
+ *
+ * Only the first touch is queued with a template id: it is chosen at ingest, before any
+ * session has run, from the goal's `firstTouch.templateKey`. Every later touch is written
+ * by a Claude session that supplies the copy for the slot and has no reason to know which
+ * skeleton it lands in — the greeting, the call to action and the opt-out block are the
+ * template's, and which template that is depends on how far through the sequence the
+ * person is, which is only knowable at send time.
+ *
+ * Resolving it here rather than at compose time also means a plan rewritten between
+ * writing and sending still renders through the right rung.
+ */
+export async function resolveTemplateFor(pick: TemplatePick): Promise<Document | null> {
+  const db = await getDb();
+  const candidates = await db
+    .collection(C.templates)
+    .find({ orgId: pick.orgId, productId: pick.productId, channel: pick.channel, status: "active" })
+    .toArray();
+  if (candidates.length === 0) return null;
+
+  const rung = LADDER_KEYS[Math.min(Math.max(pick.touchesSpent ?? 0, 0), LADDER_KEYS.length - 1)]!;
+  const atRung = candidates.filter((t) => String(t.key) === rung);
+
+  // The cascade is the same one ingest uses, applied twice: first among templates for the
+  // rung this person has climbed to, then among everything on the channel. A product
+  // missing its day-seven rung falls back to a template that exists rather than to
+  // nothing, because a plain message that goes out beats a designed one that does not.
+  const cascade = (pool: Document[]) =>
+    (pick.segment && pool.find((t) => t.scope === "segment" && t.segmentKey === pick.segment)) ||
+    pool.find((t) => t.scope === "product_default") ||
+    pool[0];
+
+  return cascade(atRung) ?? cascade(candidates) ?? null;
+}
 
 export async function generateDefaultTemplates(
   orgId: string,

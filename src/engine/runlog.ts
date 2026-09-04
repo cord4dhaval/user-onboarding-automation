@@ -17,7 +17,16 @@ import { COLLECTIONS as C } from "../db/collections.js";
  */
 
 /** The scopes a routine sweeps with. Anything else is a person poking at the tools by hand. */
-export const ROUTINE_KEYS = ["monitor", "plan", "compose", "groom"] as const;
+export const ROUTINE_KEYS = ["acquire", "advance", "react", "close", "maintain"] as const;
+
+/**
+ * The four product-scoped routines this system started with, kept so run history written
+ * under them still reads. Nothing schedules them any more: they were replaced by five
+ * org-scoped mains when it became clear that a routine per product meant forty scheduled
+ * sessions for ten products, and that each of them was choosing its own work by sweeping
+ * the database in disk order.
+ */
+export const LEGACY_ROUTINE_KEYS = ["monitor", "plan", "compose", "groom"] as const;
 export type RoutineKey = (typeof ROUTINE_KEYS)[number];
 /** `engine` is the model-free tick; `ad-hoc` is a human or an unscoped session. */
 export type RunKind = RoutineKey | "engine" | "ad-hoc";
@@ -37,6 +46,14 @@ export interface RunCounters {
 
 function isRoutineKey(value: unknown): value is RoutineKey {
   return typeof value === "string" && (ROUTINE_KEYS as readonly string[]).includes(value);
+}
+
+/** Accepts historical keys too, so a run log written last week still renders. */
+export function isKnownRoutine(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    [...(ROUTINE_KEYS as readonly string[]), ...(LEGACY_ROUTINE_KEYS as readonly string[])].includes(value)
+  );
 }
 
 /** Stored as text, capped. A truncated payload still shows the shape of what happened. */
@@ -272,17 +289,34 @@ async function adopt(run: Document, argProductId: string): Promise<{ runId: Obje
  * than one routine really are shared: Monitor replans someone who has gone off-plan, and
  * repairs a campaign whose checks are bound to the wrong tool.
  */
-const ALWAYS_ALLOWED = ["register_routine", "routine_status", "sweep", "lead_card", "report", "list_products"];
+const ALWAYS_ALLOWED = [
+  "register_routine",
+  "routine_status",
+  "sweep",
+  "lead_card",
+  "report",
+  "list_products",
+  // Every main claims its own slice and hands it back, and every main should be able to say
+  // what it could not get to.
+  "next_work",
+  "finish_work",
+  "backlog_report",
+];
 
 const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
-  // Monitor replans people who have gone off-plan, so it reads the same evidence Plan does.
-  monitor: [...ALWAYS_ALLOWED, "mark_state", "plan_goal", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply", "what_works"],
-  // Plan researches a person before it reads them, so it writes what it found.
-  plan: [...ALWAYS_ALLOWED, "verifiers", "set_checks", "classify", "plan_goal", "save_enrichment", "what_works"],
-  compose: [...ALWAYS_ALLOWED, "compose_batch"],
-  // Groom finishes setup, so it writes templates and campaigns — and raises the one
-  // notification for the parts only a human can supply.
-  groom: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "plan_goal"],
+  // Acquire reads new arrivals and writes the sequence their segment runs. It may write a
+  // playbook — the sequence for a whole segment — but never a per-person plan: a person
+  // nobody has engaged with has given no evidence that would justify one.
+  acquire: [...ALWAYS_ALLOWED, "classify", "save_enrichment", "upsert_playbook", "what_works", "verifiers", "set_checks"],
+  // Advance writes the messages for people the engine judged worth writing for.
+  advance: [...ALWAYS_ALLOWED, "compose_batch", "preview_template", "get_brand"],
+  // React is the only routine that rewrites one person's plan, because it is the only one
+  // that ever sees evidence about one person: a click, a reply, a bounce.
+  react: [...ALWAYS_ALLOWED, "plan_goal", "compose_batch", "record_reply", "what_works", "upsert_playbook"],
+  // Close decides whether someone is done, and repairs the checks that decide it.
+  close: [...ALWAYS_ALLOWED, "mark_state", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
+  // Maintain finishes setup, and raises the one notification for what only a human can give.
+  maintain: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works"],
 };
 
 /** Which routine, if any, the caller is currently running as. Ad-hoc sessions return null. */

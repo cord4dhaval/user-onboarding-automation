@@ -15,19 +15,21 @@ import RunDrawer from "./run-drawer";
 
 const FILTERS: Array<{ key: string; label: string }> = [
   { key: "all", label: "Everything" },
-  { key: "monitor", label: "Monitor" },
-  { key: "plan", label: "Plan" },
-  { key: "compose", label: "Compose" },
-  { key: "groom", label: "Groom" },
+  { key: "acquire", label: "Acquire" },
+  { key: "advance", label: "Advance" },
+  { key: "react", label: "React" },
+  { key: "close", label: "Close" },
+  { key: "maintain", label: "Maintain" },
   { key: "engine", label: "Engine" },
   { key: "ad-hoc", label: "By hand" },
 ];
 
 const KIND_LABELS: Record<RunKind, string> = {
-  monitor: "Monitor",
-  plan: "Plan",
-  compose: "Compose",
-  groom: "Groom",
+  acquire: "Acquire",
+  advance: "Advance",
+  react: "React",
+  close: "Close",
+  maintain: "Maintain",
   engine: "Engine",
   "ad-hoc": "By hand",
 };

@@ -9,6 +9,7 @@ import { isSuppressed } from "./suppression.js";
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
 import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, rateBlock } from "./governor.js";
+import { resolveTemplateFor } from "./templates.js";
 import { applyTracking, trackingAllowed } from "./tracking.js";
 import { unsubscribeUrl } from "./unsubscribe.js";
 import { bumpPrior } from "./outcomes.js";
@@ -110,13 +111,33 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         .collection(C.goalInstances)
         .findOne({ _id: new ObjectId(String(action.goalInstanceId)) });
       const channel = await db.collection(C.channels).findOne({ _id: new ObjectId(String(action.channelId)) });
+
+      if (!person || !goalInstance || !channel) {
+        await release(action._id, "failed", { error: "missing person, goal or channel" });
+        summary.failed.push({ person: label, error: "missing related document" });
+        continue;
+      }
+
+      // Only the first touch is queued carrying a template id. Every later one is written
+      // by a session that supplies the slot copy and cannot know which skeleton it will
+      // land in, so the skeleton is chosen here, from how far through the sequence this
+      // person actually is. Treating a missing id as a failure instead cost this product
+      // 71 messages and would have cost it the 92 still queued behind them.
       const template = action.templateId
         ? await db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) })
-        : null;
+        : await resolveTemplateFor({
+            orgId: opts.orgId,
+            productId: opts.productId,
+            channel: String(action.channel),
+            segment: (person.belief as { segment?: string } | undefined)?.segment,
+            touchesSpent: Number((goalInstance.spent as { touches?: number } | undefined)?.touches ?? 0),
+          });
 
-      if (!person || !goalInstance || !channel || !template) {
-        await release(action._id, "failed", { error: "missing person, goal, channel or template" });
-        summary.failed.push({ person: label, error: "missing related document" });
+      if (!template) {
+        await release(action._id, "failed", {
+          error: `no active ${String(action.channel)} template for this product`,
+        });
+        summary.failed.push({ person: label, error: "no template on this channel" });
         continue;
       }
 
@@ -287,6 +308,10 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
           $set: {
             status: queued ? "dispatched" : "sent",
             content,
+            // Written back for actions that arrived without one. Which skeleton a message
+            // rendered through is part of reading it afterwards, and re-deriving it later
+            // would give whatever the ladder says today rather than what actually went out.
+            templateId: String(template._id),
             sentAt: new Date(),
             providerMessageId: result.providerMessageId,
             dryRun,

@@ -6,6 +6,7 @@ import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
 import { loadChannels, pickChannelFrom } from "./channels.js";
 import { nextSendableAt } from "./time.js";
 import { mailboxFields } from "./mailbox.js";
+import { stampPlaybook } from "./playbooks.js";
 import type { ChannelKey } from "../schemas/common.js";
 
 export interface IngestSummary {
@@ -15,6 +16,8 @@ export interface IngestSummary {
   suppressed: number;
   filteredOut: number;
   firstTouchesQueued: number;
+  /** Arrivals given their segment's whole sequence at ingest, with no model in the path. */
+  playbooksStamped: number;
   /** People who had already reached this goal, so nothing was sent to them again. */
   alreadyMet: number;
   /** Rows a poll returned that had already been recorded. High and steady means no cursor. */
@@ -134,6 +137,7 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     suppressed: 0,
     filteredOut: 0,
     firstTouchesQueued: 0,
+    playbooksStamped: 0,
     alreadyMet: 0,
     arrivalsSkipped: 0,
     errors: [],
@@ -383,6 +387,23 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     starting: starting.map((e) => ({ person: e.person, goalInstanceId: String(e.goalInstanceId) })),
     summary,
   });
+
+  // The rest of the sequence, stamped from the campaign's playbook while the welcome is
+  // still queued. Nobody is classified yet, so this is the campaign default — and that is
+  // the point: everyone has a real, complete sequence before any session has looked at
+  // them. Where a session later reads them as a different segment, the stamp is redone
+  // while the sequence is still essentially unspent.
+  for (const entry of starting) {
+    const result = await stampPlaybook({
+      orgId: source.orgId,
+      productId: source.productId,
+      goalInstanceId: String(entry.goalInstanceId),
+      goalKey: goal.key,
+      segmentKey: typeof entry.person.segment === "string" ? entry.person.segment : undefined,
+      now,
+    });
+    if (result.stamped) summary.playbooksStamped++;
+  }
 
   return summary;
 }

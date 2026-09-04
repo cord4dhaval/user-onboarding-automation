@@ -12,7 +12,11 @@ import { resolveChannelAdapter } from "@/engine/adapters.js";
 import { closeIdleRuns, recordEngineRun } from "@/engine/runlog.js";
 import { checkRoutineHealth } from "@/engine/routines.js";
 import { refreshBrandSource } from "@/engine/brand.js";
-import { claim, complete, fail, orgsWithWork } from "@/engine/queue.js";
+import { claim, complete, fail, orgsWithWork, reapLeases } from "@/engine/queue.js";
+import { advance } from "@/engine/advance.js";
+import { detectWork, watchdog } from "@/engine/detect.js";
+import { dispatch } from "@/engine/dispatch.js";
+import { notify } from "@/engine/notify.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -88,7 +92,21 @@ export async function GET(request: NextRequest) {
   // Sending and reconciliation run for every product that has anything pending, not only
   // the ones whose sources just fired.
   const products = await db.collection(C.products).find({ status: "active" }).toArray();
-  for (const product of products) {
+
+  // Rotated, not walked from the top. The loop is bounded by the same wall clock as
+  // everything else, so a product early in the list with a large backlog would otherwise
+  // consume the budget on every single tick and the products behind it would never send at
+  // all. Starting where the last tick stopped gives every product its turn.
+  const cursorDoc = await db.collection(C.audit).findOne({ type: "tick_cursor" });
+  const startAt = products.length ? Number(cursorDoc?.index ?? 0) % products.length : 0;
+  const rotated = [...products.slice(startAt), ...products.slice(0, startAt)];
+  let servedProducts = 0;
+
+  for (const product of rotated) {
+    // Sending is time-critical and the platform kills this request at sixty seconds. A
+    // product that cannot be served this minute is served the next one, from the cursor.
+    if (Date.now() - started > BUDGET_MS) break;
+    servedProducts++;
     const orgId = String(product.orgId);
     const productId = String(product._id);
     const sent = await fireDue({
@@ -111,18 +129,46 @@ export async function GET(request: NextRequest) {
     // someone who wrote "stop" is suppressed here, and anything queued for them in this
     // same tick has already been claimed and will find them suppressed before it sends.
     const replies = await pollReplies(orgId, productId, 40);
+
+    // Everything above reacts to what already exists. These four decide what happens next,
+    // and all four are deterministic: turn plans into messages, notice what needs a
+    // session, divide that fairly, and shout about anything that has gone quiet.
+    //
+    // They run here rather than inside an hourly routine because an hourly routine can only
+    // see the slice it managed to read, and the slice it read was chosen by disk order.
+    const advanced = await advance(orgId, productId, 200, now);
+    const detected = await detectWork(orgId, productId, now);
+    const late = await watchdog(orgId, productId, now);
+    if (late.overdue > 0) {
+      // A message that was due and never went out is not held back by any guardrail — every
+      // guardrail has a state of its own. It has been forgotten, and nothing but this
+      // notices.
+      await notify({
+        orgId,
+        productId,
+        dedupeKey: "actions:overdue",
+        severity: "critical",
+        title: `${late.overdue} message${late.overdue === 1 ? "" : "s"} overdue and unsent`,
+        body: `Oldest is ${late.oldestMinutes} minutes past its send time.`,
+        href: `/products/${productId}/review`,
+      });
+    }
+
     if (
       sent.claimed ||
       reconciled.checked ||
       verified.succeeded ||
       verified.failed ||
       temps.changed ||
+      advanced.queued ||
+      advanced.handedToClaude ||
+      late.overdue ||
       replies.recorded ||
       // A tick that found only a dead address still did something worth a row: it is the
       // reason a campaign stopped, and a run log that omits it makes that look unexplained.
       replies.bounced
     ) {
-      const work = { product: String(product.name), sent, reconciled, verified, temps, replies };
+      const work = { product: String(product.name), sent, reconciled, verified, temps, replies, advanced, detected, late };
       report.push(work);
       // Only ticks that did something are kept. A row a minute, mostly empty, would bury
       // the ones worth reading under 1,400 that say nothing.
@@ -187,8 +233,58 @@ export async function GET(request: NextRequest) {
   }
   if (drained) report.push({ queue: { chunks: drained, rows: rowsIngested } });
 
+  // A session that was killed mid-batch left rows marked running that nobody is working on.
+  // Nothing else would ever look at them again, so without this the work is lost silently —
+  // which is the single outcome the queue exists to prevent.
+  const reaped = await reapLeases(now);
+  if (reaped.requeued || reaped.dead) report.push({ leases: reaped });
+
+  // Whose turn it is, decided every minute so the hourly routines find their work already
+  // chosen and already fair. Reads counts, writes a status: it costs the same at ten
+  // thousand people as at ten.
+  const orgIds = [...new Set(products.map((p) => String(p.orgId)))];
+  for (const orgId of orgIds) {
+    const summary = await dispatch(orgId, now);
+    const busy = summary.lanes.filter((l) => l.granted || l.starved.length);
+    if (busy.length) report.push({ dispatch: { orgId, lanes: busy } });
+
+    // Starvation is only a problem if nobody can see it. The old sweep read the first two
+    // hundred rows in disk order and reported "nothing to do" while thousands waited, and
+    // the only symptom was silence.
+    const stuck = busy.flatMap((l) => l.starved.filter((s) => s.oldestMinutes > 120));
+    if (stuck.length) {
+      const worst = stuck.sort((a, b) => b.oldestMinutes - a.oldestMinutes)[0]!;
+      await notify({
+        orgId,
+        productId: worst.productId,
+        dedupeKey: "dispatch:starved",
+        severity: "action",
+        title: `${stuck.length} campaign${stuck.length === 1 ? "" : "s"} waiting on a routine`,
+        body: `"${worst.campaignKey}" has ${worst.waiting} item${worst.waiting === 1 ? "" : "s"} waiting, oldest ${Math.round(worst.oldestMinutes / 60)}h.`,
+        href: `/products/${worst.productId}/goals`,
+      });
+    }
+  }
+
+  // Where the next tick starts its product rotation.
+  if (products.length) {
+    await db.collection(C.audit).updateOne(
+      { type: "tick_cursor" },
+      { $set: { index: (startAt + Math.max(servedProducts, 1)) % products.length, updatedAt: now } },
+      { upsert: true },
+    );
+  }
+
   // A routine that finished two minutes ago should not still read as running.
   const closed = await closeIdleRuns(now);
 
-  return NextResponse.json({ at: now.toISOString(), dueSources: due.length, dueBrandSources: dueBrand.length, runsClosed: closed, report });
+  return NextResponse.json({
+    at: now.toISOString(),
+    dueSources: due.length,
+    dueBrandSources: dueBrand.length,
+    productsServed: servedProducts,
+    productsTotal: products.length,
+    runsClosed: closed,
+    report,
+  });
 }

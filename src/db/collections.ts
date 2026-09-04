@@ -14,6 +14,8 @@ export const COLLECTIONS = {
   goals: "goals",
   goalInstances: "goal_instances",
   plans: "plans",
+  /** A plan with no person attached: the sequence for a segment, written once. */
+  playbooks: "playbooks",
   actions: "actions",
   templates: "templates",
 

@@ -45,8 +45,8 @@ tab explains itself and SMTP, MCP and HTTP channels work as before.
 
 The engine needs something to hit `/api/cron/tick` roughly every minute: it fetches due
 sources, sends what is due, and reconciles delivery. Vercel's Hobby plan allows only one
-cron run per day, so `vercel.json` keeps a daily entry as a fallback and the real clock
-lives outside.
+cron run per day, which is far too coarse to send on, so the clock lives outside the
+deployment entirely and `vercel.json` declares no cron at all.
 
 **cron-job.org (recommended)** — free, one-minute granularity.
 

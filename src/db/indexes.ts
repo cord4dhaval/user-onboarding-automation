@@ -117,9 +117,25 @@ export async function ensureIndexes(): Promise<void> {
   ]);
 
   // The lease. Without it two concurrent runs claim the same job and double-send.
-  await db.collection(C.workQueue).createIndex(
-    { orgId: 1, status: 1, dueAt: 1, leaseUntil: 1 },
-    { name: "claimable" },
+  await db.collection(C.workQueue).createIndexes([
+    { key: { orgId: 1, status: 1, dueAt: 1, leaseUntil: 1 }, name: "claimable" },
+    // What a worker actually asks for: this kind, ready, urgent first, oldest first.
+    { key: { orgId: 1, kind: 1, status: 1, priority: 1, dueAt: 1 }, name: "claimable_by_kind" },
+    // Drives the dispatcher's grouped count. It runs every minute over the whole queue, so
+    // it is the one query in the system that must never become a collection scan.
+    { key: { orgId: 1, kind: 1, status: 1, productId: 1, campaignKey: 1 }, name: "dispatch_buckets" },
+    // Deduplication on enqueue: one pending item per subject per kind, checked on every
+    // detection pass, which is every minute for every person in flight.
+    { key: { orgId: 1, kind: 1, subjectId: 1, status: 1 }, name: "one_per_subject" },
+    // Lease reaping sweeps the whole collection for abandoned work regardless of tenant.
+    { key: { status: 1, leaseUntil: 1 }, name: "expired_leases" },
+  ]);
+
+  // One playbook per segment per campaign. The uniqueness is the point: two playbooks for
+  // the same segment means half a campaign silently runs a sequence nobody chose.
+  await db.collection(C.playbooks).createIndex(
+    { orgId: 1, productId: 1, goalKey: 1, segmentKey: 1 },
+    { name: "playbook_per_segment", unique: true },
   );
 
   await db.collection(C.suppressions).createIndex(

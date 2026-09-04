@@ -25,228 +25,331 @@ export interface RoutineDef {
   prompt: string;
   essential: boolean;
 }
-
 /**
- * One hour is the floor Claude Code routines allow, and all three sit on it: a lead who
- * arrives at 09:05 should not wait until 11:20 for a pipeline. The minutes are staggered
- * so the three never fire together and race each other over the same people.
+ * One run per hour is the floor the scheduler enforces, and runs are staggered by a few
+ * minutes on top of that. Both facts shape everything below.
+ *
+ * Nothing time-critical may sit in one of these routines, because an hour is too long to
+ * wait to stop a sequence for somebody who replied. That work is the engine's, on the
+ * minute clock. And no routine may assume another has just finished, because the stagger
+ * means it may not have: the only handoff between them is the queue.
+ *
+ * The minutes spread them so five sessions do not open on the same database at the same
+ * second. Maintain is daily because setup gaps are a day-scale problem — hourly would mean
+ * twenty-four notifications about the same missing lead source.
  */
 export const DEFAULT_CRONS: Record<RoutineKey, string> = {
-  monitor: "5 * * * *",
-  plan: "20 * * * *",
-  compose: "35 * * * *",
-  // Setup gaps are a day-scale problem, not an hour-scale one. Hourly would mean
-  // twenty-four notifications about the same missing lead source.
-  groom: "50 7 * * *",
+  acquire: "0 * * * *",
+  advance: "15 * * * *",
+  react: "30 * * * *",
+  close: "45 * * * *",
+  maintain: "50 7 * * *",
 };
 
 /**
- * The three routines, prompt and all.
+ * The five main routines, prompt and all.
  *
- * They live here rather than in the page because three separate things need them: the page
- * that tells you what to paste, the tool that records what you scheduled, and the check
- * that decides whether it is late.
+ * Each one is an orchestrator of its own sub-routines rather than a single pass of work.
+ * The reason is arithmetic: a session's context is what bounds how many people it can get
+ * through, and reading a person costs roughly the same whether the session then does one
+ * thing with them or ten. Spawning a sub-agent per slice of work gives each slice a fresh
+ * window and returns twenty lines to the main routine instead of twenty thousand tokens, so
+ * the main routine's own context stays flat whether the org holds a thousand people or a
+ * hundred thousand. This is the documented failure of orchestrator patterns — the
+ * orchestrator accumulating every worker's context until it overflows — and it is avoided
+ * here by making the handoff a database row rather than a conversation.
+ *
+ * They are scoped to the org, not the product. A routine per product meant forty scheduled
+ * sessions for ten products, and each of them chose its own work by sweeping in disk order.
+ * Now the engine decides what is ready and whose turn it is, every minute, and a routine
+ * asks only for its slice.
  */
-export function routineCatalog(productId: string): RoutineDef[] {
-  const preamble = `Product ${productId} on the conversion engine.`;
+export function routineCatalog(productId?: string): RoutineDef[] {
+  const scope = productId
+    ? `You are scoped to product ${productId}. Pass product_id "${productId}" wherever a tool accepts one.`
+    : `You work across every product this token owns. Do not pass product_id unless you are deliberately narrowing to one — the engine has already balanced the work across products and campaigns, and narrowing undoes that.`;
+
   const registration = (key: RoutineKey) =>
-    `Start by calling register_routine with product_id "${productId}", routine "${key}" and the
-cron you scheduled this session on. It takes a moment and it is what lets the console
-show when you last ran and when you are due next. If you are late, that is how anyone
-finds out.`;
+    `Start by calling register_routine with routine "${key}" and the cron you scheduled this
+session on${productId ? `, and product_id "${productId}"` : ""}. It is what lets the console show when you last ran and
+when you are due next. If you are late, that is how anyone finds out.`;
+
+  const contract = `How work reaches you:
+
+- next_work("<kind>") gives you your slice. The engine has already decided what is
+  ready and divided it fairly across every product and campaign, so you do not
+  choose what to work on and you must not go looking for more. Urgent items —
+  someone who replied or clicked — come first automatically.
+- finish_work(job_ids) hands back what you completed. Anything you do not finish
+  returns to the pool on its own when the lease expires, so if you run low on room,
+  stop. Never report work you did not do; the queue is what remembers, not you.
+- If next_work returns nothing, say so in one line and stop. An empty slice with a
+  non-zero still_waiting means the dispatcher has more coming next round, not that
+  you should go and find it yourself.
+- Before you finish, call backlog_report and say what is still waiting. A backlog
+  nobody reports is a backlog nobody fixes — this system once hid nine thousand
+  unplanned people behind a routine that cheerfully said "nothing to do".
+
+How to use your sub-routines:
+
+Each numbered step below is a sub-routine. Run it as its own sub-agent, in parallel
+where the steps are independent, and give each one only the slice it needs. Ask each
+to return a short summary — counts, and anything a person would want to know — never
+its full working. Your own job is to split the work, read the summaries and write one
+line of run notes. Do not do the per-person work yourself: your context is the thing
+that runs out, and once it does the rest of the hour's work is lost.`;
 
   return [
     {
-      key: "monitor",
-      name: "Monitor",
-      cron: DEFAULT_CRONS.monitor,
-      human: "every hour, at :05",
+      key: "acquire",
+      name: "1 — Acquire",
+      cron: DEFAULT_CRONS.acquire,
+      human: "every hour, on the hour",
       essential: true,
-      job: "Every person in an active campaign: where are they, are they done, and what happens next. Verification and monitoring are the same question about the same person, so they are answered in one pass.",
+      job: "Turn arrivals into people with a working sequence: read who they are, and make sure their segment has a playbook to run.",
       example: [
-        "Priya's probes show an account and two sessions — marked succeeded, her two queued messages cancelled.",
-        "Rahul has not moved in nine days and the profitability angle failed twice, so his remaining steps are replaced with the surveillance objection.",
+        "Eight hundred leads arrive overnight; one call reads a hundred of them and eight of those run at once.",
+        "Anand reads as an engineering leader, so the engine swaps him onto that segment's playbook before his second message.",
+        "A segment with no playbook gets one written — once, for everybody in it, instead of once per person.",
+      ],
+      prompt: `${scope}
+
+${registration("acquire")}
+
+${contract}
+
+Your job is who these people are, and what sequence their segment runs. It is not
+what any individual message says, and it is not one person's plan — a lead who has
+done nothing has given no evidence that would justify a plan of their own. They run
+their segment's playbook until they do something.
+
+1.1 classify-batch
+  next_work("classify") with limit 100. Split what comes back across parallel
+  sub-agents, about a hundred people each, and have each one submit its whole
+  batch in a single classify call.
+  The rows you get are deliberately compact — name, role, company, how they
+  arrived. That is usually enough. Call lead_card only for the ones it is not.
+  Segment must come from the product's declared list; classify refuses anything
+  else, and being refused means the answer is "unknown" or "off_icp", not a new
+  bucket. Where email_kind is "personal" there is no company to research: read fit
+  from the arrivals alone and set fit_known false rather than inventing an employer.
+  A lead nobody can read is not a bad lead — their first real message should be
+  short and ask something, because their answer is the only enrichment available.
+  finish_work as each sub-agent reports.
+
+1.2 playbook-writer
+  next_work("playbook"). Each item names a segment with no sequence.
+  Read what_works for that segment first, then get_brand, then write the playbook
+  with upsert_playbook: the ordered steps, each with a channel, an angle, a reason
+  and an offset in days.
+  This is written once and then run by everybody in the segment, so it is worth
+  more care than any single message. Around a third of the steps must use an angle
+  that is not already proven — upsert_playbook refuses a sequence that spends every
+  step on the current favourite, because that is how an untested angle never gets
+  the sends that would prove it. Place the untested ones where they can actually be
+  judged, not bolted onto the end.
+  Offsets are intentions, not dates. The engine paces the real send from the
+  person's temperature, so write the shape of the sequence and let it decide the days.
+
+1.3 segment-auditor
+  On your first run of the day only. Call report and look at the segment spread.
+  Where two segments are plainly the same bucket under different names, say so in
+  your run notes and name the merge you would make. Do not merge anything yourself:
+  people are already running those playbooks, and a rename that lands mid-sequence
+  changes what a person receives without anyone having asked for it.`,
+    },
+    {
+      key: "advance",
+      name: "2 — Advance",
+      cron: DEFAULT_CRONS.advance,
+      human: "every hour, at :15",
+      essential: true,
+      job: "Write the messages for the people worth writing for. Everyone else is already being served by the engine from their playbook.",
+      example: [
+        "Rahul fits at 0.85 and his next step is due Thursday: subject, around 140 words, a link, an opt-out.",
+        "His step after that is WhatsApp — about 45 words, no link — so the same angle becomes different writing.",
+        "Four thousand colder leads get the same step rendered from the template, and cost nothing.",
+      ],
+      prompt: `${scope}
+
+${registration("advance")}
+
+${contract}
+
+Only people who have earned a written message reach you: someone hot, someone who
+replied, or a strong fit early in their sequence. Everyone else already had their
+next message rendered by the engine from their playbook's template, with their name
+and their segment's pain merged in. That is not a lesser message — it goes through
+the same brand kit, the same claims validation and the same send guardrails — it
+simply does not need you.
+
+2.1 compose-tier1
+  next_work("compose") with limit 20. One sub-agent per person, in parallel.
+  Each one: lead_card for context, then compose_batch for the step it names.
+  Write to the channel's shape. lead_card lists each channel's real limits: an email
+  carries a subject, a few hundred words, a link and an opt-out; a WhatsApp message
+  is a couple of sentences with no link, and outside its reply window it must use an
+  approved template. The same angle becomes two different pieces of writing.
+  Read their prior touches. Never repeat a claim already made to them, never
+  contradict one, and let the register escalate naturally across a sequence.
+  The lower your confidence in someone, the harder the opening line has to work: be
+  specific and a little cheeky rather than polite and generic, because a message that
+  reads like every other message gets deleted unread. This never licenses a false
+  claim — no invented capability, no number the product cannot back.
+
+2.2 buffer-check
+  Call backlog_report. If the compose queue is empty but people are still in flight,
+  that is worth a line in your notes: it usually means the engine is serving them
+  from their playbook, which is correct, but it is also what a silent breakage looks
+  like. Say which of the two you think it is.
+
+2.3 template-gap
+  Where a person's step needed a template rung the product does not have, say so
+  rather than working around it. Maintain drafts the missing rung tonight; writing a
+  one-off message that papers over it means the gap is never found.`,
+    },
+    {
+      key: "react",
+      name: "3 — React",
+      cron: DEFAULT_CRONS.react,
+      human: "every hour, at :30",
+      essential: true,
+      job: "The people who did something. Smallest volume, highest value, and the only routine that rewrites one person's plan.",
+      example: [
+        "Dhaval clicked the report link and did not sign up: the angle worked and the ask was wrong, so his next message asks something smaller.",
         "Deepa replied \"ask in Q3\" — campaign closed, cooling until July, her reason kept for whoever picks her up then.",
+        "The surveillance objection has now ended three agency owners, so the fix goes in the playbook, not in one person's plan.",
       ],
-      prompt: `${preamble}
+      prompt: `${scope}
 
-${registration("monitor")}
+${registration("react")}
 
-Every run:
-1. sweep with product_id "${productId}" and scope "monitor".
-2. If total_work_items is 0, stop and say "nothing to monitor".
-3. For each person under in_flight, read last_probes — what the tools actually
-   returned — alongside check_results and their last message. Decide:
-     succeeded  the evidence plainly shows it. Not "probably".
-     failed     a real ending: they said no, or the budget and deadline are
-                spent. Never because a check has simply not passed yet.
-     continue   still running. Say in one line where they are.
-   Submit them together with mark_state. It refuses "succeeded" unless every
-   check the campaign defines has actually passed, so if it refuses, the answer
-   is to repair the check — never to route around it.
-4. Where someone is off-plan — stalled, or a signal the plan did not expect —
-   call plan_goal with a new version and say why the old one is being replaced.
-   Call what_works first, once per run: replacing a plan with different wording of
-   the same losing angle is the most expensive way to do nothing. Their lead_card
-   carries angles_tried — every angle already spent on them, whether they clicked
-   and how the campaign ended. plan_goal refuses one they were sent and ignored, so
-   read it first rather than being refused. An angle they clicked is not spent: it
-   reached them and the ask was wrong, so keep the angle and change what you ask.
-   A person whose temperature reads hot has clicked something recently. That is
-   the strongest signal a non-replier ever gives: tighten their sequence and open
-   on whatever they clicked, rather than continuing the schedule as written.
-5. For each reply: read it, then record_reply with a grounded answer. Never
-   invent a capability to close someone.
-6. For each undetermined check: verify_person, read the raw response, and
-   resolve_check only if it plainly supports the verdict.
-7. On your first run of the day, look at both verification lists.
-   verification_looks_wrong is two weeks with nothing passing — usually a check
-   bound to the wrong tool.
-   verification_too_easy is the more dangerous one: a check that has passed for
-   everybody it has ever run on. That is not evidence, it is a constant, and it
-   ends campaigns for people who have done nothing. Read one probe, compare the
-   scope the args asked for against the scope the response says it used — a
-   provider that ignores an argument it does not have the privilege for will
-   answer about your own account instead. Repair both with verifiers and
-   set_checks.`,
+${contract}
+
+Everything here is urgent by construction: the engine only queues an escalation when
+somebody clicked, replied, or went hot. The parts that could not wait for you have
+already happened — a reply stopped their sequence within the minute, an unsubscribe
+suppressed them, a temperature change moved their next message's date. What is left
+is the judgment, and that is yours.
+
+3.1 reply-handler
+  next_work("escalate") and take the items whose reason is a reply.
+  One sub-agent per person: read what they actually wrote, then record_reply with a
+  grounded answer. Never invent a capability to close someone. A reply that says
+  "not now" is a date, not a rejection — record the reason so whoever picks them up
+  later knows what was said.
+
+3.2 escalate-hot
+  The rest of the escalate items: people who clicked and did not convert.
+  One sub-agent per person. Read what_works once for the run, then their lead_card —
+  it carries angles_tried, every angle already spent on them and whether they
+  clicked. plan_goal refuses an angle they were sent and ignored, so read it first
+  rather than being refused. An angle they clicked is not spent: it reached them and
+  the ask was wrong, so keep the angle and make the ask smaller.
+  Then plan_goal for the steps that remain, and compose_batch for the next one. Do
+  not spread the remaining budget evenly: they are paying attention now and will not
+  be next week, so weight it towards the front.
+
+3.3 objection-rewriter
+  When you have seen the same objection end three or more people in one segment,
+  that is not a person-level problem. Say so, and fix the segment's playbook with
+  upsert_playbook so everybody still running it gets the better sequence. One
+  playbook edit is worth more than thirty rescued individuals.`,
     },
     {
-      key: "plan",
-      name: "Plan",
-      cron: DEFAULT_CRONS.plan,
-      human: "every hour, at :20",
+      key: "close",
+      name: "4 — Close",
+      cron: DEFAULT_CRONS.close,
+      human: "every hour, at :45",
       essential: true,
-      job: "New people get understood and given a pipeline. New campaigns get a verification plan — which can only happen here, because the browser that created them cannot call Claude.",
+      job: "Decide who is done, who is finished with, and who is still running — and keep the checks that decide it honest.",
       example: [
-        "Twelve leads arrive overnight and none of them mean anything yet.",
-        "Priya reads as an engineering leader with no honest view of where the team's time goes, so her sequence opens by showing exactly that.",
-        "Deepa in HR gets a different one entirely, opening on audit-ready attendance.",
+        "Priya's probes show an account and two sessions, so she is marked succeeded and her queued messages are cancelled.",
+        "A check that has passed for every single person it ever ran on is not evidence; it is a constant, and it has been ending campaigns for people who did nothing.",
+        "Rahul has spent his budget with no reply — a real ending, recorded as one.",
       ],
-      prompt: `${preamble}
+      prompt: `${scope}
 
-${registration("plan")}
+${registration("close")}
 
-Every run:
-1. sweep with product_id "${productId}" and scope "plan".
-2. If total_work_items is 0, stop.
-3. For anything under need_verification_plan: it names verify_connection_id —
-   the source whoever created it said holds the truth. Call verifiers with that
-   connection_id, read the tools it exposes, and work out which answer the
-   success sentence. Respect any hint. Then set_checks. Until this exists the
-   campaign cannot mark anyone as succeeded.
-   Every check needs an argument that identifies the person — $person.email,
-   $person.id, something they alone match. set_checks tries each check against
-   two different people and refuses any that answers identically for both,
-   because a check that cannot tell two people apart will pass for everyone.
-   Beware arguments a provider accepts and then ignores: many scoping parameters
-   need an admin privilege, and without it the tool answers about your own
-   account and echoes the scope it really used back in the response. Read that
-   echo before trusting a check.
-4. Classify unclassified people in batches — lead_card for context, then submit
-   them all in one classify call. Where email_kind is "personal" there is no company
-   to research: the only signal is arrivals — which source, how they came, how many
-   times. Read fit off that, and set fit_known false rather than inventing an
-   employer. A lead nobody can read is not a bad lead, and the first message to one
-   should be short and ask something, because their answer is the only enrichment
-   available.
-5. Once per run, before any planning: what_works with product_id "${productId}".
-   It returns every segment and angle with what was sent, what came back and what
-   converted. Plan against that rather than against taste. Read it carefully:
-   a rate over trackable sends is evidence, a null rate means those messages could
-   never report and prove nothing either way, and an angle marked "untested" has
-   too few sends to have failed — it has not been tried. Retiring one of those is
-   how a product locks onto whatever won first and stops learning, so plan_goal
-   refuses a plan that spends every step on the proven angles: around a third of
-   the steps have to go somewhere unproven. Choose those deliberately rather than
-   discovering the rule by being refused — an untested angle placed where it can
-   actually be judged is worth more than one bolted onto the end.
-6. For each campaign under need_plan: lead_card, then plan_goal.
-   Everyone gets a real sequence. Spend the campaign's touch budget, not a
-   cautious fraction of it — an unspent budget converts nobody.
-   Low confidence means try harder, not go quiet. Someone you read at 5% fit
-   gets the tightest gaps in their band and the boldest, most attention-earning
-   angles, because a polite generic message will not land on them and silence
-   loses them anyway. Someone you are sure of gets a calmer, straighter
-   sequence; the cadence bands already give them the wider gaps.
-   Use only channels the campaign allows; lead_card lists what is connected and
-   what each can carry. Stay inside the budget, the weekly cap and the cadence
-   band for that temperature. Those are the guardrails — work at their edge, not
-   half-way inside them.
-7. Stop after 40 people and leave the rest for the next run.`,
+${contract}
+
+4.1 verify-runner
+  next_work("monitor") with limit 50. Split across sub-agents.
+  For each person read last_probes — what the tools actually returned — alongside
+  check_results and their last message. Where a check is undetermined, call
+  verify_person, read the raw response, and resolve_check only if it plainly
+  supports the verdict.
+
+4.2 verdict-writer
+  Decide, and submit them together with mark_state:
+    succeeded  the evidence plainly shows it. Not "probably".
+    failed     a real ending: they said no, or the budget and deadline are spent.
+               Never because a check has simply not passed yet.
+    continue   still running. Say in one line where they are.
+  mark_state refuses "succeeded" unless every check the campaign defines has
+  actually passed. If it refuses, the answer is to repair the check — never to route
+  around it.
+
+4.3 check-auditor
+  On your first run of the day, look at both verification lists.
+  verification_looks_wrong is two weeks with nothing passing — usually a check bound
+  to the wrong tool.
+  verification_too_easy is the more dangerous one: a check that has passed for
+  everybody it has ever run on. That is not evidence, it is a constant, and it ends
+  campaigns for people who have done nothing. Read one probe and compare the scope
+  the args asked for against the scope the response says it used — a provider that
+  ignores an argument it does not have the privilege for will answer about your own
+  account instead. Repair both with verifiers and set_checks.`,
     },
     {
-      key: "compose",
-      name: "Compose",
-      cron: DEFAULT_CRONS.compose,
-      human: "every hour, at :35",
-      essential: false,
-      job: "Write the messages about to go out — in the shape of the channel each one is going on. Only the next two days' worth.",
-      example: [
-        "Rahul's replanned step is due Thursday on email: subject line, around 140 words, a link, an opt-out.",
-        "His step after that is WhatsApp: about 45 words, no link, and outside the 24-hour window an approved template.",
-        "Same angle, two different pieces of writing — because the channel decides the shape.",
-      ],
-      prompt: `${preamble}
-
-${registration("compose")}
-
-Every run:
-1. sweep with product_id "${productId}" and scope "compose".
-2. If total_work_items is 0, stop.
-3. For each low buffer: compose_batch for the steps it names. Each one carries
-   next_step and steps_due_in_window — the sweep has already filtered to what
-   falls inside 48 hours, so write those and nothing further ahead. A message
-   written now for day 9 is usually wasted, because the person signs up or
-   unsubscribes first.
-4. Write to the channel's shape. lead_card lists each channel's real limits:
-   an email carries a subject, a body of a few hundred words, a link and an
-   opt-out; a WhatsApp message is a couple of sentences with no link, and
-   outside its reply window it must use an approved template. The same angle
-   becomes two different pieces of writing.
-5. Read their prior touches. Never repeat a claim already made to them, never
-   contradict one, and let the register escalate naturally across a sequence.
-6. The lower your confidence in someone, the harder the opening line has to
-   work. Be specific and a little cheeky rather than polite and generic — a
-   message that reads like every other message gets deleted unread. This never
-   licenses a false claim: no invented capability, no number the product cannot
-   back, nothing the voice rules forbid.
-7. Stop after 30 touches.`,
-    },
-    {
-      key: "groom",
-      name: "Groom",
-      cron: DEFAULT_CRONS.groom,
+      key: "maintain",
+      name: "5 — Maintain",
+      cron: DEFAULT_CRONS.maintain,
       human: "once a day, 07:50",
       essential: false,
-      job: "Finishes what setup left half-done, and asks for the rest exactly once. A product with a brand kit but no day-three template, or four campaigns still drafted a week after they were written, is not broken — it is waiting on somebody, and nothing else in the system says so.",
+      job: "Finish what setup left half-done, learn from what has actually worked, and ask for the rest exactly once.",
       example: [
-        "Priya's product has a welcome and nothing after it, so the day-three nudge and the last call get written in her brand voice and left as drafts.",
-        "Her four campaigns have sat unstarted for six days — one notification says so, naming the lead source they are all waiting on.",
-        "Tomorrow it stays quiet about the same four, because it already asked.",
+        "A product with a welcome and nothing after it gets its day-three nudge and last call written in its brand voice, left as drafts.",
+        "The margin-leak angle has forty sends and no clicks, so it is retired from the playbooks that still use it.",
+        "Four campaigns have sat unstarted for six days — one notification says so, naming the lead source they are all waiting on.",
       ],
-      prompt: `${preamble}
+      prompt: `${scope}
 
-${registration("groom")}
+${registration("maintain")}
 
-This runs once a day. It finishes setup nobody came back to, and it asks for
-what only a person can give — once, not daily.
+${contract}
 
-Every run:
-1. setup_gaps with product_id "${productId}". It returns what is missing and
-   what is merely unfinished. If gaps is empty, stop and say "setup is complete".
-2. Fill what you can yourself:
-   - Missing templates in the ladder: get_brand first so the copy suits the
-     design, then upsert_template for each, always status "draft". Check each
-     one with preview_template before moving on.
-   - A campaign with no plan: plan_goal, as the Plan routine would.
-   Everything you write stays a draft. This routine never activates anything —
-   a campaign that starts sending because a scheduled session decided it was
-   ready is the worst possible surprise.
-3. For what only a person can supply — a lead source, a send channel, a real
-   trial link, a brand nobody has confirmed — call notify_owner once, with all
-   of it in one message. It is deduped for seven days, so repeating yourself
-   costs you nothing and gains them nothing.
-4. Say plainly what you drafted and what you are waiting on.`,
+This runs once a day. It finishes setup nobody came back to, learns from what has
+actually happened, and asks for what only a person can give — once, not daily.
+
+5.1 gaps-filler
+  setup_gaps for each product. If gaps is empty, say "setup is complete" and move on.
+  Fill what you can: missing ladder rungs get get_brand first so the copy suits the
+  design, then upsert_template, always status "draft", checked with preview_template
+  before you move on. A campaign with no verification plan gets verifiers then
+  set_checks.
+  Everything you write stays a draft. This routine never activates anything — a
+  campaign that starts sending because a scheduled session decided it was ready is
+  the worst possible surprise.
+
+5.2 playbook-learner
+  what_works for each product. Read it carefully: a rate over trackable sends is
+  evidence, a null rate means those messages could never report and prove nothing
+  either way, and an angle marked "untested" has too few sends to have failed — it
+  has not been tried. Retiring one of those is how a product locks onto whatever won
+  first and stops learning.
+  Where an angle has genuinely lost with enough sends to say so, rewrite the
+  playbooks that still use it. Where one has genuinely won, give it more of the
+  sequence — but never all of it; upsert_playbook refuses a sequence with no
+  untested angle in it, for the same reason.
+
+5.3 owner-asks
+  For what only a person can supply — a lead source, a send channel, a real trial
+  link, a brand nobody has confirmed, a sending capacity too small for the campaign
+  size — call notify_owner once, with all of it in one message. It is deduped for
+  seven days, so repeating yourself costs you nothing and gains them nothing.
+  Then say plainly what you drafted and what you are waiting on.`,
     },
   ];
 }

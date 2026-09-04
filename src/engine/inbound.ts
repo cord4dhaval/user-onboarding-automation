@@ -7,6 +7,7 @@ import { schemasFor } from "../mcp/schemas.js";
 import { unsubscribePerson } from "./unsubscribe.js";
 import { suppress } from "./suppression.js";
 import { grantedCapabilities } from "../auth/google.js";
+import { detectMovement } from "./detect.js";
 
 /**
  * Reads replies.
@@ -35,6 +36,8 @@ export interface InboundSummary {
   examined: number;
   matched: number;
   recorded: number;
+  /** Scheduled messages pulled back because the person wrote to us first. */
+  heldForReply: number;
   unsubscribed: number;
   /** Hard bounces found and suppressed. Soft ones are counted nowhere: they mean nothing yet. */
   bounced: number;
@@ -300,6 +303,7 @@ export async function pollReplies(
     examined: 0,
     matched: 0,
     recorded: 0,
+    heldForReply: 0,
     unsubscribed: 0,
     bounced: 0,
     errors: [],
@@ -420,7 +424,24 @@ export async function pollReplies(
       if (looksLikeOptOut(text)) {
         const result = await unsubscribePerson(personId, "replied asking to stop");
         if (result.found && !result.alreadyDone) summary.unsubscribed++;
+        continue;
       }
+
+      // Somebody who writes back is the strongest signal this system ever gets, and the
+      // two things that follow from it must not wait for a session an hour away.
+      //
+      // Their queued messages are held immediately: continuing a scripted sequence at
+      // someone who has just asked a question reads as nobody being home, and it is the
+      // fastest way to lose a lead who was interested enough to type.
+      await db.collection(C.people).updateOne({ _id: person._id }, { $set: { lastReplyAt: at } });
+      const held = await db.collection(C.actions).updateMany(
+        { orgId, productId, personId, status: "queued", reviewedAt: { $exists: false } },
+        { $set: { status: "skipped", skipReason: "they replied; waiting on a human answer" } },
+      );
+      summary.heldForReply += held.modifiedCount;
+
+      // Then the answer itself is queued as urgent work, which bypasses fairness entirely.
+      await detectMovement(orgId, productId, { personId, reason: "replied" });
     }
   }
 

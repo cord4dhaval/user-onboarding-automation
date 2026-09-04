@@ -77,7 +77,7 @@ export default async function SetupPanel({ productId, orgId }: { productId: stri
       <h2>Register it as a connector</h2>
       <p className="sub">
         Add it as a custom connector with the URL above and your token as the bearer credential, then schedule
-        the three routines on the next tab.
+        the five routines on the next tab.
       </p>
       <a className="btn ghost" href="https://claude.ai/customize/connectors" target="_blank" rel="noreferrer">
         <ExternalLink size={14} /> Open Claude connectors

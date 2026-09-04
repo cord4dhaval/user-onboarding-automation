@@ -22,6 +22,18 @@ export interface ComposedContent {
    * template's open slot, and the recipient got the heading and greeting twice.
    */
   fromBlocks?: boolean;
+  /**
+   * The copy a session wrote for this touch's open slot, kept apart from `bodyMd` for the
+   * whole life of the action.
+   *
+   * `bodyMd` is the finished message — greeting, slot, list, call to action, opt-out — and
+   * a second render has to be able to tell the part Claude wrote from the part the
+   * template contributed. Holding both in one field cannot: the first render turns the
+   * slot copy into the whole body, and the next one feeds that body back into the slot.
+   * Carrying the slot separately means a message can be rendered any number of times and
+   * still say what its author wrote, once.
+   */
+  slotText?: string;
 }
 
 type Block = Record<string, unknown>;
@@ -37,7 +49,10 @@ export interface MergeVars {
   [key: string]: string;
 }
 
-/** What Claude wrote for this touch. Named sections win; `bodyMd` fills anything unnamed. */
+/**
+ * What Claude wrote for this touch. Named sections win; `slotText` fills the first unnamed
+ * slot, and `bodyMd` does the same for copy that arrived before slots existed.
+ */
 export interface Precomposed extends Partial<ComposedContent> {
   slots?: Record<string, string>;
 }
@@ -131,9 +146,18 @@ export function resolveBlocks(
       const name = typeof block.name === "string" ? block.name : undefined;
       const named = name ? precomposed?.slots?.[name] : undefined;
       let filled = named;
-      if (!filled && !name && !bodyUsed && precomposed?.bodyMd && !precomposed.fromBlocks) {
-        filled = precomposed.bodyMd;
-        bodyUsed = true;
+      if (!filled && !name && !bodyUsed) {
+        // `slotText` is the composed copy on its own and survives any number of renders.
+        // `bodyMd` is the older shape — copy that arrived before the slot was a separate
+        // field — and is only safe to reuse while it has not yet been through a render,
+        // which is exactly what `fromBlocks` records.
+        const composed =
+          precomposed?.slotText ??
+          (precomposed?.bodyMd && !precomposed.fromBlocks ? precomposed.bodyMd : undefined);
+        if (composed) {
+          filled = composed;
+          bodyUsed = true;
+        }
       }
       filled ??= text(block.fallback);
       if (filled) out.push({ kind: "text", text: merge(filled, vars) });
@@ -279,7 +303,10 @@ export function renderTemplate(
     wordCount: bodyMd.split(/\s+/).filter(Boolean).length,
     // Copy a session wrote keeps its provenance; blocks read back to text declare theirs,
     // so a later render can tell the two apart.
-    fromBlocks: precomposed?.bodyMd ? precomposed.fromBlocks : true,
+    fromBlocks: precomposed?.slotText || precomposed?.bodyMd ? precomposed.fromBlocks : true,
+    // Carried forward rather than consumed. The rendered body is stored back on the action,
+    // and without this the next render would find nothing but its own previous output.
+    slotText: precomposed?.slotText,
   };
 }
 

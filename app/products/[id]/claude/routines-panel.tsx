@@ -83,7 +83,7 @@ export default async function RoutinesPanel({ productId, orgId }: { productId: s
         </li>
         <li>
           Create it, then hit <strong>Run now</strong>.
-          <span className="hint">Start with Monitor and Plan. Compose has nothing to write until they have run, and Groom is a once-a-day tidy you can add later.</span>
+          <span className="hint">Schedule Acquire and Advance first — they are what turns arrivals into mail. React and Close matter as soon as anyone starts clicking and replying, and Maintain is a once-a-day tidy you can add later.</span>
         </li>
       </ol>
 

@@ -134,14 +134,34 @@ export async function channelUsage(
   return out;
 }
 
-/** Reads the provider's declared limits off the channel, with conservative defaults. */
+/**
+ * The ceiling a mailbox provider enforces that nobody declared to us.
+ *
+ * A daily cap alone does not describe how a mailbox actually behaves: providers refuse on
+ * an hourly window long before the day is spent, and a queue that only knows the day will
+ * empty itself into the first hour and lose the overflow. This product sent 103 messages
+ * in one hour against a provider limit of 100 and burned 50 touches to `hourly_cap`
+ * rejections, each one a real message a real person never received.
+ *
+ * Deliberately below any provider's real number. A cap that is slightly too low delays a
+ * message; one that is slightly too high destroys it.
+ */
+const DEFAULT_PER_HOUR = 90;
+
+/**
+ * Reads the provider's declared limits off the channel, with conservative defaults.
+ *
+ * An hourly figure is assumed where none is declared, because the failure modes are not
+ * symmetric: pacing a message an hour later costs an hour, and exceeding a provider's
+ * window costs the message.
+ */
 export async function limitsFor(orgId: string, channelId: string): Promise<RateLimits> {
   const db = await getDb();
   const channel = await db.collection(C.channels).findOne({ _id: new ObjectId(channelId), orgId });
   const governor = (channel?.governor ?? {}) as { perMinute?: number; perHour?: number; dailyCap?: number };
   return {
     perMinute: governor.perMinute,
-    perHour: governor.perHour,
+    perHour: governor.perHour ?? DEFAULT_PER_HOUR,
     perDay: governor.dailyCap,
   };
 }

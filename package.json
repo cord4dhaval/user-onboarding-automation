@@ -24,7 +24,9 @@
     "dedupe:arrivals": "tsx --env-file=.env src/scripts/dedupe-arrivals.ts",
     "recompose": "tsx --env-file=.env src/scripts/recompose-held.ts",
     "test:signals": "tsx --env-file=.env src/scripts/signal-test.ts",
-    "gmail:check": "tsx --env-file=.env src/scripts/gmail-check.ts"
+    "gmail:check": "tsx --env-file=.env src/scripts/gmail-check.ts",
+    "verify:orchestration": "tsx --env-file=.env src/scripts/verify-orchestration.ts",
+    "repair:dead": "tsx --env-file=.env src/scripts/repair-dead-actions.ts"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",

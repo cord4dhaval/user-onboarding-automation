@@ -3,6 +3,9 @@ import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
 import { anglePerformance, anglesTriedOn, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
 import { greetingName } from "../../engine/names.js";
+import { allowedSegments, stampPlaybook } from "../../engine/playbooks.js";
+import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type ThinkingKind } from "../../engine/queue.js";
+import { backlog } from "../../engine/dispatch.js";
 import { suppress } from "../../engine/suppression.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue } from "../../engine/fireDue.js";
@@ -306,20 +309,37 @@ export const TOOLS: ToolDef[] = [
           ? await db
               .collection(C.people)
               .find({ ...s, needsClassification: true, suppressedAt: { $exists: false } })
+              // Oldest first, always. Without a sort this returned whatever the index handed
+              // back, so the same rows were offered run after run while people who arrived
+              // later were never reached.
+              .sort({ createdAt: 1 })
               .limit(limit)
               .toArray()
           : [];
 
-        const activeGoals = await db.collection(C.goalInstances).find({ ...s, status: "active" }).limit(200).toArray();
-        const planned = new Set(
-          activeGoals.filter((g) => g.currentPlanId).map((g) => String(g._id)),
-        );
-
         // A goal instance with no plan has had its welcome and nothing since — that is the
         // gap a routine exists to close.
+        //
+        // Queried on the condition rather than filtered after a limit. The previous version
+        // read the first two hundred active instances in natural order and then kept the
+        // unplanned ones, so a product whose first two hundred rows were already planned
+        // reported "nothing to do" while thousands waited behind them. There was no error
+        // and no log line: the backlog was invisible precisely because it was large.
         const needPlan = wants("plan")
-          ? activeGoals.filter((g) => !planned.has(String(g._id))).slice(0, limit)
+          ? await db
+              .collection(C.goalInstances)
+              .find({ ...s, status: "active", currentPlanId: { $exists: false } })
+              .sort({ startedAt: 1 })
+              .limit(limit)
+              .toArray()
           : [];
+
+        const activeGoals = await db
+          .collection(C.goalInstances)
+          .find({ ...s, status: "active" })
+          .sort({ lastReviewedAt: 1, startedAt: 1 })
+          .limit(200)
+          .toArray();
 
         // Campaigns the UI created but could not write a verification plan for — a browser
         // cannot call Claude, so it marks the work and this is where it is picked up.
@@ -656,13 +676,36 @@ export const TOOLS: ToolDef[] = [
     },
     async handler(args, ctx) {
       const db = await getDb();
-      await assertProduct(String(args.product_id), ctx);
+      const productId = String(args.product_id);
+      await assertProduct(productId, ctx);
       const results = (args.results ?? []) as Array<Record<string, unknown>>;
       let updated = 0;
+      let restamped = 0;
+
+      // Refused rather than corrected, and refused for the whole batch before anything is
+      // written. This product declares two segments and classification had invented
+      // twenty-two, including `smb_owner_other`, `other_smb_owner` and
+      // `smb_owner_services` as three separate buckets of twenty-seven, nine and three
+      // people. Nothing can learn from buckets that size, and a playbook per accidental
+      // bucket is a playbook nobody writes. A genuinely new segment is an edit to the
+      // product config, which is a decision someone makes on purpose.
+      const allowed = await allowedSegments(ctx.orgId, productId);
+      const rejected = [...new Set(results.map((r) => String(r.segment)).filter((s) => !allowed.includes(s)))];
+      if (rejected.length) {
+        throw new Error(
+          `unknown segment${rejected.length === 1 ? "" : "s"} ${rejected.join(", ")}. ` +
+            `This product accepts: ${allowed.join(", ")}. Use "unknown" where there was nothing to read ` +
+            `and "off_icp" where they are not a prospect; add a real new segment to the product config first.`,
+        );
+      }
 
       for (const r of results) {
         const icpFit = Number(r.icp_fit ?? 0);
         const fitKnown = r.fit_known !== false;
+        const personId = String(r.person_id);
+        const before = await db
+          .collection(C.people)
+          .findOne({ _id: new ObjectId(personId), orgId: ctx.orgId }, { projection: { belief: 1 } });
         await db.collection(C.people).updateOne(
           { _id: new ObjectId(String(r.person_id)), orgId: ctx.orgId },
           {
@@ -696,8 +739,33 @@ export const TOOLS: ToolDef[] = [
           },
         );
         updated++;
+
+        // Reading somebody as a different segment is only useful if it changes what they
+        // receive. The welcome has already gone out by now — it is queued within seconds of
+        // arrival — so the stamp swaps the rest of the sequence for the one this segment
+        // actually deserves, and declines to do it once enough messages have been sent that
+        // a rewrite would contradict what they have already read.
+        const wasSegment = (before?.belief as { segment?: string } | undefined)?.segment;
+        if (wasSegment !== String(r.segment)) {
+          const instance = await db
+            .collection(C.goalInstances)
+            .findOne(
+              { orgId: ctx.orgId, productId, personId, status: "active" },
+              { projection: { _id: 1, goalKey: 1 } },
+            );
+          if (instance) {
+            const stamp = await stampPlaybook({
+              orgId: ctx.orgId,
+              productId,
+              goalInstanceId: String(instance._id),
+              goalKey: String(instance.goalKey),
+              segmentKey: String(r.segment),
+            });
+            if (stamp.stamped) restamped++;
+          }
+        }
       }
-      return { updated };
+      return { updated, restamped };
     },
   },
 
@@ -1493,7 +1561,9 @@ TOOLS.push({
 
     const engine = recent.find((r) => r.routine === "engine");
     const problems = routines
-      .filter((r) => r.state === "late" || r.state === "never" || (!r.registered && r.routine !== "compose"))
+      // Maintain is the one main a product can run without: it finishes setup and learns,
+      // and a product whose setup is already done loses nothing by never scheduling it.
+      .filter((r) => r.state === "late" || r.state === "never" || (!r.registered && r.routine !== "maintain"))
       .map((r) =>
         r.registered
           ? `${r.routine} is ${r.state} — last run ${r.last_run_at ?? "never"}`
@@ -1756,7 +1826,12 @@ TOOLS.push({
     required: ["product_id"],
   },
   async handler(args, ctx) {
-    const productId = await assertProduct(String(args.product_id), ctx);
+    // assertProduct returns the org, not the product. Assigning it to `productId` filtered
+    // every query below on productId == orgId, which matches nothing: groom was told daily
+    // that this product had no channel, no source and no brand while all three were
+    // healthy, and never saw the ladder rungs that really were missing.
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
     const db = await getDb();
     const s = { orgId: ctx.orgId, productId };
 
@@ -2389,6 +2464,280 @@ TOOLS.push({
       note: actionId
         ? "Attributed to their most recent send, so the angle that started this conversation gets the credit."
         : "No unanswered send to attribute this to — recorded against the person only.",
+    };
+  },
+});
+
+/**
+ * The worker contract: what a sub-routine is allowed to work on, and how it hands it back.
+ *
+ * Routines used to choose their own work by sweeping the database, which put two decisions
+ * in one place — what needs doing, and whose turn it is. The second is arithmetic, it has
+ * to happen every minute rather than every hour, and getting it wrong is invisible: the
+ * old sweep read two hundred rows in disk order and reported an empty queue while thousands
+ * waited. Both decisions now belong to the engine, and a routine asks only for its slice.
+ */
+TOOLS.push({
+  name: "next_work",
+  description:
+    "Claim the next batch of work of one kind. The engine has already decided what is ready and divided it fairly across products and campaigns, so what comes back is yours to do now — urgent first, then whoever has waited longest. Every item is leased: finish it with finish_work, or it returns to the pool on its own when the lease expires. Kinds: classify (people nobody has read), compose (the next message for someone who has earned a written one), escalate (someone who just clicked or replied), monitor (is this person done), playbook (a segment with no sequence), groom (setup).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: [...THINKING_KINDS] },
+      limit: { type: "number", description: "Max items. Default 25, ceiling 200." },
+      product_id: { type: "string", description: "Narrow to one product. Omit to work across everything you own." },
+    },
+    required: ["kind"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const kind = String(args.kind) as ThinkingKind;
+    if (!(THINKING_KINDS as readonly string[]).includes(kind)) throw new Error(`unknown kind "${kind}"`);
+    const limit = Math.min(Math.max(Number(args.limit ?? 25), 1), 200);
+
+    const claimed = await claimBatch(ctx.orgId, kind, limit);
+    const wanted = str(args.product_id);
+    // Filtered after the claim rather than before it: narrowing the lease query by product
+    // would let a session quietly take only its favourite product's work and leave the rest
+    // leased to nobody. Anything not wanted is released immediately.
+    const mine = wanted ? claimed.filter((j) => String(j.productId ?? "") === wanted) : claimed;
+    const notMine = claimed.filter((j) => !mine.includes(j));
+    if (notMine.length) await releaseAll(notMine.map((j) => j._id));
+
+    const items = [];
+    for (const job of mine) {
+      const payload = (job.payload ?? {}) as Record<string, unknown>;
+      const personId = str(payload.personId);
+      const person = personId
+        ? await db.collection(C.people).findOne({ _id: new ObjectId(personId) })
+        : null;
+
+      // Compact by design. A full lead card runs to roughly four hundred tokens and a
+      // session's context is what bounds how many people it can get through in an hour —
+      // a hundred cards is a full window, a hundred rows like these is a fifth of one.
+      // Anything a particular person turns out to need is one lead_card call away.
+      items.push({
+        job_id: String(job._id),
+        product_id: job.productId ?? null,
+        campaign: job.campaignKey ?? null,
+        urgent: Number(job.priority ?? 1) === PRIORITY.urgent,
+        waiting_minutes: Math.round((Date.now() - new Date(String(job.dueAt)).getTime()) / 60_000),
+        reason: payload.reason ?? null,
+        goal_instance_id: payload.goalInstanceId ?? null,
+        person: person
+          ? {
+              id: String(person._id),
+              name: person.name ?? null,
+              role: person.role ?? null,
+              company: person.companyDomain ?? null,
+              email_kind: person.emailKind ?? null,
+              segment: (person.belief as { segment?: string } | undefined)?.segment ?? null,
+              temperature: (person.temp as { band?: string } | undefined)?.band ?? null,
+              arrivals: ((person.arrivals ?? []) as Array<{ kind?: string }>).map((a) => a.kind ?? "unknown"),
+            }
+          : null,
+      });
+    }
+
+    const waiting = await db
+      .collection(C.workQueue)
+      .countDocuments({ orgId: ctx.orgId, kind, status: "queued" });
+
+    return {
+      kind,
+      claimed: items.length,
+      // Said plainly rather than left to be inferred from an empty page. A backlog nobody
+      // can see is how this system lost nine thousand people once already.
+      still_waiting: waiting,
+      items,
+      note:
+        items.length === 0
+          ? waiting > 0
+            ? `Nothing is ready yet; ${waiting} waiting for the dispatcher's next round. Stop and report that.`
+            : "Nothing waiting. Stop."
+          : "Finish these with finish_work. Anything you do not finish returns to the pool when the lease expires.",
+    };
+  },
+});
+
+TOOLS.push({
+  name: "finish_work",
+  description:
+    "Mark claimed work done. Anything you leave unfinished returns to the pool on its own, so a session that runs out of room should simply stop rather than reporting work it did not do.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      job_ids: { type: "array", items: { type: "string" } },
+    },
+    required: ["job_ids"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const ids = ((args.job_ids ?? []) as unknown[]).map((id) => String(id)).filter((id) => ObjectId.isValid(id));
+    if (ids.length === 0) return { finished: 0 };
+
+    // Scoped to the caller's org before anything is written. A job id is guessable, and
+    // "finish" on somebody else's queue would drop their work silently.
+    const own = await db
+      .collection(C.workQueue)
+      .find({ _id: { $in: ids.map((id) => new ObjectId(id)) }, orgId: ctx.orgId })
+      .project({ _id: 1 })
+      .toArray();
+
+    await completeAll(own.map((j) => j._id));
+    return { finished: own.length };
+  },
+});
+
+TOOLS.push({
+  name: "backlog_report",
+  description:
+    "What is waiting, per product and campaign, and how long it has been waiting. Read this when you cannot finish everything, so what you leave behind is stated rather than silent.",
+  inputSchema: { type: "object", properties: {} },
+  async handler(_args, ctx) {
+    const rows = await backlog(ctx.orgId);
+    const stuck = rows.filter((r) => r.oldestMinutes > 120);
+    return {
+      lanes: rows,
+      note: stuck.length
+        ? `${stuck.length} queue${stuck.length === 1 ? "" : "s"} have work older than two hours. Say so in your run summary — a backlog nobody reports is a backlog nobody fixes.`
+        : "Nothing has been waiting more than two hours.",
+    };
+  },
+});
+
+TOOLS.push({
+  name: "upsert_playbook",
+  description:
+    "Write the sequence one segment of one campaign runs: the ordered steps, each with a channel, an angle, a reason and an offset in days. Written once and copied onto everybody in that segment as they arrive, so it is worth more care than any single message — and so a person has a working sequence within seconds of landing, before any session has looked at them. Offsets are intentions: the engine paces the real send from the person's temperature. Around a third of the steps must use an angle that is not already proven for this segment, and a sequence of three or more steps may not use one angle throughout; both are refused rather than warned about.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      goal_key: { type: "string", description: "The campaign this sequence belongs to." },
+      segment_key: {
+        type: "string",
+        description:
+          'The segment that runs it, or "default" for the sequence everybody runs until they are classified. Must be a segment the product declares.',
+      },
+      rationale: { type: "string", description: "Why this sequence, or what the previous one got wrong." },
+      steps: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "number" },
+            offset_days: { type: "number", description: "Days after the previous touch, as an intention." },
+            channel: { type: "string" },
+            angle: { type: "string" },
+            why: { type: "string" },
+            template_key: { type: "string", description: "Optional. Left unset, send time picks the ladder rung." },
+          },
+          required: ["id", "offset_days", "channel", "angle", "why"],
+        },
+      },
+    },
+    required: ["product_id", "goal_key", "segment_key", "steps"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
+
+    const goalKey = String(args.goal_key);
+    const goal = await db.collection(C.goals).findOne({ orgId: ctx.orgId, productId, key: goalKey });
+    if (!goal) throw new Error(`campaign "${goalKey}" not found for this product`);
+
+    const segmentKey = String(args.segment_key);
+    // "default" is not a segment, it is the absence of one, and it is the sequence every
+    // single person runs first — nobody is classified at the moment they arrive.
+    if (segmentKey !== "default") {
+      const allowed = await allowedSegments(ctx.orgId, productId);
+      if (!allowed.includes(segmentKey)) {
+        throw new Error(
+          `unknown segment "${segmentKey}". This product accepts: ${allowed.join(", ")}, or "default". ` +
+            `A playbook for a segment nothing classifies into would never run.`,
+        );
+      }
+    }
+
+    const steps = ((args.steps ?? []) as Array<Record<string, unknown>>).map((step, index) => ({
+      id: Number(step.id ?? index + 1),
+      offsetDays: Number(step.offset_days ?? 3),
+      channel: String(step.channel ?? "email"),
+      angle: String(step.angle ?? ""),
+      why: String(step.why ?? ""),
+      templateKey: step.template_key ? String(step.template_key) : undefined,
+    }));
+    if (steps.length === 0) throw new Error("a playbook needs at least one step");
+
+    const allowedChannels = (goal.allowedChannels ?? ["email"]) as string[];
+    const wrongChannel = steps.find((s) => !allowedChannels.includes(s.channel));
+    if (wrongChannel) {
+      throw new Error(
+        `step ${wrongChannel.id} uses "${wrongChannel.channel}", which campaign "${goalKey}" does not allow. ` +
+          `Allowed: ${allowedChannels.join(", ")}.`,
+      );
+    }
+
+    const budget = (goal.budget ?? {}) as { touches?: number };
+    if (budget.touches !== undefined && steps.length > budget.touches) {
+      throw new Error(
+        `this playbook has ${steps.length} steps but the campaign's budget is ${budget.touches} touches. ` +
+          `The steps past the budget would never send.`,
+      );
+    }
+
+    // The same guardrail plan_goal applies, checked once here instead of once per person —
+    // which is most of why a playbook is cheaper than a thousand plans.
+    const block = await explorationBlock(
+      ctx.orgId,
+      productId,
+      segmentKey === "default" ? undefined : segmentKey,
+      steps.map((s) => s.angle),
+    );
+    if (block) throw new Error(block);
+
+    const existing = await db
+      .collection(C.playbooks)
+      .findOne({ orgId: ctx.orgId, productId, goalKey, segmentKey });
+    const version = Number(existing?.version ?? 0) + 1;
+
+    await db.collection(C.playbooks).updateOne(
+      { orgId: ctx.orgId, productId, goalKey, segmentKey },
+      {
+        $set: {
+          steps,
+          version,
+          rationale: str(args.rationale),
+          createdBy: "claude",
+          updatedAt: new Date(),
+        },
+        $setOnInsert: { _id: new ObjectId(), orgId: ctx.orgId, productId, goalKey, segmentKey, createdAt: new Date() },
+      },
+      { upsert: true },
+    );
+
+    // Existing runners are not rewritten from here. The engine re-stamps anyone whose
+    // sequence is still essentially unspent on its next pass, and leaves alone anyone far
+    // enough in that a new sequence would contradict what they have already read.
+    const running = await db.collection(C.goalInstances).countDocuments({
+      orgId: ctx.orgId,
+      productId,
+      goalKey,
+      status: "active",
+    });
+
+    return {
+      segment: segmentKey,
+      version,
+      steps: steps.length,
+      running_this_campaign: running,
+      note:
+        version === 1
+          ? "Everybody who arrives in this segment from now on runs this within seconds, with no model in the path."
+          : "People early in their sequence move to this version on the next tick; anyone further in keeps the sequence they have already been reading.",
     };
   },
 });

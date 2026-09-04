@@ -15,19 +15,60 @@ import { COLLECTIONS as C } from "../db/collections.js";
  * crash.
  */
 
-export type JobKind = "ingest_rows";
+/**
+ * Work the engine does itself, and work it can only queue for a session to do.
+ *
+ * `ingest_rows` is engine work: a chunk of spreadsheet the tick drains on its own budget.
+ * The rest is judgment — who someone is, what to say to them, whether they are finished —
+ * and is claimed by the hourly Claude routines. Both live in one collection because both
+ * need the same three properties: a lease so two workers cannot take the same item, a
+ * durable record so a killed worker loses nothing, and a tenant key so no product can
+ * starve another.
+ */
+export const THINKING_KINDS = ["classify", "playbook", "compose", "escalate", "monitor", "groom"] as const;
+export type ThinkingKind = (typeof THINKING_KINDS)[number];
+export type JobKind = "ingest_rows" | ThinkingKind;
+
+/**
+ * Urgent work is not subject to fairness. A reply or a click is the thing the whole system
+ * exists to catch, and making it wait behind a routine classification of somebody who has
+ * done nothing is the one queue behaviour that cannot be defended.
+ */
+export const PRIORITY = { urgent: 0, normal: 1, background: 2 } as const;
 
 export interface Job<P = Record<string, unknown>> {
   _id: ObjectId;
   orgId: string;
   kind: JobKind;
-  status: "queued" | "running" | "done" | "dead";
+  /**
+   * `queued` is waiting to be chosen; `ready` has been chosen by the dispatcher and is the
+   * only state a thinking worker may claim from. The extra state is what lets fairness be
+   * decided every minute by code while the workers that act on it run once an hour.
+   */
+  status: "queued" | "ready" | "running" | "done" | "dead";
   payload: P;
   dueAt: Date;
   leaseUntil: Date;
   attempts: number;
   lastError?: string;
   createdAt: Date;
+  productId?: string;
+  campaignKey?: string;
+  priority?: number;
+  subjectId?: string;
+}
+
+export interface EnqueueOptions {
+  dueAt?: Date;
+  productId?: string;
+  campaignKey?: string;
+  priority?: number;
+  /**
+   * The person, goal instance or segment this item is about. Also the deduplication key:
+   * one pending item per subject per kind, so a person who clicks four times in a minute
+   * is escalated once rather than four times.
+   */
+  subjectId?: string;
 }
 
 /** Long enough for a chunk to finish, short enough that a crashed worker frees it fast. */
@@ -45,20 +86,50 @@ export async function enqueue(
   orgId: string,
   kind: JobKind,
   payload: Record<string, unknown>,
-  dueAt = new Date(),
+  options: Date | EnqueueOptions = {},
 ): Promise<string> {
   const db = await getDb();
+  const opts: EnqueueOptions = options instanceof Date ? { dueAt: options } : options;
   const _id = new ObjectId();
+
+  // One pending item per subject per kind. The engine notices the same condition on every
+  // tick — a person still unclassified, a buffer still low — and without this the queue
+  // would grow by one row a minute for a person nobody has got to yet, and the dispatcher
+  // would then spend a campaign's whole quantum on duplicates of one lead.
+  if (opts.subjectId) {
+    const existing = await db.collection(C.workQueue).findOne({
+      orgId,
+      kind,
+      subjectId: opts.subjectId,
+      status: { $in: ["queued", "ready", "running"] },
+    });
+    if (existing) {
+      // A later request may be more urgent than the one already waiting — a person who was
+      // queued for a routine look and has since replied. Urgency is raised, never lowered.
+      const priority = opts.priority ?? PRIORITY.normal;
+      if (priority < Number(existing.priority ?? PRIORITY.normal)) {
+        await db
+          .collection(C.workQueue)
+          .updateOne({ _id: existing._id }, { $set: { priority, dueAt: opts.dueAt ?? new Date() } });
+      }
+      return String(existing._id);
+    }
+  }
+
   await db.collection(C.workQueue).insertOne({
     _id,
     orgId,
     kind,
     status: "queued",
     payload,
-    dueAt,
+    dueAt: opts.dueAt ?? new Date(),
     leaseUntil: new Date(0),
     attempts: 0,
     createdAt: new Date(),
+    productId: opts.productId,
+    campaignKey: opts.campaignKey,
+    priority: opts.priority ?? PRIORITY.normal,
+    subjectId: opts.subjectId,
   });
   return String(_id);
 }
@@ -70,6 +141,18 @@ export async function enqueue(
  * The attempt is counted here rather than on failure, because the failures that matter
  * most are the ones that kill the worker before it can report anything.
  */
+/**
+ * Which states a kind may be claimed from.
+ *
+ * Engine work is claimed straight out of `queued`: the tick both queues and drains it, and
+ * a dispatcher standing in between would only add a minute of latency to an import. Work a
+ * session does is claimed only from `ready`, because that is the state the dispatcher owns
+ * — it is where fairness across products and campaigns is actually applied.
+ */
+function claimableFrom(kind: JobKind): string[] {
+  return kind === "ingest_rows" ? ["queued", "running"] : ["ready", "running"];
+}
+
 export async function claim<P = Record<string, unknown>>(
   orgId: string,
   kind: JobKind,
@@ -80,7 +163,7 @@ export async function claim<P = Record<string, unknown>>(
     {
       orgId,
       kind,
-      status: { $in: ["queued", "running"] },
+      status: { $in: claimableFrom(kind) },
       dueAt: { $lte: now },
       leaseUntil: { $lt: now },
     },
@@ -88,7 +171,9 @@ export async function claim<P = Record<string, unknown>>(
       $set: { status: "running", leaseUntil: new Date(now.getTime() + LEASE_MS) },
       $inc: { attempts: 1 },
     },
-    { sort: { dueAt: 1 }, returnDocument: "after" },
+    // Urgent first, then oldest. Sorting on dueAt alone let a routine item queued an hour
+    // ago outrank a reply that arrived a minute ago, which is the wrong answer every time.
+    { sort: { priority: 1, dueAt: 1 }, returnDocument: "after" },
   );
   if (!claimed) return null;
 
@@ -143,5 +228,124 @@ export async function orgsWithWork(kind: JobKind, now = new Date()): Promise<str
   const db = await getDb();
   return (await db
     .collection(C.workQueue)
-    .distinct("orgId", { kind, status: { $in: ["queued", "running"] }, dueAt: { $lte: now } })) as string[];
+    .distinct("orgId", {
+      kind,
+      status: { $in: claimableFrom(kind) },
+      dueAt: { $lte: now },
+    })) as string[];
+}
+
+/**
+ * A batch of ready work for one kind, leased together.
+ *
+ * A session is billed for its context, not its round trips, so it wants fifty people in
+ * one claim rather than fifty claims. Leasing them as a group also makes the failure clean:
+ * if the session dies, the whole batch returns at once when the lease expires, rather than
+ * half of it being marked done and the other half silently retried.
+ */
+export async function claimBatch<P = Record<string, unknown>>(
+  orgId: string,
+  kind: ThinkingKind,
+  limit: number,
+  now = new Date(),
+): Promise<Job<P>[]> {
+  const db = await getDb();
+  const candidates = await db
+    .collection(C.workQueue)
+    .find({
+      orgId,
+      kind,
+      status: { $in: claimableFrom(kind) },
+      dueAt: { $lte: now },
+      leaseUntil: { $lt: now },
+    })
+    .sort({ priority: 1, dueAt: 1 })
+    .limit(Math.max(1, limit))
+    .toArray();
+
+  const taken: Job<P>[] = [];
+  for (const candidate of candidates) {
+    // Claimed one at a time even though they were read as a batch: the read is not atomic
+    // and another worker may have taken any of them in between. The filter repeats the
+    // lease condition so only rows still genuinely free are taken.
+    const claimed = await db.collection(C.workQueue).findOneAndUpdate(
+      { _id: candidate._id, status: { $in: claimableFrom(kind) }, leaseUntil: { $lt: now } },
+      {
+        $set: { status: "running", leaseUntil: new Date(now.getTime() + LEASE_MS) },
+        $inc: { attempts: 1 },
+      },
+      { returnDocument: "after" },
+    );
+    if (claimed) taken.push(claimed as unknown as Job<P>);
+  }
+  return taken;
+}
+
+/**
+ * Returns expired leases to the pool.
+ *
+ * A Claude session that is killed mid-batch — the platform reclaiming it, a timeout, a
+ * crash — leaves rows marked running that nobody is working on. Nothing else in the system
+ * would ever look at them again, so the work would be lost silently, which is the one
+ * outcome the queue exists to prevent.
+ */
+export async function reapLeases(now = new Date()): Promise<{ requeued: number; dead: number }> {
+  const db = await getDb();
+  const expired = await db
+    .collection(C.workQueue)
+    .find({ status: "running", leaseUntil: { $lt: now } })
+    .limit(500)
+    .toArray();
+
+  let requeued = 0;
+  let dead = 0;
+  for (const job of expired) {
+    const attempts = Number(job.attempts ?? 0);
+    const finished = attempts >= MAX_ATTEMPTS;
+    await db.collection(C.workQueue).updateOne(
+      { _id: job._id },
+      {
+        $set: {
+          // Back to `ready` rather than `queued` for thinking work: the dispatcher already
+          // judged this item worth doing, and sending it back for re-selection would let a
+          // person who has been picked up and dropped fall behind people who never were.
+          status: finished ? "dead" : job.kind === "ingest_rows" ? "queued" : "ready",
+          leaseUntil: new Date(0),
+          lastError: finished ? "lease expired too many times" : "lease expired; requeued",
+        },
+      },
+    );
+    if (finished) dead++;
+    else requeued++;
+  }
+  return { requeued, dead };
+}
+
+/**
+ * Hands leased work back untouched.
+ *
+ * A worker that claims a batch and then finds part of it is not its to do must return that
+ * part immediately rather than let the lease run out: the lease is minutes long, and for
+ * those minutes the work is invisible to everybody, including the worker that should have
+ * had it.
+ */
+export async function releaseAll(jobIds: Array<ObjectId | string>): Promise<void> {
+  if (jobIds.length === 0) return;
+  const db = await getDb();
+  await db.collection(C.workQueue).updateMany(
+    { _id: { $in: jobIds.map((id) => new ObjectId(String(id))) }, status: "running" },
+    // Back to ready, not queued: the dispatcher already judged this worth doing, and
+    // sending it round for re-selection would put it behind work that was never chosen.
+    { $set: { status: "ready", leaseUntil: new Date(0) }, $inc: { attempts: -1 } },
+  );
+}
+
+/** Marks a whole leased batch done in one write. */
+export async function completeAll(jobIds: Array<ObjectId | string>): Promise<void> {
+  if (jobIds.length === 0) return;
+  const db = await getDb();
+  await db.collection(C.workQueue).updateMany(
+    { _id: { $in: jobIds.map((id) => new ObjectId(String(id))) } },
+    { $set: { status: "done", leaseUntil: new Date(0), finishedAt: new Date() } },
+  );
 }
