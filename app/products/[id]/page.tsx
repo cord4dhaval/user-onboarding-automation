@@ -5,6 +5,7 @@ import {
   CircleDashed,
   Inbox,
   Info,
+  MousePointerClick,
   RefreshCw,
   Send,
   Target,
@@ -92,7 +93,12 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
       // skipReason is what separates a message one of our limits stopped from one a human
       // turned down. Both are `skipped`, and only the first belongs in the failed alert.
       .find(s, {
-        projection: { status: 1, sentAt: 1, personId: 1, goalInstanceId: 1, channel: 1, skipReason: 1 },
+        projection: {
+          status: 1, sentAt: 1, personId: 1, goalInstanceId: 1, channel: 1, skipReason: 1,
+          // What came back. Read here rather than counted separately, because the funnel
+          // and the tile both need it and it rides along on a query already being made.
+          firstClickedAt: 1, firstOpenedAt: 1,
+        },
       })
       .sort({ dueAt: -1 })
       .limit(1000)
@@ -102,6 +108,11 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
     db.collection(C.sources).find(s).toArray(),
     db.collection(C.templates).countDocuments(s),
   ]);
+
+  const replyEvents = await db
+    .collection(C.events)
+    .find({ ...s, type: "reply_received" }, { projection: { personId: 1, ts: 1 } })
+    .toArray();
 
   const byStatus = (status: string) => actions.filter((a) => String(a.status) === status);
   const held = byStatus("awaiting_approval");
@@ -120,6 +131,22 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
   const inWindow = (d: unknown) => d instanceof Date && d >= windowStart;
   const inPrior = (d: unknown) => d instanceof Date && d >= priorStart && d < windowStart;
 
+  // The step the funnel was missing, and the only one measured from their side of the
+  // wire. Without it the chart drops straight from "we sent something" to "verified
+  // success", and every campaign in between reads as a black box.
+  //
+  // Opens are deliberately not a step: a mail client that prefetches images would inflate
+  // this into the widest bar on the chart while nobody had read a thing.
+  const clickedActions = actions.filter((a) => a.firstClickedAt);
+  const responded = new Set([
+    ...clickedActions.map((a) => String(a.personId)),
+    ...replyEvents.map((e) => String(e.personId)),
+  ]).size;
+  const responseDates = [
+    ...clickedActions.map((a) => a.firstClickedAt as Date | undefined),
+    ...replyEvents.map((e) => e.ts as Date | undefined),
+  ];
+
   const sentDates = sent.map((a) => a.sentAt as Date | undefined);
   const personDates = people.map((p) => p.createdAt as Date | undefined);
   const startedDates = instances.map((i) => i.startedAt as Date | undefined);
@@ -132,6 +159,7 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
     people: tally(personDates, windowStart, WINDOW_DAYS),
     started: tally(startedDates, windowStart, WINDOW_DAYS),
     won: tally(wonDates, windowStart, WINDOW_DAYS),
+    responded: tally(responseDates, windowStart, WINDOW_DAYS),
   };
 
   /** This window against the one before it — a number with no baseline says nothing. */
@@ -305,6 +333,14 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
           {...delta(sentDates)}
         />
         <Tile
+          icon={<MousePointerClick size={14} />}
+          label="Responded"
+          explain="People who clicked a link or wrote back. Opens are excluded — mail clients fire those without a human looking."
+          value={responded}
+          spark={series.responded}
+          {...delta(responseDates)}
+        />
+        <Tile
           icon={<CircleCheck size={14} />}
           label="Succeeded"
           explain="Campaign runs whose success checks came back true against the connected source."
@@ -340,6 +376,7 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
               { label: "In the library", value: people.length },
               { label: "In a campaign", value: inCampaign },
               { label: "Contacted", value: contacted, hint: "at least one message" },
+              { label: "Responded", value: responded, hint: "clicked or replied" },
               { label: "Succeeded", value: won, hint: "verified" },
             ]}
           />

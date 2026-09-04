@@ -4,7 +4,7 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { bumpPrior, type PriorKey } from "@/engine/outcomes.js";
 import { notify } from "@/engine/notify.js";
-import { PIXEL, unb64url, verify } from "@/engine/tracking.js";
+import { PIXEL, looksAutomated, signalField, unb64url, verify } from "@/engine/tracking.js";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +28,10 @@ export async function GET(
 
   if (!ObjectId.isValid(id)) return new NextResponse(null, { status: 404 });
 
+  const agent = request.headers.get("user-agent");
+
   if (kind === "o") {
-    if (verify("o", id, "", signature)) await record(id, "opened");
+    if (verify("o", id, "", signature)) await record(id, "opened", agent);
     // The pixel is returned either way. A tracking image that 404s shows as a broken
     // placeholder in some clients, which tells the reader they are being counted.
     return pixel();
@@ -47,31 +49,62 @@ export async function GET(
   if (!/^https?:\/\//i.test(target)) return new NextResponse(null, { status: 404 });
   if (!verify("c", id, target, signature)) return new NextResponse(null, { status: 404 });
 
-  await record(id, "clicked", target);
+  await record(id, "clicked", agent, target);
   return NextResponse.redirect(target, 302);
 }
 
 /**
- * One signal per action per kind. A mail client that prefetches images fires the pixel
- * repeatedly, and counting each one would make a single ignored message look like sustained
- * interest — so the first occurrence is what the rollup reads, and later ones are dropped.
+ * One signal per action per kind, per kind of visitor.
+ *
+ * Two things are deduped here, for different reasons. A mail client that prefetches images
+ * fires the pixel repeatedly, and counting each one would make a single ignored message
+ * look like sustained interest. And a security gateway walks every link seconds after
+ * delivery, which is not interest at all — it is the message being scanned.
+ *
+ * So machine and human are recorded in separate fields rather than the machine simply
+ * winning by arriving first. That ordering mattered: the gateway always gets there before
+ * the reader, and a single first-wins field meant the scanner's fetch permanently masked
+ * the click a person made forty minutes later. Everything that counts clicks reads the
+ * human field, and the machine field exists so the console can say how many were filtered
+ * rather than quietly dropping them.
  */
-async function record(actionId: string, type: "opened" | "clicked", url?: string): Promise<void> {
-  const field = type === "opened" ? "firstOpenedAt" : "firstClickedAt";
+async function record(
+  actionId: string,
+  type: "opened" | "clicked",
+  agent?: string | null,
+  url?: string,
+): Promise<void> {
   const now = new Date();
   try {
     const db = await getDb();
+    // Read first, because which field this belongs in depends on when the message was sent.
+    const action = await db
+      .collection(C.actions)
+      .findOne({ _id: new ObjectId(actionId) }, { projection: { sentAt: 1 } });
+    if (!action) return;
+
+    const machine = looksAutomated({ sentAt: action.sentAt as Date | undefined, at: now, userAgent: agent });
+    const field = signalField(type, machine);
+
     const result = await db.collection(C.actions).findOneAndUpdate(
       { _id: new ObjectId(actionId), [field]: { $exists: false } },
       // The destination is kept on the signal, not only the fact of a click. "Clicked" is
       // one answer; "clicked the pricing link" is the one a person acts on.
-      { $set: { [field]: now }, $push: { signals: { type, at: now, ...(url ? { url } : {}) } } as never },
+      {
+        $set: { [field]: now },
+        $push: { signals: { type, at: now, ...(url ? { url } : {}), ...(machine ? { bot: true } : {}) } } as never,
+      },
       {
         returnDocument: "after",
         projection: { orgId: 1, productId: 1, personId: 1, channel: 1, variant: 1, "content.subject": 1 },
       },
     );
     if (!result) return;
+
+    // Nothing downstream hears about a scanner. It must not move a prior, warm a lead, or
+    // put a notification in front of a person — each of those would be acting on a machine
+    // reading its own mail.
+    if (machine) return;
 
     // The shared prior moves only on a first click. A prefetching client that fires the
     // pixel ten times must not make one ignored message look like ten engaged ones — the

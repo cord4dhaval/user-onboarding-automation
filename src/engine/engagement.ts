@@ -17,6 +17,15 @@ import { COLLECTIONS as C } from "../db/collections.js";
  * not against a message — so they are counted from events and attributed to the person.
  */
 
+/**
+ * Only a message that actually went out can be responded to.
+ *
+ * A tracking link in a draft can still be reached — a preview, a test run, a link someone
+ * pasted on — and counting that as engagement credits a send that never happened. Those
+ * hits are counted separately and named, never folded into the rate.
+ */
+const DELIVERED = ["sent", "dispatched"];
+
 export interface Engagement {
   /** Messages the provider accepted. Queued and held ones are not sends. */
   sent: number;
@@ -29,6 +38,8 @@ export interface Engagement {
   unsubscribed: number;
   bounced: number;
   failed: number;
+  /** Links reached in a message that was never sent. Almost always our own testing. */
+  preSend: number;
 }
 
 const empty = (): Engagement => ({
@@ -40,6 +51,7 @@ const empty = (): Engagement => ({
   unsubscribed: 0,
   bounced: 0,
   failed: 0,
+  preSend: 0,
 });
 
 /** A rate nobody can be misled by: no denominator, no number. */
@@ -106,8 +118,38 @@ export async function campaignEngagement(
               ],
             },
           },
-          opened: { $sum: { $cond: [{ $ifNull: ["$firstOpenedAt", false] }, 1, 0] } },
-          clicked: { $sum: { $cond: [{ $ifNull: ["$firstClickedAt", false] }, 1, 0] } },
+          opened: {
+            $sum: {
+              $cond: [
+                { $and: [{ $in: ["$status", DELIVERED] }, { $ifNull: ["$firstOpenedAt", false] }] },
+                1,
+                0,
+              ],
+            },
+          },
+          clicked: {
+            $sum: {
+              $cond: [
+                { $and: [{ $in: ["$status", DELIVERED] }, { $ifNull: ["$firstClickedAt", false] }] },
+                1,
+                0,
+              ],
+            },
+          },
+          preSend: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $not: [{ $in: ["$status", DELIVERED] }] },
+                    { $ifNull: ["$firstClickedAt", false] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
     ])
@@ -121,6 +163,7 @@ export async function campaignEngagement(
       clicked: Number(row.clicked ?? 0),
     });
     of(String(row._id)).failed = Number(row.failed ?? 0);
+    of(String(row._id)).preSend = Number(row.preSend ?? 0);
   }
 
   // Replies, unsubscribes and bounces reach us against a person, never against the message
@@ -183,7 +226,7 @@ export async function peopleEngagement(
   const rows = await db
     .collection(C.actions)
     .aggregate([
-      { $match: { orgId, productId, personId: { $in: personIds } } },
+      { $match: { orgId, productId, personId: { $in: personIds }, status: { $in: DELIVERED } } },
       {
         $group: {
           _id: "$personId",
@@ -240,7 +283,9 @@ export async function peopleMatching(
   }
   const field = state === "opened" ? "firstOpenedAt" : "firstClickedAt";
   return (
-    await db.collection(C.actions).distinct("personId", { orgId, productId, [field]: { $exists: true } })
+    await db
+      .collection(C.actions)
+      .distinct("personId", { orgId, productId, status: { $in: DELIVERED }, [field]: { $exists: true } })
   ).map(String);
 }
 

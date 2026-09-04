@@ -440,9 +440,9 @@ export default async function Review({
                     <th>Campaign</th>
                     <th>Subject</th>
                     <th>Channel</th>
-                    <th>{waiting ? "Due (IST)" : "State"}</th>
-                    <th>{waiting ? "Decision" : "When (IST)"}</th>
-                    {!waiting && <th />}
+                    <th>{decidable ? "Due (IST)" : "State"}</th>
+                    <th>{decidable ? "Decision" : "When (IST)"}</th>
+                    {!decidable && <th />}
                   </tr>
                 </thead>
                 <tbody>
@@ -469,7 +469,7 @@ export default async function Review({
                         <td className="cell-wide">{content.subject ?? <span className="muted">no subject</span>}</td>
                         <td><span className="pill">{String(action.channel)}</span></td>
 
-                        {waiting ? (
+                        {decidable ? (
                           <td className="muted num" title={istLong(action.dueAt as string)}>
                             {ist(action.dueAt as string)}
                           </td>
@@ -492,7 +492,7 @@ export default async function Review({
                           </td>
                         )}
 
-                        {waiting ? (
+                        {decidable ? (
                           <td>
                             <div className="row-actions">
                               <PreviewDrawer

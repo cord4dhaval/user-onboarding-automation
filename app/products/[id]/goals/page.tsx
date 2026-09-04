@@ -407,6 +407,17 @@ function Responses({ engagement, library }: { engagement?: Engagement; library: 
           {unsubscribed} unsubscribed
         </span>
       )}
+
+      {/* Named rather than folded in. A link reached in a draft is nearly always our own
+          testing, and quietly adding it to the click count would overstate the campaign. */}
+      {engagement.preSend > 0 && (
+        <span
+          className="status muted"
+          title="A tracking link was reached in a message that was never sent — a preview or a test, not a reader."
+        >
+          +{engagement.preSend} on unsent drafts
+        </span>
+      )}
     </div>
   );
 }

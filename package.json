@@ -27,7 +27,8 @@
     "gmail:check": "tsx --env-file=.env src/scripts/gmail-check.ts",
     "verify:orchestration": "tsx --env-file=.env src/scripts/verify-orchestration.ts",
     "repair:dead": "tsx --env-file=.env src/scripts/repair-dead-actions.ts",
-    "dedupe:review": "tsx --env-file=.env src/scripts/dedupe-review-queue.ts"
+    "dedupe:review": "tsx --env-file=.env src/scripts/dedupe-review-queue.ts",
+    "backfill:notices": "tsx --env-file=.env src/scripts/backfill-engagement-notices.ts"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",

@@ -137,3 +137,56 @@ export function applyTracking(html: string, opts: TrackingOptions): { html: stri
 
   return { html: out, applied };
 }
+
+/**
+ * Whether a signal came from a machine rather than a person.
+ *
+ * Mail security gateways fetch every link in a message the moment it is delivered. On this
+ * product that produced five "clicks" in the first minute after send — six, seven, eight,
+ * nine and sixty-two seconds — and each of those five gateways went on to fetch the
+ * unsubscribe link a second later, which suppressed five live leads before a human had
+ * seen the mail. The unsubscribe side was closed with a confirm button. This is the other
+ * side: those same fetches were being counted as interest, and they were the majority of
+ * every click number in the console.
+ *
+ * Latency is the test because it is the one thing a gateway cannot fake. It fetches on
+ * delivery; a person reads their mail when they read their mail. The three genuine clicks
+ * in that same campaign landed forty minutes, six hours and twenty-one hours after the
+ * send.
+ *
+ * The window is deliberately generous in the machine's favour. A click at eighty seconds
+ * from someone who happened to be looking at their inbox is lost, and that is the cheaper
+ * mistake: one uncounted click costs a little confidence, while a campaign whose stated
+ * click rate is mostly scanners costs every decision made on top of it.
+ */
+export const MACHINE_WINDOW_MS = 90_000;
+
+/**
+ * Agents that announce themselves. Rare — most gateways send a browser string — so this
+ * only ever adds to what latency already catches, and never overrides it.
+ */
+const MACHINE_AGENT =
+  /(bot|crawler|spider|slurp|proofpoint|barracuda|mimecast|forcepoint|symantec|trendmicro|fireeye|safelinks|urldefense|googleimageproxy|yahoomailproxy|curl|wget|python-requests|okhttp|go-http-client|axios|headlesschrome|phantomjs)/i;
+
+export interface MachineCheck {
+  /** When the message was handed to the provider. Absent means it was never sent. */
+  sentAt?: Date | string | null;
+  at: Date;
+  userAgent?: string | null;
+}
+
+export function looksAutomated({ sentAt, at, userAgent }: MachineCheck): boolean {
+  if (userAgent && MACHINE_AGENT.test(userAgent)) return true;
+  if (!sentAt) return false;
+  const sent = sentAt instanceof Date ? sentAt : new Date(String(sentAt));
+  if (Number.isNaN(sent.getTime())) return false;
+  const gap = at.getTime() - sent.getTime();
+  // A negative gap is a clock disagreeing with itself, not a reader with a time machine.
+  return gap < MACHINE_WINDOW_MS;
+}
+
+/** Where a signal of each kind is recorded, once machine and human are told apart. */
+export function signalField(type: "opened" | "clicked", machine: boolean): string {
+  if (type === "opened") return machine ? "firstMachineOpenedAt" : "firstOpenedAt";
+  return machine ? "firstMachineClickedAt" : "firstClickedAt";
+}

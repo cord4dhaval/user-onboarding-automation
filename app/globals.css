@@ -480,6 +480,60 @@ button.destructive { background: var(--bad); border-color: var(--bad); color: #f
 .timeline .t-mark.signal::before { background: var(--good); }
 .timeline .t-mark.next::before { background: transparent; border: 1.5px dashed var(--accent); }
 .timeline .future strong { color: var(--ink-2); }
+/* Something they did, not something we did. Green marker, and the heading takes the
+   colour too — a lead's own action should be findable in a long timeline at a glance. */
+.timeline .t-mark.bad::before { background: var(--bad); }
+.timeline strong { display: inline-flex; align-items: center; gap: 6px; }
+.timeline strong.hit { color: var(--good); }
+.timeline strong svg { flex: none; opacity: .75; }
+.timeline strong.hit svg { opacity: 1; }
+/* The subject and its preview control share a line, so the button never pushes the
+   detail lines out of the column they belong to. */
+.timeline .t-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.timeline .t-line button { padding: 2px 8px; font-size: 12px; }
+.timeline .t-detail { font-size: 12.5px; margin-top: 3px; line-height: 1.5; }
+.timeline .t-detail .mono { word-break: break-all; }
+.timeline .responded { margin-top: 5px; }
+/* Their words, verbatim. Indented rather than boxed: it is a quotation, not a panel. */
+.timeline .t-quote {
+  margin: 6px 0 0; padding: 8px 12px; border-left: 2px solid var(--good);
+  background: var(--surface-2); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 13px; line-height: 1.6; white-space: pre-wrap; color: var(--ink-2);
+  max-width: 72ch;
+}
+
+/* ── engagement ───────────────────────────────────────────────────────────────
+   Every one of these was recorded and none of it was rendered: a campaign could
+   collect nine clicks and report the same blank row as one that collected none.
+   Clicks and replies are the only two things a lead does that cannot be faked by a
+   mail client, so they get colour; opens are always labelled as the guess they are. */
+.responded { display: flex; flex-wrap: wrap; gap: 4px; }
+.responses { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; white-space: nowrap; }
+.responses .status { gap: 5px; }
+.responses a { color: var(--ink-2); }
+.responses a.live { color: var(--good); font-weight: 600; }
+.responses a:hover { text-decoration: underline; }
+
+.signal-strip { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 16px; }
+.signal {
+  display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;
+  border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface);
+  color: var(--ink); text-decoration: none;
+}
+.signal:hover { border-color: var(--ink-3); text-decoration: none; }
+.signal.on { border-color: var(--accent); background: var(--accent-soft); }
+.signal-top { display: flex; align-items: center; gap: 6px; color: var(--ink-3); }
+.signal-top .label { margin: 0; }
+.signal-value {
+  font-family: var(--font-display), sans-serif; font-size: 26px; font-weight: 700;
+  letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.signal.live .signal-top svg, .signal.live .signal-value { color: var(--good); }
+.signal-note { font-size: 12px; color: var(--ink-3); line-height: 1.45; }
+
+/* A count of something a person did, rather than something we spent. */
+.card.stat.live .value { color: var(--good); }
+.card.stat.live { border-color: var(--good); }
 
 .fieldset {
   border: 1px solid var(--rule); border-radius: var(--r-sm);
