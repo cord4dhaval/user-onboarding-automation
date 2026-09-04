@@ -256,7 +256,7 @@ export const TOOLS: ToolDef[] = [
     async handler(_args, ctx) {
       const db = await getDb();
       const products = await db.collection(C.products).find({ orgId: ctx.orgId, status: "active" }).toArray();
-      return Promise.all(
+      const rows = await Promise.all(
         products.map(async (p) => {
           const s = { orgId: String(p.orgId), productId: String(p._id) };
           return {
@@ -268,6 +268,11 @@ export const TOOLS: ToolDef[] = [
           };
         }),
       );
+      // Wrapped, because a bare array is not a valid `structuredContent` — the protocol
+      // requires an object, and a client that validates the response rejects the call
+      // outright. This tool is available to every routine, so the failure was one a
+      // scheduled session could hit on its opening call and spend the hour recovering from.
+      return { products: rows };
     },
   },
 
