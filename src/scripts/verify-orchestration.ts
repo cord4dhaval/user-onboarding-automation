@@ -309,5 +309,40 @@ console.log(`\nverifying against "${String(product.name)}" (${productId})\n`);
   );
 }
 
+// ── 8. The greeting the template already wrote ───────────────────────────────
+{
+  const template = await resolveTemplateFor({ orgId, productId, channel: "email", touchesSpent: 1 });
+  const vars = {
+    first_name: "Kiran",
+    full_name: "Kiran Shah",
+    company: "Acme",
+    person_id: "x",
+    trial_link: "https://example.com/start",
+    opt_out_url: "https://example.com/u",
+  };
+
+  // Exactly what a live routine wrote for a real person: it opens by saying hello, because
+  // that is what writing to a named human looks like.
+  const rendered = renderTemplate(template?.blocks as Record<string, unknown>[], vars, {
+    slotText: "Hi Kiran,\n\nMost electrical contractors can tell you total hours worked in a week.",
+  });
+  const greetings = (rendered.bodyMd.match(/Hi Kiran,/g) ?? []).length;
+  check(
+    "the reader is greeted once, not twice",
+    greetings === 1,
+    `"Hi Kiran," appears ${greetings} time(s) in the rendered body`,
+  );
+
+  // And a paragraph that merely begins with a name is the writing doing its job.
+  const kept = renderTemplate(template?.blocks as Record<string, unknown>[], vars, {
+    slotText: "Kiran, the retainer you flagged last month is the one running over.",
+  });
+  check(
+    "a sentence that opens with a name is not mistaken for a salutation",
+    kept.bodyMd.includes("the retainer you flagged last month"),
+    kept.bodyMd.includes("the retainer you flagged last month") ? "kept intact" : "the opening sentence was stripped",
+  );
+}
+
 console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}\n`);
 process.exit(failures === 0 ? 0 : 1);

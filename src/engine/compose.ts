@@ -57,6 +57,24 @@ export interface Precomposed extends Partial<ComposedContent> {
   slots?: Record<string, string>;
 }
 
+/** "Hi Kiran," — a salutation line, not a sentence that happens to start with a name. */
+function looksLikeGreeting(line: string): boolean {
+  return /^\s*(hi|hey|hello|dear)\b[^.!?]{0,40}[,:—-]?\s*$/i.test(line.split("\n")[0] ?? "");
+}
+
+/**
+ * Drops a salutation the composed copy opens with, where the template supplies its own.
+ *
+ * Only the first line, and only when it is unmistakably a greeting: a paragraph that merely
+ * begins with the reader's name is the writing doing its job and must survive.
+ */
+function withoutGreeting(body: string): string {
+  const lines = body.split("\n");
+  const first = lines[0] ?? "";
+  if (!looksLikeGreeting(first) && !/^\s*[A-Z][a-z]+,\s*$/.test(first)) return body;
+  return lines.slice(1).join("\n").replace(/^\s+/, "");
+}
+
 /**
  * Removes a name from the subject when there was no name.
  *
@@ -120,6 +138,8 @@ export function resolveBlocks(
   // An unnamed slot takes the composed body wholesale, and only the first one does —
   // repeating it in a second slot would print the same paragraph twice.
   let bodyUsed = false;
+  /** Whether the template has already greeted the reader by the time a slot is filled. */
+  let greeted = false;
 
   for (const block of blocks) {
     const type = String(block.type);
@@ -138,7 +158,10 @@ export function resolveBlocks(
 
     if (type === "text") {
       const filled = text(block.fixed);
-      if (filled) out.push({ kind: "text", text: filled });
+      if (filled) {
+        if (looksLikeGreeting(filled)) greeted = true;
+        out.push({ kind: "text", text: filled });
+      }
       continue;
     }
 
@@ -155,7 +178,11 @@ export function resolveBlocks(
           precomposed?.slotText ??
           (precomposed?.bodyMd && !precomposed.fromBlocks ? precomposed.bodyMd : undefined);
         if (composed) {
-          filled = composed;
+          // The template already said hello. A session writing for one person naturally
+          // opens with a greeting too, and the two together produce "Hi Kiran," twice in a
+          // row at the top of a real email — which no amount of prompting reliably
+          // prevents, because writing to a named human is exactly what the copy is for.
+          filled = greeted ? withoutGreeting(composed) : composed;
           bodyUsed = true;
         }
       }
