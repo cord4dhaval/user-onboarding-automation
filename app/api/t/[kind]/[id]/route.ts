@@ -104,7 +104,11 @@ async function record(
     // Nothing downstream hears about a scanner. It must not move a prior, warm a lead, or
     // put a notification in front of a person — each of those would be acting on a machine
     // reading its own mail.
-    if (machine) return;
+    //
+    // A message that was never sent is treated the same way. Its links can still be reached
+    // — from a preview, or a test — and that is worth recording as the oddity it is, but
+    // nobody clicked anything we sent them, so it must not warm a lead or claim one did.
+    if (machine || !action.sentAt) return;
 
     // The shared prior moves only on a first click. A prefetching client that fires the
     // pixel ten times must not make one ignored message look like ten engaged ones — the

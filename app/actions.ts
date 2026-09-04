@@ -1212,11 +1212,14 @@ export async function decide(formData: FormData) {
   const productId = String(formData.get("productId"));
   const ids = formData.getAll("ids").map((v) => new ObjectId(String(v)));
   const approve = String(formData.get("decision")) === "approve";
+  // Where to send the reader back to, so a decision made on the scheduled list does not
+  // silently return them to the gate.
+  const back = String(formData.get("back") ?? "");
   // The reviewer is looking at the designed mail; sending it as plain text is their call
   // to make here, on the message in front of them, not a template-wide setting.
   const asText = String(formData.get("format") ?? "html") === "text";
 
-  await db.collection(C.actions).updateMany(
+  const result = await db.collection(C.actions).updateMany(
     {
       _id: { $in: ids },
       orgId,
@@ -1241,6 +1244,13 @@ export async function decide(formData: FormData) {
   );
 
   revalidatePath(`/products/${productId}/review`, "layout");
+
+  // Says what happened. A bulk decision that changes the page underneath you and reports
+  // nothing leaves you counting rows to work out whether it worked — and when this action
+  // silently matched none of them, that was the only way to find out at all.
+  const params = new URLSearchParams(back);
+  params.set(approve ? "approved" : "rejected", String(result.modifiedCount));
+  redirect(`/products/${productId}/review?${params.toString()}`);
 }
 
 /**
@@ -1262,7 +1272,7 @@ export async function returnToReview(formData: FormData) {
   const ids = formData.getAll("ids").map((v) => new ObjectId(String(v)));
   if (ids.length === 0) return;
 
-  await db.collection(C.actions).updateMany(
+  const result = await db.collection(C.actions).updateMany(
     {
       _id: { $in: ids },
       orgId,

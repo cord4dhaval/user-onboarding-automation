@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
+import { replyReach } from "@/engine/reach.js";
 import { refreshDashboard } from "../../actions";
 import { getProduct, requireSession, scope } from "../../tenant";
 import ClaudeBadge from "../../ui/claude-badge";
@@ -109,10 +110,13 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
     db.collection(C.templates).countDocuments(s),
   ]);
 
-  const replyEvents = await db
-    .collection(C.events)
-    .find({ ...s, type: "reply_received" }, { projection: { personId: 1, ts: 1 } })
-    .toArray();
+  const [replyEvents, reach] = await Promise.all([
+    db
+      .collection(C.events)
+      .find({ ...s, type: "reply_received" }, { projection: { personId: 1, ts: 1 } })
+      .toArray(),
+    replyReach(orgId, id),
+  ]);
 
   const byStatus = (status: string) => actions.filter((a) => String(a.status) === status);
   const held = byStatus("awaiting_approval");
@@ -137,7 +141,11 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
   //
   // Opens are deliberately not a step: a mail client that prefetches images would inflate
   // this into the widest bar on the chart while nobody had read a thing.
-  const clickedActions = actions.filter((a) => a.firstClickedAt);
+  // Sends only. A link reached in a draft that never went out is an oddity worth recording
+  // on the campaign, not a person who responded to us.
+  const clickedActions = actions.filter(
+    (a) => a.firstClickedAt && ["sent", "dispatched"].includes(String(a.status)),
+  );
   const responded = new Set([
     ...clickedActions.map((a) => String(a.personId)),
     ...replyEvents.map((e) => String(e.personId)),
@@ -229,6 +237,18 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
       why: "One of our own rules held these back — an unsubscribe honoured, a cap reached, a duplicate caught. The reason is on each row.",
     });
   }
+  // The loudest thing on this page should be the thing that makes every other number on it
+  // incomplete. A hundred and fifty sends with nothing reading the answers is that thing.
+  if (!reach.replies && sent.length > 0) {
+    alerts.push({
+      text: `${sent.length} messages sent, and nothing is reading the replies`,
+      href: `${base}/channels`,
+      action: "Connect",
+      tone: "bad",
+      why: `${reach.why}. Every reply this product has ever received is sitting in a mailbox it cannot open, so "0 replied" everywhere else on this page means "not measured", not "nobody answered".`,
+    });
+  }
+
   const unverifiable = goals.filter(
     (g) => g.enabled !== false && ((g.checks ?? []) as unknown[]).length === 0,
   ).length;
@@ -335,7 +355,11 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
         <Tile
           icon={<MousePointerClick size={14} />}
           label="Responded"
-          explain="People who clicked a link or wrote back. Opens are excluded — mail clients fire those without a human looking."
+          explain={
+            reach.replies
+              ? "People who clicked a link or wrote back. Opens are excluded — mail clients fire those without a human looking, and gateway fetches in the first ninety seconds are filtered out."
+              : `Clicks only: replies are not being read (${reach.why}), so anyone who answered in words is not in this number. Gateway fetches in the first ninety seconds are filtered out.`
+          }
           value={responded}
           spark={series.responded}
           {...delta(responseDates)}
@@ -376,7 +400,11 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
               { label: "In the library", value: people.length },
               { label: "In a campaign", value: inCampaign },
               { label: "Contacted", value: contacted, hint: "at least one message" },
-              { label: "Responded", value: responded, hint: "clicked or replied" },
+              {
+                label: "Responded",
+                value: responded,
+                hint: reach.replies ? "clicked or replied" : "clicked — replies unread",
+              },
               { label: "Succeeded", value: won, hint: "verified" },
             ]}
           />

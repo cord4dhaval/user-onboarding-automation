@@ -57,13 +57,31 @@ export function tierFor(person: Document, goalInstance: Document): Tier {
   return 2;
 }
 
-/** The step a plan is up to: the lowest-numbered one nothing has been written for yet. */
-function nextStep(plan: Document | null, written: Set<number>): Document | null {
+/**
+ * The step a plan is up to: the lowest-numbered one nothing has been written for yet.
+ *
+ * With one exception, at the very start of a sequence. The engine queues a first touch the
+ * moment a lead lands — it does not wait for a plan, because speed to lead is worth more
+ * than the personalisation a session would add — and a plan written afterwards almost
+ * always opens with a welcome of its own. Both are correct in isolation and together they
+ * put the identical "your workspace is ready" in front of the same person twice.
+ *
+ * So while nothing from the plan has been written yet, a leading step whose angle has
+ * already been delivered is treated as spent and skipped. Only the leading steps, and only
+ * before the plan has done anything: past that point a repeated angle can be deliberate —
+ * an angle somebody clicked is not spent, it reached them and the ask was wrong — and that
+ * is a judgement for the routine that rewrote their plan, not for this loop.
+ */
+export function nextStep(plan: Document | null, written: Set<number>, delivered: Set<string> = new Set()): Document | null {
   const steps = ((plan?.steps ?? []) as Document[]).slice().sort((a, b) => Number(a.id ?? 0) - Number(b.id ?? 0));
+  const planStarted = steps.some((step) => written.has(Number(step.id ?? step.step_id ?? 0)));
+
   for (const step of steps) {
     const id = Number(step.id ?? step.step_id ?? 0);
     if (!Number.isFinite(id) || id === 0) continue;
-    if (!written.has(id)) return { ...step, id };
+    if (written.has(id)) continue;
+    if (!planStarted && delivered.has(String(step.angle ?? "").toLowerCase())) continue;
+    return { ...step, id };
   }
   return null;
 }
@@ -133,7 +151,7 @@ export async function advance(
       .collection(C.actions)
       .find(
         { ...s, goalInstanceId: { $in: instanceIds } },
-        { projection: { goalInstanceId: 1, planStepId: 1, status: 1 } },
+        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1 } },
       )
       .toArray(),
   ]);
@@ -144,6 +162,8 @@ export async function advance(
 
   const pendingBy = new Map<string, number>();
   const writtenBy = new Map<string, Set<number>>();
+  /** Angles this person has already been given, whatever produced them. */
+  const deliveredBy = new Map<string, Set<string>>();
   for (const action of actionRows) {
     const key = String(action.goalInstanceId);
     if (["queued", "awaiting_approval", "sending"].includes(String(action.status))) {
@@ -154,6 +174,12 @@ export async function advance(
       const set = writtenBy.get(key) ?? new Set<number>();
       set.add(step);
       writtenBy.set(key, set);
+    }
+    // A message that was skipped or failed never reached anyone, so its angle is not spent.
+    if (["queued", "awaiting_approval", "sending", "sent", "dispatched"].includes(String(action.status))) {
+      const angles = deliveredBy.get(key) ?? new Set<string>();
+      angles.add(String(action.angle ?? "").toLowerCase());
+      deliveredBy.set(key, angles);
     }
   }
 
@@ -208,7 +234,11 @@ export async function advance(
       continue;
     }
 
-    const step = nextStep(planById.get(String(instance.currentPlanId)) ?? null, writtenBy.get(goalInstanceId) ?? new Set());
+    const step = nextStep(
+      planById.get(String(instance.currentPlanId)) ?? null,
+      writtenBy.get(goalInstanceId) ?? new Set(),
+      deliveredBy.get(goalInstanceId) ?? new Set(),
+    );
     if (!step) {
       summary.skipped.push({ goalInstanceId, reason: "plan exhausted" });
       continue;

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { markScannerPass } from "@/engine/engagement.js";
 import { unsubscribePerson } from "@/engine/unsubscribe.js";
 import { verify } from "@/engine/tracking.js";
 
@@ -33,6 +34,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!verify("u", id, "", signature)) {
     return page("This link is not valid.", "Ask whoever mailed you to remove you by hand.");
   }
+
+  // A gateway that fetches this link has just identified itself, and it fetched the call to
+  // action seconds earlier in the same pass. That click is retracted here rather than left
+  // standing as interest — this route is the only place with proof of what it was.
+  await markScannerPass(id, new Date());
 
   // A query-only action resolves against this URL, so the signature rides along without
   // the page having to know its own path.

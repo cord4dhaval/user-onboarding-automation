@@ -1,9 +1,10 @@
-import { CircleCheck, Mail, MousePointerClick, MessageSquare, Pause, Play, Send, Target } from "lucide-react";
+import { Bot, CircleCheck, Mail, MousePointerClick, MessageSquare, Pause, Play, Send, Target } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
 import { audienceCount } from "@/engine/library.js";
 import { campaignEngagement, rate, type Engagement } from "@/engine/engagement.js";
+import { replyReach, type Reach } from "@/engine/reach.js";
 import { createGoal, deleteGoal, toggleGoal, updateGoal } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
@@ -43,6 +44,8 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
   // One read for the page: a per-row lookup here is one round trip per campaign to render
   // a column that is four numbers wide.
   const responses = await campaignEngagement(orgId, id);
+  // Whether a zero in the replied column is a measurement or a missing mailbox.
+  const reach = await replyReach(orgId, id);
 
   const audienceDocs = await db.collection(C.audiences).find(s).sort({ createdAt: -1 }).toArray();
   const audiences = await Promise.all(
@@ -289,6 +292,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                     <td>
                       <Responses
                         engagement={responses.get(String(goal.key))}
+                        reach={reach}
                         library={`${base}/library?campaign=${encodeURIComponent(String(goal.key))}`}
                       />
                     </td>
@@ -365,12 +369,20 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
  * reported one, so a campaign sent before tracking existed reads as unknown rather than
  * as a failure.
  */
-function Responses({ engagement, library }: { engagement?: Engagement; library: string }) {
+function Responses({
+  engagement,
+  reach,
+  library,
+}: {
+  engagement?: Engagement;
+  reach: Reach;
+  library: string;
+}) {
   if (!engagement || engagement.sent === 0) {
     return <span className="muted">nothing sent yet</span>;
   }
 
-  const { sent, trackable, opened, clicked, replied, unsubscribed } = engagement;
+  const { sent, trackable, openTrackable, opened, clicked, machineClicked, replied, unsubscribed } = engagement;
   return (
     <div className="responses">
       <span className="status" title="Messages the provider accepted.">
@@ -386,21 +398,39 @@ function Responses({ engagement, library }: { engagement?: Engagement; library: 
         {trackable > 0 && <span className="muted"> · {rate(clicked, trackable)}</span>}
       </a>
 
-      <a
-        className={`status ${replied > 0 ? "live" : "muted"}`}
-        href={`${library}&engagement=replied`}
-        title="People in this campaign who wrote back."
-      >
-        <MessageSquare size={13} /> {replied} replied
-      </a>
+      {/* Two zeros that mean opposite things. A campaign nobody answered is a campaign to
+          rewrite; a campaign whose replies nothing reads is a mailbox to connect, and
+          printing both as "0 replied" hid the second one behind the first. */}
+      {reach.replies ? (
+        <a
+          className={`status ${replied > 0 ? "live" : "muted"}`}
+          href={`${library}&engagement=replied`}
+          title="People in this campaign who wrote back."
+        >
+          <MessageSquare size={13} /> {replied} replied
+        </a>
+      ) : (
+        <span className="status unmeasured" title={`Replies are not being read — ${reach.why}.`}>
+          <MessageSquare size={13} /> replies not read
+        </span>
+      )}
 
-      <a
-        className="status muted"
-        href={`${library}&engagement=opened`}
-        title="Opens are unreliable: some mail clients load images without a human looking."
-      >
-        <Mail size={13} /> {opened} opened
-      </a>
+      {openTrackable > 0 ? (
+        <a
+          className="status muted"
+          href={`${library}&engagement=opened`}
+          title="Opens are unreliable: some mail clients load images without a human looking."
+        >
+          <Mail size={13} /> {opened} opened
+        </a>
+      ) : (
+        <span
+          className="status unmeasured"
+          title="No pixel was sent. A pixel needs opt-in consent, and these leads arrived under legitimate interest — so opens were never measured, rather than measured at zero."
+        >
+          <Mail size={13} /> opens not tracked
+        </span>
+      )}
 
       {unsubscribed > 0 && (
         <span className="status muted" title="They asked never to be contacted again.">
@@ -416,6 +446,18 @@ function Responses({ engagement, library }: { engagement?: Engagement; library: 
           title="A tracking link was reached in a message that was never sent — a preview or a test, not a reader."
         >
           +{engagement.preSend} on unsent drafts
+        </span>
+      )}
+
+      {/* The number that was quietly inflating this column. Shown rather than dropped,
+          because a campaign whose links are mostly walked by scanners is worth knowing
+          about — it is a deliverability fact, just not an interest one. */}
+      {machineClicked > 0 && (
+        <span
+          className="status muted"
+          title="Fetched by a mail security gateway within ninety seconds of the send, before any person could have read it. Not counted as interest."
+        >
+          <Bot size={13} /> {machineClicked} filtered as scanner
         </span>
       )}
     </div>

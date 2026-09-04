@@ -2,6 +2,7 @@ import type { Document } from "mongodb";
 import type { ReactNode } from "react";
 import {
   Ban,
+  Bot,
   CircleCheck,
   CircleSlash,
   Mail,
@@ -149,6 +150,25 @@ export default async function PersonPage({
   }
 
   for (const signal of signals) {
+    // A gateway walking the links is worth showing and must never look like a reader. It
+    // explains a message that appears to have been engaged with within seconds of sending,
+    // and it is the reason the counts above are lower than the raw record.
+    if (signal.bot) {
+      past.push({
+        at: signal.at,
+        node: (
+          <>
+            <strong className="muted"><Bot size={13} /> Scanned by a mail gateway</strong>
+            <div className="muted t-detail">
+              {signal.type === "clicked" ? "Fetched the link" : "Loaded the image"} seconds after the send, before
+              anyone could have read it. Not counted as interest.
+            </div>
+          </>
+        ),
+      });
+      continue;
+    }
+
     past.push({
       at: signal.at,
       mark: "signal",
@@ -250,8 +270,9 @@ export default async function PersonPage({
 
   past.sort((a, b) => a.at.getTime() - b.at.getTime());
 
-  const opened = signals.filter((s) => s.type === "opened").length;
-  const clicked = signals.filter((s) => s.type === "clicked").length;
+  const opened = signals.filter((s) => s.type === "opened" && !s.bot).length;
+  const clicked = signals.filter((s) => s.type === "clicked" && !s.bot).length;
+  const scanned = signals.filter((s) => s.bot).length;
 
   return (
     <>
@@ -307,6 +328,12 @@ export default async function PersonPage({
           <div className="label">Opened</div>
           <div className="value">{opened}</div>
         </div>
+        {scanned > 0 && (
+          <div className="card stat" title="Fetches by a mail security gateway in the seconds after a send. Excluded from every count above.">
+            <div className="label">Scanner</div>
+            <div className="value muted">{scanned}</div>
+          </div>
+        )}
         <div className="card stat"><div className="label">Invested</div><div className="value">${Number(inv.usd ?? 0).toFixed(2)}</div></div>
         <div className="card stat"><div className="label">Campaigns</div><div className="value">{campaigns.length}</div></div>
       </div>
@@ -521,12 +548,15 @@ function Result({ action }: { action: Document }) {
   const clicked = action.firstClickedAt;
 
   if (!opened && !clicked) {
+    const scanned = action.firstMachineClickedAt ?? action.firstMachineOpenedAt;
     return (
       <div className="t-detail">
         <span className="muted">
-          {tracking.clicks || tracking.opens
-            ? "No response to this one."
-            : "Not tracked — this send could not have reported anything."}
+          {scanned
+            ? `No response from them. A mail gateway walked the links ${ist(scanned)}.`
+            : tracking.clicks || tracking.opens
+              ? "No response to this one."
+              : "Not tracked — this send could not have reported anything."}
         </span>
       </div>
     );

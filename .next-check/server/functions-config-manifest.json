@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/cron/tick": {
+      "maxDuration": 60
+    },
+    "/api/mcp": {
+      "maxDuration": 60
+    }
+  }
+}

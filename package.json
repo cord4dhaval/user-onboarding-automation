@@ -28,7 +28,9 @@
     "verify:orchestration": "tsx --env-file=.env src/scripts/verify-orchestration.ts",
     "repair:dead": "tsx --env-file=.env src/scripts/repair-dead-actions.ts",
     "dedupe:review": "tsx --env-file=.env src/scripts/dedupe-review-queue.ts",
-    "backfill:notices": "tsx --env-file=.env src/scripts/backfill-engagement-notices.ts"
+    "backfill:notices": "tsx --env-file=.env src/scripts/backfill-engagement-notices.ts",
+    "reclassify:signals": "tsx --env-file=.env src/scripts/reclassify-signals.ts",
+    "build:check": "NEXT_DIST_DIR=.next-check next build"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",

@@ -1,6 +1,7 @@
-import { Filter, Layers, MessageSquare, MousePointerClick, Mail, Search, Users } from "lucide-react";
+import { Bot, Filter, Layers, MessageSquare, MousePointerClick, Mail, Search, Users } from "lucide-react";
 import { audienceCount, queryLibrary, type DeliveryState } from "@/engine/library.js";
 import { peopleEngagement, peopleMatching, type EngagementState } from "@/engine/engagement.js";
+import { replyReach } from "@/engine/reach.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { deleteAudience, importPeople, saveAudience } from "../../../actions";
@@ -110,34 +111,52 @@ export default async function Audience({
 
   // The headline the page was missing. These are people, not messages: someone who clicked
   // three links is one interested human, and three would read as three leads.
-  const [clickedIds, repliedIds, openedIds] = await Promise.all([
+  const [clickedIds, repliedIds, openedIds, reach, pixelled, scanned] = await Promise.all([
     peopleMatching(orgId, id, "clicked"),
     peopleMatching(orgId, id, "replied"),
     peopleMatching(orgId, id, "opened"),
+    replyReach(orgId, id),
+    // Whether a pixel ever went out. Without one, "0 opened" is not a measurement.
+    db.collection(C.actions).countDocuments({ ...s, status: "sent", "tracking.opens": true }),
+    db.collection(C.actions).countDocuments({ ...s, firstMachineClickedAt: { $exists: true } }),
   ]);
   const engaged = await peopleEngagement(orgId, id, rows.map((r) => String(r._id)));
 
+  // Each tile states what it knows, or says plainly that it cannot know. A tile reading
+  // zero when nothing was ever measured is the single most misleading thing this page
+  // could show — it invites a rewrite of copy that was never the problem.
   const signals = [
     {
       key: "clicked" as const,
       icon: <MousePointerClick size={14} />,
       label: "clicked a link",
-      value: clickedIds.length,
-      note: "The strongest signal that arrives without words.",
+      value: String(clickedIds.length),
+      measured: true,
+      note:
+        scanned > 0
+          ? `The strongest signal that arrives without words. ${scanned} scanner fetch${scanned === 1 ? "" : "es"} excluded.`
+          : "The strongest signal that arrives without words.",
     },
     {
       key: "replied" as const,
       icon: <MessageSquare size={14} />,
       label: "replied",
-      value: repliedIds.length,
-      note: "Someone typed at us. Nothing outranks it.",
+      value: reach.replies ? String(repliedIds.length) : "—",
+      measured: reach.replies,
+      note: reach.replies
+        ? "Someone typed at us. Nothing outranks it."
+        : `Not being read: ${reach.why}. Connect a mailbox on Channels.`,
     },
     {
       key: "opened" as const,
       icon: <Mail size={14} />,
       label: "opened",
-      value: openedIds.length,
-      note: "Counted, not trusted — some clients load images on their own.",
+      value: pixelled > 0 ? String(openedIds.length) : "—",
+      measured: pixelled > 0,
+      note:
+        pixelled > 0
+          ? "Counted, not trusted — some clients load images on their own."
+          : "Never measured. A pixel needs opt-in consent; these leads arrived under legitimate interest.",
     },
   ];
 
@@ -178,17 +197,27 @@ export default async function Audience({
           {/* One row that answers "did any of this land?" without reading a table. Each
               tile is a link, because a number nobody can drill into is a poster. */}
           <div className="signal-strip">
-            {signals.map((sig) => (
-              <a
-                key={sig.key}
-                className={`signal ${engagementKey === sig.key ? "on" : ""} ${sig.value > 0 ? "live" : ""}`}
-                href={`${base}?engagement=${sig.key}${campaign ? `&campaign=${campaign}` : ""}`}
-              >
-                <span className="signal-top">{sig.icon}<span className="label">{sig.label}</span></span>
-                <span className="signal-value">{sig.value}</span>
-                <span className="signal-note">{sig.note}</span>
-              </a>
-            ))}
+            {signals.map((sig) => {
+              const body = (
+                <>
+                  <span className="signal-top">{sig.icon}<span className="label">{sig.label}</span></span>
+                  <span className="signal-value">{sig.value}</span>
+                  <span className="signal-note">{sig.note}</span>
+                </>
+              );
+              // Nothing to filter by when nothing was measured, so it is not a link.
+              return sig.measured ? (
+                <a
+                  key={sig.key}
+                  className={`signal ${engagementKey === sig.key ? "on" : ""} ${Number(sig.value) > 0 ? "live" : ""}`}
+                  href={`${base}?engagement=${sig.key}${campaign ? `&campaign=${campaign}` : ""}`}
+                >
+                  {body}
+                </a>
+              ) : (
+                <div key={sig.key} className="signal unmeasured">{body}</div>
+              );
+            })}
           </div>
 
           <form method="get" className="row" style={{ marginBottom: 18 }}>

@@ -1,6 +1,7 @@
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { signalField } from "./tracking.js";
 
 /**
  * What people did back.
@@ -29,10 +30,18 @@ const DELIVERED = ["sent", "dispatched"];
 export interface Engagement {
   /** Messages the provider accepted. Queued and held ones are not sends. */
   sent: number;
-  /** Sends carrying a tracking pixel or wrapped links — the only honest denominator. */
+  /** Sends whose links were wrapped — the only honest denominator for a click rate. */
   trackable: number;
+  /**
+   * Sends that carried a pixel. Usually zero: a pixel needs opt-in consent, and most leads
+   * arrive under legitimate interest. Zero here means opens were never measured, which is
+   * a different sentence from nobody having opened, and the console must not merge them.
+   */
+  openTrackable: number;
   opened: number;
   clicked: number;
+  /** Clicks that were a security gateway scanning the mail. Reported, never counted in. */
+  machineClicked: number;
   /** People who wrote back, not messages: one reply answers a thread, not a send. */
   replied: number;
   unsubscribed: number;
@@ -45,8 +54,10 @@ export interface Engagement {
 const empty = (): Engagement => ({
   sent: 0,
   trackable: 0,
+  openTrackable: 0,
   opened: 0,
   clicked: 0,
+  machineClicked: 0,
   replied: 0,
   unsubscribed: 0,
   bounced: 0,
@@ -102,17 +113,43 @@ export async function campaignEngagement(
       {
         $group: {
           _id: "$goalKey",
-          sent: { $sum: { $cond: [{ $in: ["$status", ["sent", "dispatched"]] }, 1, 0] } },
+          sent: { $sum: { $cond: [{ $in: ["$status", DELIVERED] }, 1, 0] } },
           failed: { $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] } },
           trackable: {
             $sum: {
               $cond: [
                 {
                   $and: [
-                    { $in: ["$status", ["sent", "dispatched"]] },
+                    { $in: ["$status", DELIVERED] },
                     { $ne: [{ $ifNull: ["$tracking.clicks", false] }, false] },
                   ],
                 },
+                1,
+                0,
+              ],
+            },
+          },
+          // Zero here is the difference between "nobody opened" and "we never asked". A
+          // pixel needs opt-in consent, so on most products this stays at nought and the
+          // open column has to say so rather than printing a measurement it never made.
+          openTrackable: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $in: ["$status", DELIVERED] },
+                    { $ne: [{ $ifNull: ["$tracking.opens", false] }, false] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          machineClicked: {
+            $sum: {
+              $cond: [
+                { $and: [{ $in: ["$status", DELIVERED] }, { $ifNull: ["$firstMachineClickedAt", false] }] },
                 1,
                 0,
               ],
@@ -159,8 +196,10 @@ export async function campaignEngagement(
     Object.assign(of(String(row._id)), {
       sent: Number(row.sent ?? 0),
       trackable: Number(row.trackable ?? 0),
+      openTrackable: Number(row.openTrackable ?? 0),
       opened: Number(row.opened ?? 0),
       clicked: Number(row.clicked ?? 0),
+      machineClicked: Number(row.machineClicked ?? 0),
     });
     of(String(row._id)).failed = Number(row.failed ?? 0);
     of(String(row._id)).preSend = Number(row.preSend ?? 0);
@@ -301,6 +340,8 @@ export interface Signal {
   at: Date;
   /** Where a click went. Only recorded from the point the link carried it. */
   url?: string;
+  /** A security gateway scanning the message, not a person reading it. */
+  bot?: boolean;
   actionId: string;
   subject?: string;
 }
@@ -309,17 +350,25 @@ export function signalsOf(actions: Document[]): Signal[] {
   const out: Signal[] = [];
   for (const action of actions) {
     const subject = (action.content as { subject?: string } | undefined)?.subject;
-    const recorded = (action.signals ?? []) as Array<{ type?: string; at?: unknown; url?: unknown }>;
+    const recorded = (action.signals ?? []) as Array<{
+      type?: string;
+      at?: unknown;
+      url?: unknown;
+      bot?: unknown;
+    }>;
     const seen = new Set<string>();
 
     for (const signal of recorded) {
       if (signal.type !== "opened" && signal.type !== "clicked") continue;
       if (!signal.at) continue;
-      seen.add(signal.type);
+      // Only a human signal satisfies the fallback below: a message whose sole record is a
+      // scanner fetch must still fall through to its own first-touch stamp if it has one.
+      if (!signal.bot) seen.add(signal.type);
       out.push({
         type: signal.type,
         at: new Date(String(signal.at)),
         url: signal.url ? String(signal.url) : undefined,
+        bot: Boolean(signal.bot),
         actionId: String(action._id),
         subject,
       });
@@ -340,3 +389,92 @@ export function signalsOf(actions: Document[]): Signal[] {
 
 /** Guards a person id that came in from a URL before it reaches a query. */
 export const isId = (value: string): boolean => ObjectId.isValid(value);
+
+/**
+ * Moves a signal already recorded as a person's into the machine column.
+ *
+ * Used by the backfill for signals collected before machines were told apart, and by the
+ * unsubscribe page when a scanner reveals itself by walking that link too. The shared
+ * counter is wound back with it: a prior that learned "this hour gets clicks" from a
+ * gateway would go on recommending that hour to every product on the platform.
+ */
+export async function demoteToMachine(
+  actionId: string | ObjectId,
+  type: "opened" | "clicked",
+): Promise<boolean> {
+  const db = await getDb();
+  const _id = typeof actionId === "string" ? new ObjectId(actionId) : actionId;
+  const human = signalField(type, false);
+  const machine = signalField(type, true);
+
+  const action = await db.collection(C.actions).findOne({ _id }, { projection: { [human]: 1, signals: 1, channel: 1, variant: 1 } });
+  const at = action?.[human] as Date | undefined;
+  if (!at) return false;
+
+  const signals = ((action?.signals ?? []) as Array<Record<string, unknown>>).map((signal) =>
+    signal.type === type && !signal.bot && sameInstant(signal.at, at) ? { ...signal, bot: true } : signal,
+  );
+
+  await db.collection(C.actions).updateOne(
+    { _id },
+    {
+      // The machine field is only filled if it is empty: an action that already has a
+      // scanner signal of this kind keeps the earlier one, which is the one that dates the
+      // scan.
+      $set: { signals, ...(action?.[machine] ? {} : { [machine]: at }) },
+      $unset: { [human]: "" },
+    },
+  );
+
+  if (type === "clicked") {
+    const variant = (action?.variant ?? {}) as { stepIndex?: number; hourLocal?: number };
+    if (typeof variant.stepIndex === "number" && typeof variant.hourLocal === "number") {
+      await db
+        .collection(C.outcomePriors)
+        .updateOne(
+          { channel: String(action?.channel), stepIndex: variant.stepIndex, hourLocal: variant.hourLocal },
+          { $inc: { clicked: -1 } },
+        );
+    }
+  }
+  return true;
+}
+
+/**
+ * Two stamps for the same moment.
+ *
+ * Via `String()` this silently lost milliseconds — a Date stringifies to second precision —
+ * so a signal never matched the timestamp taken from the very same field, and the first
+ * run of the reclassifier moved seven signals without flagging one of them.
+ */
+const sameInstant = (a: unknown, b: Date): boolean => {
+  if (a instanceof Date) return a.getTime() === b.getTime();
+  const left = a ? new Date(String(a)).getTime() : NaN;
+  return left === b.getTime();
+};
+
+/**
+ * A scanner has just walked the unsubscribe link. Anything it "clicked" moments earlier was
+ * the same pass over the same message.
+ *
+ * Ten seconds, because the window has to be short enough that a person who read the mail,
+ * followed the call to action and then decided to leave is never caught by it — they would
+ * have to load a page and come back inside it. The gateways this was written for did both
+ * within two seconds.
+ */
+export async function markScannerPass(personId: string, at: Date, withinMs = 10_000): Promise<number> {
+  if (!ObjectId.isValid(personId)) return 0;
+  const db = await getDb();
+  const since = new Date(at.getTime() - withinMs);
+  let moved = 0;
+
+  for (const type of ["clicked", "opened"] as const) {
+    const field = signalField(type, false);
+    const actions = await db
+      .collection(C.actions)
+      .find({ personId, [field]: { $gte: since, $lte: at } }, { projection: { _id: 1 } })
+      .toArray();
+    for (const action of actions) if (await demoteToMachine(action._id, type)) moved++;
+  }
+  return moved;
+}

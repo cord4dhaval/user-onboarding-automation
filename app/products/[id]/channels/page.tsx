@@ -36,6 +36,18 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
   const bindingFor = (connectionId: string) =>
     bindings.find((b) => String(b.connectionId) === connectionId);
 
+  // Connections whose server actually hands out mailbox tokens, which is what decides
+  // whether replies get read — not the capability flag stamped on the channel at creation.
+  const reads = new Set(
+    connections
+      .filter((c) =>
+        ((bindingFor(String(c._id))?.discoveredTools ?? []) as McpTool[]).some(
+          (t) => String(t.name) === "get_email_tokens",
+        ),
+      )
+      .map((c) => String(c._id)),
+  );
+
   // Every connection with its full tool list. Nothing is filtered or ranked — guessing
   // which tool sends was worse than asking, because "mail" appears inside "email" and the
   // readers outranked the sender.
@@ -192,7 +204,14 @@ export default async function Channels({ params }: { params: Promise<{ id: strin
                       )}
                     </td>
                     <td className="muted" style={{ fontSize: 12.5 }}>
-                      {caps.trackingOpens ? "opens" : "no opens"} · {caps.inboundReplies ? "replies" : "no replies"}
+                      {/* What the channel reports, as against what it was recorded as
+                          reporting. `inboundReplies` is set when the channel is created and
+                          never revisited, and it said "no replies" on a connection whose
+                          server does offer the mailbox tool and whose replies have been
+                          read every ten minutes since. The discovered tool list is the
+                          fact; the stored flag was a guess made once. */}
+                      {caps.trackingOpens ? "opens" : "no opens"} ·{" "}
+                      {reads.has(String(c.connectionId)) ? "replies" : "no replies"}
                       {caps.asyncDelivery ? <div>queued, reconciled</div> : null}
                     </td>
                     <td>

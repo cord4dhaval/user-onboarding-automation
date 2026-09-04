@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { replyReach } from "./reach.js";
 
 /**
  * Severity is about what a person should do, not how the system feels.
@@ -129,6 +130,54 @@ export async function refreshDerived(orgId: string, productId: string): Promise<
     });
   }
 
+  // Not the same notice as the one above, and deliberately louder. "52 messages waiting"
+  // is a chore; "3 of them are for people who clicked this week" is a decision with a
+  // deadline, and the first was burying the second inside its own count.
+  const warm = (
+    await db
+      .collection(C.people)
+      .find({ ...scope, "temp.band": "hot" }, { projection: { _id: 1 } })
+      .toArray()
+  ).map((p) => String(p._id));
+
+  if (warm.length > 0) {
+    // Undecided, whichever side of the gate it is on. Every message to a recent responder
+    // on this product was sitting under Scheduled dated days out, so counting only what had
+    // reached the gate would have reported none of them.
+    const pending = await db
+      .collection(C.actions)
+      .find(
+        {
+          ...scope,
+          status: { $in: ["awaiting_approval", "queued"] },
+          reviewedAt: { $exists: false },
+          personId: { $in: warm },
+        },
+        { projection: { dueAt: 1, status: 1 } },
+      )
+      .sort({ dueAt: 1 })
+      .toArray();
+
+    if (pending.length > 0) {
+      const atGate = pending.filter((a) => a.status === "awaiting_approval").length;
+      const soonest = pending[0]?.dueAt ? new Date(String(pending[0].dueAt)) : undefined;
+      const waitDays = soonest ? Math.round((soonest.getTime() - Date.now()) / 86_400_000) : 0;
+      await notify({
+        ...scope,
+        severity: "action",
+        dedupeKey: "review:hot",
+        title: `${pending.length} message${pending.length === 1 ? "" : "s"} to people who just responded ${
+          pending.length === 1 ? "is" : "are"
+        } undecided`,
+        body:
+          waitDays >= 1
+            ? `They clicked or wrote back in the last few days and the next message to them is not due for ${waitDays} day${waitDays === 1 ? "" : "s"}. Approving early sends it on its date without stopping again.`
+            : "They clicked or wrote back recently. A message while they are still interested is worth more than the same words next week.",
+        href: `${base}/review${atGate > 0 ? "" : "?view=scheduled"}`,
+      });
+    }
+  }
+
   for (const channel of await db.collection(C.channels).find({ ...scope, enabled: true }).toArray()) {
     if (channel.status === "healthy") continue;
     await notify({
@@ -152,6 +201,24 @@ export async function refreshDerived(orgId: string, productId: string): Promise<
       body: health.error,
       href: `${base}/goals`,
     });
+  }
+
+  // A campaign that cannot hear an answer is not a campaign, it is a broadcast. This one
+  // had sent a hundred and fifty messages and read none of the replies, and the console
+  // reported that as "0 replied" — a measurement, rather than the missing mailbox it was.
+  const sent = await db.collection(C.actions).countDocuments({ ...scope, status: "sent" });
+  if (sent > 0) {
+    const reach = await replyReach(orgId, productId);
+    if (!reach.replies) {
+      await notify({
+        ...scope,
+        severity: "critical",
+        dedupeKey: "reach:no_inbound",
+        title: `${sent} message${sent === 1 ? "" : "s"} sent, and nothing is reading the replies`,
+        body: `${reach.why}. Anyone who wrote back is waiting in a mailbox this product cannot open — connect one on Channels.`,
+        href: `${base}/channels`,
+      });
+    }
   }
 
   const unclassified = await db.collection(C.people).countDocuments({ ...scope, needsClassification: true });

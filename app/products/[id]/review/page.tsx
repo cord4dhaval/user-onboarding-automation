@@ -2,9 +2,10 @@ import { ObjectId } from "mongodb";
 import type { Filter, Document } from "mongodb";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
+import { peopleEngagement } from "@/engine/engagement.js";
 import { requireSession, scope } from "../../../tenant";
 import { decide, heldMessage, returnToReview } from "../../../actions";
-import { Check, CheckCheck, RotateCcw, X } from "lucide-react";
+import { Check, CheckCheck, Flame, MessageSquare, MousePointerClick, RotateCcw, X } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { BusyArea, BusyLink, BusyProvider, BusySelect } from "../../../ui/busy";
 import { ist, istLong } from "../../../ui/time";
@@ -178,7 +179,15 @@ export default async function Review({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ campaign?: string; view?: string; channel?: string; page?: string; per?: string }>;
+  searchParams: Promise<{
+    campaign?: string;
+    view?: string;
+    channel?: string;
+    page?: string;
+    per?: string;
+    approved?: string;
+    rejected?: string;
+  }>;
 }) {
   const { id } = await params;
   const {
@@ -187,6 +196,8 @@ export default async function Review({
     channel: channelParam,
     page: pageParam,
     per: perParam,
+    approved: approvedParam,
+    rejected: rejectedParam,
   } = await searchParams;
   const { orgId } = await requireSession();
   const db = await getDb();
@@ -232,15 +243,44 @@ export default async function Review({
   const current = Math.min(Math.max(1, Number(pageParam) || 1), pages);
   const skip = (current - 1) * per;
 
-  const held = await db
-    .collection(C.actions)
-    .find(query)
-    // Newest first everywhere but the queue: history is read from the top, whereas a
-    // review queue is worked oldest-first.
-    .sort(view === "waiting" ? { dueAt: 1 } : { sentAt: -1, reviewedAt: -1, dueAt: -1 })
-    .skip(skip)
-    .limit(per)
-    .toArray();
+  // Whose messages jump the queue.
+  //
+  // A reviewer works down a list of fifty identical rows in date order, and the message to
+  // the one person who clicked yesterday sits at position thirty-one because that is when
+  // it happened to be written. Someone who has just responded is the only lead in the queue
+  // whose interest expires, so their message is lifted to the top of it — the order is
+  // still oldest-first inside each group, so nothing is buried by the lift.
+  const lifted = (
+    await db
+      .collection(C.people)
+      .find({ ...s, "temp.band": "hot" }, { projection: { _id: 1 } })
+      .toArray()
+  ).map((p) => String(p._id));
+
+  // Both undecided views, not only the gate. On this product every message to someone who
+  // had just clicked was sitting under Scheduled, dated days out — so lifting inside the
+  // gate alone would have reordered a list none of them were in.
+  const held =
+    (view === "waiting" || view === "scheduled") && lifted.length > 0
+      ? await db
+          .collection(C.actions)
+          .aggregate([
+            { $match: query },
+            { $addFields: { lift: { $cond: [{ $in: ["$personId", lifted] }, 0, 1] } } },
+            { $sort: { lift: 1, dueAt: 1 } },
+            { $skip: skip },
+            { $limit: per },
+          ])
+          .toArray()
+      : await db
+          .collection(C.actions)
+          .find(query)
+          // Newest first everywhere but the queue: history is read from the top, whereas a
+          // review queue is worked oldest-first.
+          .sort(view === "waiting" ? { dueAt: 1 } : { sentAt: -1, reviewedAt: -1, dueAt: -1 })
+          .skip(skip)
+          .limit(per)
+          .toArray();
 
   const viewCounts = Object.fromEntries(
     await Promise.all(
@@ -298,6 +338,12 @@ export default async function Review({
     })),
   );
 
+  // What each of these people has already done. Approving a message to someone who clicked
+  // an hour ago is a different decision from approving one to someone who has never
+  // responded, and the queue was showing both as the same row.
+  const responded = await peopleEngagement(orgId, id, rows.map((r) => String(r.action.personId)));
+  const liftedHere = rows.filter((r) => lifted.includes(String(r.action.personId))).length;
+
   const options: CampaignOption[] = totals.map((t) => ({
     ...t,
     // Choosing a campaign starts that list at the top; page 4 of the old filter means
@@ -308,6 +354,18 @@ export default async function Review({
   const first = matching === 0 ? 0 : skip + 1;
   const last = skip + held.length;
   const waiting = view === "waiting";
+  // The filters this reader is looking through, so a decision hands them back the same list
+  // rather than dropping them at the default view with their campaign filter gone.
+  const back = (() => {
+    const q = new URLSearchParams();
+    if (view !== "waiting") q.set("view", view);
+    if (campaign) q.set("campaign", campaign);
+    if (channelParam) q.set("channel", channelParam);
+    if (perParam) q.set("per", String(perParam));
+    return q.toString();
+  })();
+  const decided = Number(approvedParam ?? rejectedParam ?? NaN);
+  const decidedWord = approvedParam !== undefined ? "approved" : "rejected";
   // Scheduled messages can be decided on too, and saying so on the button is the difference
   // between a reviewer knowing they are approving next week's mail and finding out later.
   const decidable = waiting || view === "scheduled";
@@ -324,6 +382,17 @@ export default async function Review({
                 ? `${allInView} waiting. Approving returns a message to the send queue, where every guardrail still applies.`
                 : VIEWS[view].blurb}
           </p>
+          {/* What the last decision actually changed. The list redraws underneath a bulk
+              action, so without this the only way to know whether it worked is to count
+              rows — and while this action could silently match nothing, that was the only
+              way to find out it had not. */}
+          {Number.isFinite(decided) && (
+            <p className="sub" style={{ marginBottom: 0 }}>
+              {decided === 0
+                ? "Nothing changed — those messages had already been decided on."
+                : `${decided} message${decided === 1 ? "" : "s"} ${decidedWord}.`}
+            </p>
+          )}
         </div>
         {view === "failed" && held.length > 0 && (
           <>
@@ -348,6 +417,7 @@ export default async function Review({
             <form action={decide}>
               <input type="hidden" name="productId" value={id} />
               <input type="hidden" name="decision" value="approve" />
+              <input type="hidden" name="back" value={back} />
               {held.map((a) => (
                 <input key={String(a._id)} type="hidden" name="ids" value={String(a._id)} />
               ))}
@@ -420,6 +490,17 @@ export default async function Review({
         )}
       </div>
 
+      {decidable && liftedHere > 0 && (
+        <div className="note">
+          <p style={{ margin: 0 }}>
+            <Flame size={14} /> <strong>{liftedHere}</strong>{" "}
+            {liftedHere === 1 ? "message on this page is" : "messages on this page are"} going to someone who has
+            just clicked or written back. They are at the top{waiting ? "" : ", and approving one sends it on its date without stopping here again"} — their interest is the
+            thing on this page with a shelf life.
+          </p>
+        </div>
+      )}
+
       <BusyArea>
         {held.length === 0 ? (
           <div className="empty">
@@ -437,6 +518,7 @@ export default async function Review({
                 <thead>
                   <tr>
                     <th>Person</th>
+                    <th>What they have done</th>
                     <th>Campaign</th>
                     <th>Subject</th>
                     <th>Channel</th>
@@ -461,6 +543,15 @@ export default async function Review({
                         <td>
                           <strong>{name}</strong>
                           <div className="muted" style={{ fontSize: 12.5 }}>{email}</div>
+                        </td>
+                        {/* The column that turns a queue into a set of decisions. Everything
+                            else on this row describes the message; this one describes the
+                            person it is going to. */}
+                        <td>
+                          <Signal
+                            temp={person?.temp as { band?: string } | undefined}
+                            engagement={responded.get(String(action.personId))}
+                          />
                         </td>
                         <td>
                           {totals.find((t) => t.key === goalKey)?.name ?? goalKey}
@@ -504,6 +595,7 @@ export default async function Review({
                                 fetchMessage={heldMessage}
                               />
                               <form action={decide}>
+                                <input type="hidden" name="back" value={back} />
                                 <input type="hidden" name="productId" value={id} />
                                 <input type="hidden" name="ids" value={String(action._id)} />
                                 <SubmitButton
@@ -601,4 +693,65 @@ export default async function Review({
       </BusyArea>
     </BusyProvider>
   );
+}
+
+/**
+ * What the person on this row has already done about us.
+ *
+ * A reviewer approving fifty messages needs one thing the queue never told them: which of
+ * these people are already interested. The temperature is the engine's own reading, and the
+ * line under it is the evidence for that reading, because "hot" without a reason is a colour
+ * rather than a fact.
+ */
+function Signal({
+  temp,
+  engagement,
+}: {
+  temp?: { band?: string };
+  engagement?: { clicked: number; replied: number; lastClickedAt?: Date; lastRepliedAt?: Date };
+}) {
+  const band = temp?.band ? String(temp.band) : undefined;
+  const clicked = engagement?.clicked ?? 0;
+  const replied = engagement?.replied ?? 0;
+
+  if (!clicked && !replied) {
+    return (
+      <>
+        {band && band !== "cold" ? <span className={`pill ${band}`}>{band}</span> : null}
+        <div className="muted" style={{ fontSize: 12.5 }}>no response yet</div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="responded">
+        {replied > 0 && (
+          <span className="pill ok"><MessageSquare /> replied</span>
+        )}
+        {clicked > 0 && (
+          <span className="pill hot"><MousePointerClick /> clicked</span>
+        )}
+      </div>
+      <div className="muted" style={{ fontSize: 12.5 }}>
+        {ago(engagement?.lastRepliedAt ?? engagement?.lastClickedAt)}
+      </div>
+    </>
+  );
+}
+
+/**
+ * How long ago, in the units a person would use. An exact timestamp is the wrong shape for
+ * this decision — "clicked 40 minutes ago" is a reason to act now, and "2026-09-04 09:27"
+ * has to be worked out before it means the same thing.
+ */
+function ago(at?: Date): string {
+  if (!at) return "";
+  const minutes = Math.round((Date.now() - at.getTime()) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }

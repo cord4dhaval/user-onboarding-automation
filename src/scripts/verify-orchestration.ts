@@ -344,5 +344,78 @@ console.log(`\nverifying against "${String(product.name)}" (${productId})\n`);
   );
 }
 
+// ── 9. The duplicate welcome, at its source ─────────────────────────────────
+{
+  const { nextStep } = await import("../engine/advance.js");
+
+  // The exact shape that produced fifteen identical emails: the engine has already sent the
+  // welcome, and the plan written afterwards opens with one of its own.
+  const plan = {
+    steps: [
+      { id: 1, offsetDays: 0, channel: "email", angle: "welcome", why: "opener" },
+      { id: 2, offsetDays: 3, channel: "email", angle: "pain_point", why: "the real ask" },
+    ],
+  };
+
+  const afterFirstTouch = nextStep(plan, new Set(), new Set(["welcome"]));
+  check(
+    "a plan opening with a welcome already sent skips to the next step",
+    Number(afterFirstTouch?.id) === 2,
+    afterFirstTouch ? `chose step ${afterFirstTouch.id} (${afterFirstTouch.angle})` : "chose nothing",
+  );
+
+  const fresh = nextStep(plan, new Set(), new Set());
+  check(
+    "with nothing delivered, the plan still starts at step 1",
+    Number(fresh?.id) === 1,
+    fresh ? `chose step ${fresh.id} (${fresh.angle})` : "chose nothing",
+  );
+
+  // Once a sequence is under way, a repeated angle can be deliberate — an angle somebody
+  // clicked is not spent — so the skip must not apply past the opening.
+  const midSequence = nextStep(
+    { steps: [...plan.steps, { id: 3, offsetDays: 6, channel: "email", angle: "welcome", why: "they clicked it" }] },
+    new Set([1, 2]),
+    new Set(["welcome", "pain_point"]),
+  );
+  check(
+    "a deliberate repeat mid-sequence is left alone",
+    Number(midSequence?.id) === 3,
+    midSequence ? `chose step ${midSequence.id} (${midSequence.angle})` : "chose nothing",
+  );
+}
+
+// ── 10. And refused before it can be written ────────────────────────────────
+{
+  const { TOOLS } = await import("../mcp/server/tools.js");
+  const upsert = TOOLS.find((t) => t.name === "upsert_playbook")!;
+  const goal = await db.collection(C.goals).findOne({ orgId, productId, enabled: true });
+  const opener = String((goal?.firstTouch as { templateKey?: string } | undefined)?.templateKey ?? "welcome");
+
+  let refused = "";
+  try {
+    await upsert.handler(
+      {
+        product_id: productId,
+        goal_key: String(goal?.key),
+        segment_key: "default",
+        steps: [
+          { id: 1, offset_days: 0, channel: "email", angle: opener, why: "opener" },
+          { id: 2, offset_days: 3, channel: "email", angle: "margin_leak", why: "the real ask" },
+        ],
+      },
+      { orgId, userId: "verify" } as never,
+    );
+  } catch (err) {
+    refused = err instanceof Error ? err.message : String(err);
+  }
+
+  check(
+    "a playbook cannot open with the touch the engine already sends",
+    refused.includes("first touch"),
+    refused ? refused.slice(0, 90) + "…" : "it was accepted",
+  );
+}
+
 console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -514,6 +514,13 @@ button.destructive { background: var(--bad); border-color: var(--bad); color: #f
 .responses a.live { color: var(--good); font-weight: 600; }
 .responses a:hover { text-decoration: underline; }
 
+/* Not a zero. A count nothing measured has to look different from a count that came back
+   empty — the first is a mailbox to connect, the second is copy to rewrite. */
+.unmeasured { color: var(--ink-3); font-style: italic; }
+.signal.unmeasured { border-style: dashed; cursor: default; }
+.signal.unmeasured .signal-value { color: var(--ink-3); font-style: normal; }
+.card.stat .value.muted { color: var(--ink-3); }
+
 .signal-strip { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 16px; }
 .signal {
   display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;

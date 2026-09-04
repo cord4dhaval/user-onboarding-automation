@@ -248,6 +248,41 @@ async function assertProduct(productId: string, ctx: ToolCtx): Promise<string> {
   return ctx.orgId;
 }
 
+/**
+ * One person's whole response, in the shape a session reads before writing to them.
+ *
+ * Machine fetches are counted separately and named rather than dropped, so a session that
+ * reads the raw touch list and sees a timestamp seconds after the send has the explanation
+ * on the same object instead of inferring interest from a scanner.
+ */
+function engagementOf(
+  actions: Array<Record<string, unknown>>,
+  events: Array<Record<string, unknown>>,
+): Record<string, unknown> {
+  const sent = actions.filter((a) => ["sent", "dispatched"].includes(String(a.status)));
+  const clicked = sent.filter((a) => a.firstClickedAt);
+  const opened = sent.filter((a) => a.firstOpenedAt);
+  const replies = events.filter((e) => String(e.type) === "reply_received");
+  const last = <T,>(rows: T[], pick: (row: T) => unknown): unknown =>
+    rows
+      .map(pick)
+      .filter(Boolean)
+      .sort((a, b) => new Date(String(b)).getTime() - new Date(String(a)).getTime())[0] ?? null;
+
+  return {
+    sent: sent.length,
+    clicked: clicked.length,
+    opened: opened.length,
+    replied: replies.length,
+    last_clicked_at: last(clicked, (a) => a.firstClickedAt),
+    last_replied_at: last(replies, (e) => e.ts),
+    // Opens are only measured where consent allowed a pixel, which is rarely. Zero opens
+    // with nothing trackable means nothing was measured, and must not be read as silence.
+    opens_measured: sent.some((a) => (a.tracking as { opens?: boolean } | undefined)?.opens === true),
+    machine_filtered: sent.filter((a) => a.firstMachineClickedAt ?? a.firstMachineOpenedAt).length,
+  };
+}
+
 export const TOOLS: ToolDef[] = [
   {
     name: "list_products",
@@ -565,7 +600,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "lead_card",
     description:
-      "Everything about one person in a single call: identity, enrichment, belief, temperature, their goal, every touch sent and what came back.",
+      "Everything about one person in a single call: identity, enrichment, belief, temperature, their goal, every touch sent, and what came back — opens, clicks and the link they followed, with mail-gateway scans reported separately so they are never mistaken for interest.",
     inputSchema: {
       type: "object",
       properties: { product_id: { type: "string" }, person_id: { type: "string" } },
@@ -629,6 +664,12 @@ export const TOOLS: ToolDef[] = [
             }
           : null,
         // Prior claims are supplied so the next message never repeats or contradicts one.
+        //
+        // And what each one earned. This card promised "every touch sent and what came
+        // back" while returning only the sending half, so a session writing the next
+        // message to someone who had clicked twice wrote it as though they had ignored
+        // everything — the strongest thing known about that person was the one thing not
+        // on the card.
         touches: actions.map((a) => ({
           action_id: String(a._id),
           channel: a.channel,
@@ -637,7 +678,22 @@ export const TOOLS: ToolDef[] = [
           sent_at: a.sentAt ?? null,
           subject: (a.content as { subject?: string })?.subject ?? null,
           claims_made: (a.content as { claimsMade?: string[] })?.claimsMade ?? [],
+          opened_at: a.firstOpenedAt ?? null,
+          clicked_at: a.firstClickedAt ?? null,
+          // Where they went, when the link recorded it. "Clicked the pricing page" is a
+          // different opening line from "clicked something".
+          clicked_url:
+            ((a.signals ?? []) as Array<{ type?: string; url?: unknown; bot?: unknown }>).find(
+              (sig) => sig.type === "clicked" && !sig.bot && sig.url,
+            )?.url ?? null,
+          // A mail security gateway walked the links seconds after the send. Reported so
+          // that a message which looks engaged-with in the raw record is not mistaken for
+          // interest — it is not one, and nothing should be written as though it were.
+          machine_scanned_at: a.firstMachineClickedAt ?? a.firstMachineOpenedAt ?? null,
         })),
+        // The same thing said once, so a session does not have to fold the touch list to
+        // learn whether this person has ever responded at all.
+        engagement: engagementOf(actions, events),
         events: events.map((e) => ({ type: e.type, ts: e.ts, payload: e.payload })),
         product_config: product?.config ?? null,
         // What each channel can actually carry. Without this, copy gets written to an
@@ -2711,6 +2767,19 @@ TOOLS.push({
       throw new Error(
         `this playbook has ${steps.length} steps but the campaign's budget is ${budget.touches} touches. ` +
           `The steps past the budget would never send.`,
+      );
+    }
+
+    // The engine sends this campaign's first touch the moment a lead lands, without waiting
+    // for anybody — so a playbook that opens with the same angle is asking for a second copy
+    // of a message already on its way. Seventeen people were holding two or three at once
+    // before this was caught, fifteen of them identical.
+    const opener = String((goal.firstTouch as { templateKey?: string } | undefined)?.templateKey ?? "").toLowerCase();
+    if (opener && String(steps[0]!.angle).toLowerCase() === opener) {
+      throw new Error(
+        `step 1 uses the angle "${steps[0]!.angle}", which is the first touch this campaign already sends ` +
+          `automatically when someone arrives. Start this sequence at the message that comes after it — ` +
+          `the opener is handled for you, and repeating it means two identical emails.`,
       );
     }
 

@@ -37,7 +37,10 @@ async function main(): Promise<void> {
     const actions = await db
       .collection(C.actions)
       .find(
-        { [field]: { $gte: since } },
+        // Only what a person did to a message that actually went out. The raw field no
+        // longer holds scanner fetches, and a link reached in an unsent draft is not a
+        // reader either.
+        { [field]: { $gte: since }, status: { $in: ["sent", "dispatched"] } },
         { projection: { orgId: 1, productId: 1, personId: 1, "content.subject": 1, [field]: 1 } },
       )
       .sort({ [field]: 1 })

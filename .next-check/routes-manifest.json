@@ -1,0 +1,266 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [
+      {
+        "source": "/.well-known/oauth-authorization-server",
+        "destination": "/api/wellknown/oauth-authorization-server",
+        "regex": "^/\\.well-known/oauth-authorization-server(?:/)?$"
+      },
+      {
+        "source": "/.well-known/oauth-protected-resource",
+        "destination": "/api/wellknown/oauth-protected-resource",
+        "regex": "^/\\.well-known/oauth-protected-resource(?:/)?$"
+      },
+      {
+        "source": "/.well-known/oauth-protected-resource/api/mcp",
+        "destination": "/api/wellknown/oauth-protected-resource",
+        "regex": "^/\\.well-known/oauth-protected-resource/api/mcp(?:/)?$"
+      }
+    ],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/api/t/[kind]/[id]",
+      "regex": "^/api/t/([^/]+?)/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPkind": "nxtPkind",
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/t/(?<nxtPkind>[^/]+?)/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/u/[id]",
+      "regex": "^/api/u/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/u/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/products/[id]",
+      "regex": "^/products/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/audiences",
+      "regex": "^/products/([^/]+?)/audiences(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/audiences(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/brand",
+      "regex": "^/products/([^/]+?)/brand(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/brand(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/channels",
+      "regex": "^/products/([^/]+?)/channels(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/channels(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/claude",
+      "regex": "^/products/([^/]+?)/claude(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/claude(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/connections",
+      "regex": "^/products/([^/]+?)/connections(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/connections(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/connections/[cid]",
+      "regex": "^/products/([^/]+?)/connections/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPcid": "nxtPcid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/connections/(?<nxtPcid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/goals",
+      "regex": "^/products/([^/]+?)/goals(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/goals(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/leads",
+      "regex": "^/products/([^/]+?)/leads(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/leads(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/library",
+      "regex": "^/products/([^/]+?)/library(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/library(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/library/[personId]",
+      "regex": "^/products/([^/]+?)/library/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPpersonId": "nxtPpersonId"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/library/(?<nxtPpersonId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/logs",
+      "regex": "^/products/([^/]+?)/logs(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/logs(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/providers",
+      "regex": "^/products/([^/]+?)/providers(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/providers(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/review",
+      "regex": "^/products/([^/]+?)/review(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/review(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/routines",
+      "regex": "^/products/([^/]+?)/routines(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/routines(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/settings",
+      "regex": "^/products/([^/]+?)/settings(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/settings(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/sources",
+      "regex": "^/products/([^/]+?)/sources(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/sources(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/templates",
+      "regex": "^/products/([^/]+?)/templates(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/templates(?:/)?$"
+    },
+    {
+      "page": "/products/[id]/templates/[tid]",
+      "regex": "^/products/([^/]+?)/templates/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPtid": "nxtPtid"
+      },
+      "namedRegex": "^/products/(?<nxtPid>[^/]+?)/templates/(?<nxtPtid>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/oauth/authorize",
+      "regex": "^/oauth/authorize(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/oauth/authorize(?:/)?$"
+    },
+    {
+      "page": "/products",
+      "regex": "^/products(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/products(?:/)?$"
+    },
+    {
+      "page": "/signup",
+      "regex": "^/signup(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/signup(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}
