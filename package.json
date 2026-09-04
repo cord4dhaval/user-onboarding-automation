@@ -30,7 +30,8 @@
     "dedupe:review": "tsx --env-file=.env src/scripts/dedupe-review-queue.ts",
     "backfill:notices": "tsx --env-file=.env src/scripts/backfill-engagement-notices.ts",
     "reclassify:signals": "tsx --env-file=.env src/scripts/reclassify-signals.ts",
-    "build:check": "NEXT_DIST_DIR=.next-check next build"
+    "build:check": "NEXT_DIST_DIR=.next-check next build",
+    "is:deployed": "tsx --env-file=.env src/scripts/is-deployed.ts"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",
