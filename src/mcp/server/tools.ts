@@ -287,7 +287,7 @@ export const TOOLS: ToolDef[] = [
         limit: { type: "number", description: "Max items per section. Default 25." },
         scope: {
           type: "string",
-          enum: ["all", "monitor", "plan", "compose"],
+          enum: ["all", "acquire", "advance", "react", "close", "maintain", "monitor", "plan", "compose"],
           description:
             "Which slice of work to return, so separate routines run on separate schedules without duplicating each other. monitor = everyone in an active campaign, with their latest probe results, replies and unsettled checks — where they are, whether they are done, what happens next; plan = unclassified people, campaigns with no pipeline, campaigns with no verification plan; compose = steps due inside 48 hours. Defaults to all.",
         },
@@ -298,7 +298,27 @@ export const TOOLS: ToolDef[] = [
       const now = new Date();
       const limit = typeof args.limit === "number" ? args.limit : 25;
       const scope = String(args.scope ?? "all");
-      const wants = (section: string) => scope === "all" || scope === section;
+
+      // The sections predate the routines that read them, and the routines were renamed
+      // without this. A session calling sweep with its own name got an empty packet and a
+      // prompt telling it that an empty packet means stop — so it stopped, having done
+      // nothing, with no error anywhere. Silence again.
+      const BY_ROUTINE: Record<string, string[]> = {
+        acquire: ["plan"],
+        advance: ["compose"],
+        react: ["monitor"],
+        close: ["monitor"],
+        maintain: ["plan"],
+      };
+      const SECTIONS = ["plan", "compose", "monitor"];
+      if (scope !== "all" && !BY_ROUTINE[scope] && !SECTIONS.includes(scope)) {
+        throw new Error(
+          `unknown scope "${scope}". Use one of: all, ${Object.keys(BY_ROUTINE).join(", ")}. ` +
+            `Returning nothing for a scope nobody recognises would read as "no work", which is not the same answer.`,
+        );
+      }
+      const sections = scope === "all" ? SECTIONS : (BY_ROUTINE[scope] ?? [scope]);
+      const wants = (section: string) => sections.includes(section);
       const productIds = str(args.product_id)
         ? [str(args.product_id) as string]
         : (await db.collection(C.products).find({ orgId: ctx.orgId, status: "active" }).toArray()).map((p) =>

@@ -1,8 +1,9 @@
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import { NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { bumpPrior, type PriorKey } from "@/engine/outcomes.js";
+import { notify } from "@/engine/notify.js";
 import { PIXEL, unb64url, verify } from "@/engine/tracking.js";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +47,7 @@ export async function GET(
   if (!/^https?:\/\//i.test(target)) return new NextResponse(null, { status: 404 });
   if (!verify("c", id, target, signature)) return new NextResponse(null, { status: 404 });
 
-  await record(id, "clicked");
+  await record(id, "clicked", target);
   return NextResponse.redirect(target, 302);
 }
 
@@ -55,15 +56,20 @@ export async function GET(
  * repeatedly, and counting each one would make a single ignored message look like sustained
  * interest — so the first occurrence is what the rollup reads, and later ones are dropped.
  */
-async function record(actionId: string, type: "opened" | "clicked"): Promise<void> {
+async function record(actionId: string, type: "opened" | "clicked", url?: string): Promise<void> {
   const field = type === "opened" ? "firstOpenedAt" : "firstClickedAt";
   const now = new Date();
   try {
     const db = await getDb();
     const result = await db.collection(C.actions).findOneAndUpdate(
       { _id: new ObjectId(actionId), [field]: { $exists: false } },
-      { $set: { [field]: now }, $push: { signals: { type, at: now } } as never },
-      { returnDocument: "after", projection: { orgId: 1, personId: 1, channel: 1, variant: 1 } },
+      // The destination is kept on the signal, not only the fact of a click. "Clicked" is
+      // one answer; "clicked the pricing link" is the one a person acts on.
+      { $set: { [field]: now }, $push: { signals: { type, at: now, ...(url ? { url } : {}) } } as never },
+      {
+        returnDocument: "after",
+        projection: { orgId: 1, productId: 1, personId: 1, channel: 1, variant: 1, "content.subject": 1 },
+      },
     );
     if (!result) return;
 
@@ -91,9 +97,67 @@ async function record(actionId: string, type: "opened" | "clicked"): Promise<voi
           { $set: { "temp.computedAt": new Date(0) } },
         );
     }
+
+    await announce(result as Document, type, url);
   } catch {
     // A dropped signal is a lost data point. Failing the request instead would be a lost
     // reader, which is worse.
+  }
+}
+
+/**
+ * Tells the owner, in the bell, that somebody responded.
+ *
+ * This is the whole point of tracking and it was going nowhere: a campaign could collect
+ * nine clicks and the console would report the same silence as one that collected none.
+ *
+ * A click is severity "action" because it asks for a decision — this is the moment to
+ * reach out, and it goes stale within the day. An open is only "good": mail clients
+ * prefetch images, so it is worth knowing and not worth acting on, and the copy says so
+ * rather than letting a reader mistake a proxy for a person.
+ *
+ * Deduped per person per kind, so somebody working through five links is one row that
+ * counts to five rather than five rows burying everything else in the panel.
+ */
+async function announce(action: Document, type: "opened" | "clicked", url?: string): Promise<void> {
+  const productId = action.productId ? String(action.productId) : "";
+  if (!productId) return;
+
+  const db = await getDb();
+  const person = await db
+    .collection(C.people)
+    .findOne(
+      { _id: new ObjectId(String(action.personId)) },
+      { projection: { name: 1, primaryEmail: 1 } },
+    );
+  const who = String(person?.name ?? person?.primaryEmail ?? "Someone");
+  const subject = (action.content as { subject?: string } | undefined)?.subject;
+
+  await notify({
+    orgId: String(action.orgId),
+    productId,
+    severity: type === "clicked" ? "action" : "good",
+    dedupeKey: `engagement:${type}:${String(action.personId)}`,
+    title: type === "clicked" ? `${who} clicked a link` : `${who} opened your email`,
+    body:
+      type === "clicked"
+        ? [subject ? `"${subject}"` : null, url ? host(url) : null, "Warm right now — reply while it is."]
+            .filter(Boolean)
+            .join(" · ")
+        : [subject ? `"${subject}"` : null, "Opens are unreliable: some clients load images on their own."]
+            .filter(Boolean)
+            .join(" · "),
+    href: `/products/${productId}/library/${String(action.personId)}`,
+  });
+}
+
+/** The destination as a person would name it, not as a query string. */
+function host(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+  } catch {
+    return url;
   }
 }
 

@@ -26,13 +26,25 @@ const PER_PAGE = [10, 50, 100, 500] as const;
  */
 const VIEWS = {
   waiting: {
-    label: "Waiting",
-    // Both halves are undecided: one has reached the gate, the other has not been claimed
-    // yet. Counting only the first understated the number nobody had looked at.
-    match: {
-      $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
-    },
-    blurb: "Nothing has been decided on these yet.",
+    label: "Needs you",
+    // Only what has actually reached the gate.
+    //
+    // This tab used to include scheduled messages too, on the reasoning that both halves
+    // are undecided. They are — but they are not both actionable, and merging them made
+    // the screen say 262 while the sidebar said 51, both correct and neither trustworthy.
+    // A reviewer opening this page is asking "what needs me now", and next week's mail is
+    // not an answer to that question.
+    match: { status: "awaiting_approval" },
+    blurb: "At the gate and due. Approving sends them within the minute.",
+  },
+  scheduled: {
+    label: "Scheduled",
+    // Written, dated, and not yet at the gate. They arrive here on their own as each one
+    // comes due — but a reviewer who wants to look ahead can, and approving one early is a
+    // real decision the system honours rather than silently ignoring.
+    match: { status: "queued", reviewedAt: { $exists: false } },
+    blurb:
+      "Dated for later. Each one comes to you for review when it is due — approving now means it goes out on its date without stopping here again.",
   },
   approved: {
     label: "Approved",
@@ -47,7 +59,7 @@ const VIEWS = {
     blurb: "These reached the provider. The message shown is the one that went.",
   },
   failed: {
-    label: "Failed",
+    label: "Never sent",
     // Two statuses, one question. `skipped` with a reason is one of our own limits stopping
     // an approved message; `failed` is the send itself erroring. Both mean nobody received
     // it, so a reviewer asking "what never reached anyone" was checking two tabs for one
@@ -296,6 +308,9 @@ export default async function Review({
   const first = matching === 0 ? 0 : skip + 1;
   const last = skip + held.length;
   const waiting = view === "waiting";
+  // Scheduled messages can be decided on too, and saying so on the button is the difference
+  // between a reviewer knowing they are approving next week's mail and finding out later.
+  const decidable = waiting || view === "scheduled";
 
   return (
     <BusyProvider>
@@ -327,7 +342,7 @@ export default async function Review({
             </form>
           </>
         )}
-        {waiting && held.length > 1 && (
+        {decidable && held.length > 1 && (
           <>
             <div className="spacer" />
             <form action={decide}>
@@ -336,10 +351,14 @@ export default async function Review({
               {held.map((a) => (
                 <input key={String(a._id)} type="hidden" name="ids" value={String(a._id)} />
               ))}
-              {/* Says which messages it releases. "All 25 shown" read as "all 25 waiting"
-                  on a queue of 137, which is a send you cannot take back. */}
+              {/* Says which messages it releases, and when they go. "All 25 shown" read as
+                  "all 25 waiting" on a queue of 137, which is a send you cannot take back —
+                  and on the scheduled list the same words hid the fact that approving there
+                  releases mail dated days out. */}
               <SubmitButton variant="quiet" icon={<CheckCheck />} pendingLabel="Approving…">
-                Approve this page ({held.length} of {matching})
+                {waiting
+                  ? `Approve this page — sends ${held.length} now`
+                  : `Approve this page — ${held.length} will send on their dates`}
               </SubmitButton>
             </form>
           </>

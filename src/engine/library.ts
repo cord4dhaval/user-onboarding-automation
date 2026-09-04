@@ -2,6 +2,7 @@ import { ObjectId, type Filter, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { AudienceFilter } from "../schemas/audience.js";
+import { peopleMatching, type EngagementState } from "./engagement.js";
 
 /**
  * The library is every person this product has ever touched. Campaigns write into it as a
@@ -18,6 +19,8 @@ export interface LibraryQuery {
   campaign?: string;
   /** How far a message to them got: "sent" is handed off, "delivered" is confirmed. */
   delivery?: DeliveryState;
+  /** What they did back. "none" is everyone who has never given us a signal at all. */
+  engagement?: EngagementState;
   limit?: number;
   skip?: number;
 }
@@ -61,6 +64,14 @@ export async function queryLibrary(orgId: string, productId: string, q: LibraryQ
       (await db.collection(C.actions).distinct("personId", { orgId, productId, ...DELIVERY_MATCH[q.delivery] }))
         .map(String),
     );
+  }
+  // "Nobody has ever responded" is a question about absence, so it cannot be answered by
+  // intersecting lists of people who did something — it is a condition on the person.
+  if (q.engagement === "none") {
+    filter.lastSignalAt = { $exists: false };
+    filter.lastReplyAt = { $exists: false };
+  } else if (q.engagement) {
+    narrowings.push(await peopleMatching(orgId, productId, q.engagement));
   }
   if (narrowings.length > 0) {
     const ids = narrowings.reduce((a, b) => a.filter((id) => b.includes(id)));

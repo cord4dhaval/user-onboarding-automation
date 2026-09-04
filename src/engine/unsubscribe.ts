@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { notify } from "./notify.js";
 import { suppress } from "./suppression.js";
 import { tokenFor } from "./tracking.js";
 
@@ -43,7 +44,7 @@ export async function unsubscribePerson(personId: string, reason: string): Promi
   const _id = new ObjectId(personId);
   const person = await db
     .collection(C.people)
-    .findOne({ _id }, { projection: { primaryEmail: 1, orgId: 1, productId: 1, lifecycle: 1 } });
+    .findOne({ _id }, { projection: { primaryEmail: 1, name: 1, orgId: 1, productId: 1, lifecycle: 1 } });
   if (!person) return { found: false, alreadyDone: false };
 
   const email = person.primaryEmail ? String(person.primaryEmail) : undefined;
@@ -78,6 +79,18 @@ export async function unsubscribePerson(personId: string, reason: string): Promi
     { orgId, personId, status: { $in: ["queued", "held", "awaiting_approval"] } },
     { $set: { status: "skipped", skipReason: "unsubscribed" } },
   );
+
+  // The owner hears about it too. Someone leaving is not an emergency, but a campaign
+  // quietly shedding people is — and that is only visible if each one is reported.
+  await notify({
+    orgId,
+    productId: String(person.productId),
+    severity: "good",
+    dedupeKey: `engagement:unsubscribed:${personId}`,
+    title: `${String(person.name ?? person.primaryEmail ?? email ?? "Someone")} unsubscribed`,
+    body: `${reason}. They can never be contacted again from this product.`,
+    href: `/products/${String(person.productId)}/library/${personId}`,
+  });
 
   // Kept as an event so the person's own timeline says when they left and by what route.
   await db.collection(C.events).insertOne({

@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { notify } from "./notify.js";
 import { resolveSecret } from "../crypto/broker.js";
 import { McpClient } from "../mcp/client.js";
 import { schemasFor } from "../mcp/schemas.js";
@@ -392,7 +393,7 @@ export async function pollReplies(
         .collection(C.people)
         .findOne(
           { orgId, productId, "identities.value": from },
-          { projection: { primaryEmail: 1, lifecycle: 1 } },
+          { projection: { primaryEmail: 1, name: 1, lifecycle: 1 } },
         );
       if (!person) continue;
       summary.matched++;
@@ -434,6 +435,19 @@ export async function pollReplies(
       // someone who has just asked a question reads as nobody being home, and it is the
       // fastest way to lose a lead who was interested enough to type.
       await db.collection(C.people).updateOne({ _id: person._id }, { $set: { lastReplyAt: at } });
+
+      // And the owner is told, now. A reply is the one signal in this system that expires:
+      // an answer the same hour is a conversation, the same week is an apology. It sat in
+      // the events collection where only a routine ever looked.
+      await notify({
+        orgId,
+        productId,
+        severity: "action",
+        dedupeKey: `engagement:replied:${personId}`,
+        title: `${String(person.name ?? person.primaryEmail ?? from)} replied`,
+        body: text ? `${text.slice(0, 160).replace(/\s+/g, " ").trim()}${text.length > 160 ? "…" : ""}` : undefined,
+        href: `/products/${productId}/library/${personId}`,
+      });
       const held = await db.collection(C.actions).updateMany(
         { orgId, productId, personId, status: "queued", reviewedAt: { $exists: false } },
         { $set: { status: "skipped", skipReason: "they replied; waiting on a human answer" } },
@@ -514,5 +528,17 @@ async function handleBounce(
         { $set: { status: "failed", outcome: "hard_bounce", endedAt: new Date() } },
       ),
   ]);
+
+  // A dead address is a lead the list will never deliver to again, and a run of them is a
+  // list-quality problem worth seeing early rather than in a sender-reputation report.
+  await notify({
+    orgId,
+    productId,
+    severity: "good",
+    dedupeKey: `engagement:bounced:${personId}`,
+    title: `${parsed.recipient} does not exist`,
+    body: "The address hard bounced, so they are suppressed and nothing further will be sent.",
+    href: `/products/${productId}/library/${personId}`,
+  });
   return true;
 }

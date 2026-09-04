@@ -1,5 +1,6 @@
-import { Filter, Layers, Search, Users } from "lucide-react";
+import { Filter, Layers, MessageSquare, MousePointerClick, Mail, Search, Users } from "lucide-react";
 import { audienceCount, queryLibrary, type DeliveryState } from "@/engine/library.js";
+import { peopleEngagement, peopleMatching, type EngagementState } from "@/engine/engagement.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { deleteAudience, importPeople, saveAudience } from "../../../actions";
@@ -9,7 +10,7 @@ import ConfirmButton from "../../../ui/confirm";
 import { SubmitButton, Tabs } from "../../../ui/kit";
 import AudienceDrawer from "../audiences/audience-drawer";
 import ImportDrawer from "./import-drawer";
-import { istDay } from "../../../ui/time";
+import { istDay, ist } from "../../../ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,18 @@ const DELIVERY: Array<{ key: DeliveryState; label: string }> = [
   { key: "delivered", label: "delivered — provider confirmed" },
   { key: "failed", label: "failed" },
   { key: "pending", label: "not sent yet" },
+];
+
+/**
+ * What we sent is only half the page. Until now the other half — what they did about it —
+ * was a single date column, so "who clicked" was a question the library could not answer
+ * even though every click was recorded.
+ */
+const ENGAGEMENT: Array<{ key: EngagementState; label: string }> = [
+  { key: "clicked", label: "clicked a link" },
+  { key: "replied", label: "replied" },
+  { key: "opened", label: "opened (unreliable)" },
+  { key: "none", label: "never responded" },
 ];
 
 const LIFECYCLE_COPY: Record<string, string> = {
@@ -53,11 +66,19 @@ export default async function Audience({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ q?: string; state?: string; campaign?: string; delivery?: string; tab?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    state?: string;
+    campaign?: string;
+    delivery?: string;
+    engagement?: string;
+    tab?: string;
+  }>;
 }) {
   const { id } = await params;
-  const { q, state, campaign, delivery, tab } = await searchParams;
+  const { q, state, campaign, delivery, engagement, tab } = await searchParams;
   const deliveryKey = DELIVERY.find((d) => d.key === delivery)?.key;
+  const engagementKey = ENGAGEMENT.find((e) => e.key === engagement)?.key;
   const current = tab === "audiences" ? "audiences" : "people";
   const { orgId } = await requireSession();
   const db = await getDb();
@@ -70,6 +91,7 @@ export default async function Audience({
       lifecycle: state ? [state] : undefined,
       campaign: campaign || undefined,
       delivery: deliveryKey,
+      engagement: engagementKey,
       limit: 100,
     }),
     db.collection(C.people).countDocuments(s),
@@ -85,6 +107,39 @@ export default async function Audience({
   const sized = await Promise.all(
     audienceDocs.map(async (a) => ({ audience: a, size: await audienceCount(orgId, id, a) })),
   );
+
+  // The headline the page was missing. These are people, not messages: someone who clicked
+  // three links is one interested human, and three would read as three leads.
+  const [clickedIds, repliedIds, openedIds] = await Promise.all([
+    peopleMatching(orgId, id, "clicked"),
+    peopleMatching(orgId, id, "replied"),
+    peopleMatching(orgId, id, "opened"),
+  ]);
+  const engaged = await peopleEngagement(orgId, id, rows.map((r) => String(r._id)));
+
+  const signals = [
+    {
+      key: "clicked" as const,
+      icon: <MousePointerClick size={14} />,
+      label: "clicked a link",
+      value: clickedIds.length,
+      note: "The strongest signal that arrives without words.",
+    },
+    {
+      key: "replied" as const,
+      icon: <MessageSquare size={14} />,
+      label: "replied",
+      value: repliedIds.length,
+      note: "Someone typed at us. Nothing outranks it.",
+    },
+    {
+      key: "opened" as const,
+      icon: <Mail size={14} />,
+      label: "opened",
+      value: openedIds.length,
+      note: "Counted, not trusted — some clients load images on their own.",
+    },
+  ];
 
   return (
     <>
@@ -120,6 +175,22 @@ export default async function Audience({
 
       {current === "people" ? (
         <>
+          {/* One row that answers "did any of this land?" without reading a table. Each
+              tile is a link, because a number nobody can drill into is a poster. */}
+          <div className="signal-strip">
+            {signals.map((sig) => (
+              <a
+                key={sig.key}
+                className={`signal ${engagementKey === sig.key ? "on" : ""} ${sig.value > 0 ? "live" : ""}`}
+                href={`${base}?engagement=${sig.key}${campaign ? `&campaign=${campaign}` : ""}`}
+              >
+                <span className="signal-top">{sig.icon}<span className="label">{sig.label}</span></span>
+                <span className="signal-value">{sig.value}</span>
+                <span className="signal-note">{sig.note}</span>
+              </a>
+            ))}
+          </div>
+
           <form method="get" className="row" style={{ marginBottom: 18 }}>
             <div style={{ position: "relative", flex: "0 1 320px" }}>
               <Search
@@ -151,6 +222,12 @@ export default async function Audience({
                 <option key={d.key} value={d.key}>{d.label}</option>
               ))}
             </select>
+            <select name="engagement" defaultValue={engagementKey ?? ""} style={{ maxWidth: 220 }}>
+              <option value="">Any response</option>
+              {ENGAGEMENT.map((e) => (
+                <option key={e.key} value={e.key}>{e.label}</option>
+              ))}
+            </select>
             {tab && <input type="hidden" name="tab" value={tab} />}
             <SubmitButton variant="quiet" icon={<Filter />} pendingLabel="Filtering…">Filter</SubmitButton>
           </form>
@@ -166,7 +243,7 @@ export default async function Audience({
               <strong>{everyone === 0 ? "Nobody here yet" : "Nobody matches that"}</strong>
               {everyone === 0
                 ? "Add people directly, or run a campaign — everyone it touches lands here automatically."
-                : "Try a different search, state, campaign or delivery."}
+                : "Try a different search, state, campaign, delivery or response."}
             </div>
           ) : (
             <>
@@ -175,8 +252,8 @@ export default async function Audience({
                   <thead>
                     <tr>
                       <th>Person</th><th>State</th><th>Segment</th>
+                      <th>What they did</th>
                       <th className="num">Attempts</th><th className="num">Invested</th><th>Last contacted</th>
-                      <th>Last engaged</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -198,6 +275,12 @@ export default async function Audience({
                             </span>
                           </td>
                           <td>{belief?.segment ?? <ClaudeBadge note="next run" />}</td>
+                          {/* What they did back, as against what we did to them. This was a
+                              date, which reports that something happened and refuses to say
+                              what — a click and an image prefetch rendered identically. */}
+                          <td>
+                            <Responded engagement={engaged.get(String(p._id))} />
+                          </td>
                           <td className="num">{Number(p.attempts ?? 0)}</td>
                           <td className="num">
                             {Number(inv.messages ?? 0)} msg
@@ -205,11 +288,6 @@ export default async function Audience({
                           </td>
                           <td className="muted num">
                             {istDay(p.lastContactedAt as string, "never")}
-                          </td>
-                          {/* What they did back, as against what we did to them. The two
-                              columns side by side are the whole read on a lead. */}
-                          <td className="muted num">
-                            {istDay(p.lastSignalAt as string, "never")}
                           </td>
                         </tr>
                       );
@@ -278,5 +356,37 @@ export default async function Audience({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * One person's response, in the order it matters: a reply outranks a click, a click
+ * outranks an open, and an open is labelled as the guess it is.
+ *
+ * Silence is spelled out rather than left blank. An empty cell reads as missing data; "no
+ * response yet" reads as the fact it is, and is the answer for most rows on most days.
+ */
+function Responded({ engagement }: { engagement?: { opened: number; clicked: number; replied: number; lastOpenedAt?: Date; lastClickedAt?: Date; lastRepliedAt?: Date } }) {
+  if (!engagement || engagement.replied + engagement.clicked + engagement.opened === 0) {
+    return <span className="muted">no response yet</span>;
+  }
+  return (
+    <div className="responded">
+      {engagement.replied > 0 && (
+        <span className="pill ok" title={`Last reply ${ist(engagement.lastRepliedAt)}`}>
+          <MessageSquare /> replied{engagement.replied > 1 ? ` ×${engagement.replied}` : ""}
+        </span>
+      )}
+      {engagement.clicked > 0 && (
+        <span className="pill hot" title={`Last click ${ist(engagement.lastClickedAt)}`}>
+          <MousePointerClick /> clicked{engagement.clicked > 1 ? ` ×${engagement.clicked}` : ""}
+        </span>
+      )}
+      {engagement.opened > 0 && (
+        <span className="pill warm" title={`Opens are unreliable — clients prefetch images. Last ${ist(engagement.lastOpenedAt)}`}>
+          <Mail /> opened{engagement.opened > 1 ? ` ×${engagement.opened}` : ""}
+        </span>
+      )}
+    </div>
   );
 }

@@ -1,0 +1,12 @@
+import { MongoClient } from "mongodb";
+const c = new MongoClient(process.env.MONGODB_URI!); await c.connect();
+const db = c.db("conversion_engine");
+const g = await db.collection("goals").findOne({ key: "teamgrid_leads", productId: "6a964454c4fa12977b6d6964" });
+console.log("GOAL:", JSON.stringify(g, null, 1));
+const ch = await db.collection("channels").find({ productId: "6a964454c4fa12977b6d6964" }).project({secret:0}).toArray();
+for (const x of ch) console.log("CHANNEL:", JSON.stringify({id:String(x._id),key:x.key,kind:x.kind,enabled:x.enabled,requiresApproval:x.requiresApproval,approval:x.approval,governor:x.governor,dailyCap:x.dailyCap}));
+console.log("work_queue pending:", await db.collection("work_queue").countDocuments({status:{$in:["pending","claimed"]}}));
+console.log("actions queued (not sent):", await db.collection("actions").countDocuments({productId:"6a964454c4fa12977b6d6964", state:{$in:["queued","held","pending_approval"]}}));
+const st = await db.collection("actions").aggregate([{$match:{productId:"6a964454c4fa12977b6d6964"}},{$group:{_id:"$state",n:{$sum:1}}}]).toArray();
+console.log("action states:", JSON.stringify(st));
+await c.close();

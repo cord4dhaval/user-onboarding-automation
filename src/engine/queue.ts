@@ -147,11 +147,27 @@ export async function enqueue(
 export async function enqueueMany(
   orgId: string,
   kind: JobKind,
-  items: Array<{ subjectId: string; payload: Record<string, unknown> } & Omit<EnqueueOptions, "subjectId">>,
+  input: Array<{ subjectId: string; payload: Record<string, unknown> } & Omit<EnqueueOptions, "subjectId">>,
   now = new Date(),
 ): Promise<number> {
+  let items = input;
   if (items.length === 0) return 0;
   const db = await getDb();
+
+  // Deduplicated within the batch as well as against the queue. The two are different
+  // checks: the query below catches a subject already waiting, and this catches the same
+  // subject appearing twice in one call — which happens the moment a person holds two
+  // active campaigns, and would put two items in the queue for one decision.
+  const byId = new Map<string, (typeof items)[number]>();
+  for (const item of items) {
+    const seen = byId.get(item.subjectId);
+    // The more urgent of the two wins, so a duplicate cannot demote the reason it was
+    // queued in the first place.
+    if (!seen || (item.priority ?? PRIORITY.normal) < (seen.priority ?? PRIORITY.normal)) {
+      byId.set(item.subjectId, item);
+    }
+  }
+  items = [...byId.values()];
 
   const subjectIds = items.map((i) => i.subjectId);
   const pending = await db

@@ -1,8 +1,9 @@
-import { CircleCheck, Pause, Play, Target } from "lucide-react";
+import { CircleCheck, Mail, MousePointerClick, MessageSquare, Pause, Play, Send, Target } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import type { McpTool } from "@/mcp/client.js";
 import { audienceCount } from "@/engine/library.js";
+import { campaignEngagement, rate, type Engagement } from "@/engine/engagement.js";
 import { createGoal, deleteGoal, toggleGoal, updateGoal } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
@@ -27,6 +28,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
   const { orgId } = await requireSession();
   const db = await getDb();
   const s = scope(orgId, id);
+  const base = `/products/${id}`;
 
   const [goals, templates, sources, connections, bindings, channels] = await Promise.all([
     db.collection(C.goals).find(s).toArray(),
@@ -36,6 +38,11 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
     db.collection(C.mcpBindings).find({ orgId }).toArray(),
     db.collection(C.channels).find({ ...s, enabled: true }).toArray(),
   ]);
+
+  // Every click this product has ever collected, grouped by the campaign that earned it.
+  // One read for the page: a per-row lookup here is one round trip per campaign to render
+  // a column that is four numbers wide.
+  const responses = await campaignEngagement(orgId, id);
 
   const audienceDocs = await db.collection(C.audiences).find(s).sort({ createdAt: -1 }).toArray();
   const audiences = await Promise.all(
@@ -162,6 +169,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                 <th>Comes from</th>
                 <th>Done when</th>
                 <th className="num">People</th>
+                <th>What came back</th>
                 <th />
               </tr>
             </thead>
@@ -275,6 +283,16 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                       <div className="muted">{done} done</div>
                     </td>
 
+                    {/* The column this page was missing. A campaign can collect nine clicks
+                        and, without this, report exactly what a campaign that collected none
+                        reports: a row of configuration. */}
+                    <td>
+                      <Responses
+                        engagement={responses.get(String(goal.key))}
+                        library={`${base}/library?campaign=${encodeURIComponent(String(goal.key))}`}
+                      />
+                    </td>
+
                     <td>
                       <div className="row" style={{ flexWrap: "nowrap", justifyContent: "flex-end" }}>
                         <GoalDrawer
@@ -335,5 +353,60 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * What a campaign earned, as against what it spent.
+ *
+ * Sent is the denominator and is stated first, because every other number here is
+ * meaningless without it — nine clicks out of eleven sends and nine out of nine hundred
+ * are different campaigns. Rates are shown only where tracking could actually have
+ * reported one, so a campaign sent before tracking existed reads as unknown rather than
+ * as a failure.
+ */
+function Responses({ engagement, library }: { engagement?: Engagement; library: string }) {
+  if (!engagement || engagement.sent === 0) {
+    return <span className="muted">nothing sent yet</span>;
+  }
+
+  const { sent, trackable, opened, clicked, replied, unsubscribed } = engagement;
+  return (
+    <div className="responses">
+      <span className="status" title="Messages the provider accepted.">
+        <Send size={13} className="muted" /> {sent} sent
+      </span>
+
+      <a
+        className={`status ${clicked > 0 ? "live" : "muted"}`}
+        href={`${library}&engagement=clicked`}
+        title={trackable > 0 ? `${clicked} of ${trackable} tracked sends` : "These sends carried no tracked links."}
+      >
+        <MousePointerClick size={13} /> {clicked} clicked
+        {trackable > 0 && <span className="muted"> · {rate(clicked, trackable)}</span>}
+      </a>
+
+      <a
+        className={`status ${replied > 0 ? "live" : "muted"}`}
+        href={`${library}&engagement=replied`}
+        title="People in this campaign who wrote back."
+      >
+        <MessageSquare size={13} /> {replied} replied
+      </a>
+
+      <a
+        className="status muted"
+        href={`${library}&engagement=opened`}
+        title="Opens are unreliable: some mail clients load images without a human looking."
+      >
+        <Mail size={13} /> {opened} opened
+      </a>
+
+      {unsubscribed > 0 && (
+        <span className="status muted" title="They asked never to be contacted again.">
+          {unsubscribed} unsubscribed
+        </span>
+      )}
+    </div>
   );
 }

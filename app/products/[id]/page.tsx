@@ -108,7 +108,12 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
   // Everything that never reached anyone, on either side of the line: our own limits
   // stopping an approved message, and sends the provider refused. One alert, because the
   // question behind it — who did not get their mail — does not care which.
-  const failed = [...byStatus("failed"), ...byStatus("skipped").filter((a) => a.skipReason)];
+  // Two different things a reader needs told apart. A send the provider refused is a
+  // fault; a message our own rules stopped — an unsubscribe honoured, a duplicate caught —
+  // is the system working. Counting them together put "18 messages failed to send" on this
+  // page on a day when nothing had failed at all, which trains people to ignore the banner.
+  const errored = byStatus("failed");
+  const stopped = byStatus("skipped").filter((a) => a.skipReason);
   const queued = byStatus("queued");
   const sent = byStatus("sent");
 
@@ -174,15 +179,26 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
       why: "The last few fetches errored, so new people are not arriving. Campaigns keep running on whoever is already here.",
     });
   }
-  if (failed.length > 0) {
+  if (errored.length > 0) {
     alerts.push({
-      text: `${failed.length} message${failed.length === 1 ? "" : "s"} failed to send`,
+      text: `${errored.length} message${errored.length === 1 ? "" : "s"} failed to send`,
       // Straight to the list of exactly these messages, with the reason on every row and
       // the way back to the review queue beside it.
       href: `${base}/review?view=failed`,
       action: "Inspect",
       tone: "bad",
-      why: "Either one of our own limits stopped them or the provider refused. Nothing retries them on its own — the reason is on each row, and you can return them to the review queue from there.",
+      why: "The provider refused these. Nothing retries them on its own — the reason is on each row, and you can return them to the review queue from there.",
+    });
+  }
+  if (stopped.length > 0) {
+    alerts.push({
+      text: `${stopped.length} message${stopped.length === 1 ? "" : "s"} stopped before sending`,
+      href: `${base}/review?view=failed`,
+      action: "Inspect",
+      // Deliberately not "bad". Someone unsubscribed and we honoured it; a duplicate was
+      // caught before it went out. Worth seeing, not worth alarm.
+      tone: "warn",
+      why: "One of our own rules held these back — an unsubscribe honoured, a cap reached, a duplicate caught. The reason is on each row.",
     });
   }
   const unverifiable = goals.filter(

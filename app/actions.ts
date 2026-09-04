@@ -1217,9 +1217,21 @@ export async function decide(formData: FormData) {
   const asText = String(formData.get("format") ?? "html") === "text";
 
   await db.collection(C.actions).updateMany(
-    { _id: { $in: ids }, orgId, productId, status: "awaiting_approval" },
+    {
+      _id: { $in: ids },
+      orgId,
+      productId,
+      // Both states a reviewer can act on: one has reached the gate, the other is dated for
+      // later and has not been decided on. Matching only the first meant a reviewer could
+      // click Approve on a scheduled message and have nothing happen at all — no change, no
+      // error, no explanation. Deciding early on a message you have read is a real decision,
+      // and the system should keep it rather than quietly discard it.
+      $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
+    },
     // Approving returns it to the queue rather than sending directly, so budgets, caps and
-    // suppression are all still checked at the moment it actually goes out.
+    // suppression are all still checked at the moment it actually goes out. A message dated
+    // for next week keeps that date; approving it early only means it will not stop here
+    // again on the way out.
     {
       $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date(), format: asText ? "text" : "html" },
       // Dropping the rendered HTML is not enough on its own — the sender rebuilds it from
