@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { PRIORITY, enqueue } from "./queue.js";
+import { PRIORITY, enqueue, enqueueMany } from "./queue.js";
 
 /**
  * Noticing what needs a session's attention, on the minute clock, without a model.
@@ -25,14 +25,21 @@ export interface DetectSummary {
   playbook: number;
 }
 
-export async function detectWork(orgId: string, productId: string, now = new Date()): Promise<DetectSummary> {
+export async function detectWork(
+  orgId: string,
+  productId: string,
+  now = new Date(),
+  deadline = Date.now() + 8_000,
+): Promise<DetectSummary> {
   const db = await getDb();
   const summary: DetectSummary = { classify: 0, compose: 0, monitor: 0, escalate: 0, playbook: 0 };
   const s = { orgId, productId };
 
-  // Bounded per tick. The clock comes round again in a minute, and a tick that tries to
-  // enqueue a hundred thousand rows is a tick that times out and enqueues none of them.
+  // Bounded by rows and by wall clock, because the two run out at different times. The
+  // clock comes round again in a minute, and a tick that tries to enqueue a hundred
+  // thousand rows is a tick that is killed mid-write and enqueues none of them.
   const BATCH = 500;
+  const outOfTime = () => Date.now() > deadline;
 
   // ── people nobody has read yet ────────────────────────────────────────────────
   const unclassified = await db
@@ -43,103 +50,120 @@ export async function detectWork(orgId: string, productId: string, now = new Dat
     .project({ _id: 1 })
     .toArray();
 
-  for (const person of unclassified) {
-    // Campaign key comes from the goal the person entered on, so fairness is applied per
-    // campaign rather than per product: ten campaigns under one product are ten queues.
-    const instance = await db
+  if (unclassified.length) {
+    // The campaign each person entered on, read in one query rather than one per person.
+    // Fairness is applied per campaign, so ten campaigns under one product are ten queues.
+    const instances = await db
       .collection(C.goalInstances)
-      .findOne({ ...s, personId: String(person._id) }, { projection: { goalKey: 1 } });
-    await enqueue(orgId, "classify", { personId: String(person._id) }, {
-      productId,
-      campaignKey: String(instance?.goalKey ?? "unassigned"),
-      subjectId: String(person._id),
-      priority: PRIORITY.normal,
-    });
-    summary.classify++;
-  }
+      .find(
+        { ...s, personId: { $in: unclassified.map((p) => String(p._id)) } },
+        { projection: { personId: 1, goalKey: 1 } },
+      )
+      .toArray();
+    const campaignOf = new Map(instances.map((i) => [String(i.personId), String(i.goalKey)]));
 
-  // ── campaigns whose next message is close and unwritten ───────────────────────
-  const active = await db
+    summary.classify = await enqueueMany(
+      orgId,
+      "classify",
+      unclassified.map((person) => ({
+        subjectId: String(person._id),
+        payload: { personId: String(person._id) },
+        productId,
+        campaignKey: campaignOf.get(String(person._id)) ?? "unassigned",
+        priority: PRIORITY.normal,
+      })),
+      now,
+    );
+  }
+  if (outOfTime()) return summary;
+
+  // ── campaigns due another look ───────────────────────────────────────────────
+  //
+  // Composing is not queued here. `advance` walks the same campaigns, works out whose next
+  // step is actually due and what tier they are in, and hands over only the tier that earns
+  // a model call. Queuing one from here as well would ask a session to write for everybody,
+  // which is the cost this whole design exists to avoid.
+  const due = await db
     .collection(C.goalInstances)
-    .find({ ...s, status: "active" })
-    .sort({ lastReviewedAt: 1 })
+    .find({
+      ...s,
+      status: "active",
+      $or: [{ nextVerifyAt: { $lte: now } }, { nextVerifyAt: { $exists: false } }],
+    })
+    .sort({ nextVerifyAt: 1 })
     .limit(BATCH)
-    .project({ _id: 1, goalKey: 1, personId: 1, currentPlanId: 1, lastReviewedAt: 1, nextVerifyAt: 1 })
+    .project({ _id: 1, goalKey: 1, personId: 1 })
     .toArray();
 
-  for (const instance of active) {
-    const goalInstanceId = String(instance._id);
-    const campaignKey = String(instance.goalKey);
-
-    // Composing is not queued here. `advance` walks the same campaigns, works out whose
-    // next step is actually due and what tier they are in, and only the tier that earns a
-    // model call is handed over. Queuing one from here as well would ask a session to write
-    // for everybody, which is the cost this whole design exists to avoid.
-
-    // Verification and "where has this person got to" are the same question, and the
-    // instance already carries when it is next due to be asked.
-    const verifyDue = !instance.nextVerifyAt || new Date(String(instance.nextVerifyAt)) <= now;
-    if (verifyDue) {
-      await enqueue(orgId, "monitor", { goalInstanceId, personId: String(instance.personId) }, {
+  if (due.length) {
+    summary.monitor = await enqueueMany(
+      orgId,
+      "monitor",
+      due.map((instance) => ({
+        subjectId: String(instance._id),
+        payload: { goalInstanceId: String(instance._id), personId: String(instance.personId) },
         productId,
-        campaignKey,
-        subjectId: goalInstanceId,
+        campaignKey: String(instance.goalKey),
         priority: PRIORITY.background,
-      });
-      summary.monitor++;
-    }
+      })),
+      now,
+    );
   }
+  if (outOfTime()) return summary;
 
   // ── campaigns and segments with no sequence to run ───────────────────────────
   //
-  // Checked every tick because it is the one gap that makes everything else pointless: a
-  // campaign whose default playbook is missing has nothing to stamp onto arrivals, so every
-  // person entering it waits on a session before they have any sequence at all — which is
-  // exactly the dependency this design exists to remove.
+  // The one gap that makes everything else pointless: a campaign whose default playbook is
+  // missing has nothing to stamp onto arrivals, so every person entering it waits on a
+  // session before they have any sequence at all — which is exactly the dependency this
+  // design exists to remove.
   const campaigns = await db.collection(C.goals).find({ ...s, enabled: true }).toArray();
+  if (campaigns.length === 0) return summary;
+
+  const existing = await db
+    .collection(C.playbooks)
+    .find({ ...s }, { projection: { goalKey: 1, segmentKey: 1 } })
+    .toArray();
+  const written = new Set(existing.map((p) => `${String(p.goalKey)}:${String(p.segmentKey)}`));
+
+  // A segment only earns its own sequence once enough people are in it to be worth writing
+  // one — and to have anything to learn from afterwards. Below that they run the campaign
+  // default, which is a real sequence, not a placeholder.
+  const segments = (await db
+    .collection(C.people)
+    .aggregate([
+      { $match: { ...s, "belief.segment": { $exists: true } } },
+      { $group: { _id: "$belief.segment", people: { $sum: 1 } } },
+      { $match: { people: { $gte: SEGMENT_PLAYBOOK_FLOOR } } },
+    ])
+    .toArray()) as Array<{ _id: string; people: number }>;
+
+  const wanted: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
   for (const goal of campaigns) {
     const goalKey = String(goal.key);
-    const written = new Set(
-      (await db.collection(C.playbooks).find({ ...s, goalKey }).project({ segmentKey: 1 }).toArray()).map((p) =>
-        String(p.segmentKey),
-      ),
-    );
-
-    if (!written.has("default")) {
-      await enqueue(orgId, "playbook", { goalKey, segmentKey: "default" }, {
+    if (!written.has(`${goalKey}:default`)) {
+      wanted.push({
+        subjectId: `${goalKey}:default`,
+        payload: { goalKey, segmentKey: "default" },
         productId,
         campaignKey: goalKey,
-        subjectId: `${goalKey}:default`,
         priority: PRIORITY.normal,
       });
-      summary.playbook++;
     }
-
-    // A segment only earns its own sequence once enough people are in it to be worth
-    // writing one — and to have anything to learn from afterwards. Below that they run the
-    // campaign default, which is a real sequence, not a placeholder.
-    const segments = (await db
-      .collection(C.people)
-      .aggregate([
-        { $match: { ...s, "belief.segment": { $exists: true } } },
-        { $group: { _id: "$belief.segment", people: { $sum: 1 } } },
-        { $match: { people: { $gte: SEGMENT_PLAYBOOK_FLOOR } } },
-      ])
-      .toArray()) as Array<{ _id: string; people: number }>;
-
     for (const segment of segments) {
       const segmentKey = String(segment._id);
       if (segmentKey === "off_icp" || segmentKey === "unknown") continue;
-      if (written.has(segmentKey)) continue;
-      await enqueue(orgId, "playbook", { goalKey, segmentKey, people: segment.people }, {
+      if (written.has(`${goalKey}:${segmentKey}`)) continue;
+      wanted.push({
+        subjectId: `${goalKey}:${segmentKey}`,
+        payload: { goalKey, segmentKey, people: segment.people },
         productId,
         campaignKey: goalKey,
-        subjectId: `${goalKey}:${segmentKey}`,
         priority: PRIORITY.background,
       });
-      summary.playbook++;
     }
   }
+  if (wanted.length) summary.playbook = await enqueueMany(orgId, "playbook", wanted, now);
 
   return summary;
 }

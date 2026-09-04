@@ -135,6 +135,71 @@ export async function enqueue(
 }
 
 /**
+ * Many items of one kind, deduplicated and inserted in two queries rather than in three
+ * per row.
+ *
+ * The per-row version was correct and unusably slow: a round trip to a hosted cluster is
+ * about forty milliseconds, and the detection pass runs over every person in flight on
+ * every tick. Five hundred rows at three round trips each is a minute of wall clock inside
+ * a function the platform kills at sixty seconds — so the tick would send its mail, die
+ * before it recorded anything, and look from the outside like a system that was working.
+ */
+export async function enqueueMany(
+  orgId: string,
+  kind: JobKind,
+  items: Array<{ subjectId: string; payload: Record<string, unknown> } & Omit<EnqueueOptions, "subjectId">>,
+  now = new Date(),
+): Promise<number> {
+  if (items.length === 0) return 0;
+  const db = await getDb();
+
+  const subjectIds = items.map((i) => i.subjectId);
+  const pending = await db
+    .collection(C.workQueue)
+    .find(
+      { orgId, kind, subjectId: { $in: subjectIds }, status: { $in: ["queued", "ready", "running"] } },
+      { projection: { subjectId: 1, priority: 1 } },
+    )
+    .toArray();
+  const already = new Map(pending.map((p) => [String(p.subjectId), Number(p.priority ?? PRIORITY.normal)]));
+
+  const fresh = items.filter((i) => !already.has(i.subjectId));
+  // An item already waiting may have become urgent since — somebody queued for a routine
+  // look who has since replied. Urgency is raised, never lowered.
+  const promote = items.filter(
+    (i) => already.has(i.subjectId) && (i.priority ?? PRIORITY.normal) < already.get(i.subjectId)!,
+  );
+
+  if (promote.length) {
+    await db.collection(C.workQueue).updateMany(
+      { orgId, kind, subjectId: { $in: promote.map((p) => p.subjectId) }, status: { $in: ["queued", "ready"] } },
+      { $set: { priority: PRIORITY.urgent, dueAt: now } },
+    );
+  }
+  if (fresh.length === 0) return 0;
+
+  await db.collection(C.workQueue).insertMany(
+    fresh.map((item) => ({
+      _id: new ObjectId(),
+      orgId,
+      kind,
+      status: "queued",
+      payload: item.payload,
+      dueAt: item.dueAt ?? now,
+      leaseUntil: new Date(0),
+      attempts: 0,
+      createdAt: now,
+      productId: item.productId,
+      campaignKey: item.campaignKey,
+      priority: item.priority ?? PRIORITY.normal,
+      subjectId: item.subjectId,
+    })),
+    { ordered: false },
+  );
+  return fresh.length;
+}
+
+/**
  * Takes one job and holds it for LEASE_MS. Running jobs are candidates too — an expired
  * lease means the worker holding it is gone, and the job has to move.
  *

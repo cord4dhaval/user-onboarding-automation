@@ -42,6 +42,12 @@ export async function GET(request: NextRequest) {
   // so the queue drain stops well short of that and leaves the rest for the next minute.
   const started = Date.now();
   const BUDGET_MS = 45_000;
+  const left = () => BUDGET_MS - (Date.now() - started);
+  // Every phase gets a deadline rather than a row count, because the two run out at
+  // different moments and only one of them is the reason the platform kills the request.
+  // A tick that is killed has still sent its mail — the send phase runs first — so from
+  // outside it looks like a working system while nothing behind the send phase ever runs.
+  const deadline = (share: number) => Date.now() + Math.max(1_000, Math.min(left() * share, left()));
 
   // Only pollable kinds. An uploaded spreadsheet and a webhook push both arrive on their
   // own; putting them in the poll loop would fail on every tick, forever.
@@ -136,8 +142,8 @@ export async function GET(request: NextRequest) {
     //
     // They run here rather than inside an hourly routine because an hourly routine can only
     // see the slice it managed to read, and the slice it read was chosen by disk order.
-    const advanced = await advance(orgId, productId, 200, now);
-    const detected = await detectWork(orgId, productId, now);
+    const advanced = await advance(orgId, productId, 100, now, deadline(0.25));
+    const detected = await detectWork(orgId, productId, now, deadline(0.25));
     const late = await watchdog(orgId, productId, now);
     if (late.overdue > 0) {
       // A message that was due and never went out is not held back by any guardrail — every
@@ -244,6 +250,7 @@ export async function GET(request: NextRequest) {
   // thousand people as at ten.
   const orgIds = [...new Set(products.map((p) => String(p.orgId)))];
   for (const orgId of orgIds) {
+    if (left() <= 0) break;
     const summary = await dispatch(orgId, now);
     const busy = summary.lanes.filter((l) => l.granted || l.starved.length);
     if (busy.length) report.push({ dispatch: { orgId, lanes: busy } });

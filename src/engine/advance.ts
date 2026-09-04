@@ -2,7 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { dueAtFor, type CadenceBand } from "./cadence.js";
-import { PRIORITY, enqueue } from "./queue.js";
+import { PRIORITY, enqueueMany } from "./queue.js";
 import { pickChannelFrom, loadChannels } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
 
@@ -78,8 +78,9 @@ function nextStep(plan: Document | null, written: Set<number>): Document | null 
 export async function advance(
   orgId: string,
   productId: string,
-  limit = 200,
+  limit = 100,
   now = new Date(),
+  deadline = Date.now() + 10_000,
 ): Promise<AdvanceSummary> {
   const db = await getDb();
   const summary: AdvanceSummary = { examined: 0, queued: 0, handedToClaude: 0, parked: 0, skipped: [] };
@@ -87,23 +88,96 @@ export async function advance(
 
   const instances = await db
     .collection(C.goalInstances)
-    .find({ ...s, status: "active", currentPlanId: { $exists: true } })
+    .find(
+      { ...s, status: "active", currentPlanId: { $exists: true } },
+      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1 } },
+    )
     .sort({ lastAdvancedAt: 1, startedAt: 1 })
     .limit(limit)
     .toArray();
   if (instances.length === 0) return summary;
+  // The cluster this runs against is shared, and a query that usually costs a second has
+  // been seen to cost twenty. Checking here as well as in the loop means a slow moment
+  // costs a batch rather than the whole tick, which still has mail to reconcile after this.
+  if (Date.now() > deadline) return summary;
 
-  const goals = await db.collection(C.goals).find(s).toArray();
+  const instanceIds = instances.map((i) => String(i._id));
+
+  // Everything this loop needs, read in five queries rather than five per person.
+  //
+  // The per-person version was correct and far too slow to run on a minute clock: a round
+  // trip to a hosted cluster is about forty milliseconds, so two hundred people at five
+  // round trips each is thirty-nine seconds inside a function the platform kills at sixty.
+  // The tick would send its mail, then die before recording anything — which from outside
+  // looks exactly like a system that is working.
+  // Projected down to what the decision actually reads. A person document is about 1.5KB
+  // and only six of its fields matter here; over two hundred people that is the difference
+  // between a payload worth waiting for and one worth timing out over.
+  const [goals, people, plans, actionRows] = await Promise.all([
+    db.collection(C.goals).find(s).toArray(),
+    db
+      .collection(C.people)
+      .find(
+        { _id: { $in: instances.map((i) => new ObjectId(String(i.personId))) } },
+        { projection: { temp: 1, belief: 1, lifecycle: 1, suppressedAt: 1, lastReplyAt: 1, lastContactedAt: 1, consent: 1, stage: 1 } },
+      )
+      .toArray(),
+    db
+      .collection(C.plans)
+      .find(
+        { _id: { $in: instances.map((i) => new ObjectId(String(i.currentPlanId))) } },
+        { projection: { steps: 1 } },
+      )
+      .toArray(),
+    db
+      .collection(C.actions)
+      .find(
+        { ...s, goalInstanceId: { $in: instanceIds } },
+        { projection: { goalInstanceId: 1, planStepId: 1, status: 1 } },
+      )
+      .toArray(),
+  ]);
+
   const goalByKey = new Map(goals.map((g) => [String(g.key), g]));
+  const personById = new Map(people.map((p) => [String(p._id), p]));
+  const planById = new Map(plans.map((p) => [String(p._id), p]));
+
+  const pendingBy = new Map<string, number>();
+  const writtenBy = new Map<string, Set<number>>();
+  for (const action of actionRows) {
+    const key = String(action.goalInstanceId);
+    if (["queued", "awaiting_approval", "sending"].includes(String(action.status))) {
+      pendingBy.set(key, (pendingBy.get(key) ?? 0) + 1);
+    }
+    const step = Number(action.planStepId);
+    if (Number.isFinite(step)) {
+      const set = writtenBy.get(key) ?? new Set<number>();
+      set.add(step);
+      writtenBy.set(key, set);
+    }
+  }
+
+  // Channels are the same handful of documents for everyone in the batch, so they are read
+  // once per campaign and the per-person decision is made in memory.
+  const channelsByGoal = new Map<string, Record<string, unknown>[]>();
+  for (const goal of goals) {
+    channelsByGoal.set(
+      String(goal.key),
+      await loadChannels(orgId, productId, (goal.allowedChannels ?? ["email"]) as ChannelKey[]),
+    );
+  }
+
+  const advancedIds: ObjectId[] = [];
+  const toInsert: Document[] = [];
+  const handOver: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
 
   for (const instance of instances) {
+    if (Date.now() > deadline) break;
     summary.examined++;
     const goalInstanceId = String(instance._id);
-    // Stamped before any early `continue`, so a campaign that cannot advance today drops to
-    // the back of the queue instead of being re-examined on every single tick forever.
-    await db
-      .collection(C.goalInstances)
-      .updateOne({ _id: instance._id }, { $set: { lastAdvancedAt: now } });
+    // Stamped whatever happens, so a campaign that cannot advance today drops to the back of
+    // the queue instead of being re-examined on every single tick forever.
+    advancedIds.push(instance._id as ObjectId);
 
     const goal = goalByKey.get(String(instance.goalKey));
     if (!goal) {
@@ -118,14 +192,11 @@ export async function advance(
       continue;
     }
 
-    // Anything already waiting means this person's next message exists. Writing a second
-    // one now would put two messages in front of somebody who has read neither.
-    const pending = await db
-      .collection(C.actions)
-      .countDocuments({ ...s, goalInstanceId, status: { $in: ["queued", "awaiting_approval", "sending"] } });
-    if (pending > 0) continue;
+    // Anything already waiting means this person's next message exists. Writing a second one
+    // now would put two messages in front of somebody who has read neither.
+    if ((pendingBy.get(goalInstanceId) ?? 0) > 0) continue;
 
-    const person = await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) });
+    const person = personById.get(String(instance.personId));
     if (!person) {
       summary.skipped.push({ goalInstanceId, reason: "person missing" });
       continue;
@@ -137,17 +208,7 @@ export async function advance(
       continue;
     }
 
-    const plan = await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) });
-    const writtenIds = (
-      await db
-        .collection(C.actions)
-        .find({ ...s, goalInstanceId }, { projection: { planStepId: 1 } })
-        .toArray()
-    )
-      .map((a) => Number(a.planStepId))
-      .filter(Number.isFinite);
-
-    const step = nextStep(plan, new Set(writtenIds));
+    const step = nextStep(planById.get(String(instance.currentPlanId)) ?? null, writtenBy.get(goalInstanceId) ?? new Set());
     if (!step) {
       summary.skipped.push({ goalInstanceId, reason: "plan exhausted" });
       continue;
@@ -162,21 +223,17 @@ export async function advance(
       now,
     });
 
-    // Tier 1 is handed to a session rather than written here. The action is not created
-    // yet: whoever writes the copy also decides the shape, and creating an empty shell now
-    // would race the session that is about to fill it.
+    // Tier 1 is handed to a session rather than written here. The action is not created yet:
+    // whoever writes the copy also decides the shape, and creating an empty shell now would
+    // race the session that is about to fill it.
     if (tier === 1) {
-      await enqueue(
-        orgId,
-        "compose",
-        { goalInstanceId, personId: String(person._id), stepId: step.id, dueAt },
-        {
-          productId,
-          campaignKey: String(instance.goalKey),
-          subjectId: goalInstanceId,
-          priority: band === "hot" ? PRIORITY.urgent : PRIORITY.normal,
-        },
-      );
+      handOver.push({
+        subjectId: goalInstanceId,
+        payload: { goalInstanceId, personId: String(person._id), stepId: step.id, dueAt },
+        productId,
+        campaignKey: String(instance.goalKey),
+        priority: band === "hot" ? PRIORITY.urgent : PRIORITY.normal,
+      });
       summary.handedToClaude++;
       continue;
     }
@@ -185,47 +242,68 @@ export async function advance(
     // first inside it. A plan naming a channel the campaign never allowed is not honoured —
     // that is the campaign's decision to make, not a plan's.
     const allowed = (goal.allowedChannels ?? ["email"]) as ChannelKey[];
-    const preferred = allowed.filter((key) => key === String(step.channel));
-    const channels = await loadChannels(orgId, productId, allowed);
+    const channels = channelsByGoal.get(String(goal.key)) ?? [];
     const pick =
-      pickChannelFrom(channels, preferred, person as never) ??
+      pickChannelFrom(channels, allowed.filter((key) => key === String(step.channel)), person as never) ??
       pickChannelFrom(channels, allowed, person as never);
     if (!pick) {
       summary.skipped.push({ goalInstanceId, reason: "no healthy channel" });
       continue;
     }
 
+    toInsert.push({
+      _id: new ObjectId(),
+      orgId,
+      productId,
+      goalInstanceId,
+      personId: String(person._id),
+      planStepId: step.id,
+      channel: pick.key,
+      channelId: pick.channelId,
+      angle: String(step.angle ?? "follow_up"),
+      rationale: String(step.why ?? `Plan step ${step.id}; ${pick.reason}.`),
+      // No template id and no composed copy. The ladder rung is chosen at send time from how
+      // far through the sequence this person is, and its own fallback text is the message —
+      // which is what tier 2 means.
+      status: "queued",
+      dueAt,
+      cost: 0,
+      signals: [],
+      next: {},
+      content: { bodyMd: "", personalizationUsed: [], claimsMade: [], wordCount: 0 },
+      assetIds: [],
+      idempotencyKey: `${goalInstanceId}:step:${step.id}`,
+    });
+  }
+
+  if (advancedIds.length) {
+    await db
+      .collection(C.goalInstances)
+      .updateMany({ _id: { $in: advancedIds } }, { $set: { lastAdvancedAt: now } });
+  }
+
+  if (toInsert.length) {
     try {
-      await db.collection(C.actions).insertOne({
-        _id: new ObjectId(),
-        orgId,
-        productId,
-        goalInstanceId,
-        personId: String(person._id),
-        planStepId: step.id,
-        channel: pick.key,
-        channelId: pick.channelId,
-        angle: String(step.angle ?? "follow_up"),
-        rationale: String(step.why ?? `Plan step ${step.id}; ${pick.reason}.`),
-        // No template id and no composed copy. The ladder rung is chosen at send time from
-        // how far through the sequence this person is, and its own fallback text is the
-        // message — which is what tier 2 means.
-        status: "queued",
-        dueAt,
-        cost: 0,
-        signals: [],
-        next: {},
-        content: { bodyMd: "", personalizationUsed: [], claimsMade: [], wordCount: 0 },
-        assetIds: [],
-        idempotencyKey: `${goalInstanceId}:step:${step.id}`,
-      });
-      summary.queued++;
+      const result = await db.collection(C.actions).insertMany(toInsert, { ordered: false });
+      summary.queued += result.insertedCount;
     } catch (err) {
-      // The unique index doing its job: a session wrote this same step between the read
-      // above and this insert. Theirs wins; it has words in it.
-      if (!(err instanceof Error && err.message.includes("E11000"))) throw err;
+      // Duplicate keys are the unique index doing its job: a session wrote the same step
+      // between the read above and this insert. Theirs wins; it has words in it.
+      const inserted = insertedDespiteDuplicates(err);
+      if (inserted === null) throw err;
+      summary.queued += inserted;
     }
   }
 
+  if (handOver.length) await enqueueMany(orgId, "compose", handOver, now);
+
   return summary;
+}
+
+/** A duplicate key is the unique index doing its job. Anything else is a real failure. */
+function insertedDespiteDuplicates(err: unknown): number | null {
+  const bulk = err as { result?: { insertedCount?: number }; writeErrors?: { code?: number }[] };
+  const writeErrors = bulk?.writeErrors;
+  if (!Array.isArray(writeErrors) || writeErrors.some((e) => e.code !== 11000)) return null;
+  return bulk.result?.insertedCount ?? 0;
 }
