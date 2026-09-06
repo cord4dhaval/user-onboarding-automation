@@ -116,44 +116,15 @@ export default function PreviewDrawer({
               </p>
             </div>
 
-            <div className="preview">
-              {message.subject && (
-                <div className="preview-head">
-                  <span className="k">Subject</span> <strong>{message.subject}</strong>
-                </div>
-              )}
-              {format === "html" && message.bodyHtml ? (
-                <iframe
-                  title={`Message to ${personEmail}`}
-                  srcDoc={message.bodyHtml}
-                  className="preview-frame"
-                />
-              ) : (
-                <div className="preview-body">
-                  {message.bodyText || message.previewError || "This message has no body."}
-                </div>
-              )}
-            </div>
-
-            {/* A body rendered on open, not read off the action. Saying so is the difference
-                between "this is the message" and "this is the message as long as nobody
-                edits the template before it goes". */}
-            {message.preview && !message.previewError ? (
-              <p className="muted preview-why">
-                Rendered from the template now — the greeting, button and opt-out line are
-                added at send, exactly as shown.
-              </p>
-            ) : null}
-
-            {message.rationale ? (
-              <p className="muted preview-why">Why this: {message.rationale}</p>
-            ) : null}
-
             {/* Changing the message, rather than only deciding on it.
                 Three separate things a reviewer wants at this point and could not do at
                 all: fix a line, move the date, or ask for it to be written again. They open
                 one at a time — all three act on this same message, and two of them open
-                would leave it unclear which one Save applies to. */}
+                would leave it unclear which one Save applies to.
+
+                Above the preview, not below it. A rendered email is a full screen tall, so
+                controls underneath it are controls nobody knows are there — the reader has
+                to scroll past the whole message to find out they could have edited it. */}
             {message.editable && (
               <div className="msg-tools">
                 <div className="row">
@@ -252,6 +223,39 @@ export default function PreviewDrawer({
                 )}
               </div>
             )}
+
+            <div className="preview">
+              {message.subject && (
+                <div className="preview-head">
+                  <span className="k">Subject</span> <strong>{message.subject}</strong>
+                </div>
+              )}
+              {format === "html" && message.bodyHtml ? (
+                <iframe
+                  title={`Message to ${personEmail}`}
+                  srcDoc={message.bodyHtml}
+                  className="preview-frame"
+                />
+              ) : (
+                <div className="preview-body">
+                  {message.bodyText || message.previewError || "This message has no body."}
+                </div>
+              )}
+            </div>
+
+            {/* A body rendered on open, not read off the action. Saying so is the difference
+                between "this is the message" and "this is the message as long as nobody
+                edits the template before it goes". */}
+            {message.preview && !message.previewError ? (
+              <p className="muted preview-why">
+                Rendered from the template now — the greeting, button and opt-out line are
+                added at send, exactly as shown.
+              </p>
+            ) : null}
+
+            {message.rationale ? (
+              <p className="muted preview-why">Why this: {message.rationale}</p>
+            ) : null}
 
             {/* Sticky, because the decision must stay reachable without scrolling back up
                 past a full-height rendered email. */}

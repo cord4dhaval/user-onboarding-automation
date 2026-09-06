@@ -1181,8 +1181,10 @@ details > summary:hover { color: var(--ink); }
 
 /* ── changing a message from its drawer ────────────────────────────────────── */
 
-/* Sits between the preview and the decision: what you can change, above what you decide. */
-.msg-tools { border-top: 1px solid var(--rule-soft); margin-top: 16px; padding-top: 14px; }
+/* Sits above the preview: a rendered email is a screenful, and controls below one are
+   controls nobody scrolls to. The rule underneath separates them from the message they
+   act on without pushing that message down the drawer. */
+.msg-tools { border-bottom: 1px solid var(--rule-soft); margin-bottom: 14px; padding-bottom: 14px; }
 .msg-form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .msg-form textarea { font: inherit; font-size: 13.5px; line-height: 1.55; resize: vertical; }
 .msg-form .muted { font-size: 12.5px; margin: 0; }
