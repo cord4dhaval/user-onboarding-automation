@@ -13,22 +13,35 @@
  */
 const IST_ZONE = "Asia/Kolkata";
 
-/** ISO-ish and sortable by eye, which a table of a hundred rows needs more than prose. */
-const stamp = new Intl.DateTimeFormat("en-CA", {
+/**
+ * Date and time are formatted apart and then joined, rather than by one formatter.
+ *
+ * The date wants to stay ISO — a table of a hundred rows is scanned down a column, and
+ * `2026-09-09` sorts by eye where `09/09/2026` does not. The time wants a meridiem, because
+ * `18:08` is a small translation everybody reading a queue has to do, and at a glance
+ * `06:08` in the wrong half of the day is a message you thought went out this morning.
+ * No locale gives both, so each half gets the locale that spells it the way it is read.
+ */
+const dateHalf = new Intl.DateTimeFormat("en-CA", {
   timeZone: IST_ZONE,
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
+});
+
+const timeHalf = new Intl.DateTimeFormat("en-US", {
+  timeZone: IST_ZONE,
   hour: "2-digit",
   minute: "2-digit",
-  hour12: false,
+  hour12: true,
 });
 
 /** The same instant spelled out, for a tooltip where there is room to be unambiguous. */
-const full = new Intl.DateTimeFormat("en-GB", {
+const full = new Intl.DateTimeFormat("en-US", {
   timeZone: IST_ZONE,
   dateStyle: "medium",
   timeStyle: "short",
+  hour12: true,
 });
 
 type When = Date | string | number | null | undefined;
@@ -39,36 +52,33 @@ function parse(value: When): Date | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
-/** `2026-09-02 17:36`, in IST. The em dash is what an empty cell should read as. */
+/** `2026-09-02 05:36 PM`, in IST. The em dash is what an empty cell should read as. */
 export function ist(value: When, empty = "—"): string {
   const date = parse(value);
   if (!date) return empty;
-  return stamp.format(date).replace(", ", " ");
+  return `${dateHalf.format(date)} ${timeHalf.format(date)}`;
 }
 
-/** `2 Sept 2026, 17:36 IST` — for a `title`, where the zone is worth naming outright. */
+/** `Sep 2, 2026, 5:36 PM IST` — for a `title`, where the zone is worth naming outright. */
 export function istLong(value: When): string | undefined {
   const date = parse(value);
   return date ? `${full.format(date)} IST` : undefined;
 }
 
-/** `17:36:04` — for a call log, where only the time of day is in question. */
-const clock = new Intl.DateTimeFormat("en-GB", {
+/** `05:36:04 PM` — for a call log, where only the time of day is in question. */
+const clock = new Intl.DateTimeFormat("en-US", {
   timeZone: IST_ZONE,
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
-  hour12: false,
+  hour12: true,
 });
 
-/** `09-02 17:36` — a table scanned rather than read, where the year is never the question. */
-const shortStamp = new Intl.DateTimeFormat("en-CA", {
+/** `09-02` — the date half of a table scanned rather than read, where the year is never the question. */
+const shortDate = new Intl.DateTimeFormat("en-CA", {
   timeZone: IST_ZONE,
   month: "2-digit",
   day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
 });
 
 /** `2026-09-02` — a date with no time, and the key days are bucketed by. */
@@ -91,9 +101,10 @@ export function istClock(value: When, empty = "—"): string {
   return date ? clock.format(date) : empty;
 }
 
+/** `09-02 05:36 PM` — the same two halves as `ist`, without the year. */
 export function istShort(value: When, empty = "—"): string {
   const date = parse(value);
-  return date ? shortStamp.format(date).replace(", ", " ") : empty;
+  return date ? `${shortDate.format(date)} ${timeHalf.format(date)}` : empty;
 }
 
 /**

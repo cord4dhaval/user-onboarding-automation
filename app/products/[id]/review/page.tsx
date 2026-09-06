@@ -10,6 +10,7 @@ import { SubmitButton } from "../../../ui/kit";
 import { BusyArea, BusyLink, BusyProvider, BusySelect } from "../../../ui/busy";
 import { ist, istLong } from "../../../ui/time";
 import CampaignFilter, { type CampaignOption } from "./campaign-filter";
+import SearchBox from "./search-box";
 import PreviewDrawer from "./preview-drawer";
 
 export const dynamic = "force-dynamic";
@@ -27,25 +28,18 @@ const PER_PAGE = [10, 50, 100, 500] as const;
  */
 const VIEWS = {
   waiting: {
-    label: "Needs you",
-    // Only what has actually reached the gate.
+    label: "Pending approval",
+    // Everything undecided, whether it is due now or dated for next week.
     //
-    // This tab used to include scheduled messages too, on the reasoning that both halves
-    // are undecided. They are — but they are not both actionable, and merging them made
-    // the screen say 262 while the sidebar said 51, both correct and neither trustworthy.
-    // A reviewer opening this page is asking "what needs me now", and next week's mail is
-    // not an answer to that question.
-    match: { status: "awaiting_approval" },
-    blurb: "At the gate and due. Approving sends them within the minute.",
-  },
-  scheduled: {
-    label: "Scheduled",
-    // Written, dated, and not yet at the gate. They arrive here on their own as each one
-    // comes due — but a reviewer who wants to look ahead can, and approving one early is a
-    // real decision the system honours rather than silently ignoring.
-    match: { status: "queued", reviewedAt: { $exists: false } },
-    blurb:
-      "Dated for later. Each one comes to you for review when it is due — approving now means it goes out on its date without stopping here again.",
+    // These were two tabs. Both held messages nobody had decided on, both offered the same
+    // Approve and Reject, and the only difference between them was the due date — which is
+    // a column, not a tab. What that split actually produced was a reviewer approving a
+    // message, seeing a new one appear under Scheduled for the same person, and reading it
+    // as the decision having been lost. One queue, with the date on the row.
+    match: {
+      $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
+    },
+    blurb: "Waiting on a decision. Approving sends each one on its date — today's go within the minute.",
   },
   approved: {
     label: "Approved",
@@ -60,7 +54,7 @@ const VIEWS = {
     blurb: "These reached the provider. The message shown is the one that went.",
   },
   failed: {
-    label: "Never sent",
+    label: "Undelivered",
     // Two statuses, one question. `skipped` with a reason is one of our own limits stopping
     // an approved message; `failed` is the send itself erroring. Both mean nobody received
     // it, so a reviewer asking "what never reached anyone" was checking two tabs for one
@@ -78,7 +72,7 @@ const VIEWS = {
     blurb: "Turned down in review. Nothing was sent.",
   },
   all: {
-    label: "All",
+    label: "All messages",
     match: {},
     blurb: "Every message this product has ever composed.",
   },
@@ -96,7 +90,7 @@ const VIEW_KEYS = Object.keys(VIEWS) as ViewKey[];
  */
 type Origin = "ours" | "theirs";
 
-const ORIGIN_LABEL: Record<Origin, string> = { ours: "stopped here", theirs: "provider error" };
+const ORIGIN_LABEL: Record<Origin, string> = { ours: "Stopped here", theirs: "Provider error" };
 
 function failureOrigin(action: Document): Origin {
   // A rule of ours held it: a cap, a suppression, a campaign that had already closed.
@@ -123,7 +117,7 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
   const validation = action.validation as { hardFails?: string[] } | undefined;
   switch (status) {
     case "awaiting_approval":
-      return { label: "waiting", tone: "" };
+      return { label: "Pending", tone: "" };
     case "queued": {
       // "queued" is where every message starts, not only where an approved one waits. A
       // row that nobody has looked at read as "approved · in the send queue", which is the
@@ -132,16 +126,16 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
       // message, so there is always a window where both meanings share one status, and
       // reviewedAt is the only thing that tells them apart.
       if (!action.reviewedAt) {
-        return { label: "not reviewed", tone: "", detail: "queued — the gate has not reached it yet" };
+        return { label: "Scheduled", tone: "", detail: "dated for later, no decision yet" };
       }
       // A message waiting out a full window is not the same as one about to go, and the
       // difference is the only thing anyone wants to know from this row. The date it is
       // waiting for matters as much as the reason: the reason is a snapshot of the limit
       // that stopped it, so without the date a raised cap looks like it did nothing.
       const until = action.dueAt ? new Date(String(action.dueAt)) : undefined;
-      if (!action.deferReason) return { label: "approved", tone: "accent", detail: "in the send queue" };
+      if (!action.deferReason) return { label: "Approved", tone: "accent", detail: "in the send queue" };
       return {
-        label: "approved",
+        label: "Approved",
         tone: "accent",
         detail:
           until && until > new Date()
@@ -150,14 +144,14 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
       };
     }
     case "sending":
-      return { label: "sending", tone: "accent", detail: "claimed by a send run" };
+      return { label: "Sending", tone: "accent", detail: "claimed by a send run" };
     case "dispatched":
-      return { label: "dispatched", tone: "accent", detail: "provider has it, delivery unconfirmed" };
+      return { label: "Dispatched", tone: "accent", detail: "provider has it, delivery unconfirmed" };
     case "sent":
-      return { label: "sent", tone: "ok", detail: action.confirmedAt ? "delivery confirmed" : undefined };
+      return { label: "Sent", tone: "ok", detail: action.confirmedAt ? "delivery confirmed" : undefined };
     case "failed":
       return {
-        label: "failed",
+        label: "Failed",
         tone: "bad",
         detail: action.error ? String(action.error) : validation?.hardFails?.join("; "),
         origin: failureOrigin(action),
@@ -167,8 +161,8 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
       // provider refused are the same fact to the person reading — nobody got it — and the
       // origin pill beside this says which of the two it was.
       return action.skipReason
-        ? { label: "failed", tone: "bad", detail: String(action.skipReason), origin: "ours" }
-        : { label: "rejected", tone: "", detail: "turned down in review" };
+        ? { label: "Failed", tone: "bad", detail: String(action.skipReason), origin: "ours" }
+        : { label: "Rejected", tone: "", detail: "turned down in review" };
     default:
       return { label: status, tone: "" };
   }
@@ -185,6 +179,7 @@ export default async function Review({
     channel?: string;
     page?: string;
     per?: string;
+    q?: string;
     approved?: string;
     rejected?: string;
   }>;
@@ -196,6 +191,7 @@ export default async function Review({
     channel: channelParam,
     page: pageParam,
     per: perParam,
+    q: queryParam,
     approved: approvedParam,
     rejected: rejectedParam,
   } = await searchParams;
@@ -205,7 +201,10 @@ export default async function Review({
 
   // "Never sent" and "Failed" used to be separate tabs. A bookmark, a notification or a
   // browser's back button can still ask for the old one by name.
-  const asked = viewParam === "blocked" ? "failed" : viewParam;
+  // Old tabs that bookmarks, notifications and back buttons still ask for by name.
+  // "blocked" was renamed to the undelivered list; "scheduled" was merged into the queue.
+  const RENAMED: Record<string, ViewKey> = { blocked: "failed", scheduled: "waiting" };
+  const asked = viewParam ? (RENAMED[viewParam] ?? viewParam) : viewParam;
   const view: ViewKey = VIEW_KEYS.includes(asked as ViewKey) ? (asked as ViewKey) : "waiting";
   const per = PER_PAGE.includes(Number(perParam) as (typeof PER_PAGE)[number])
     ? Number(perParam)
@@ -226,11 +225,35 @@ export default async function Review({
   const instanceIds = campaign ? await runsFor(campaign) : undefined;
   const channelKey = channels.some((c) => String(c.key) === channelParam) ? channelParam : undefined;
 
+  // One box over two collections. The reviewer hunting a row does not know or care whether
+  // what they remember is on the person or on the message, so a name, an email address and
+  // a subject line all answer to the same search.
+  const search = (queryParam ?? "").trim();
+  const searchFilter = search
+    ? await (async (): Promise<Filter<Document>> => {
+        // Escaped, because a lead's company really can be called "C++" and a regex built
+        // from raw input either throws or matches the wrong rows.
+        const needle = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+        const people = await db
+          .collection(C.people)
+          .find({ ...s, $or: [{ name: needle }, { primaryEmail: needle }, { companyDomain: needle }] })
+          .project({ _id: 1 })
+          .toArray();
+        return {
+          $or: [
+            { personId: { $in: people.map((p) => String(p._id)) } },
+            { "content.subject": needle },
+          ],
+        };
+      })()
+    : undefined;
+
   /** Everything except the status view, so the tab counts can be taken against it. */
   const base: Filter<Document> = {
     ...s,
     ...(instanceIds ? { goalInstanceId: { $in: instanceIds } } : {}),
     ...(channelKey ? { channel: channelKey } : {}),
+    ...(searchFilter ? { $and: [searchFilter] } : {}),
   };
   // The literal VIEWS object infers its $or as a readonly tuple, which the driver's
   // Filter type will not take. The shape is right; only its mutability is not.
@@ -257,11 +280,10 @@ export default async function Review({
       .toArray()
   ).map((p) => String(p._id));
 
-  // Both undecided views, not only the gate. On this product every message to someone who
-  // had just clicked was sitting under Scheduled, dated days out — so lifting inside the
-  // gate alone would have reordered a list none of them were in.
+  // The undecided queue holds both halves now — at the gate and dated for later — so a
+  // message to someone who has just clicked is lifted whichever half it is in.
   const held =
-    (view === "waiting" || view === "scheduled") && lifted.length > 0
+    view === "waiting" && lifted.length > 0
       ? await db
           .collection(C.actions)
           .aggregate([
@@ -314,6 +336,7 @@ export default async function Review({
     channel?: string | null;
     page?: number;
     per?: number;
+    q?: string | null;
   }): string {
     const q = new URLSearchParams();
     const nextCampaign = next.campaign === null ? undefined : (next.campaign ?? campaign);
@@ -326,6 +349,8 @@ export default async function Review({
     if (nextPer !== PER_PAGE[0]) q.set("per", String(nextPer));
     const nextPage = next.page ?? current;
     if (nextPage > 1) q.set("page", String(nextPage));
+    const nextSearch = next.q === null ? "" : (next.q ?? search);
+    if (nextSearch) q.set("q", nextSearch);
     const qs = q.toString();
     return `/products/${id}/review${qs ? `?${qs}` : ""}`;
   }
@@ -362,13 +387,27 @@ export default async function Review({
     if (campaign) q.set("campaign", campaign);
     if (channelParam) q.set("channel", channelParam);
     if (perParam) q.set("per", String(perParam));
+    if (search) q.set("q", search);
+    return q.toString();
+  })();
+  /** Every filter except the search itself, so searching does not drop the tab you are on. */
+  const searchFilters = (() => {
+    const q = new URLSearchParams();
+    if (view !== "waiting") q.set("view", view);
+    if (campaign) q.set("campaign", campaign);
+    if (channelKey) q.set("channel", channelKey);
+    if (per !== PER_PAGE[0]) q.set("per", String(per));
     return q.toString();
   })();
   const decided = Number(approvedParam ?? rejectedParam ?? NaN);
   const decidedWord = approvedParam !== undefined ? "approved" : "rejected";
-  // Scheduled messages can be decided on too, and saying so on the button is the difference
-  // between a reviewer knowing they are approving next week's mail and finding out later.
-  const decidable = waiting || view === "scheduled";
+  // One undecided queue now, so the decision controls belong to exactly one tab.
+  const decidable = waiting;
+  // Which half of that queue goes out on this send run, and which is dated for later. The
+  // bulk button has to say both, or "approve this page" reads as "send all of these now".
+  const now = Date.now();
+  const dueNow = held.filter((a) => new Date(String(a.dueAt)).getTime() <= now).length;
+  const later = held.length - dueNow;
 
   return (
     <BusyProvider>
@@ -379,7 +418,7 @@ export default async function Review({
             {waiting && allInView === 0
               ? "Campaigns set to hold each message queue them here before anything goes out."
               : waiting
-                ? `${allInView} waiting. Approving returns a message to the send queue, where every guardrail still applies.`
+                ? `${allInView} pending. Approving returns a message to the send queue, where every guardrail still applies.`
                 : VIEWS[view].blurb}
           </p>
           {/* What the last decision actually changed. The list redraws underneath a bulk
@@ -426,9 +465,11 @@ export default async function Review({
                   and on the scheduled list the same words hid the fact that approving there
                   releases mail dated days out. */}
               <SubmitButton variant="quiet" icon={<CheckCheck />} pendingLabel="Approving…">
-                {waiting
-                  ? `Approve this page — sends ${held.length} now`
-                  : `Approve this page — ${held.length} will send on their dates`}
+                {later === 0
+                  ? `Approve page — sends ${dueNow} now`
+                  : dueNow === 0
+                    ? `Approve page — ${later} send on their dates`
+                    : `Approve page — ${dueNow} now, ${later} on their dates`}
               </SubmitButton>
             </form>
           </>
@@ -454,6 +495,13 @@ export default async function Review({
       </div>
 
       <div className="row" style={{ marginBottom: 16 }}>
+        {/* Still a real GET form underneath — see the component. The debounce is an
+            enhancement on top of it, not the thing that makes it work. */}
+        <SearchBox
+          action={`/products/${id}/review`}
+          hiddenQuery={searchFilters}
+          current={search}
+        />
         {goals.length > 1 && (
           <CampaignFilter
             options={options}
@@ -495,7 +543,7 @@ export default async function Review({
           <p style={{ margin: 0 }}>
             <Flame size={14} /> <strong>{liftedHere}</strong>{" "}
             {liftedHere === 1 ? "message on this page is" : "messages on this page are"} going to someone who has
-            just clicked or written back. They are at the top{waiting ? "" : ", and approving one sends it on its date without stopping here again"} — their interest is the
+            just clicked or written back. They are at the top of the queue — their interest is the
             thing on this page with a shelf life.
           </p>
         </div>
@@ -505,11 +553,17 @@ export default async function Review({
         {held.length === 0 ? (
           <div className="empty">
             <strong>
-              {campaign ? `Nothing ${VIEWS[view].label.toLowerCase()} in this campaign` : `Nothing ${VIEWS[view].label.toLowerCase()}`}
+              {search
+                ? `No ${VIEWS[view].label.toLowerCase()} matches “${search}”`
+                : campaign
+                  ? `Nothing ${VIEWS[view].label.toLowerCase()} in this campaign`
+                  : `Nothing ${VIEWS[view].label.toLowerCase()}`}
             </strong>
-            {waiting
-              ? "Messages appear here once a campaign set to hold each one has something to send."
-              : VIEWS[view].blurb}
+            {search
+              ? "Recipient name, email address and subject line are all searched. Clear the search to see the rest."
+              : waiting
+                ? "Messages appear here once a campaign set to hold each one has something to send."
+                : VIEWS[view].blurb}
           </div>
         ) : (
           <>
@@ -517,13 +571,13 @@ export default async function Review({
               <table>
                 <thead>
                   <tr>
-                    <th>Person</th>
-                    <th>What they have done</th>
+                    <th>Recipient</th>
+                    <th>Engagement</th>
                     <th>Campaign</th>
                     <th>Subject</th>
                     <th>Channel</th>
-                    <th>{decidable ? "Due (IST)" : "State"}</th>
-                    <th>{decidable ? "Decision" : "When (IST)"}</th>
+                    <th>{decidable ? "Scheduled (IST)" : "Status"}</th>
+                    <th>{decidable ? "Actions" : "Updated (IST)"}</th>
                     {!decidable && <th />}
                   </tr>
                 </thead>
@@ -561,8 +615,14 @@ export default async function Review({
                         <td><span className="pill">{String(action.channel)}</span></td>
 
                         {decidable ? (
-                          <td className="muted num" title={istLong(action.dueAt as string)}>
-                            {ist(action.dueAt as string)}
+                          <td className="num" title={istLong(action.dueAt as string)}>
+                            <div className="muted">{ist(action.dueAt as string)}</div>
+                            {/* The distinction the Scheduled tab used to carry. Approving a
+                                row marked "due now" puts mail in front of someone within the
+                                minute; approving one dated next week does not. */}
+                            <span className={`pill ${new Date(String(action.dueAt)).getTime() <= now ? "hot" : ""}`}>
+                              {new Date(String(action.dueAt)).getTime() <= now ? "Due now" : "Scheduled"}
+                            </span>
                           </td>
                         ) : (
                           <td>

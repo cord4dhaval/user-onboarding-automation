@@ -159,7 +159,6 @@ export async function refreshDerived(orgId: string, productId: string): Promise<
       .toArray();
 
     if (pending.length > 0) {
-      const atGate = pending.filter((a) => a.status === "awaiting_approval").length;
       const soonest = pending[0]?.dueAt ? new Date(String(pending[0].dueAt)) : undefined;
       const waitDays = soonest ? Math.round((soonest.getTime() - Date.now()) / 86_400_000) : 0;
       await notify({
@@ -173,7 +172,8 @@ export async function refreshDerived(orgId: string, productId: string): Promise<
           waitDays >= 1
             ? `They clicked or wrote back in the last few days and the next message to them is not due for ${waitDays} day${waitDays === 1 ? "" : "s"}. Approving early sends it on its date without stopping again.`
             : "They clicked or wrote back recently. A message while they are still interested is worth more than the same words next week.",
-        href: `${base}/review${atGate > 0 ? "" : "?view=scheduled"}`,
+        // One undecided queue now — at the gate and dated for later are the same tab.
+        href: `${base}/review`,
       });
     }
   }

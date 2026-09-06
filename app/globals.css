@@ -1179,6 +1179,31 @@ details > summary:hover { color: var(--ink); }
 .combo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo-none { padding: 12px 8px; font-size: 13px; margin: 0; }
 
+/* ── search ────────────────────────────────────────────────────────────────── */
+
+/* Sized to sit level with the campaign filter beside it rather than to fill the row: a
+   search field the width of the page reads as the main event, and on this screen the list
+   is. */
+.search {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: var(--r-sm); min-width: 260px;
+  border: 1px solid var(--rule); background: var(--surface);
+}
+.search:focus-within { border-color: var(--accent); }
+.search svg { color: var(--ink-3); flex: none; }
+.search input {
+  border: 0; padding: 2px 0; font-size: 13.5px; background: transparent;
+  color: var(--ink); flex: 1; min-width: 0;
+}
+.search input:focus { outline: 0; }
+/* The browser's own clear affordance would sit beside ours, saying the same thing twice. */
+.search input::-webkit-search-cancel-button { display: none; }
+.search-clear {
+  display: inline-flex; padding: 2px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-3); cursor: pointer;
+}
+.search-clear:hover { color: var(--ink); background: var(--surface-2); filter: none; }
+
 /* ── pagination ────────────────────────────────────────────────────────────── */
 
 .pager { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: -4px 0 22px; }
