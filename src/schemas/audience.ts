@@ -19,6 +19,15 @@ export const audienceFilter = z.object({
   temperature: z.array(z.enum(["hot", "warm", "cold", "dead"])).optional(),
   /** Has ever clicked, replied, or otherwise shown a positive signal. */
   everEngaged: z.boolean().optional(),
+  /**
+   * What they did back, as a group you can point a campaign at.
+   *
+   * "Everyone who clicked and never wrote back" is the most valuable list this product can
+   * produce and there was no way to build it — the only engagement predicate was a boolean
+   * that lumped an image load in with a reply. Machine fetches never reach any of these:
+   * the fields behind them are only written for a signal a person made.
+   */
+  responded: z.enum(["clicked", "replied", "any", "never"]).optional(),
   /** Excludes anyone who has said no. Defaults on, and turning it off is deliberate. */
   excludeSuppressed: z.boolean().default(true),
   companyDomains: z.array(z.string()).optional(),

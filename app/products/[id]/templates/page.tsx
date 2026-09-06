@@ -5,6 +5,8 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { loadBrandKit } from "@/engine/brand.js";
 import { renderTemplate, type MergeVars } from "@/engine/compose.js";
 import { validate } from "@/engine/validate.js";
+import { rate, templatePerformance, type TemplatePerformance } from "@/engine/engagement.js";
+import { anglePerformance } from "@/engine/outcomes.js";
 import { createTemplate, generateTemplates } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import BrandBadge from "../../../ui/brand-badge";
@@ -35,12 +37,16 @@ export default async function Templates({
   const db = await getDb();
   const s = scope(orgId, id);
 
-  const [templates, product, people, kit, brandSources] = await Promise.all([
+  const [templates, product, people, kit, brandSources, earned, angles] = await Promise.all([
     db.collection(C.templates).find(s).sort({ channel: 1, scope: 1 }).toArray(),
     db.collection(C.products).findOne({ _id: new ObjectId(id), orgId }),
     db.collection(C.people).find(s).sort({ createdAt: -1 }).limit(25).toArray(),
     loadBrandKit(orgId, id),
     db.collection(C.brandSources).countDocuments(s),
+    // What each of these has actually earned. Without it this page shows what a message
+    // would look like and never whether it worked, which is the question being asked.
+    templatePerformance(orgId, id),
+    anglePerformance(orgId, id),
   ]);
 
   const selected =
@@ -130,6 +136,7 @@ export default async function Templates({
                   <th>Sends as</th>
                   <th>Scope</th>
                   <th>Preview</th>
+                  <th>What it earned</th>
                   <th>State</th>
                 </tr>
               </thead>
@@ -174,6 +181,9 @@ export default async function Templates({
                         </span>
                       </td>
                       <td>
+                        <Earned performance={earned.get(String(t._id))} />
+                      </td>
+                      <td>
                         <span className={`pill ${t.status === "active" ? "ok" : ""}`}>{String(t.status)}</span>
                         {!chk.ok && <span className="pill bad">blocked</span>}
                       </td>
@@ -183,8 +193,110 @@ export default async function Templates({
               </tbody>
             </table>
           </div>
+
+          {/* The same record cut the other way. A template is a piece of writing; an angle
+              is the argument inside it, and the argument is what carries across templates
+              and segments. This existed only as a tool a model could call — the person
+              deciding what to write next could not see it at all. */}
+          {angles.length > 0 && (
+            <>
+              <h2>Which arguments earn a click</h2>
+              <p className="sub">
+                Every send grouped by the angle it took and the segment it went to. Rates appear once a row has
+                enough tracked sends to mean anything — below that the counts stand on their own.
+              </p>
+              <div className="tw scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Angle</th>
+                      <th>Segment</th>
+                      <th className="num">Sent</th>
+                      <th className="num">Clicked</th>
+                      <th className="num">Replied</th>
+                      <th className="num">Won</th>
+                      <th>Read</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {angles.map((a) => (
+                      <tr key={`${a.angle}:${a.segment}:${a.channel}`}>
+                        <td><strong>{a.angle.replace(/_/g, " ")}</strong>
+                          <span className="cell-sub">{a.channel}</span>
+                        </td>
+                        <td>{a.segment.replace(/_/g, " ")}</td>
+                        <td className="num">{a.sent}</td>
+                        <td className="num">
+                          {a.clicked}
+                          {a.trackable >= ENOUGH_TO_RATE && (
+                            <div className="muted">{rate(a.clicked, a.trackable)}</div>
+                          )}
+                        </td>
+                        <td className="num">{a.replied}</td>
+                        <td className="num">{a.won}</td>
+                        <td className="muted">{verdict(a)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       )}
     </main>
+  );
+}
+
+/**
+ * What a row is allowed to claim.
+ *
+ * The honest answer for almost every row in a young product is "not enough sends yet", and
+ * saying so is the point: a nought per cent from four messages reads as a dead angle and
+ * gets a working one rewritten.
+ */
+function verdict(row: { sent: number; trackable: number; clicked: number; won: number }): string {
+  if (row.won > 0) return `${row.won} campaign${row.won === 1 ? "" : "s"} finished on this angle`;
+  if (row.trackable < ENOUGH_TO_RATE) return `too few sends to judge — ${row.trackable} tracked`;
+  if (row.clicked === 0) return "nobody has clicked this one";
+  return `${rate(row.clicked, row.trackable)} of tracked sends clicked`;
+}
+
+/**
+ * One template's record, in the order a writer cares about: how many people it reached,
+ * then how many of them did anything.
+ *
+ * A rate needs a denominator worth trusting, so it appears only once enough messages have
+ * gone out for the number to mean something. Below that the counts are shown plainly —
+ * "1 of 3" is a fact, "33%" from three sends is a claim the data cannot support.
+ */
+const ENOUGH_TO_RATE = 20;
+
+function Earned({ performance }: { performance?: TemplatePerformance }) {
+  if (!performance || performance.sent === 0) {
+    return <span className="muted">never sent</span>;
+  }
+
+  const { sent, trackable, clicked, replied, won, machineClicked } = performance;
+  return (
+    <div className="responses">
+      <span className="status muted">{sent} sent</span>
+      <span className={`status ${clicked > 0 ? "live" : "muted"}`}>
+        {clicked} clicked
+        {trackable >= ENOUGH_TO_RATE && <span className="muted"> · {rate(clicked, trackable)}</span>}
+      </span>
+      {replied > 0 && <span className="status live">{replied} replied</span>}
+      {won > 0 && <span className="status live">{won} won</span>}
+      {trackable > 0 && trackable < ENOUGH_TO_RATE && (
+        <span className="status unmeasured" title={`Only ${trackable} tracked sends — too few for a rate to mean anything.`}>
+          too few to rate
+        </span>
+      )}
+      {machineClicked > 0 && (
+        <span className="status muted" title="Mail-gateway fetches, excluded from the click count.">
+          {machineClicked} scanner
+        </span>
+      )}
+    </div>
   );
 }

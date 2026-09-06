@@ -118,7 +118,10 @@ async function record(
       .collection(C.people)
       .updateOne(
         { _id: new ObjectId(String(result.personId)), orgId: result.orgId },
-        { $set: { lastSignalAt: now } },
+        // A click is kept on the person as well as the action. "Everyone who has ever
+        // clicked" is a question an audience has to answer without reading every message
+        // ever sent, and `lastSignalAt` could not answer it — an open sets that too.
+        { $set: { lastSignalAt: now, ...(type === "clicked" ? { lastClickAt: now } : {}) } },
       );
 
     // Sends them to the front of the recompute queue. That queue is ordered oldest-reading

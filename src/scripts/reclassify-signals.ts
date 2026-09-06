@@ -96,6 +96,51 @@ async function main(): Promise<void> {
     }
   }
 
+  // The person-level stamps an audience is built from. `lastSignalAt` was written for
+  // every signal including the gateways, and `lastClickAt` did not exist at all — so a
+  // group of "everyone who clicked" would have been mostly scanners, and one of "clicked
+  // and never wrote back" could not be built. Both are recomputed from what survived.
+  if (APPLY) {
+    for (const person of await db.collection(C.people).find({}, { projection: { _id: 1 } }).toArray()) {
+      const personId = String(person._id);
+      const human = await db
+        .collection(C.actions)
+        .find(
+          {
+            personId,
+            status: { $in: ["sent", "dispatched"] },
+            $or: [{ firstClickedAt: { $exists: true } }, { firstOpenedAt: { $exists: true } }],
+          },
+          { projection: { firstClickedAt: 1, firstOpenedAt: 1 } },
+        )
+        .toArray();
+
+      const stamps = (field: "firstClickedAt" | "firstOpenedAt") =>
+        human
+          .map((a) => a[field])
+          .filter(Boolean)
+          .map((d) => new Date(String(d)).getTime());
+      const clicks = stamps("firstClickedAt");
+      const any = [...clicks, ...stamps("firstOpenedAt")];
+
+      const set: Record<string, Date> = {};
+      const unset: Record<string, ""> = {};
+      if (any.length > 0) set.lastSignalAt = new Date(Math.max(...any));
+      else unset.lastSignalAt = "";
+      if (clicks.length > 0) set.lastClickAt = new Date(Math.max(...clicks));
+      else unset.lastClickAt = "";
+
+      await db.collection(C.people).updateOne(
+        { _id: person._id },
+        {
+          ...(Object.keys(set).length ? { $set: set } : {}),
+          ...(Object.keys(unset).length ? { $unset: unset } : {}),
+        },
+      );
+    }
+    console.log("  person signal stamps recomputed from surviving human signals");
+  }
+
   // Any notice still claiming a person clicked, for a person with no click on anything we
   // actually sent. Covers the reclassified scanners and the links reached in drafts that
   // never went out — both told somebody a lead was warm when none was.

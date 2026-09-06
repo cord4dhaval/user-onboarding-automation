@@ -478,3 +478,71 @@ export async function markScannerPass(personId: string, at: Date, withinMs = 10_
   }
   return moved;
 }
+
+export interface TemplatePerformance {
+  templateId: string;
+  sent: number;
+  trackable: number;
+  clicked: number;
+  replied: number;
+  won: number;
+  machineClicked: number;
+}
+
+/**
+ * What each template actually earns.
+ *
+ * The templates page could say what a message would look like and never what it achieved,
+ * so the question it exists to answer — which of these is worth sending — was answerable
+ * only by a model calling `what_works`, and never by the person deciding what to write
+ * next. Only sends count: a draft has proved nothing, and a failed send proves something
+ * about the channel rather than the words.
+ */
+export async function templatePerformance(
+  orgId: string,
+  productId: string,
+): Promise<Map<string, TemplatePerformance>> {
+  const db = await getDb();
+  const rows = await db
+    .collection(C.actions)
+    .aggregate([
+      {
+        $match: {
+          orgId,
+          productId,
+          status: { $in: DELIVERED },
+          templateId: { $exists: true },
+          // A rehearsal reaches a console, not a person. Counting one would mix messages
+          // nobody could ever answer into the rate that decides what gets written next.
+          dryRun: { $ne: true },
+        },
+      },
+      {
+        $group: {
+          _id: "$templateId",
+          sent: { $sum: 1 },
+          trackable: { $sum: { $cond: [{ $eq: ["$tracking.clicks", true] }, 1, 0] } },
+          clicked: { $sum: { $cond: [{ $ifNull: ["$firstClickedAt", false] }, 1, 0] } },
+          machineClicked: { $sum: { $cond: [{ $ifNull: ["$firstMachineClickedAt", false] }, 1, 0] } },
+          replied: { $sum: { $cond: [{ $ifNull: ["$firstRepliedAt", false] }, 1, 0] } },
+          won: { $sum: { $cond: [{ $eq: ["$goalOutcome", "won"] }, 1, 0] } },
+        },
+      },
+    ])
+    .toArray();
+
+  return new Map(
+    rows.map((r) => [
+      String(r._id),
+      {
+        templateId: String(r._id),
+        sent: Number(r.sent ?? 0),
+        trackable: Number(r.trackable ?? 0),
+        clicked: Number(r.clicked ?? 0),
+        replied: Number(r.replied ?? 0),
+        won: Number(r.won ?? 0),
+        machineClicked: Number(r.machineClicked ?? 0),
+      },
+    ]),
+  );
+}

@@ -1310,22 +1310,50 @@ details > summary:hover { color: var(--ink); }
   .runs-table { table-layout: auto; min-width: 720px; }
 }
 
-/* ── channel picker ───────────────────────────────────────────────────────── */
-/* A grid of what can be connected, including what cannot yet. The unavailable ones stay
-   on screen rather than being hidden: a customer who needs WhatsApp should find that out
-   here, not after connecting email and waiting. */
-.picker { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
-.picker button {
-  display: block; width: 100%; text-align: left; background: var(--surface);
-  border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 13px 14px;
-  color: var(--ink); font: inherit; cursor: pointer;
+/* ── channel cards ─────────────────────────────────────────────────────────── */
+/* The list of channels and the picker are one grid: everything the product can send on,
+   connected or not. What is not live yet stays on screen rather than being hidden — a
+   customer who needs WhatsApp should find that out here, not after connecting email and
+   waiting. A connected card carries its live values; an unconnected one is a button. */
+.channels {
+  display: grid; gap: 12px; align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
-.picker button:hover:not(:disabled) { border-color: var(--accent); filter: none; }
-.picker button.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.picker button:disabled { cursor: default; background: var(--surface-2); color: var(--ink-3); }
-.picker-top { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-.picker-top svg { width: 15px; height: 15px; color: var(--ink-3); }
-.picker-top strong { font-size: 14px; font-weight: 600; }
-.picker-top .pill { margin-left: auto; }
-.picker p { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
-.picker + .segmented, .picker + .empty, .picker + form { margin-top: 16px; }
+.channel-card {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--r-lg); padding: 14px 15px;
+}
+/* A card that is also a button has to undo what a button is: centred, nowrap and shrunk
+   to its content is right for a control and wrong for a panel of text. */
+button.channel-card {
+  width: 100%; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+  align-self: stretch; align-items: stretch; justify-content: flex-start; white-space: normal;
+}
+button.channel-card:hover { border-color: var(--accent); filter: none; }
+.channel-head { display: flex; align-items: center; gap: 8px; }
+.channel-head svg { width: 16px; height: 16px; color: var(--ink-3); flex: none; }
+.channel-head strong { font-size: 14.5px; font-weight: 600; }
+.channel-head .pill { margin-left: auto; }
+.channel-card .blurb { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+/* Pushed to the bottom so cards of different heights still line their calls to action up. */
+.channel-cta { margin-top: auto; font-size: 13px; font-weight: 600; color: var(--accent); }
+
+/* One connected channel inside its card. */
+.channel-conn {
+  display: flex; flex-direction: column; gap: 6px;
+  border-top: 1px solid var(--rule-soft); padding-top: 10px;
+}
+.channel-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.channel-meta { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+.channel-conn .row-actions { justify-content: flex-start; margin-top: 2px; }
+.channel-foot { display: flex; gap: 6px; }
+
+/* Drawer blocks: a form or a notice under the transport row, and the notices inside one. */
+.drawer-block { margin-top: 18px; }
+.drawer-body .empty p { margin: 6px 0 0; }
+.segmented + .note, .note + .segmented { margin-top: 16px; }
+textarea.payload { min-height: 130px; }
+/* A caption whose spacing comes from the stack around it — a heading followed by cards, or
+   a line inside a form — rather than from the 22px a standalone paragraph carries. */
+.sub.tight { margin: 0; }

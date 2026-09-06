@@ -120,6 +120,23 @@ export function audienceQuery(orgId: string, productId: string, f: AudienceFilte
   }
   if (f.everEngaged === true) filter.lastSignalAt = { $exists: true };
 
+  // Set after the boolean above, so a group carrying both is governed by the more precise
+  // of the two rather than by whichever happened to be written last.
+  if (f.responded === "clicked") filter.lastClickAt = { $exists: true };
+  if (f.responded === "replied") filter.lastReplyAt = { $exists: true };
+  if (f.responded === "any") {
+    // Under $and rather than $or, because silentDays above already claims the top-level
+    // $or and the second writer would silently replace the first — a group asking for
+    // "quiet for 90 days and has responded" would have quietly dropped one of the two.
+    (filter.$and ??= []).push({
+      $or: [{ lastClickAt: { $exists: true } }, { lastReplyAt: { $exists: true } }],
+    });
+  }
+  if (f.responded === "never") {
+    filter.lastClickAt = { $exists: false };
+    filter.lastReplyAt = { $exists: false };
+  }
+
   return filter;
 }
 

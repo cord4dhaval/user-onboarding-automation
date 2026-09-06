@@ -53,6 +53,16 @@ function describe(filter: Record<string, unknown> | undefined): string {
   if ((filter.lifecycle as string[])?.length) parts.push((filter.lifecycle as string[]).join(" or "));
   if ((filter.temperature as string[])?.length) parts.push((filter.temperature as string[]).join(" or "));
   if (filter.everEngaged) parts.push("has engaged before");
+  if (filter.responded) {
+    parts.push(
+      {
+        clicked: "clicked a link",
+        replied: "wrote back",
+        any: "clicked or wrote back",
+        never: "never responded",
+      }[String(filter.responded)] ?? String(filter.responded),
+    );
+  }
   if (filter.minIcpFit) parts.push(`fit ≥ ${String(filter.minIcpFit)}`);
   return parts.length ? parts.join(" · ") : "everyone, minus anyone who said no";
 }
@@ -111,7 +121,7 @@ export default async function Audience({
 
   // The headline the page was missing. These are people, not messages: someone who clicked
   // three links is one interested human, and three would read as three leads.
-  const [clickedIds, repliedIds, openedIds, reach, pixelled, scanned] = await Promise.all([
+  const [clickedIds, repliedIds, openedIds, reach, pixelled, scanned, everConfirmed] = await Promise.all([
     peopleMatching(orgId, id, "clicked"),
     peopleMatching(orgId, id, "replied"),
     peopleMatching(orgId, id, "opened"),
@@ -119,6 +129,10 @@ export default async function Audience({
     // Whether a pixel ever went out. Without one, "0 opened" is not a measurement.
     db.collection(C.actions).countDocuments({ ...s, status: "sent", "tracking.opens": true }),
     db.collection(C.actions).countDocuments({ ...s, firstMachineClickedAt: { $exists: true } }),
+    // Whether "delivered" is a state this product can ever be in. The channel here hands a
+    // message over and reports nothing back, so the filter for it matched nothing and said
+    // so in the same words it would use for a product whose mail all bounced.
+    db.collection(C.actions).countDocuments({ ...s, confirmedAt: { $exists: true } }, { limit: 1 }),
   ]);
   const engaged = await peopleEngagement(orgId, id, rows.map((r) => String(r._id)));
 
@@ -248,7 +262,15 @@ export default async function Audience({
             <select name="delivery" defaultValue={deliveryKey ?? ""} style={{ maxWidth: 220 }}>
               <option value="">Any delivery</option>
               {DELIVERY.map((d) => (
-                <option key={d.key} value={d.key}>{d.label}</option>
+                <option
+                  key={d.key}
+                  value={d.key}
+                  disabled={d.key === "delivered" && everConfirmed === 0}
+                >
+                  {d.key === "delivered" && everConfirmed === 0
+                    ? "delivered — this channel never confirms"
+                    : d.label}
+                </option>
               ))}
             </select>
             <select name="engagement" defaultValue={engagementKey ?? ""} style={{ maxWidth: 220 }}>

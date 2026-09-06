@@ -113,9 +113,21 @@ export default function AudienceDrawer({
                 ))}
               </fieldset>
 
-              <label className="check">
-                <input type="checkbox" name="everEngaged" defaultChecked={f.everEngaged === true} />
-                Only people who have ever engaged
+              {/* The list this product could not build. "Clicked and never wrote back" is
+                  the group worth a human writing to, and until now the only engagement
+                  control here was a checkbox that counted an image load as interest. */}
+              <label>
+                What they did back
+                <select name="responded" defaultValue={String(f.responded ?? "")}>
+                  <option value="">Anyone, responded or not</option>
+                  <option value="clicked">Clicked a link</option>
+                  <option value="replied">Wrote back</option>
+                  <option value="any">Clicked or wrote back</option>
+                  <option value="never">Never responded</option>
+                </select>
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  Mail-gateway scans are never counted here — only what a person did.
+                </span>
               </label>
 
               <label>
