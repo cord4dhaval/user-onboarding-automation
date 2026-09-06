@@ -126,9 +126,21 @@ export default function PreviewDrawer({
                   className="preview-frame"
                 />
               ) : (
-                <div className="preview-body">{message.bodyText}</div>
+                <div className="preview-body">
+                  {message.bodyText || message.previewError || "This message has no body."}
+                </div>
               )}
             </div>
+
+            {/* A body rendered on open, not read off the action. Saying so is the difference
+                between "this is the message" and "this is the message as long as nobody
+                edits the template before it goes". */}
+            {message.preview && !message.previewError ? (
+              <p className="muted preview-why">
+                Rendered from the template now — the greeting, button and opt-out line are
+                added at send, exactly as shown.
+              </p>
+            ) : null}
 
             {message.rationale ? (
               <p className="muted preview-why">Why this: {message.rationale}</p>

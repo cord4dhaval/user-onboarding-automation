@@ -40,6 +40,30 @@ export interface ToolDef {
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
 /**
+ * The call-to-action a writer added to copy that is going to be wrapped in a template that
+ * already has one, or null when the copy leaves that to the skeleton.
+ *
+ * Matches the link by shape rather than by the product's own domain: what makes it a
+ * duplicate is that it is the start link for this person — `{{trial_link}}`, a URL carrying
+ * `{{person_id}}`, or one where the id has already been resolved into it. A resolved id is
+ * the worse of the two: copy carrying one person's id is copy that cannot be reused for
+ * anyone else without mailing them a stranger's link.
+ */
+function signOffLink(body: string): string | null {
+  const patterns = [
+    /\{\{\s*trial_link\s*\}\}/,
+    /https?:\/\/\S*\{\{\s*person_id\s*\}\}/,
+    /https?:\/\/\S*[?&]p=[0-9a-f]{24}/i,
+    /https?:\/\/\S*\/(?:start|signup|trial)\b\S*/i,
+  ];
+  for (const pattern of patterns) {
+    const hit = body.match(pattern);
+    if (hit) return hit[0].slice(0, 80);
+  }
+  return null;
+}
+
+/**
  * Why a "succeeded" verdict cannot be accepted, or null when it can.
  *
  * The tool description has always said to mark success only when the evidence supports it.
@@ -976,7 +1000,13 @@ export const TOOLS: ToolDef[] = [
               channel: { type: "string" },
               angle: { type: "string" },
               subject: { type: "string" },
-              body: { type: "string", description: "Markdown. Must not contain an unsubscribe line; one is appended." },
+              body: {
+                type: "string",
+                description:
+                  "Markdown. Write the message only: the greeting, the call-to-action button and the " +
+                  "unsubscribe line belong to the template and are added around it. A sign-off link of " +
+                  "your own is dropped at render when it points where the button already does.",
+              },
               claims_made: { type: "array", items: { type: "string" } },
               rationale: { type: "string" },
             },
@@ -998,6 +1028,22 @@ export const TOOLS: ToolDef[] = [
       const productId = String(instance.productId);
       const touches = (args.touches ?? []) as Array<Record<string, unknown>>;
       const queued: string[] = [];
+
+      // Refused here rather than cleaned up later. Copy that signs off with its own link
+      // lands under a template that ends with a button to the same place, and the reader
+      // gets the destination twice — once as a raw tracking URL mid-sentence. The writer
+      // cannot see the skeleton it is writing into, so the contract has to be stated on
+      // the way in; a message already in the queue is one somebody has to notice.
+      for (const t of touches) {
+        const offending = signOffLink(String(t.body ?? ""));
+        if (offending) {
+          throw new Error(
+            `step ${String(t.step_id)} ends with "${offending}". The template adds its own button to that ` +
+              `same link, so this sends the reader two of them. Write the message only — no start link, ` +
+              `no unsubscribe line — and let the skeleton supply the call to action.`,
+          );
+        }
+      }
 
       for (const t of touches) {
         const channelKey = String(t.channel);

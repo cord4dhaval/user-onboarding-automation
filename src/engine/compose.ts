@@ -75,6 +75,50 @@ function withoutGreeting(body: string): string {
   return lines.slice(1).join("\n").replace(/^\s+/, "");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Drops a link the composed copy pastes in, where the template already renders a button to
+ * the same place.
+ *
+ * Same shape of problem as the duplicated greeting, and the same cause: a session writing a
+ * message naturally ends it by telling the reader where to go, and cannot see that the
+ * skeleton it lands in ends with "Get started →" pointing at that exact URL. The reader
+ * gets a raw tracking URL mid-paragraph and a button under it, both the same destination,
+ * which reads like a mail merge that ran twice.
+ *
+ * Only the template's own CTA destinations are removed, and only where the copy is left
+ * saying something afterwards — a link to somewhere else is the writing doing its job, and
+ * a paragraph that was nothing but a link keeps it rather than vanishing.
+ */
+function withoutDuplicateCta(body: string, urls: string[]): string {
+  if (urls.length === 0) return body;
+
+  let out = body;
+  for (const url of urls) {
+    const link = escapeRegExp(url);
+    out = out
+      // [Take a look](url) — the whole link, lead-in words and all.
+      .replace(new RegExp(`\\[[^\\]]*\\]\\(\\s*${link}\\s*\\)`, "gi"), "")
+      // "Take a look: url" / "Get started — url" / a bare url, with the trailing stop that
+      // belonged to the sentence it was tacked onto.
+      .replace(new RegExp(`(?:[ \\t]*[A-Z][^.!?\\n]{0,60}?[:—–-])?[ \\t]*<?${link}>?[.,]?`, "g"), "");
+  }
+
+  // Whatever the removal left behind: trailing spaces, a line that is now empty, and the
+  // gap where a paragraph used to be.
+  const tidied = out
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return /[a-z]/i.test(tidied) ? tidied : body;
+}
+
 /**
  * Removes a name from the subject when there was no name.
  *
@@ -138,8 +182,15 @@ export function resolveBlocks(
   // An unnamed slot takes the composed body wholesale, and only the first one does —
   // repeating it in a second slot would print the same paragraph twice.
   let bodyUsed = false;
+  /** Whether this slot is holding copy a session wrote, rather than the template's own text. */
+  let usedComposed = false;
   /** Whether the template has already greeted the reader by the time a slot is filled. */
   let greeted = false;
+  // Read ahead rather than as we go: the CTA block sits after the slot it duplicates, so by
+  // the time the loop reaches it the copy has already been placed.
+  const ctaUrls = blocks
+    .filter((block) => String(block.type) === "cta" && typeof block.url === "string")
+    .map((block) => merge(String(block.url), vars));
 
   for (const block of blocks) {
     const type = String(block.type);
@@ -184,10 +235,16 @@ export function resolveBlocks(
           // prevents, because writing to a named human is exactly what the copy is for.
           filled = greeted ? withoutGreeting(composed) : composed;
           bodyUsed = true;
+          usedComposed = true;
         }
       }
       filled ??= text(block.fallback);
-      if (filled) out.push({ kind: "text", text: merge(filled, vars) });
+      if (filled) {
+        // Merge first: copy written by a session carries `{{person_id}}` rather than the
+        // finished URL, so a link is only comparable to the button's once both are real.
+        const merged = merge(filled, vars);
+        out.push({ kind: "text", text: usedComposed ? withoutDuplicateCta(merged, ctaUrls) : merged });
+      }
       continue;
     }
 

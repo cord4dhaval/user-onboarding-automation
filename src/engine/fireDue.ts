@@ -11,10 +11,9 @@ import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, rateBlock } from "./governor.js";
 import { resolveTemplateFor } from "./templates.js";
 import { applyTracking, trackingAllowed } from "./tracking.js";
-import { unsubscribeUrl } from "./unsubscribe.js";
 import { bumpPrior } from "./outcomes.js";
 import { localHour } from "./time.js";
-import { greetingName } from "./names.js";
+import { mergeVarsFor } from "./vars.js";
 
 export interface FireSummary {
   claimed: number;
@@ -178,25 +177,11 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // The trial link comes from the product's own config rather than a hardcoded host,
       // so a second product does not silently send people to the first one's site.
       const product = await db.collection(C.products).findOne({ _id: new ObjectId(productIdOf(action)) });
-      const config = (product?.config ?? {}) as { trialLinkTemplate?: string; website?: string };
       const personId = String(person._id);
-      const site = (config.website ?? "https://example.com").replace(/\/$/, "");
 
-      const origin = process.env.APP_URL?.replace(/\/$/, "") ?? "";
-      const vars: MergeVars = {
-        first_name: greetingName(name),
-        full_name: name,
-        company: String(person.companyDomain ?? "").split(".")[0] || "your team",
-        person_id: personId,
-        trial_link: (config.trialLinkTemplate ?? `${site}/start?p={{person_id}}`).replace("{{person_id}}", personId),
-        // Points at this app, not the product's website. The marketing site has no access
-        // to this database, so a link there is a door painted on a wall: the reader
-        // believes they have left and the mail keeps coming. Falls back to the old form
-        // only when APP_URL is unset, where nothing here could work anyway.
-        opt_out_url: origin
-          ? unsubscribeUrl(origin, personId)
-          : `${site}/unsubscribe?p=${personId}`,
-      };
+      // Shared with the review screen, so what a reviewer reads is rendered from the same
+      // variables the recipient's copy is.
+      const vars: MergeVars = mergeVarsFor(person, product);
 
       const prior = action.content as Partial<ComposedContent> | undefined;
       // A message someone read and approved ships exactly as read. Re-rendering it here

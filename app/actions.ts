@@ -19,6 +19,7 @@ import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
+import { previewContent } from "@/engine/preview.js";
 import { setRoutineEnabled } from "@/engine/routines.js";
 import { requireSession } from "./tenant";
 
@@ -1311,6 +1312,15 @@ export interface HeldMessage {
   skipReason?: string;
   sentAt?: string;
   reviewedAt?: string;
+  /**
+   * True when the body shown was rendered here rather than read off the action, because
+   * the message has not been through a render yet. The words are the ones that will go
+   * out; the reviewer is told so they know why the body can still change if the template
+   * does.
+   */
+  preview?: boolean;
+  /** Why nothing could be shown, when even the render failed. */
+  previewError?: string;
 }
 
 /**
@@ -1338,10 +1348,26 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     : null;
   const caps = (channel?.capabilities ?? {}) as { html?: boolean };
 
+  // Copy written by a session lives in `slotText` until the sender wraps it in its
+  // template, so `bodyMd` is empty for every message composed that way. Reading it alone
+  // showed the reviewer a subject over a blank page — nothing to approve on, and no sign
+  // anything was missing. Render it the way the sender will instead.
+  let rendered: { subject?: string; bodyMd?: string; bodyHtml?: string } | undefined;
+  let previewError: string | undefined;
+  if (!content.bodyMd) {
+    try {
+      rendered = await previewContent(orgId, action);
+    } catch (err) {
+      previewError = err instanceof Error ? err.message : "this message could not be rendered";
+    }
+  }
+
   return {
-    subject: content.subject,
-    bodyHtml: content.bodyHtml,
-    bodyText: content.bodyMd,
+    subject: content.subject ?? rendered?.subject,
+    bodyHtml: content.bodyHtml ?? rendered?.bodyHtml,
+    bodyText: content.bodyMd || rendered?.bodyMd,
+    preview: Boolean(rendered),
+    previewError,
     rationale: action.rationale ? String(action.rationale) : undefined,
     canHtml: caps.html !== false,
     status: String(action.status),
