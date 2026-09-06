@@ -11,13 +11,25 @@ import { unsubscribeUrl } from "./unsubscribe.js";
  * there" — a difference nobody would think to look for, because both screens look right on
  * their own.
  */
+/**
+ * This app's own origin, with no trailing slash — where a tracked link or an unsubscribe
+ * comes back to.
+ *
+ * A function rather than a bare `origin` binding on purpose: `origin` is a DOM global, so
+ * a reference to one that does not exist here type-checks cleanly and then throws
+ * "origin is not defined" at send time, one message at a time, in production.
+ */
+export function appOrigin(): string {
+  return process.env.APP_URL?.replace(/\/$/, "") ?? "";
+}
+
 export function mergeVarsFor(person: Document, product: Document | null): MergeVars {
   const config = (product?.config ?? {}) as { trialLinkTemplate?: string; website?: string };
   const site = (config.website ?? "https://example.com").replace(/\/$/, "");
   const personId = String(person._id);
   const name = String(person.name ?? "");
 
-  const origin = process.env.APP_URL?.replace(/\/$/, "") ?? "";
+  const origin = appOrigin();
   return {
     first_name: greetingName(name),
     full_name: name,

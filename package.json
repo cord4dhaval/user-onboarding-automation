@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.engine.json --noEmit",
     "db:indexes": "tsx --env-file=.env src/db/indexes.ts",
     "demo": "tsx --env-file=.env src/scripts/demo.ts",
     "demo:ingest": "tsx --env-file=.env src/scripts/ingest-demo.ts",

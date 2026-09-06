@@ -13,7 +13,7 @@ import { resolveTemplateFor } from "./templates.js";
 import { applyTracking, trackingAllowed } from "./tracking.js";
 import { bumpPrior } from "./outcomes.js";
 import { localHour } from "./time.js";
-import { mergeVarsFor } from "./vars.js";
+import { appOrigin, mergeVarsFor } from "./vars.js";
 
 export interface FireSummary {
   claimed: number;
@@ -220,7 +220,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       if (content.bodyHtml && !dryRun) {
         const wrapped = applyTracking(content.bodyHtml, {
           actionId: String(action._id),
-          origin,
+          origin: appOrigin(),
           choice: trackChoice,
           // An unsubscribe that depends on our signing key still verifying is an
           // unsubscribe that can break. It goes direct.

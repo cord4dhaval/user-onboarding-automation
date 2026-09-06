@@ -1,0 +1,11 @@
+{
+  "//": "The engine runs in Node, where the browser's globals do not exist. Checking it without the DOM lib is what catches a stray `origin`, `name` or `status` — identifiers that type-check cleanly against `Window` and then throw at send time, one message at a time, in production.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "incremental": false,
+    "plugins": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}
