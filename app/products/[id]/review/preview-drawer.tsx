@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Eye, RotateCcw, X } from "lucide-react";
+import { CalendarClock, Check, Eye, Pencil, RotateCcw, Sparkles, X } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, Spinner, SubmitButton } from "../../../ui/kit";
-import { decide, returnToReview, type HeldMessage } from "../../../actions";
-import { ist } from "../../../ui/time";
+import { decide, editMessage, regenerateMessage, rescheduleMessage, returnToReview, type HeldMessage } from "../../../actions";
+import { ist, istInputValue } from "../../../ui/time";
 
 /**
  * One held message, previewed as it will actually arrive.
@@ -37,9 +37,12 @@ export default function PreviewDrawer({
   const [message, setMessage] = useState<HeldMessage | null>(null);
   const [format, setFormat] = useState<"html" | "text">("html");
   const [pending, start] = useTransition();
+  /** Which of the three changes is open. Only one at a time — they all act on this message. */
+  const [panel, setPanel] = useState<"none" | "edit" | "schedule" | "rewrite">("none");
 
   function show() {
     setOpen(true);
+    setPanel("none");
     if (message) return;
     start(async () => {
       const loaded = await fetchMessage(actionId);
@@ -145,6 +148,110 @@ export default function PreviewDrawer({
             {message.rationale ? (
               <p className="muted preview-why">Why this: {message.rationale}</p>
             ) : null}
+
+            {/* Changing the message, rather than only deciding on it.
+                Three separate things a reviewer wants at this point and could not do at
+                all: fix a line, move the date, or ask for it to be written again. They open
+                one at a time — all three act on this same message, and two of them open
+                would leave it unclear which one Save applies to. */}
+            {message.editable && (
+              <div className="msg-tools">
+                <div className="row">
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    icon={<Pencil />}
+                    onClick={() => setPanel(panel === "edit" ? "none" : "edit")}
+                  >
+                    Edit copy
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    icon={<CalendarClock />}
+                    onClick={() => setPanel(panel === "schedule" ? "none" : "schedule")}
+                  >
+                    Reschedule
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    icon={<Sparkles />}
+                    onClick={() => setPanel(panel === "rewrite" ? "none" : "rewrite")}
+                  >
+                    Rewrite
+                  </Button>
+                  {message.rewriteRequestedAt ? (
+                    <span className="pill">rewrite asked for {ist(message.rewriteRequestedAt)}</span>
+                  ) : null}
+                </div>
+
+                {panel === "edit" && (
+                  <form action={editMessage} className="msg-form">
+                    <input type="hidden" name="productId" value={productId} />
+                    <input type="hidden" name="actionId" value={actionId} />
+                    <label>
+                      Subject
+                      <input name="subject" defaultValue={message.subject ?? ""} />
+                    </label>
+                    <label>
+                      Message
+                      <textarea name="body" rows={10} defaultValue={message.editableBody ?? ""} />
+                    </label>
+                    {/* Says what the reviewer is not responsible for writing, because the
+                        preview above shows those parts and the box below does not. */}
+                    <p className="muted">
+                      Write the message only — the greeting, the button and the opt-out line
+                      are added from the template when it sends.
+                    </p>
+                    <SubmitButton icon={<Check />} pendingLabel="Saving…">
+                      Save copy
+                    </SubmitButton>
+                  </form>
+                )}
+
+                {panel === "schedule" && (
+                  <form action={rescheduleMessage} className="msg-form">
+                    <input type="hidden" name="productId" value={productId} />
+                    <input type="hidden" name="actionId" value={actionId} />
+                    <label>
+                      Send at (IST)
+                      <input type="datetime-local" name="dueAt" defaultValue={istInputValue(message.dueAt)} />
+                    </label>
+                    <p className="muted">
+                      The engine sends on this date under every guardrail. A message that
+                      failed or was stopped returns to the queue for the new date.
+                    </p>
+                    <SubmitButton icon={<CalendarClock />} pendingLabel="Moving…">
+                      Save date
+                    </SubmitButton>
+                  </form>
+                )}
+
+                {panel === "rewrite" && (
+                  <form action={regenerateMessage} className="msg-form">
+                    <input type="hidden" name="productId" value={productId} />
+                    <input type="hidden" name="actionId" value={actionId} />
+                    <label>
+                      What should change? (optional)
+                      <textarea
+                        name="instruction"
+                        rows={3}
+                        placeholder="e.g. he clicked the welcome — open on what he looked at, and ask something smaller"
+                      />
+                    </label>
+                    <p className="muted">
+                      Clears the copy and puts this person at the front of the writing queue.
+                      The next Advance run writes it with their history in front of it; the
+                      message comes back here for approval rather than sending itself.
+                    </p>
+                    <SubmitButton icon={<Sparkles />} pendingLabel="Asking…">
+                      Ask for a rewrite
+                    </SubmitButton>
+                  </form>
+                )}
+              </div>
+            )}
 
             {/* Sticky, because the decision must stay reachable without scrolling back up
                 past a full-height rendered email. */}

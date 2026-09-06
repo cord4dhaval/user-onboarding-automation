@@ -122,3 +122,32 @@ export function istAxisDay(value: When): string {
   const date = parse(value);
   return date ? axisDay.format(date) : "";
 }
+
+/**
+ * IST is a fixed +05:30 with no daylight saving, which is what makes these two conversions
+ * safe to do by arithmetic rather than by formatting round-trips.
+ */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/**
+ * `2026-09-11T18:08` — the value a `datetime-local` input wants, showing IST wall time.
+ *
+ * The input has no notion of a zone, so it would otherwise display the browser's, and a
+ * reviewer in Ahmedabad would be handed a UTC time labelled as their own.
+ */
+export function istInputValue(value: When): string {
+  const date = parse(value);
+  if (!date) return "";
+  return new Date(date.getTime() + IST_OFFSET_MS).toISOString().slice(0, 16);
+}
+
+/**
+ * The instant an IST wall time names, back as UTC — the inverse of `istInputValue`, for
+ * reading a `datetime-local` back off a form.
+ */
+export function fromIstInput(value: string): Date | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return undefined;
+  const asUtc = new Date(`${value.slice(0, 16)}:00.000Z`);
+  if (Number.isNaN(asUtc.getTime())) return undefined;
+  return new Date(asUtc.getTime() - IST_OFFSET_MS);
+}

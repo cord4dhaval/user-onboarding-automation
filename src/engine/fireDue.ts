@@ -130,6 +130,10 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             channel: String(action.channel),
             segment: (person.belief as { segment?: string } | undefined)?.segment,
             touchesSpent: Number((goalInstance.spent as { touches?: number } | undefined)?.touches ?? 0),
+            // What this person has actually been sent, not what the counter believes. The
+            // two disagree whenever a touch failed or was re-sent, and the disagreement
+            // was reaching real people as the welcome mail arriving twice.
+            usedKeys: await rungsSentTo(String(person._id)),
           });
 
       if (!template) {
@@ -433,4 +437,25 @@ async function priorClaimsFor(goalInstanceId: string): Promise<string[]> {
     .project({ "content.claimsMade": 1 })
     .toArray();
   return sent.flatMap((a) => ((a.content as { claimsMade?: string[] })?.claimsMade ?? []));
+}
+
+/**
+ * Which ladder rungs this person has already received.
+ *
+ * Read from what went out rather than from the touch counter: the counter is incremented
+ * on send, so a message that failed, or one sent while the counter was behind, leaves the
+ * next render pointing at a rung the reader has already had.
+ */
+async function rungsSentTo(personId: string): Promise<string[]> {
+  const db = await getDb();
+  const sent = await db
+    .collection(C.actions)
+    .find({ personId, status: { $in: ["sent", "dispatched", "sending"] }, templateId: { $exists: true } })
+    .project({ templateId: 1 })
+    .toArray();
+  if (sent.length === 0) return [];
+
+  const ids = [...new Set(sent.map((a) => String(a.templateId)))].map((id) => new ObjectId(id));
+  const templates = await db.collection(C.templates).find({ _id: { $in: ids } }).project({ key: 1 }).toArray();
+  return templates.map((t) => String(t.key));
 }

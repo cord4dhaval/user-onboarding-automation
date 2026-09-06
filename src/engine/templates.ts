@@ -104,6 +104,13 @@ export interface TemplatePick {
    * plan numbers its own steps however it likes.
    */
   touchesSpent?: number;
+  /**
+   * Rungs this person has already been sent. A counter alone cannot see them: a touch that
+   * failed, or one sent before the counter caught up, leaves the next message pointing at
+   * a rung the reader has already had — which is how a lead who had read the welcome and
+   * clicked it received the welcome a second time.
+   */
+  usedKeys?: string[];
 }
 
 /**
@@ -127,7 +134,17 @@ export async function resolveTemplateFor(pick: TemplatePick): Promise<Document |
     .toArray();
   if (candidates.length === 0) return null;
 
-  const rung = LADDER_KEYS[Math.min(Math.max(pick.touchesSpent ?? 0, 0), LADDER_KEYS.length - 1)]!;
+  const used = new Set(pick.usedKeys ?? []);
+  const start = Math.min(Math.max(pick.touchesSpent ?? 0, 0), LADDER_KEYS.length - 1);
+  // Climb past any rung this person has already been sent. Repeating one is worse than
+  // skipping ahead: the same words twice reads as a broken system, whereas arriving at the
+  // day-seven message early only reads as brisk.
+  const rung =
+    LADDER_KEYS.slice(start).find((key) => !used.has(key)) ??
+    // Everything above is spent, so fall back down to anything unsent before giving up and
+    // repeating — a later message is still closer to a conversation than the opener again.
+    [...LADDER_KEYS].reverse().find((key) => !used.has(key)) ??
+    LADDER_KEYS[start]!;
   const atRung = candidates.filter((t) => String(t.key) === rung);
 
   // The cascade is the same one ingest uses, applied twice: first among templates for the
@@ -139,7 +156,10 @@ export async function resolveTemplateFor(pick: TemplatePick): Promise<Document |
     pool.find((t) => t.scope === "product_default") ||
     pool[0];
 
-  return cascade(atRung) ?? cascade(candidates) ?? null;
+  // The wide fallback skips spent rungs too, or the exclusion above is undone by the very
+  // next line whenever a rung has no template of its own.
+  const unspent = candidates.filter((t) => !used.has(String(t.key)));
+  return cascade(atRung) ?? cascade(unspent) ?? cascade(candidates) ?? null;
 }
 
 export async function generateDefaultTemplates(

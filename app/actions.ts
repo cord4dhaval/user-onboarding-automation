@@ -20,6 +20,8 @@ import { productConfig } from "@/schemas/product.js";
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
+import { enqueue, PRIORITY } from "@/engine/queue.js";
+import { fromIstInput } from "./ui/time";
 import { setRoutineEnabled } from "@/engine/routines.js";
 import { requireSession } from "./tenant";
 
@@ -1298,6 +1300,144 @@ export async function returnToReview(formData: FormData) {
   revalidatePath(`/products/${productId}`);
 }
 
+/**
+ * Which states a message may still be changed in.
+ *
+ * A sent message is a record of what somebody received, and editing it would make the
+ * console lie about the thing it exists to answer. Everything before the send is fair game,
+ * including a failure — that one is going to be looked at again by definition.
+ */
+const EDITABLE = ["awaiting_approval", "queued", "failed", "skipped"];
+
+async function editableAction(actionId: string) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const action = await db.collection(C.actions).findOne({ _id: new ObjectId(actionId), orgId });
+  if (!action) throw new Error("that message no longer exists");
+  if (!EDITABLE.includes(String(action.status))) {
+    throw new Error(
+      `This message is ${String(action.status)} — it has already gone out, so it is a record now rather than a draft.`,
+    );
+  }
+  return { db, orgId, action };
+}
+
+/** Every change to a message, recorded with who made it. */
+async function recordEdit(productId: string, actionId: string, what: string, detail?: string) {
+  const db = await getDb();
+  await db.collection(C.audit).insertOne({
+    _id: new ObjectId(),
+    orgId: await currentOrg(),
+    productId,
+    actorType: "user",
+    action: `message.${what}`,
+    target: actionId,
+    detail,
+    at: new Date(),
+  });
+}
+
+/**
+ * The words, rewritten by the person reviewing them.
+ *
+ * Saved as `slotText` rather than as the finished body, because the greeting, the button
+ * and the opt-out line belong to the template and are added at send. Writing the rendered
+ * body back instead would bake one render of the skeleton into the message and duplicate
+ * whatever the skeleton adds next time.
+ */
+export async function editMessage(formData: FormData) {
+  const productId = String(formData.get("productId"));
+  const actionId = String(formData.get("actionId"));
+  const subject = String(formData.get("subject") ?? "").trim();
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) throw new Error("A message needs words. Reject it instead if it should not go.");
+
+  const { db, action } = await editableAction(actionId);
+  await db.collection(C.actions).updateOne(
+    { _id: action._id },
+    {
+      $set: {
+        "content.subject": subject || undefined,
+        "content.slotText": body,
+        "content.wordCount": body.split(/\s+/).filter(Boolean).length,
+        // The rendered halves are dropped so the next render rebuilds them from this text.
+        // Leaving them would show the reviewer their own edit and send the old words.
+        editedAt: new Date(),
+        editedBy: "human",
+      },
+      $unset: { "content.bodyMd": "", "content.bodyHtml": "", "content.fromBlocks": "" },
+    },
+  );
+  await recordEdit(productId, actionId, "edit", subject || undefined);
+  revalidatePath(`/products/${productId}/review`, "layout");
+}
+
+/**
+ * When it goes out.
+ *
+ * The engine sends on `dueAt` under every guardrail, so moving the date is the whole of
+ * rescheduling — there is no separate schedule to keep in step with it.
+ */
+export async function rescheduleMessage(formData: FormData) {
+  const productId = String(formData.get("productId"));
+  const actionId = String(formData.get("actionId"));
+  const when = fromIstInput(String(formData.get("dueAt") ?? ""));
+  if (!when) throw new Error("That is not a date this can send on.");
+
+  const { db, action } = await editableAction(actionId);
+  await db.collection(C.actions).updateOne(
+    { _id: action._id },
+    // A message that failed or was stopped is put back in the queue by the same move: it
+    // has a future date now, and leaving it `failed` would date a message nothing will send.
+    { $set: { dueAt: when, ...(String(action.status) === "queued" || String(action.status) === "awaiting_approval" ? {} : { status: "queued" }) }, $unset: { error: "", skipReason: "", deferReason: "" } },
+  );
+  await recordEdit(productId, actionId, "reschedule", when.toISOString());
+  revalidatePath(`/products/${productId}/review`, "layout");
+}
+
+/**
+ * Ask for it to be written again.
+ *
+ * Clears the copy and puts the person at the front of the writing queue rather than
+ * generating anything here: composing is a routine's job, with the person's history, the
+ * claims already made and the campaign's angles in front of it — none of which a button in
+ * a drawer has. Urgent, because somebody asking for a rewrite is watching for it.
+ */
+export async function regenerateMessage(formData: FormData) {
+  const productId = String(formData.get("productId"));
+  const actionId = String(formData.get("actionId"));
+  const instruction = String(formData.get("instruction") ?? "").trim();
+
+  const { db, orgId, action } = await editableAction(actionId);
+  await db.collection(C.actions).updateOne(
+    { _id: action._id },
+    {
+      $set: {
+        rewriteRequestedAt: new Date(),
+        rewriteNote: instruction || undefined,
+        // Back to the gate: a rewrite nobody has read is not an approved message.
+        status: "awaiting_approval",
+      },
+      $unset: { "content.slotText": "", "content.bodyMd": "", "content.bodyHtml": "", reviewedAt: "", error: "", skipReason: "" },
+    },
+  );
+
+  await enqueue(
+    orgId,
+    "compose",
+    {
+      actionId,
+      personId: String(action.personId),
+      goalInstanceId: String(action.goalInstanceId),
+      reason: instruction || "a reviewer asked for this message to be written again",
+    },
+    { subjectId: String(action.personId), productId, priority: PRIORITY.urgent },
+  );
+
+  await recordEdit(productId, actionId, "regenerate", instruction || undefined);
+  revalidatePath(`/products/${productId}/review`, "layout");
+}
+
 /** What a message actually says, fetched only when a reviewer opens it. */
 export interface HeldMessage {
   subject?: string;
@@ -1321,6 +1461,18 @@ export interface HeldMessage {
   preview?: boolean;
   /** Why nothing could be shown, when even the render failed. */
   previewError?: string;
+  /**
+   * The words a reviewer may edit — the slot copy alone, not the rendered message. Editing
+   * the rendered body would bake the template's greeting and button into the copy, and the
+   * next render would add its own on top.
+   */
+  editableBody?: string;
+  /** When it is set to go, for the reschedule field. */
+  dueAt?: string;
+  /** Whether the message may still be changed at all. */
+  editable: boolean;
+  /** Set while a rewrite has been asked for and the writing routine has not run yet. */
+  rewriteRequestedAt?: string;
 }
 
 /**
@@ -1362,12 +1514,21 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     }
   }
 
+  const slot = (action.content as { slotText?: string } | undefined)?.slotText;
   return {
     subject: content.subject ?? rendered?.subject,
     bodyHtml: content.bodyHtml ?? rendered?.bodyHtml,
     bodyText: content.bodyMd || rendered?.bodyMd,
     preview: Boolean(rendered),
     previewError,
+    // The slot if there is one; otherwise the rendered body, which is what a reviewer
+    // would otherwise have to retype to change one line of a template default.
+    editableBody: slot || content.bodyMd || rendered?.bodyMd,
+    dueAt: action.dueAt ? new Date(String(action.dueAt)).toISOString() : undefined,
+    editable: EDITABLE.includes(String(action.status)),
+    rewriteRequestedAt: action.rewriteRequestedAt
+      ? new Date(String(action.rewriteRequestedAt)).toISOString()
+      : undefined,
     rationale: action.rationale ? String(action.rationale) : undefined,
     canHtml: caps.html !== false,
     status: String(action.status),
@@ -1512,6 +1673,9 @@ export async function suppressPerson(productId: string, personId: string, _formD
 
 // ── audiences ─────────────────────────────────────────────────────────────────
 
+/** The engagement predicates a group can be built on. Anything else is ignored. */
+const RESPONDED = ["clicked", "replied", "any", "never"];
+
 export async function saveAudience(formData: FormData) {
   const db = await getDb();
   const orgId = await currentOrg();
@@ -1543,6 +1707,9 @@ export async function saveAudience(formData: FormData) {
             lifecycle: list("lifecycle"),
             temperature: list("temperature"),
             everEngaged: formData.get("everEngaged") === "on" ? true : undefined,
+            responded: RESPONDED.includes(String(formData.get("responded")))
+              ? (String(formData.get("responded")) as "clicked" | "replied" | "any" | "never")
+              : undefined,
             minIcpFit: num("minIcpFit"),
             excludeSuppressed: true,
           }
