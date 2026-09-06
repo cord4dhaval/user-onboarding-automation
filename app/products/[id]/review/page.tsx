@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { ObjectId } from "mongodb";
 import type { Filter, Document } from "mongodb";
 import { getDb } from "@/db/client.js";
@@ -11,6 +12,7 @@ import { BusyArea, BusyLink, BusyProvider, BusySelect } from "../../../ui/busy";
 import { ist, istLong } from "../../../ui/time";
 import CampaignFilter, { type CampaignOption } from "./campaign-filter";
 import SearchBox from "./search-box";
+import DecisionToast from "./decision-toast";
 import PreviewDrawer from "./preview-drawer";
 
 export const dynamic = "force-dynamic";
@@ -192,8 +194,6 @@ export default async function Review({
     page: pageParam,
     per: perParam,
     q: queryParam,
-    approved: approvedParam,
-    rejected: rejectedParam,
   } = await searchParams;
   const { orgId } = await requireSession();
   const db = await getDb();
@@ -399,8 +399,6 @@ export default async function Review({
     if (per !== PER_PAGE[0]) q.set("per", String(per));
     return q.toString();
   })();
-  const decided = Number(approvedParam ?? rejectedParam ?? NaN);
-  const decidedWord = approvedParam !== undefined ? "approved" : "rejected";
   // One undecided queue now, so the decision controls belong to exactly one tab.
   const decidable = waiting;
   // Which half of that queue goes out on this send run, and which is dated for later. The
@@ -421,17 +419,12 @@ export default async function Review({
                 ? `${allInView} pending. Approving returns a message to the send queue, where every guardrail still applies.`
                 : VIEWS[view].blurb}
           </p>
-          {/* What the last decision actually changed. The list redraws underneath a bulk
-              action, so without this the only way to know whether it worked is to count
-              rows — and while this action could silently match nothing, that was the only
-              way to find out it had not. */}
-          {Number.isFinite(decided) && (
-            <p className="sub" style={{ marginBottom: 0 }}>
-              {decided === 0
-                ? "Nothing changed — those messages had already been decided on."
-                : `${decided} message${decided === 1 ? "" : "s"} ${decidedWord}.`}
-            </p>
-          )}
+          {/* Said as a toast rather than as a line under the title. A sentence that appears
+              above a list which has just redrawn is a sentence nobody sees; it also stayed
+              in the address bar, so a refresh re-announced a decision made an hour ago. */}
+          <Suspense fallback={null}>
+            <DecisionToast />
+          </Suspense>
         </div>
         {view === "failed" && held.length > 0 && (
           <>

@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { CircleCheck, Info, TriangleAlert, X } from "lucide-react";
+import { type ReactNode } from "react";
+import { Toaster, toast } from "sonner";
+import { CircleCheck, Info, TriangleAlert } from "lucide-react";
 
 /**
  * Confirmation that something finished.
@@ -9,59 +10,56 @@ import { CircleCheck, Info, TriangleAlert, X } from "lucide-react";
  * The bell carries state the engine noticed on its own; a toast carries the result of
  * something the person just did. Without it, an action that changes a number three rows
  * down the page reads as no action at all.
+ *
+ * Backed by sonner rather than by the hand-rolled stack this replaced. The visible part was
+ * the easy part: what was missing was a queue that survives five results landing at once, a
+ * hover that stops the timer while you are reading, dismissal by swipe or keyboard, and a
+ * live region that announces the message without interrupting whatever else is being read.
+ * The API here is unchanged — `useToast()` still returns a function taking title, body and
+ * tone — so no call site moves.
  */
 
 type Tone = "good" | "info" | "bad";
 
-interface Toast {
-  id: number;
+interface ToastInput {
   tone: Tone;
   title: string;
   body?: string;
 }
 
-const ToastContext = createContext<(t: Omit<Toast, "id">) => void>(() => {});
-
-/** Lives in the product layout, so any control on any page can raise one. */
+/**
+ * Kept as a provider even though sonner needs no context, because the layout mounts one and
+ * the alternative is every screen remembering to render a `<Toaster />`.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<Toast[]>([]);
-
-  const push = useCallback((t: Omit<Toast, "id">) => {
-    // Math.random would be enough, but a counter keyed off the current length collides
-    // when two land in the same tick — the timestamp does not.
-    const id = Date.now() + Math.floor(Math.random() * 1000);
-    setItems((prev) => [...prev, { ...t, id }]);
-    setTimeout(() => setItems((prev) => prev.filter((x) => x.id !== id)), 5000);
-  }, []);
-
-  const value = useMemo(() => push, [push]);
-
   return (
-    <ToastContext.Provider value={value}>
+    <>
       {children}
-      <div className="toasts" role="status" aria-live="polite">
-        {items.map((t) => (
-          <div className={`toast ${t.tone}`} key={t.id}>
-            {t.tone === "good" ? <CircleCheck size={16} /> : t.tone === "bad" ? <TriangleAlert size={16} /> : <Info size={16} />}
-            <div>
-              <strong>{t.title}</strong>
-              {t.body && <div className="toast-body">{t.body}</div>}
-            </div>
-            <button
-              type="button"
-              className="toast-close"
-              aria-label="Dismiss"
-              onClick={() => setItems((prev) => prev.filter((x) => x.id !== t.id))}
-            >
-              <X size={13} />
-            </button>
-          </div>
-        ))}
-      </div>
-    </ToastContext.Provider>
+      <Toaster
+        position="bottom-right"
+        // The app's own tokens rather than sonner's palette: a toast that does not match the
+        // surface it lands on reads as a browser notification, not as part of the product.
+        toastOptions={{ className: "toast", unstyled: false }}
+        richColors={false}
+        closeButton
+        gap={10}
+        duration={5000}
+      />
+    </>
   );
 }
 
+const ICON: Record<Tone, ReactNode> = {
+  good: <CircleCheck size={16} />,
+  info: <Info size={16} />,
+  bad: <TriangleAlert size={16} />,
+};
+
 export function useToast() {
-  return useContext(ToastContext);
+  return ({ tone, title, body }: ToastInput) => {
+    toast[tone === "good" ? "success" : tone === "bad" ? "error" : "message"](title, {
+      description: body,
+      icon: ICON[tone],
+    });
+  };
 }

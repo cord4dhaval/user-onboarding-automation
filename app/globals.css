@@ -1,3 +1,39 @@
+/* Tailwind, without preflight.
+   The reset is what makes a framework take over a codebase in one commit: every button,
+   input and heading on every screen changes the moment it lands. Importing only the theme
+   and the utilities means the screens being rebuilt can use utilities while every other
+   screen keeps rendering from the CSS below, unchanged. */
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+
+/* The design tokens, handed to Tailwind so `bg-surface` and `text-ink-2` follow the same
+   variables the hand-written CSS does — including the dark theme, because these resolve at
+   use rather than at build. One set of colours, two consumers. */
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-hot: var(--hot);
+  --color-warm: var(--warm);
+  --color-cold: var(--cold);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --radius-sm: var(--r-sm);
+  --radius-DEFAULT: var(--r);
+  --radius-lg: var(--r-lg);
+  --shadow-panel: var(--shadow);
+}
+
 /* ── tokens ───────────────────────────────────────────────────────────────────
    One background across the whole console — sidebar, header and page share it, and
    hairline rules do the separating. Panels are distinguished by a border, not by a
@@ -396,10 +432,22 @@ main.auth button[type="submit"] { align-self: stretch; text-align: center; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slide { from { transform: translateX(14px); opacity: .4; } to { transform: none; opacity: 1; } }
 
+/* Positioned rather than laid out by the scrim: a dialog primitive renders the overlay and
+   the panel as siblings in a portal, so the panel places itself. */
 .drawer {
+  position: fixed; top: 0; right: 0; z-index: 51;
   background: var(--ground); border-left: 1px solid var(--rule);
   height: 100%; max-width: 100%; display: flex; flex-direction: column;
   animation: slide 160ms ease-out; box-shadow: var(--shadow);
+}
+.drawer:focus-visible { outline: none; }
+.drawer-sub { margin: 2px 0 0; }
+
+/* Announced, never shown — for the description a dialog must carry even when the header
+   has nothing extra to say. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
 }
 .drawer > header {
   display: flex; align-items: flex-start; gap: 16px;
@@ -1015,6 +1063,36 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
   align-self: flex-start;
 }
 .toast-close:hover { color: var(--ink); filter: none; background: none; }
+
+/* sonner renders the stack itself, so the app's own tokens are handed to it rather than
+   its palette being overridden per element. Data attributes are the library's API for
+   this; the `.toast` rules above still style the box. */
+[data-sonner-toaster] {
+  --normal-bg: var(--ground);
+  --normal-border: var(--rule);
+  --normal-text: var(--ink);
+  --success-bg: var(--ground);
+  --success-border: var(--good);
+  --success-text: var(--ink);
+  --error-bg: var(--ground);
+  --error-border: var(--bad);
+  --error-text: var(--ink);
+  --border-radius: var(--r);
+  font-family: inherit;
+}
+[data-sonner-toast] {
+  box-shadow: var(--shadow);
+  font-size: 13.5px;
+  align-items: flex-start;
+}
+[data-sonner-toast] [data-title] { font-weight: 600; }
+[data-sonner-toast] [data-description] { color: var(--ink-3); font-size: 12.5px; margin-top: 1px; }
+[data-sonner-toast] [data-icon] { margin-top: 1px; }
+[data-sonner-toast][data-type="success"] [data-icon] { color: var(--good); }
+[data-sonner-toast][data-type="error"] [data-icon] { color: var(--bad); }
+[data-sonner-toast] [data-close-button] {
+  background: var(--surface); border-color: var(--rule); color: var(--ink-3);
+}
 
 /* ── metric tile ──────────────────────────────────────────────────────────── */
 .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); margin-bottom: 22px; }
