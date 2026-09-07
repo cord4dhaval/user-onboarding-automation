@@ -40,6 +40,8 @@ export async function runSource(sourceId: string, pushedRows?: RawRecord[]): Pro
         // A source that returns a position wants to be asked for what came after it.
         // Dropping it meant every poll re-read the endpoint from the beginning: the
         // people deduped, but each one collected another arrival on every single poll.
+        // What that position *means* is the adapter's business — for a newest-first lead
+        // feed it is the newest record seen, not the server's own paging token.
         ...(summary.nextCursor ? { cursor: summary.nextCursor } : {}),
       },
     },
