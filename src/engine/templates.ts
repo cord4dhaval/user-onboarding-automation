@@ -88,8 +88,37 @@ const LADDER: Rung[] = [
   },
 ];
 
+/**
+ * Rungs a sequence never climbs to, because they are reached by what a person did rather
+ * than by how far through the sequence they are.
+ *
+ * Kept out of `LADDER` on purpose. Handing someone a way to reach us is not a position — it
+ * can be earned on day two or day eleven — and a rung inside the ladder would be walked
+ * into by anybody who simply received enough messages, which is exactly the thing this is
+ * meant to be an answer to.
+ */
+const STATE_RUNGS: Rung[] = [
+  {
+    key: "access",
+    name: "Access",
+    stage: "earned",
+    angle: () =>
+      "They have earned a conversation: they clicked recently, or they wrote back. Say that you noticed, " +
+      "offer the time, and stop. No pitch, no recap, nothing to read before deciding.",
+    subject: () => "{{first_name}}, worth twenty minutes?",
+    heading: () => "Worth twenty minutes?",
+    body: () =>
+      "You have been looking at this properly, so rather than send you more to read, here is time with someone who can answer whatever is still open." +
+      "\n\nNo deck, no demo you have already seen.",
+  },
+];
+
 /** The ladder as plain keys, in the order a sequence climbs them. */
 export const LADDER_KEYS = LADDER.map((rung) => rung.key);
+
+/** Reached by state, never by position. */
+export const STATE_RUNG_KEYS = STATE_RUNGS.map((rung) => rung.key);
+export const ACCESS_RUNG = "access";
 
 export interface TemplatePick {
   orgId: string;
@@ -111,6 +140,14 @@ export interface TemplatePick {
    * clicked it received the welcome a second time.
    */
   usedKeys?: string[];
+  /**
+   * Ask for one particular rung rather than climbing to one.
+   *
+   * Used by the messages that exist because of something a person did. The climb is about
+   * how far through a sequence they are, and a message that fires because they went hot is
+   * not part of that sequence at all.
+   */
+  rungKey?: string;
 }
 
 /**
@@ -135,6 +172,21 @@ export async function resolveTemplateFor(pick: TemplatePick): Promise<Document |
   if (candidates.length === 0) return null;
 
   const used = new Set(pick.usedKeys ?? []);
+
+  // Named rung wins outright, and falls back to nothing rather than to the ladder. A
+  // message asking for the access rung is asking to hand over a calendar; quietly sending
+  // the day-four value proof instead would be a different message to a different purpose.
+  if (pick.rungKey) {
+    const named = candidates.filter((t) => String(t.key) === pick.rungKey);
+    if (named.length === 0) return null;
+    return (
+      (pick.segment && named.find((t) => t.scope === "segment" && t.segmentKey === pick.segment)) ||
+      named.find((t) => t.scope === "product_default") ||
+      named[0] ||
+      null
+    );
+  }
+
   const start = Math.min(Math.max(pick.touchesSpent ?? 0, 0), LADDER_KEYS.length - 1);
   // Climb past any rung this person has already been sent. Repeating one is worse than
   // skipping ahead: the same words twice reads as a broken system, whereas arriving at the
@@ -174,10 +226,16 @@ export async function generateDefaultTemplates(
   for (const suggestion of config.suggestedChannels) {
     const isShortForm = suggestion.key !== "email";
 
-    for (const rung of LADDER) {
+    for (const rung of [...LADDER, ...STATE_RUNGS]) {
       // Short-form channels carry the opener and nothing else. A five-message SMS
       // sequence is not a sequence, it is a reason to block the number.
       if (isShortForm && rung.key !== "welcome") continue;
+
+      // A rung reached by state carries whatever earned it and nothing else. The access
+      // rung's whole job is to hand over a calendar, and the calendar arrives as an asset —
+      // so a "Get started" button under it would offer a second, smaller decision beside
+      // the one being asked for.
+      const stateRung = STATE_RUNG_KEYS.includes(rung.key);
 
       const blocks: Record<string, unknown>[] = [];
       if (!isShortForm) {
@@ -210,7 +268,9 @@ export async function generateDefaultTemplates(
       if (!isShortForm && rung.key === "welcome" && config.valueProps.length > 1) {
         blocks.push({ type: "list", style: "check", items: config.valueProps.slice(1, 4).map(sentence) });
       }
-      blocks.push({ type: "cta", fixed: rung.key === "last_call" ? "Pick up where you left off" : "Get started", url: config.trialLinkTemplate });
+      if (!stateRung) {
+        blocks.push({ type: "cta", fixed: rung.key === "last_call" ? "Pick up where you left off" : "Get started", url: config.trialLinkTemplate });
+      }
       if (!isShortForm) blocks.push({ type: "system", fixed: "opt_out_block" });
 
       await db.collection(C.templates).updateOne(

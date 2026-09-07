@@ -94,6 +94,13 @@ export interface RenderableAsset {
  */
 function assetBlocks(asset: RenderableAsset, vars: MergeVars): ResolvedBlock[] {
   const line = merge(asset.oneLine ?? "", vars);
+  // Every URL an asset contributes, not only the words around it.
+  //
+  // A booking page is the one link in the product that has to know who is arriving: the
+  // site passes {{person_id}} and {{visit_token}} back to /api/e/<event>, and that is how
+  // a check of kind `page` learns anybody booked. Rendered unmerged, the reader gets a URL
+  // with literal braces in it and the campaign never finds out it succeeded.
+  const url = (value?: string) => (value ? merge(value, vars) : undefined);
   const out: ResolvedBlock[] = [];
 
   if (asset.kind === "quote") {
@@ -123,14 +130,14 @@ function assetBlocks(asset: RenderableAsset, vars: MergeVars): ResolvedBlock[] {
     // Placed before the template's own call to action, so this is the button and the
     // template's becomes a plain link. When we are handing someone a calendar, booking is
     // the decision the message is asking for — not whatever the skeleton was asking for.
-    if (access.bookingUrl) out.push({ kind: "cta", text: "Pick a time", url: access.bookingUrl });
+    if (access.bookingUrl) out.push({ kind: "cta", text: "Pick a time", url: url(access.bookingUrl)! });
     return out;
   }
 
   if (!asset.url) return [];
 
   if (asset.kind === "image") {
-    out.push({ kind: "image", url: asset.url, alt: line });
+    out.push({ kind: "image", url: url(asset.url)!, alt: line });
     return out;
   }
 
@@ -142,13 +149,13 @@ function assetBlocks(asset: RenderableAsset, vars: MergeVars): ResolvedBlock[] {
     // link, so describing the picture too makes a screen reader read the offer twice — and
     // in the plain-text part, which renders an image as its alt text, it printed twice for
     // everybody.
-    if (asset.thumbUrl) out.push({ kind: "image", url: asset.thumbUrl, alt: "", href: asset.url });
-    out.push({ kind: "text", text: `[${line || "Watch it"}](${asset.url})` });
+    if (asset.thumbUrl) out.push({ kind: "image", url: url(asset.thumbUrl)!, alt: "", href: url(asset.url) });
+    out.push({ kind: "text", text: `[${line || "Watch it"}](${url(asset.url)})` });
     return out;
   }
 
   // document and link: a line that is a link, which is all either of them is.
-  out.push({ kind: "text", text: `[${line || "Take a look"}](${asset.url})` });
+  out.push({ kind: "text", text: `[${line || "Take a look"}](${url(asset.url)})` });
   return out;
 }
 

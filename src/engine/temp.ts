@@ -3,6 +3,9 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { detectMovement } from "./detect.js";
+import { accessAssetFor, assetContextFor } from "./assets.js";
+import { ACCESS_RUNG, resolveTemplateFor } from "./templates.js";
+import { notify } from "./notify.js";
 
 /**
  * Temperature, recomputed from what a person actually did.
@@ -102,6 +105,8 @@ export interface RecomputeSummary {
   rescheduled: number;
   /** People who went hot and were handed to a session to react to. */
   escalated: number;
+  /** People who went hot and were offered a way to reach us. */
+  accessOffered: number;
 }
 
 /**
@@ -117,7 +122,14 @@ export async function recomputeTemps(
   now = new Date(),
 ): Promise<RecomputeSummary> {
   const db = await getDb();
-  const summary: RecomputeSummary = { examined: 0, changed: 0, bands: {}, rescheduled: 0, escalated: 0 };
+  const summary: RecomputeSummary = {
+    examined: 0,
+    changed: 0,
+    bands: {},
+    rescheduled: 0,
+    escalated: 0,
+    accessOffered: 0,
+  };
 
   const instances = await db
     .collection(C.goalInstances)
@@ -237,6 +249,14 @@ export async function recomputeTemps(
         reason: "temperature rose to hot",
       });
       summary.escalated++;
+
+      // Telling a person about it was all this used to do, and a lead who has just earned a
+      // conversation would then wait for whatever the sequence had scheduled next. The
+      // offer goes out now, held for review, because the reason to send it is the thing
+      // that just happened.
+      if (await offerAccess(orgId, productId, personId, instanceByPerson.get(personId), next.band)) {
+        summary.accessOffered++;
+      }
     }
   }
 
@@ -313,4 +333,114 @@ export function explainTemp(temp: Document | null | undefined): string {
   if (terms.includes("open_weak")) parts.push("opens (discounted)");
   if (terms.includes("silence")) parts.push("silence");
   return `from ${parts.join(" + ")}`;
+}
+
+/**
+ * Queues the message that hands someone a way to reach us, the moment they earn it.
+ *
+ * Held for review rather than sent, and not because the campaign says so: the asset itself
+ * demands it, and `fireDue` honours that over any auto-send setting. A calendar link and a
+ * phone number are the two things this system can give away that cannot be taken back, so
+ * a person sees who it is going to before it goes.
+ *
+ * Returns false, quietly, in every case where there is nothing to offer — no active
+ * campaign, no access asset on this product, one already spent on this person, or a
+ * campaign whose channels cannot carry it. None of those is a fault; most products will
+ * never have an access asset at all, and this has to cost nothing when they do not.
+ */
+async function offerAccess(
+  orgId: string,
+  productId: string,
+  personId: string,
+  goalInstanceId: string | undefined,
+  band: string,
+): Promise<boolean> {
+  if (!goalInstanceId) return false;
+  const db = await getDb();
+
+  const instance = await db
+    .collection(C.goalInstances)
+    .findOne({ _id: new ObjectId(goalInstanceId), status: "active" });
+  if (!instance) return false;
+
+  const goal = await db
+    .collection(C.goals)
+    .findOne({ orgId, productId, key: String(instance.goalKey) });
+
+  // The band has been recomputed but not yet written when this runs, so it is passed in
+  // rather than read back off the person — reading would offer the calendar one tick late,
+  // and the tick is the whole point.
+  const context = { ...(await assetContextFor(orgId, productId, personId, goal)), band };
+  const asset = await accessAssetFor(orgId, productId, context);
+  if (!asset) return false;
+
+  const channel = await db.collection(C.channels).findOne({
+    orgId,
+    productId,
+    key: { $in: (goal?.allowedChannels ?? ["email"]) as string[] },
+    enabled: true,
+    status: "healthy",
+  });
+  if (!channel) return false;
+
+  const template = await resolveTemplateFor({
+    orgId,
+    productId,
+    channel: String(channel.key),
+    segment: undefined,
+    rungKey: ACCESS_RUNG,
+  });
+  // No access template on this channel. Falling back to a ladder rung would send a
+  // day-four value proof carrying a calendar, which is a different message entirely.
+  if (!template) return false;
+
+  try {
+    await db.collection(C.actions).insertOne({
+      _id: new ObjectId(),
+      orgId,
+      productId,
+      goalInstanceId,
+      personId,
+      channel: String(channel.key),
+      channelId: String(channel._id),
+      templateId: String(template._id),
+      angle: "access",
+      // No composed copy. The rung's own words carry the message and the asset carries the
+      // offer, which is what the slot fallback is for — waiting for a session to write
+      // something would spend the moment this exists to catch.
+      content: {
+        bodyMd: "",
+        personalizationUsed: [],
+        claimsMade: [],
+        wordCount: 0,
+      },
+      assetIds: [asset.asset_id],
+      rationale: `Temperature rose to ${band}; offered ${asset.key}.`,
+      next: {},
+      // One per campaign, forever. A second calendar after the first went unanswered is the
+      // clearest way to turn a warm lead cold, and the unique index refuses it rather than
+      // trusting every caller to check.
+      idempotencyKey: `${goalInstanceId}:access`,
+      status: "queued",
+      dueAt: new Date(),
+      cost: 0,
+    });
+  } catch (err) {
+    // Already offered. The index doing its job, not a failure.
+    if (err instanceof Error && err.message.includes("E11000")) return false;
+    throw err;
+  }
+
+  await notify({
+    orgId,
+    productId,
+    severity: "action",
+    title: "Someone earned a conversation",
+    body: `They went ${band}, so a message offering ${asset.key} is waiting in Review.`,
+    href: `/products/${productId}/review`,
+    // One row per campaign, matching the one message this can ever queue for it.
+    dedupeKey: `access_offered:${goalInstanceId}`,
+  });
+
+  return true;
 }

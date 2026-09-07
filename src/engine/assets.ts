@@ -390,3 +390,21 @@ export function highestTier(tiers: string[]): string | null {
   }
   return best;
 }
+
+/**
+ * The one access asset this person has earned, or nothing.
+ *
+ * Runs the same filters as the menu and then takes the best-performing row, because this
+ * is not a choice a session gets to make. It fires on a temperature change, minutes after
+ * a click, and waiting for a Claude session to pick between two calendars would spend the
+ * moment the message exists to catch.
+ */
+export async function accessAssetFor(
+  orgId: string,
+  productId: string,
+  context: MenuInput,
+): Promise<AssetMenuRow | null> {
+  if (!accessUnlocked(context.band)) return null;
+  const eligible = await eligibleAssets(orgId, productId, context);
+  return eligible.find((row) => row.kind === "access") ?? null;
+}
