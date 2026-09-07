@@ -268,6 +268,21 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const outbound = toOutbound(content, email, channel.from as string | undefined);
       outbound.replyTo = channel.replyTo as string | undefined;
 
+      // Continue the conversation this person is already in, rather than starting a third
+      // one beside it. A follow-up that arrives as a fresh message reads as nobody having
+      // seen what they wrote, which is the opposite of what a reply-driven sequence is for.
+      const conversation = await conversationFor(
+        opts.orgId,
+        opts.productId,
+        String(action.personId),
+        String(action.channel),
+      );
+      if (conversation) {
+        outbound.threadId = conversation.threadId;
+        outbound.inReplyTo = conversation.inReplyTo;
+        outbound.references = conversation.references;
+      }
+
       let result;
       try {
         result = dryRun
@@ -310,6 +325,18 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             // Records what this message could report back, so silence from an untracked
             // send is never counted against the angle.
             tracking: trackingApplied,
+            // The conversation this joined. Stored on the action rather than re-read from
+            // the provider later: the mailbox may be disconnected by then, and a thread we
+            // cannot name is a thread the next message falls out of.
+            ...(result.threadId || result.messageId
+              ? {
+                  thread: {
+                    id: result.threadId,
+                    messageId: result.messageId,
+                    references: [...(outbound.references ?? []), result.messageId].filter(Boolean),
+                  },
+                }
+              : {}),
           },
           // It waited for a window and then went out; the note about waiting is history now.
           $unset: { deferReason: "" },
@@ -458,4 +485,71 @@ async function rungsSentTo(personId: string): Promise<string[]> {
   const ids = [...new Set(sent.map((a) => String(a.templateId)))].map((id) => new ObjectId(id));
   const templates = await db.collection(C.templates).find({ _id: { $in: ids } }).project({ key: 1 }).toArray();
   return templates.map((t) => String(t.key));
+}
+
+interface Conversation {
+  threadId?: string;
+  inReplyTo?: string;
+  references: string[];
+}
+
+/**
+ * The conversation a message to this person should join, if there is one.
+ *
+ * Two things can be the newest message in it: something we sent, or something they wrote
+ * back. Whichever is later is what `In-Reply-To` names — pointing at our own last send when
+ * they have since replied threads the message under the wrong parent, and clients that
+ * build the tree from headers show the answer above the question.
+ *
+ * Returns undefined for a first touch, which is a new conversation by definition.
+ */
+async function conversationFor(
+  orgId: string,
+  productId: string,
+  personId: string,
+  channelKey: string,
+): Promise<Conversation | undefined> {
+  const db = await getDb();
+
+  const lastSent = await db
+    .collection(C.actions)
+    .find({ orgId, productId, personId, channel: channelKey, status: { $in: ["sent", "dispatched"] }, "thread.id": { $exists: true } })
+    .sort({ sentAt: -1 })
+    .limit(1)
+    .next();
+  if (!lastSent) return undefined;
+
+  const thread = lastSent.thread as { id?: string; messageId?: string; references?: string[] };
+  const references = (thread.references ?? [thread.messageId]).filter(Boolean) as string[];
+  const conversation: Conversation = {
+    threadId: thread.id,
+    inReplyTo: thread.messageId,
+    references,
+  };
+
+  // Their reply, if it came after our last send and carried an id we can point at. A reply
+  // read before this change has no rfcMessageId, so the chain quietly falls back to our own
+  // last message rather than breaking.
+  const reply = await db
+    .collection(C.events)
+    .find({
+      orgId,
+      productId,
+      personId,
+      type: "reply_received",
+      ts: { $gt: lastSent.sentAt as Date },
+      "payload.rfcMessageId": { $exists: true, $ne: null },
+    })
+    .sort({ ts: -1 })
+    .limit(1)
+    .next();
+  if (reply) {
+    const theirId = String((reply.payload as { rfcMessageId?: unknown }).rfcMessageId);
+    conversation.inReplyTo = theirId;
+    conversation.references = [...references, theirId];
+    const theirThread = (reply.payload as { threadId?: unknown }).threadId;
+    if (theirThread) conversation.threadId = String(theirThread);
+  }
+
+  return conversation;
 }

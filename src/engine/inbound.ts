@@ -376,7 +376,10 @@ export async function pollReplies(
 
       const message =
         (await gmail(`/messages/${id}?format=full`, mailbox.token)) ??
-        (await gmail(`/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`, mailbox.token));
+        (await gmail(
+          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Message-ID`,
+          mailbox.token,
+        ));
       if (!message) continue;
 
       const from = addressIn(headerOf(message.payload, "From"));
@@ -411,6 +414,11 @@ export async function pollReplies(
         handled: false,
         payload: {
           messageId: id,
+          // The RFC 5322 id, which is not Gmail's. Kept because the next message we send
+          // into this conversation has to reference the message it answers, and by then the
+          // mail itself is no longer in front of us.
+          rfcMessageId: headerOf(message.payload, "Message-ID"),
+          threadId: message.threadId,
           mailbox: mailbox.email,
           from,
           subject: headerOf(message.payload, "Subject"),
