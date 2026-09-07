@@ -188,11 +188,17 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const vars: MergeVars = mergeVarsFor(person, product);
 
       const prior = action.content as Partial<ComposedContent> | undefined;
-      // A message someone read and approved ships exactly as read. Re-rendering it here
-      // would let the words change between the review screen and the recipient.
-      const content =
-        prior?.bodyMd && action.reviewedAt
-          ? (prior as ComposedContent)
+      // An answer to something a person wrote is not a campaign touch, and rendering it
+      // through the ladder dresses it as one: it inherits the next rung's heading and
+      // subject, so a reply to "what does it cost?" arrives titled "one step left" above a
+      // greeting the sender did not write. The words are the whole message here.
+      const isReply = String(action.angle) === "reply";
+      const content = isReply
+        ? replyContent(prior, await replySubject(opts.orgId, opts.productId, personId))
+        : prior?.bodyMd && action.reviewedAt
+          ? // A message someone read and approved ships exactly as read. Re-rendering it
+            // here would let the words change between the review screen and the recipient.
+            (prior as ComposedContent)
           : renderTemplate(template.blocks as Record<string, unknown>[], vars, prior);
 
       const priorClaims = await priorClaimsFor(String(action.goalInstanceId));
@@ -206,7 +212,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // Three things have to agree before a message goes out designed: the template asks
       // for it, the channel can carry it, and the channel is email.
       // A reviewer who chose plain text outranks the template's own format.
-      const wantsHtml = String(action.format ?? template.format ?? "html") !== "text";
+      const wantsHtml = !isReply && String(action.format ?? template.format ?? "html") !== "text";
       if (!content.bodyHtml && wantsHtml && String(action.channel) === "email" && caps?.html !== false) {
         content.bodyHtml = renderHtml(
           resolveBlocks(template.blocks as Record<string, unknown>[], vars, prior),
@@ -241,6 +247,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         priorClaims,
         maxSubjectLength: caps?.maxSubjectLength,
         maxBodyLength: caps?.maxBodyLength,
+        isReply,
       });
 
       if (!check.ok) {
@@ -552,4 +559,54 @@ async function conversationFor(
   }
 
   return conversation;
+}
+
+/**
+ * A reply, exactly as it was written.
+ *
+ * No template, no greeting, no call-to-action button and no unsubscribe block: this is one
+ * side of a conversation the other person started, and every one of those turns it back
+ * into a campaign message. The opt-out still works — they can say so in a sentence, which
+ * the inbound poller reads and honours within the minute.
+ */
+function replyContent(prior: Partial<ComposedContent> | undefined, subject: string): ComposedContent {
+  const body = String(prior?.slotText ?? prior?.bodyMd ?? "").trim();
+  return {
+    ...(prior as ComposedContent),
+    subject: prior?.subject ?? subject,
+    bodyMd: body,
+    bodyHtml: undefined,
+    wordCount: body.split(/\s+/).filter(Boolean).length,
+  };
+}
+
+/**
+ * The subject a reply should carry: theirs, prefixed once.
+ *
+ * Taken from what they wrote rather than from what we sent, because a person who changed
+ * the subject line is telling us what the conversation is now about. Falls back to our own
+ * last send, and prefixes nothing that is already a reply — "Re: Re: Re:" is a machine
+ * announcing itself.
+ */
+async function replySubject(orgId: string, productId: string, personId: string): Promise<string> {
+  const db = await getDb();
+  const inbound = await db
+    .collection(C.events)
+    .find({ orgId, productId, personId, type: "reply_received" })
+    .sort({ ts: -1 })
+    .limit(1)
+    .next();
+
+  let subject = String((inbound?.payload as { subject?: unknown } | undefined)?.subject ?? "").trim();
+  if (!subject) {
+    const lastSend = await db
+      .collection(C.actions)
+      .find({ orgId, productId, personId, status: { $in: ["sent", "dispatched"] } })
+      .sort({ sentAt: -1 })
+      .limit(1)
+      .next();
+    subject = String((lastSend?.content as { subject?: unknown } | undefined)?.subject ?? "").trim();
+  }
+  if (!subject) return "Re: your message";
+  return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 }

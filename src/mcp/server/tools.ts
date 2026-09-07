@@ -2469,7 +2469,7 @@ TOOLS.push({
 TOOLS.push({
   name: "record_reply",
   description:
-    "Record that a person replied, what they said and what it means. Attributes the reply to the message it answers, so what_works can tell an angle that started a conversation from one that was ignored. Recording is not deciding: use mark_state for the campaign's verdict. An intent of unsubscribe suppresses them immediately and permanently.",
+    "Record that a person replied, what they said and what it means. Attributes the reply to the message it answers, so what_works can tell an angle that started a conversation from one that was ignored. An answer is queued as a plain-text reply in the same conversation and held in Review for a human to release — write it as the message you would send them, not as a note about it. Recording is not deciding: use mark_state for the campaign's verdict. An intent of unsubscribe suppresses them immediately and permanently.",
   inputSchema: {
     type: "object",
     properties: {
@@ -2489,7 +2489,7 @@ TOOLS.push({
       },
       answer: {
         type: "string",
-        description: "What you are replying, grounded in what the product actually does. Never invent a capability to close someone.",
+        description: "What you are replying, grounded in what the product actually does, written as the message itself — it is queued as a plain-text reply into their thread and held for a human to approve. No greeting or sign-off is added around it. Leave it out rather than guessing; never invent a capability to close someone.",
       },
       event_id: { type: "string", description: "The replies_waiting id from sweep, so it stops being returned." },
       at: { type: "string", description: "When they replied, ISO 8601. Defaults to now." },
@@ -2583,17 +2583,122 @@ TOOLS.push({
         .updateOne({ _id: new ObjectId(String(args.event_id)), orgId }, { $set: { handled: true, handledAt: at } });
     }
 
+    // The answer becomes a message, or it was never an answer.
+    //
+    // It used to be written to the event and read by nothing: a model composed a reply to a
+    // real person, and the reply went nowhere. Whoever opened the notification had to write
+    // it again from scratch, so the field cost a model call and bought silence.
+    //
+    // It is queued at awaiting_approval rather than sent. A reply is the one thing in this
+    // system a human has always answered — the poller stops the sequence saying exactly
+    // that — so this puts a draft in front of them instead of taking the decision away.
+    // Plain text, because a conversational reply wrapped in a campaign skeleton, greeting
+    // and call-to-action button reads as a machine that did not understand the question.
+    const answerText = args.answer ? String(args.answer).trim() : "";
+    let answerQueued: string | null = null;
+    if (answerText && !suppressed) {
+      answerQueued = await queueAnswer(orgId, productId, personId, answerText, at, actionId);
+    }
+
     return {
       person_id: personId,
       intent,
       attributed_to_action: actionId,
       suppressed,
+      answer_action_id: answerQueued,
       note: actionId
         ? "Attributed to their most recent send, so the angle that started this conversation gets the credit."
         : "No unanswered send to attribute this to — recorded against the person only.",
+      answer_note: answerText
+        ? answerQueued
+          ? "Queued as a plain-text reply, held in Review. It threads under their message and sends when a human approves it."
+          : "Not queued — this person has no healthy channel or open campaign to answer on."
+        : undefined,
     };
   },
 });
+
+/**
+ * Puts a written reply in the review queue, addressed to the conversation it answers.
+ *
+ * Held rather than sent: everything upstream of here treats a reply as the moment a human
+ * takes over — the inbound poller skips their queued messages with "waiting on a human
+ * answer" and notifies the owner within the minute — so this hands that person a draft, not
+ * a decision already made.
+ *
+ * Returns the action id, or null when there is nothing to answer on: no healthy channel, or
+ * no open campaign to hang it from. Silent failure here would be the same bug this replaces.
+ */
+async function queueAnswer(
+  orgId: string,
+  productId: string,
+  personId: string,
+  answer: string,
+  at: Date,
+  repliedToActionId: string | null,
+): Promise<string | null> {
+  const db = await getDb();
+
+  // The channel their last message went out on, so the answer arrives from the address they
+  // are already talking to rather than whichever channel happens to be first.
+  const lastSend = repliedToActionId
+    ? await db.collection(C.actions).findOne({ _id: new ObjectId(repliedToActionId) })
+    : await db
+        .collection(C.actions)
+        .find({ orgId, productId, personId, status: { $in: ["sent", "dispatched"] } })
+        .sort({ sentAt: -1 })
+        .limit(1)
+        .next();
+
+  const channel = lastSend?.channelId
+    ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
+    : await db.collection(C.channels).findOne({ orgId, productId, key: "email", enabled: true, status: "healthy" });
+  if (!channel) return null;
+
+  const instance =
+    (lastSend?.goalInstanceId &&
+      (await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(lastSend.goalInstanceId)) }))) ||
+    (await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active" }));
+  if (!instance) return null;
+
+  const actionId = new ObjectId();
+  try {
+    await db.collection(C.actions).insertOne({
+      _id: actionId,
+      orgId,
+      productId,
+      goalInstanceId: String(instance._id),
+      personId,
+      channel: String(channel.key),
+      channelId: String(channel._id),
+      angle: "reply",
+      rationale: "Answers what they wrote. Queued by the React routine, held for a human.",
+      content: {
+        bodyMd: "",
+        slotText: answer,
+        personalizationUsed: [],
+        claimsMade: [],
+        wordCount: answer.split(/\s+/).filter(Boolean).length,
+      },
+      // A conversational reply is not a campaign touch, and the skeleton's greeting and
+      // call-to-action button would make it read like one.
+      format: "text",
+      assetIds: [],
+      next: {},
+      signals: [],
+      // One answer per reply. Two runs reading the same unhandled reply must not send the
+      // person two answers to one question.
+      idempotencyKey: `${String(instance._id)}:reply:${at.getTime()}`,
+      status: "awaiting_approval",
+      dueAt: at,
+      cost: 0,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("E11000")) return null;
+    throw err;
+  }
+  return String(actionId);
+}
 
 /**
  * The worker contract: what a sub-routine is allowed to work on, and how it hands it back.

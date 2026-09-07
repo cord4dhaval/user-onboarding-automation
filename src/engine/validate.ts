@@ -15,6 +15,15 @@ export interface ValidationContext {
   /** Hard limits the provider itself enforces; exceeding them is a rejected send. */
   maxSubjectLength?: number;
   maxBodyLength?: number;
+  /**
+   * A one-to-one answer to something this person wrote, rather than a campaign touch.
+   *
+   * The opt-out block is not required on one. They opened the conversation; an unsubscribe
+   * footer under a direct answer to their question reads as a form letter, and saying
+   * "stop" in a sentence already works — the inbound poller honours it within the minute,
+   * before any routine sees it. Every other check still applies.
+   */
+  isReply?: boolean;
 }
 
 /**
@@ -33,7 +42,7 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
 
   if (ctx.channelKey === "email") {
     if (!content.subject?.trim()) hardFails.push("email has no subject");
-    if (!/unsubscribe/i.test(content.bodyMd)) hardFails.push("missing opt-out block");
+    if (!ctx.isReply && !/unsubscribe/i.test(content.bodyMd)) hardFails.push("missing opt-out block");
   }
 
   if (content.ctaUrl && !/^https?:\/\//.test(content.ctaUrl)) {

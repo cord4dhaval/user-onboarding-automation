@@ -235,9 +235,12 @@ is the judgment, and that is yours.
 3.1 reply-handler
   next_work("escalate") and take the items whose reason is a reply.
   One sub-agent per person: read what they actually wrote, then record_reply with a
-  grounded answer. Never invent a capability to close someone. A reply that says
-  "not now" is a date, not a rejection — record the reason so whoever picks them up
-  later knows what was said.
+  grounded answer. The answer is the message itself — it is queued into their thread
+  as plain text and held in Review for a human to release, so write what you would
+  send them, not a summary of what should be said. Never invent a capability to close
+  someone; leave the answer out rather than guessing at one. A reply that says "not
+  now" is a date, not a rejection — record the reason so whoever picks them up later
+  knows what was said.
 
 3.2 escalate-hot
   The rest of the escalate items: people who clicked and did not convert.
