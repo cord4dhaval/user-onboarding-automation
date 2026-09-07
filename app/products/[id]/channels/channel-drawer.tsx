@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Drawer from "../../../ui/drawer";
-import { Globe, Mail, Plug, ShieldCheck } from "lucide-react";
+import { Globe, Mail, Plug, ShieldCheck, Server } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { FormatChoice, SendToolFields } from "./channel-fields";
 import { catalogById, transportsFor, type TransportId } from "@/channels/catalog.js";
@@ -28,6 +28,7 @@ const EXAMPLE_PAYLOAD = JSON.stringify(
 
 const TRANSPORT_ICONS: Record<TransportId, React.ReactNode> = {
   oauth: <ShieldCheck />,
+  ses: <Server />,
   mcp: <Plug />,
   smtp: <Mail />,
   http: <Globe />,
@@ -52,7 +53,10 @@ export default function ChannelDrawer({
   mcpAction,
   httpAction,
   googleAction,
+  sesAction,
   googleReady,
+  sesReady,
+  mailboxes,
 }: {
   productId: string;
   /** Which catalogue entry was clicked on the page behind. */
@@ -64,9 +68,15 @@ export default function ChannelDrawer({
   mcpAction: (formData: FormData) => void | Promise<void>;
   httpAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
+  sesAction: (formData: FormData) => void | Promise<void>;
   /** Whether this deployment has an OAuth client at all. Checked on the server: the id is
    * not a secret, but a client component has no way to read it. */
   googleReady: boolean;
+  /** Whether this deployment has AWS credentials. Same reasoning as googleReady. */
+  sesReady: boolean;
+  /** Connected Google mailboxes that could read this channel's replies. SES sends and never
+   * receives, so without one of these there is nowhere for an answer to arrive. */
+  mailboxes: Array<{ id: string; email: string; canRead: boolean }>;
 }) {
   const option = catalogById(optionId);
   const transports = transportsFor(optionId);
@@ -97,6 +107,11 @@ export default function ChannelDrawer({
   // The channel key travels as a hidden field now that the card decided it. The server
   // actions read the same name they always did, so nothing downstream changed.
   const channelKey = <input type="hidden" name="key" value={option?.channelKey ?? "email"} />;
+
+  // A connected Google account is not the same as one that can read. Someone who unticked
+  // the read permission has a mailbox that sends perfectly and would pair with a domain to
+  // produce a channel whose every reply is invisible.
+  const readable = mailboxes.filter((m) => m.canRead);
 
   const limits = (
     <>
@@ -179,6 +194,82 @@ export default function ChannelDrawer({
             <input name="loginHint" type="email" placeholder="you@yourdomain.com" />
           </label>
           <SubmitButton pendingLabel="Opening Google…">Continue with Google</SubmitButton>
+        </form>
+      )}
+
+      {active === "ses" && !sesReady && (
+        <div className="empty drawer-block">
+          <strong>This deployment has no AWS credentials yet</strong>
+          <p>
+            Set <code>AWS_REGION</code>, <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code>, then
+            restart. The full walkthrough is in <code>docs/amazon-ses-setup.md</code>. Until then, signing in with
+            Gmail still works.
+          </p>
+        </div>
+      )}
+
+      {/* Not a warning at the bottom of a form somebody already filled in. SES can send and
+          can never receive, so a domain without a mailbox beside it mails people whose
+          answers nobody will ever see — and the campaign keeps chasing them. The step is
+          shown first, and the form is not offered until it is done. */}
+      {active === "ses" && sesReady && readable.length === 0 && (
+        <div className="empty drawer-block">
+          <strong>Connect Gmail first</strong>
+          <p>
+            Amazon SES sends mail and never receives it, so replies still arrive in your normal mailbox — and we read
+            them from there. Sign in with Google above, leaving the read permission ticked, then come back and add
+            your domain.
+          </p>
+          <p className="sub tight">
+            {mailboxes.length > 0
+              ? "A Google account is connected, but without permission to read replies. Connect it again and leave every box ticked."
+              : "Nothing is connected yet."}
+          </p>
+        </div>
+      )}
+
+      {active === "ses" && sesReady && readable.length > 0 && (
+        <form action={sesAction} className="stack drawer-block">
+          <input type="hidden" name="productId" value={productId} />
+          <p className="sub tight">
+            Send as your own domain rather than one mailbox. Amazon delivers it, so Google&rsquo;s 500 and 2,000 a
+            day caps do not apply — the limits become Amazon&rsquo;s, and they are far higher.
+          </p>
+          <p className="sub tight">
+            You will be given three DNS records to publish. Nothing sends until they are live and Amazon has
+            confirmed them, which takes minutes to a few hours.
+          </p>
+
+          <label>
+            Your domain
+            <input name="domain" placeholder="yourcompany.com" required />
+          </label>
+          <label>
+            Send as
+            <input name="from" type="email" placeholder="hello@yourcompany.com" />
+            <span className="sub tight">Has to be an address on that domain. Defaults to hello@ it.</span>
+          </label>
+
+          <label>
+            Replies arrive in
+            <select name="inboxConnectionId" required>
+              {readable.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.email}
+                </option>
+              ))}
+            </select>
+            <span className="sub tight">
+              The mailbox we read answers from. Required — a domain cannot receive.
+            </span>
+          </label>
+
+          <label>
+            Reply-To <span className="muted">(optional)</span>
+            <input name="replyTo" type="email" placeholder="you@yourcompany.com" />
+          </label>
+
+          <SubmitButton pendingLabel="Registering the domain…">Add domain</SubmitButton>
         </form>
       )}
 

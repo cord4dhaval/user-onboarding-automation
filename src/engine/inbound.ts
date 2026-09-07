@@ -200,9 +200,15 @@ async function nativeMailboxes(
   const out: Mailbox[] = [];
 
   for (const channel of channels) {
+    // Which connection reads is not always the one that sends. A channel sending through
+    // SES has no mailbox behind it — nothing arrives back at a domain identity — so it
+    // carries a second link to the Google account whose inbox its replies land in. Reading
+    // connectionId alone here found an SES identity, failed the google test, and skipped
+    // the mailbox silently: mail going out, every reply invisible.
+    const inboxId = String(channel.inboxConnectionId ?? channel.connectionId);
     const connection = await db
       .collection(C.connections)
-      .findOne({ _id: new ObjectId(String(channel.connectionId)), authType: "oauth2", provider: "google" });
+      .findOne({ _id: new ObjectId(inboxId), authType: "oauth2", provider: "google" });
     if (!connection) continue;
     if (!grantedCapabilities((connection.scopes ?? []) as string[]).read) continue;
 

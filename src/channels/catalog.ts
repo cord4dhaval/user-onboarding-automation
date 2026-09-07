@@ -33,6 +33,11 @@ export type CatalogStatus = "live" | "soon";
  */
 export const TRANSPORTS = [
   { id: "oauth", label: "Sign in", blurb: "Approve the account on the provider's own screen. No password stored." },
+  {
+    id: "ses",
+    label: "Your own domain",
+    blurb: "Send as your domain through Amazon SES. Verified by DNS, no per-mailbox cap.",
+  },
   { id: "mcp", label: "MCP tool", blurb: "A send tool on a server you already connected." },
   { id: "smtp", label: "SMTP", blurb: "Any mail account or relay, with a password." },
   { id: "http", label: "API endpoint", blurb: "Any provider that takes a token over HTTP." },
@@ -81,7 +86,10 @@ export const CHANNEL_CATALOG: ChannelOption[] = [
     typeLabel: "Email",
     status: "live",
     blurb: "Send from your own mailbox. One click, no password.",
-    transports: ["oauth", "mcp", "smtp", "http"],
+    // "Your own domain" sits second rather than last because it is the answer for anyone
+    // who has outgrown a mailbox's cap, and burying it under two password-shaped options
+    // is how they conclude the product does not scale.
+    transports: ["oauth", "ses", "mcp", "smtp", "http"],
     oauthProvider: "google",
   },
   {

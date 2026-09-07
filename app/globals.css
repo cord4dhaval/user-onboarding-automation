@@ -1427,6 +1427,22 @@ button.channel-card:hover { border-color: var(--accent); filter: none; }
 .channel-conn .row-actions { justify-content: flex-start; margin-top: 2px; }
 .channel-foot { display: flex; gap: 6px; }
 
+/* The DNS a domain is waiting on, inside its channel card.
+   Values are inputs rather than text: a DKIM token is 60 characters of base32 that has to
+   arrive somewhere else byte-perfect, and a readonly input selects on focus, copies with a
+   keystroke and never breaks across lines the way a styled span does. */
+.ses-records { display: flex; flex-direction: column; gap: 8px; }
+.dns-list { display: flex; flex-direction: column; gap: 10px; }
+.dns-row {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface-2, var(--surface)); border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md, 8px); padding: 10px 11px;
+}
+.dns-row label { font-size: 12px; color: var(--ink-3); gap: 4px; }
+.dns-row input { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
+.ses-records .row-actions { justify-content: flex-start; gap: 6px; flex-wrap: wrap; }
+.ses-records .row-actions form { display: contents; }
+
 /* Drawer blocks: a form or a notice under the transport row, and the notices inside one. */
 .drawer-block { margin-top: 18px; }
 .drawer-body .empty p { margin: 6px 0 0; }

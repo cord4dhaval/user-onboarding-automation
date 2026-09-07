@@ -30,6 +30,16 @@ export interface SendResult {
   detail?: string;
   /** The conversation this landed in. Free in the send response — no extra round trip. */
   threadId?: string;
+  /**
+   * The RFC 5322 Message-ID this message was delivered with, when the provider says so at
+   * send time.
+   *
+   * Set by providers whose response determines it — SES returns the id its header will
+   * carry. Left undefined by Gmail, which discards what the sender supplied and stamps its
+   * own; that one is discovered later, by the first follow-up that needs it, through
+   * resolveMessageId. Both paths end at the same stored value.
+   */
+  messageId?: string;
 }
 
 /**

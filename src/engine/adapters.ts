@@ -8,6 +8,8 @@ import { schemasFor } from "../mcp/schemas.js";
 import { McpChannelAdapter } from "../adapters/channel/mcp.js";
 import { SmtpAdapter } from "../adapters/channel/smtp.js";
 import { GmailAdapter } from "../adapters/channel/gmail.js";
+import { SesAdapter } from "../adapters/channel/ses.js";
+import { sesEnv } from "./sesIdentity.js";
 import { HttpChannelAdapter, type HttpChannelConfig } from "../adapters/channel/http.js";
 import type { ChannelAdapter } from "../adapters/channel/types.js";
 
@@ -23,6 +25,29 @@ export async function resolveChannelAdapter(orgId: string, channelId: string): P
   const connectionId = String(channel.connectionId);
   const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
   if (!connection) throw new Error(`connection ${connectionId} not found`);
+
+  // Before the broker is asked for anything. SES carries no per-tenant credential — every
+  // customer's domain sends from this deployment's one AWS account — so there is no
+  // credential row to resolve and asking for one throws "no usable credential" on a channel
+  // that is perfectly healthy.
+  if (connection.authType === "ses") {
+    const env = sesEnv();
+    const identity = connection.ses as
+      | { domain?: string; configurationSetName?: string; tenantName?: string }
+      | undefined;
+    if (!identity?.domain) throw new Error("SES connection is missing its domain");
+    return new SesAdapter(
+      String(channel.key),
+      {
+        region: env.region,
+        accessKeyId: env.accessKeyId,
+        secretAccessKey: env.secretAccessKey,
+        configurationSetName: identity.configurationSetName,
+        tenantName: identity.tenantName,
+      },
+      String(channel.from ?? `hello@${identity.domain}`),
+    );
+  }
 
   const secret = await resolveSecret(orgId, connectionId, "engine.send");
 

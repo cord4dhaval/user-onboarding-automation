@@ -5,13 +5,18 @@ import { channelUsage, limitsFor } from "@/engine/governor.js";
 import { catalogById, channelLabel, CHANNEL_CATALOG } from "@/channels/catalog.js";
 import type { McpTool } from "@/mcp/client.js";
 import {
+  connectSesDomain,
   createChannel,
   createHttpChannel,
   createSmtpChannel,
   deleteChannel,
+  recheckSesDomain,
+  restartSesDomain,
   startGoogleOAuth,
   updateChannel,
 } from "../../../actions";
+import { grantedCapabilities } from "@/auth/google.js";
+import SesRecords from "./ses-records";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
 import ChannelCards from "./channel-cards";
@@ -61,6 +66,17 @@ export default async function Channels({
 
   const bindingFor = (connectionId: string) =>
     bindings.find((b) => String(b.connectionId) === connectionId);
+
+  // Google accounts that could be the inbox for a domain that sends through SES. The read
+  // permission is carried rather than filtered on, so the drawer can tell "connect Gmail"
+  // apart from "the Gmail you connected cannot read replies" — two different fixes.
+  const mailboxes = connections
+    .filter((c) => c.authType === "oauth2" && c.provider === "google")
+    .map((c) => ({
+      id: String(c._id),
+      email: String(c.accountEmail ?? "this account"),
+      canRead: grantedCapabilities((c.scopes ?? []) as string[]).read,
+    }));
 
   // Connections whose server actually hands out mailbox tokens, which is what decides
   // whether replies get read — not the capability flag stamped on the channel at creation.
@@ -210,6 +226,35 @@ export default async function Channels({
           {caps.asyncDelivery ? " · queued, reconciled" : ""}
         </p>
 
+        {/* A domain that has not verified is the reason this channel is not sending, so the
+            records sit on the card itself rather than behind an edit drawer. */}
+        {connection?.authType === "ses" && (
+          <SesRecords
+            domain={String((connection.ses as { domain?: string })?.domain ?? "")}
+            status={
+              ((connection.ses as { status?: string })?.status ?? "pending") as "pending" | "verified" | "failed"
+            }
+            records={((connection.ses as { records?: unknown[] })?.records ?? []) as never}
+            checksUntil={
+              (connection.ses as { checksUntil?: Date })?.checksUntil
+                ? new Date((connection.ses as { checksUntil: Date }).checksUntil).toISOString()
+                : undefined
+            }
+            recheckAction={recheckSesDomain.bind(null, id, String(connection._id))}
+            restartAction={restartSesDomain.bind(null, id, String(connection._id))}
+          />
+        )}
+
+        {/* Why the engine is refusing to send on it, in the words the health check used.
+            A degraded channel with no stated reason is the thing people file bugs about. */}
+        {Array.isArray(c.healthReasons) && c.healthReasons.length > 0 && (
+          <ul className="channel-meta">
+            {(c.healthReasons as string[]).map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        )}
+
         <div className="row-actions">
           <ChannelSettingsDrawer
             channel={{
@@ -303,10 +348,15 @@ export default async function Channels({
         connected={connected}
         other={other}
         googleReady={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
+        sesReady={Boolean(
+          process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY,
+        )}
+        mailboxes={mailboxes}
         smtpAction={createSmtpChannel}
         mcpAction={createChannel}
         httpAction={createHttpChannel}
         googleAction={startGoogleOAuth}
+        sesAction={connectSesDomain}
       />
     </>
   );

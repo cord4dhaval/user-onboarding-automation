@@ -17,6 +17,8 @@ import { advance } from "@/engine/advance.js";
 import { detectWork, watchdog } from "@/engine/detect.js";
 import { dispatch } from "@/engine/dispatch.js";
 import { notify } from "@/engine/notify.js";
+import { identityStatus, sesConfigured } from "@/engine/sesIdentity.js";
+import { refreshChannelHealth } from "@/engine/channelHealth.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -286,6 +288,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Domains waiting on their DNS. Polled here rather than from the page because the wait is
+  // hours or days: the person who pasted the records has closed the tab long before AWS
+  // confirms them, and their channel still has to come up on its own.
+  const domains = await pollPendingIdentities(now);
+  if (domains.length) report.push({ sesIdentities: domains });
+
   // A routine that finished two minutes ago should not still read as running.
   const closed = await closeIdleRuns(now);
 
@@ -345,4 +353,83 @@ function hashId(id: string): number {
     h = Math.imul(h, 0x01000193) >>> 0;
   }
   return h >>> 0;
+}
+
+/**
+ * Moves SES domains from pending to verified, or to failed when AWS gives up on them.
+ *
+ * The whole reason this is on the clock: DNS is published by whoever runs it, on their own
+ * schedule, and the customer who started the setup is rarely that person and is certainly
+ * not watching. A channel has to be able to come up two days after anybody last looked at
+ * the page.
+ *
+ * Failure has to be reported as loudly as success. An identity AWS stopped checking looks
+ * exactly like one still waiting, and the difference is that waiting resolves itself while
+ * the other never will — the records have to go up and the domain be added again.
+ */
+async function pollPendingIdentities(now: Date): Promise<Array<Record<string, unknown>>> {
+  if (!sesConfigured()) return [];
+  const db = await getDb();
+  const out: Array<Record<string, unknown>> = [];
+
+  const pending = await db
+    .collection(C.connections)
+    .find({ authType: "ses", "ses.status": "pending" })
+    .limit(10)
+    .toArray();
+
+  for (const connection of pending) {
+    const identity = connection.ses as { domain?: string; checksUntil?: Date };
+    const domain = String(identity?.domain ?? "");
+    if (!domain) continue;
+
+    try {
+      const status = await identityStatus(domain);
+      const expired = identity.checksUntil ? new Date(identity.checksUntil) < now : false;
+      // AWS reports FAILED once it has given up, but it does not report the deadline
+      // passing. Treating a still-pending identity past its own deadline as failed is what
+      // stops a customer waiting on a check that stopped happening yesterday.
+      const settled = status.status === "failed" || (status.status === "pending" && expired);
+
+      if (status.status === "pending" && !expired) continue;
+
+      await db.collection(C.connections).updateOne(
+        { _id: connection._id },
+        {
+          $set: {
+            "ses.status": settled ? "failed" : "verified",
+            "ses.mailFromReady": status.mailFromReady,
+            "ses.checkedAt": now,
+            ...(settled ? { status: "degraded" } : { status: "healthy" }),
+          },
+        },
+      );
+
+      // The channel's own verdict is recomputed rather than assumed: a verified domain is
+      // only half of what an SES channel needs, and the other half is a mailbox to read
+      // replies in.
+      const channel = await db
+        .collection(C.channels)
+        .findOne({ connectionId: String(connection._id) });
+      if (channel) await refreshChannelHealth(String(connection.orgId), String(channel._id));
+
+      await notify({
+        orgId: String(connection.orgId),
+        productId: String(connection.productId),
+        severity: settled ? "action" : "good",
+        dedupeKey: `ses:${settled ? "failed" : "verified"}:${domain}`,
+        title: settled ? `${domain} was not verified` : `${domain} is verified`,
+        body: settled
+          ? status.detail ?? "AWS stopped checking for the DNS records. Add them, then add the domain again."
+          : "Amazon accepted the DNS records. This domain can send as soon as a mailbox is connected for replies.",
+        href: `/products/${String(connection.productId)}/channels`,
+      });
+
+      out.push({ domain, status: settled ? "failed" : "verified" });
+    } catch (err) {
+      out.push({ domain, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return out;
 }

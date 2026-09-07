@@ -8,6 +8,19 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { openSecret, sealSecret, type SealedSecret } from "@/crypto/envelope.js";
 import { reverifyConnection } from "@/mcp/reverify.js";
+import {
+  associateWithTenant,
+  configurationSetArn,
+  createIdentity,
+  createTenant,
+  deleteIdentity,
+  deleteTenant,
+  identityArn,
+  identityStatus,
+  recreateIdentity,
+  tenantArnFor,
+} from "@/engine/sesIdentity.js";
+import { refreshChannelHealth } from "@/engine/channelHealth.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import {
   buildGoogleAuthorizeUrl,
@@ -1096,6 +1109,230 @@ export async function createSmtpChannel(formData: FormData) {
 }
 
 /**
+ * Starts a domain off towards sending: registers it with SES and creates the channel that
+ * will use it, degraded, with the DNS the customer still has to publish.
+ *
+ * The channel is created now rather than when the domain verifies, because a setup with
+ * nothing to look at is a setup people abandon. It sends nothing while it is degraded —
+ * that is what degraded means to the engine — so an unfinished one is visible and harmless.
+ *
+ * The Gmail connection is required, not encouraged. SES sends and never receives, so a
+ * channel without a mailbox behind it would mail people whose answers vanish, and the
+ * campaign would keep chasing someone who already replied. Asked for here as an argument
+ * rather than checked later, so there is no order of operations in which it is skipped.
+ */
+export async function connectSesDomain(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const inboxConnectionId = String(formData.get("inboxConnectionId") ?? "").trim();
+  const domain = String(formData.get("domain") ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    // Somebody will paste an address rather than a domain, and the two are one keystroke
+    // apart in a field labelled "your domain".
+    .replace(/^.*@/, "");
+
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) {
+    throw new Error("That does not look like a domain. Enter something like yourcompany.com");
+  }
+
+  if (!inboxConnectionId) {
+    throw new Error("Connect the Gmail account replies should arrive in first — SES can send but never receive.");
+  }
+  const inbox = await db
+    .collection(C.connections)
+    .findOne({ _id: new ObjectId(inboxConnectionId), orgId, authType: "oauth2", provider: "google" });
+  if (!inbox) throw new Error("That mailbox connection no longer exists — connect Gmail again.");
+
+  // One domain, one org. SES would happily let a second tenant create an identity for a
+  // domain already verified in this account and start sending as it: AWS is checking that
+  // somebody proved control, not that this customer did.
+  const claimed = await db
+    .collection(C.connections)
+    .findOne({ authType: "ses", "ses.domain": domain, orgId: { $ne: orgId } });
+  if (claimed) {
+    throw new Error(`${domain} is already connected by another account. Contact support if that is wrong.`);
+  }
+
+  const identity = await createIdentity(domain, productId);
+
+  // The tenant this product sends as, and the two associations that make it usable. Every
+  // step is optional in the sense that a failure degrades rather than blocks: without a
+  // tenant the domain still sends, on the account's shared reputation, which is exactly
+  // where this design was before tenants existed.
+  const tenant = await createTenant(productId);
+  const domainArn = identityArn(domain);
+  const configArn = configurationSetArn(identity.configurationSetName);
+  let tenantReady = false;
+  if (tenant && domainArn && configArn) {
+    // Both, or neither. SendEmail with a TenantName is refused unless every resource it
+    // references belongs to that tenant, so associating only the identity would produce a
+    // channel that cannot send at all — strictly worse than no tenant.
+    const associated =
+      (await associateWithTenant(tenant.tenantName, domainArn)) &&
+      (await associateWithTenant(tenant.tenantName, configArn));
+    tenantReady = associated;
+  }
+  const from = String(formData.get("from") ?? "").trim() || `hello@${domain}`;
+  if (!from.endsWith(`@${domain}`)) {
+    throw new Error(`The From address has to be on ${domain} — that is the domain being verified.`);
+  }
+
+  const connectionId = new ObjectId();
+  await db.collection(C.connections).insertOne({
+    _id: connectionId,
+    orgId,
+    productId,
+    key: "ses",
+    provider: "amazonses",
+    authType: "ses",
+    ses: {
+      domain: identity.domain,
+      status: identity.status,
+      dkimTokens: identity.dkimTokens,
+      records: identity.records,
+      configurationSetName: identity.configurationSetName,
+      mailFromDomain: identity.mailFromDomain,
+      checksUntil: identity.checksUntil,
+      // Only set when the tenant exists AND both resources are associated. Sending reads
+      // this field, so a half-built tenant must not be recorded as one.
+      ...(tenantReady && tenant
+        ? { tenantName: tenant.tenantName, tenantArn: tenant.tenantArn ?? tenantArnFor(tenant.tenantName) }
+        : {}),
+      // Why this product has no tenant, when it has none. An isolation gap that is
+      // invisible is one nobody fixes.
+      ...(tenantReady
+        ? {}
+        : {
+            tenantSkipped: !tenant
+              ? "Amazon refused to create a tenant — this domain sends on the account's shared reputation."
+              : "Tenant created but its resources could not be associated, so sending stays account-level.",
+          }),
+    },
+    accountEmail: from,
+    scopes: [],
+    status: "degraded",
+    directions: ["out"],
+    createdBy: orgId,
+    createdAt: new Date(),
+  });
+
+  const channelId = new ObjectId();
+  await db.collection(C.channels).insertOne({
+    _id: channelId,
+    orgId,
+    productId,
+    connectionId: String(connectionId),
+    // The other half of the pair, and the reason this channel can hold a conversation.
+    inboxConnectionId,
+    key: "email",
+    kind: "native",
+    from,
+    replyTo: String(formData.get("replyTo") ?? "").trim() || undefined,
+    capabilities: {
+      send: true,
+      html: true,
+      designedHtml: true,
+      trackingOpens: true,
+      trackingClicks: true,
+      // The thing Gmail could not do. Declared true so the planner stops treating a silent
+      // send as evidence of anything.
+      bounceWebhook: true,
+      // Replies arrive in the paired mailbox, not here, but from the campaign's point of
+      // view this channel can be replied to — which is what this flag decides.
+      inboundReplies: true,
+      consentRequired: false,
+      fromDomain: "caller_controlled",
+    },
+    // A new domain has no reputation at all. Starting at volume is how it acquires a bad
+    // one, so the ramp is the default rather than something to remember to turn on.
+    governor: { perMinute: 10, perHour: 200, dailyCap: 50, warmupDay: 1 },
+    policy: { audience: ["cold", "warm_lead", "existing_user"] },
+    status: "degraded",
+    enabled: true,
+  });
+
+  await refreshChannelHealth(orgId, String(channelId));
+  revalidatePath(`/products/${productId}/channels`);
+}
+
+/**
+ * Asks AWS again, now, for somebody watching the page rather than waiting for the tick.
+ *
+ * The tick is what actually brings a channel up; this exists because a person who has just
+ * pasted three records wants to know within seconds whether they got them right, and
+ * telling them to wait a minute for a cron is a worse answer than one API call.
+ */
+export async function recheckSesDomain(productId: string, connectionId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const connection = await db
+    .collection(C.connections)
+    .findOne({ _id: new ObjectId(connectionId), orgId, authType: "ses" });
+  if (!connection) throw new Error("that domain is no longer connected");
+
+  const identity = connection.ses as { domain?: string };
+  const status = await identityStatus(String(identity.domain));
+
+  await db.collection(C.connections).updateOne(
+    { _id: connection._id },
+    {
+      $set: {
+        "ses.status": status.status,
+        "ses.mailFromReady": status.mailFromReady,
+        "ses.checkedAt": new Date(),
+        status: status.status === "verified" ? "healthy" : "degraded",
+      },
+    },
+  );
+
+  const channel = await db.collection(C.channels).findOne({ orgId, connectionId });
+  if (channel) await refreshChannelHealth(orgId, String(channel._id));
+
+  revalidatePath(`/products/${productId}/channels`);
+}
+
+/**
+ * Throws away a domain AWS stopped checking and starts it again with fresh tokens.
+ *
+ * New tokens mean new DNS, so this is destructive to whatever the customer already
+ * published — which is why it is a button they press rather than something the tick does on
+ * their behalf when the deadline passes.
+ */
+export async function restartSesDomain(productId: string, connectionId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const connection = await db
+    .collection(C.connections)
+    .findOne({ _id: new ObjectId(connectionId), orgId, authType: "ses" });
+  if (!connection) throw new Error("that domain is no longer connected");
+
+  const domain = String((connection.ses as { domain?: string }).domain);
+  const identity = await recreateIdentity(domain, productId);
+
+  await db.collection(C.connections).updateOne(
+    { _id: connection._id },
+    {
+      $set: {
+        "ses.status": identity.status,
+        "ses.dkimTokens": identity.dkimTokens,
+        "ses.records": identity.records,
+        "ses.checksUntil": identity.checksUntil,
+        status: "degraded",
+      },
+    },
+  );
+
+  const channel = await db.collection(C.channels).findOne({ orgId, connectionId });
+  if (channel) await refreshChannelHealth(orgId, String(channel._id));
+
+  revalidatePath(`/products/${productId}/channels`);
+}
+
+/**
  * Turns the designed-HTML capability on or off by hand.
  *
  * Discovery reads capabilities off the send tool's arguments, which is a guess — a good
@@ -1230,24 +1467,33 @@ export async function deleteChannel(productId: string, channelId: string, _formD
   // — they are history, and a deleted channel does not change what already happened.
   await db.collection(C.actions).deleteMany({ orgId, channelId, status: "queued" });
 
-  const connectionId = channel.connectionId ? String(channel.connectionId) : null;
-  if (connectionId) {
+  // Both of them. A channel sending through SES names two connections — the domain it sends
+  // as, and the mailbox its replies arrive in — and a cascade that only knew about the
+  // first left every premium tenant's Google grant alive after they removed the channel,
+  // which is the exact leak this cascade was written to close.
+  for (const connectionId of [channel.connectionId, channel.inboxConnectionId]
+    .filter(Boolean)
+    .map(String)) {
     const connection = await db
       .collection(C.connections)
       .findOne({ _id: new ObjectId(connectionId), orgId });
+    if (!connection) continue;
 
-    // Only a provider mailbox is ours to tear down, and only once nothing else points at it.
-    const stillUsed = connection
-      ? (await db.collection(C.channels).countDocuments({ orgId, connectionId })) +
-        (await db.collection(C.sources).countDocuments({ orgId, connectionId })) +
-        (await db.collection(C.brandSources).countDocuments({ orgId, connectionId })) +
-        (await db.collection(C.goals).countDocuments({
-          orgId,
-          $or: [{ verifyConnectionId: connectionId }, { "checks.connectionId": connectionId }],
-        }))
-      : 0;
+    // Only ours to tear down, and only once nothing else points at it.
+    const stillUsed =
+      (await db.collection(C.channels).countDocuments({
+        orgId,
+        $or: [{ connectionId }, { inboxConnectionId: connectionId }],
+      })) +
+      (await db.collection(C.sources).countDocuments({ orgId, connectionId })) +
+      (await db.collection(C.brandSources).countDocuments({ orgId, connectionId })) +
+      (await db.collection(C.goals).countDocuments({
+        orgId,
+        $or: [{ verifyConnectionId: connectionId }, { "checks.connectionId": connectionId }],
+      }));
+    if (stillUsed > 0) continue;
 
-    if (connection && connection.authType === "oauth2" && stillUsed === 0) {
+    if (connection.authType === "oauth2") {
       // Revoke before deleting: once the sealed refresh token is gone there is no second
       // chance to tell Google the grant is finished, and it would stay listed in the
       // customer's account with nothing on our side able to withdraw it.
@@ -1257,6 +1503,19 @@ export async function deleteChannel(productId: string, channelId: string, _formD
         await revokeGoogleGrant(openSecret(sealedRefresh));
       }
       await db.collection(C.credentials).deleteMany({ orgId, connectionId });
+      await db.collection(C.connections).deleteOne({ _id: new ObjectId(connectionId), orgId });
+      continue;
+    }
+
+    if (connection.authType === "ses") {
+      // The identity goes back to AWS as well. Leaving it costs nothing in money and
+      // everything in confusion: the domain stays verified in the account, so the next
+      // tenant to claim it is handed a working channel for a domain they may not own.
+      const identity = connection.ses as { domain?: string; tenantName?: string } | undefined;
+      if (identity?.domain) await deleteIdentity(identity.domain);
+      // The tenant goes too. Left behind it would be adopted by the next connect for this
+      // product with whatever suppression list the abandoned one had accumulated.
+      if (identity?.tenantName) await deleteTenant(identity.tenantName);
       await db.collection(C.connections).deleteOne({ _id: new ObjectId(connectionId), orgId });
     }
   }

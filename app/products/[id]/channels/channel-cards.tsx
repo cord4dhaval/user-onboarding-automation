@@ -32,10 +32,13 @@ export default function ChannelCards({
   connected,
   other,
   googleReady,
+  sesReady,
+  mailboxes,
   smtpAction,
   mcpAction,
   httpAction,
   googleAction,
+  sesAction,
 }: {
   productId: string;
   connections: ConnectionTools[];
@@ -48,10 +51,15 @@ export default function ChannelCards({
   /** Channels on a key the catalogue does not carry — nothing is hidden because of it. */
   other?: ReactNode[];
   googleReady: boolean;
+  sesReady: boolean;
+  /** Google mailboxes that could read an SES channel's replies, and whether each actually
+   * has the read permission. */
+  mailboxes: Array<{ id: string; email: string; canRead: boolean }>;
   smtpAction: (formData: FormData) => void | Promise<void>;
   mcpAction: (formData: FormData) => void | Promise<void>;
   httpAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
+  sesAction: (formData: FormData) => void | Promise<void>;
 }) {
   // Which card is being connected, or nothing. Keyed remount below resets the transport
   // choice per channel, so opening SMS never shows the tab Gmail was left on.
@@ -138,10 +146,13 @@ export default function ChannelCards({
           onClose={() => setPicking(null)}
           connections={connections}
           googleReady={googleReady}
+          sesReady={sesReady}
+          mailboxes={mailboxes}
           smtpAction={smtpAction}
           mcpAction={mcpAction}
           httpAction={httpAction}
           googleAction={googleAction}
+          sesAction={sesAction}
         />
       )}
     </>

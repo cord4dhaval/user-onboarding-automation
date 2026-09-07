@@ -420,8 +420,17 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
               // send. The RFC Message-ID is not stored here: it is not in this response, and
               // asking for it now would spend a round trip on every message to serve the few
               // that get a follow-up. conversationFor fetches it if and when one does.
-              ...(result.threadId
-                ? { thread: { id: result.threadId, references: outbound.references ?? [] } }
+              ...(result.threadId || result.messageId
+                ? {
+                    thread: {
+                      ...(result.threadId ? { id: result.threadId } : {}),
+                      // Present when the provider's response settles it. Gmail's is absent
+                      // here and filled in later by resolveMessageId; SES's is known now,
+                      // so a conversation on SES never spends a round trip discovering it.
+                      ...(result.messageId ? { messageId: result.messageId } : {}),
+                      references: [...(outbound.references ?? []), result.messageId].filter(Boolean),
+                    },
+                  }
                 : {}),
             },
             // It waited for a window and then went out; the note about waiting is history now.
@@ -630,7 +639,19 @@ async function conversationFor(
 
   const lastSent = await db
     .collection(C.actions)
-    .find({ orgId, productId, personId, channel: channelKey, status: { $in: ["sent", "dispatched"] }, "thread.id": { $exists: true } })
+    // Either half is enough to continue a conversation, and no provider gives both. Gmail
+    // hands back a threadId and hides the Message-ID until asked; SES has no threads at all
+    // and threading there is only ever the RFC headers. Requiring thread.id — which is what
+    // this asked for when Gmail was the only sender — matches nothing on SES, so every
+    // follow-up would start its own conversation.
+    .find({
+      orgId,
+      productId,
+      personId,
+      channel: channelKey,
+      status: { $in: ["sent", "dispatched"] },
+      $or: [{ "thread.id": { $exists: true } }, { "thread.messageId": { $exists: true } }, { providerMessageId: { $exists: true } }],
+    })
     .sort({ sentAt: -1 })
     .limit(1)
     .next();
