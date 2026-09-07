@@ -218,3 +218,30 @@ export async function sendAsAliases(accessToken: string): Promise<string[]> {
     .filter((a) => a.sendAsEmail && a.verificationStatus !== "pending")
     .map((a) => String(a.sendAsEmail));
 }
+
+/**
+ * Hands the grant back to Google. Revoking a refresh token kills every access token minted
+ * from it, so a mailbox disconnected here stops being reachable immediately rather than
+ * whenever the last issued token happens to expire.
+ *
+ * Caller beware: Google scopes a grant to (client, user), not to our connection row. The
+ * same mailbox connected twice shares one grant, and revoking either copy takes both down.
+ * Check for a sibling connection on the same address before calling — see revokeIsSafe.
+ *
+ * Never throws. A revoke that fails still has to be followed by deleting the local copy —
+ * keeping a token we have decided to abandon is strictly worse than a stale grant sitting
+ * in the customer's Google account, which they can remove themselves.
+ */
+export async function revokeGoogleGrant(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(GOOGLE_REVOKE_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

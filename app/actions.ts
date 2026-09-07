@@ -6,13 +6,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { sealSecret } from "@/crypto/envelope.js";
+import { openSecret, sealSecret, type SealedSecret } from "@/crypto/envelope.js";
 import { reverifyConnection } from "@/mcp/reverify.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import {
   buildGoogleAuthorizeUrl,
   configuredScopes,
   googleClient,
+  revokeGoogleGrant,
   startGoogleFlow,
 } from "@/auth/google.js";
 import { headers } from "next/headers";
@@ -937,6 +938,27 @@ export async function probeServer(serverUrl: string): Promise<{ oauth: boolean; 
 }
 
 /**
+ * Whether Google's grant for this mailbox can be handed back without collateral damage.
+ *
+ * Google revokes per (client, user), not per connection row: the same address connected
+ * twice shares one grant, so revoking the copy being deleted would silently kill the copy
+ * being kept. When a sibling survives, the local rows still go — the abandoned token simply
+ * dies with the sibling's own revoke, or with the grant, rather than taking a working
+ * channel down now.
+ */
+async function revokeIsSafe(orgId: string, connection: Record<string, unknown>): Promise<boolean> {
+  if (connection.authType !== "oauth2" || connection.provider !== "google") return false;
+  const db = await getDb();
+  const siblings = await db.collection(C.connections).countDocuments({
+    orgId,
+    provider: "google",
+    accountEmail: connection.accountEmail,
+    _id: { $ne: connection._id as ObjectId },
+  });
+  return siblings === 0;
+}
+
+/**
  * Removes a connection and everything that only existed to serve it: its credential and
  * its tool binding.
  *
@@ -970,6 +992,16 @@ export async function deleteConnection(productId: string, connectionId: string, 
       `In use by ${inUse.join(", ")}. Remove those first — or, to hand this connection to a different account, ` +
         `use Switch account, which keeps every one of them pointed here.`,
     );
+  }
+
+  // Tell Google the grant is over before the only copy of the refresh token is destroyed.
+  // Dropping the row without revoking leaves the customer's account listing an access this
+  // deployment can no longer withdraw.
+  const cred = await db.collection(C.credentials).findOne({ orgId, connectionId });
+  const sealedRefresh = cred?.refreshTokenEnc as SealedSecret | undefined;
+  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId), orgId });
+  if (connection && sealedRefresh && (await revokeIsSafe(orgId, connection))) {
+    await revokeGoogleGrant(openSecret(sealedRefresh));
   }
 
   await Promise.all([
@@ -1164,10 +1196,85 @@ export async function updateChannel(productId: string, channelId: string, formDa
   revalidatePath(`/products/${productId}/review`, "layout");
 }
 
+/**
+ * Removes a channel and everything that only existed to serve it.
+ *
+ * Deleting the channel row alone is not a delete. A mailbox connected through the Gmail
+ * flow leaves behind a connection and a stored refresh token, and the broker keeps renewing
+ * that token on a schedule — so a customer who disconnects a channel in the UI still has a
+ * live grant against their mailbox, and the next connect adds a second healthy connection
+ * beside the abandoned one. That is the leak this cascade closes.
+ *
+ * What is *not* cascaded: an MCP connection. Those are shared — a source, a brand source or
+ * a campaign's verifier can be pointed at the same server — so they are left for
+ * deleteConnection, which refuses while anything still uses them. Only a provider mailbox
+ * (authType oauth2), created by the connect flow purely to back this channel and used by
+ * nothing else, is torn down here.
+ *
+ * Sent actions survive. They are the record of what a real person received, and a deleted
+ * channel does not unsend them.
+ */
 export async function deleteChannel(productId: string, channelId: string, _formData?: FormData) {
   const db = await getDb();
-  await db.collection(C.channels).deleteOne({ _id: new ObjectId(channelId), orgId: (await currentOrg()) });
+  const orgId = await currentOrg();
+  const channel = await db
+    .collection(C.channels)
+    .findOne({ _id: new ObjectId(channelId), orgId });
+  if (!channel) return;
+
+  await db.collection(C.channels).deleteOne({ _id: new ObjectId(channelId), orgId });
+
+  // Queued work naming a channel that no longer exists can never be picked up, and would
+  // sit in the review queue forever looking sendable. Sent, failed and skipped actions stay
+  // — they are history, and a deleted channel does not change what already happened.
+  await db.collection(C.actions).deleteMany({ orgId, channelId, status: "queued" });
+
+  const connectionId = channel.connectionId ? String(channel.connectionId) : null;
+  if (connectionId) {
+    const connection = await db
+      .collection(C.connections)
+      .findOne({ _id: new ObjectId(connectionId), orgId });
+
+    // Only a provider mailbox is ours to tear down, and only once nothing else points at it.
+    const stillUsed = connection
+      ? (await db.collection(C.channels).countDocuments({ orgId, connectionId })) +
+        (await db.collection(C.sources).countDocuments({ orgId, connectionId })) +
+        (await db.collection(C.brandSources).countDocuments({ orgId, connectionId })) +
+        (await db.collection(C.goals).countDocuments({
+          orgId,
+          $or: [{ verifyConnectionId: connectionId }, { "checks.connectionId": connectionId }],
+        }))
+      : 0;
+
+    if (connection && connection.authType === "oauth2" && stillUsed === 0) {
+      // Revoke before deleting: once the sealed refresh token is gone there is no second
+      // chance to tell Google the grant is finished, and it would stay listed in the
+      // customer's account with nothing on our side able to withdraw it.
+      const cred = await db.collection(C.credentials).findOne({ orgId, connectionId });
+      const sealedRefresh = cred?.refreshTokenEnc as SealedSecret | undefined;
+      if (sealedRefresh && (await revokeIsSafe(orgId, connection))) {
+        await revokeGoogleGrant(openSecret(sealedRefresh));
+      }
+      await db.collection(C.credentials).deleteMany({ orgId, connectionId });
+      await db.collection(C.connections).deleteOne({ _id: new ObjectId(connectionId), orgId });
+    }
+  }
+
+  await db.collection(C.audit).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    productId,
+    actorType: "user",
+    action: "channel.delete",
+    target: channelId,
+    at: new Date(),
+  });
+
   revalidatePath(`/products/${productId}/channels`);
+  revalidatePath(`/products/${productId}/connections`);
+  // A campaign composes against what its channel can carry, so the pages that render a
+  // message have to be rebuilt without it.
+  revalidatePath(`/products/${productId}/review`, "layout");
 }
 
 /**
