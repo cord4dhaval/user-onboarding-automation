@@ -47,11 +47,36 @@ export const goal = z.object({
     key: z.string(),
     /** What this proves, in the words a person would use. */
     describedAs: z.string(),
-    connectionId: objectIdString,
-    tool: z.string(),
+
+    /**
+     * Where the proof comes from. Four sources, one result.
+     *
+     * mcp    ask a connected server a question and read the answer
+     * page   a page on our own site reported this person reaching it
+     * reply  they said so, and record_reply read it that way
+     * human  somebody decided, and resolve_check wrote it down
+     *
+     * Defaults to mcp, which is what every check written before this was. The three others
+     * exist because a goal like "they took the call" often has no system to ask: the truth
+     * lives in a booking page, in an inbox, or in a person's head. Forcing those through a
+     * tool produced checks that asked a question nobody could answer, and a campaign that
+     * cannot tell when it has finished either runs forever or ends on a guess.
+     */
+    kind: z.enum(["mcp", "page", "reply", "human"]).default("mcp"),
+
+    /** mcp only. */
+    connectionId: objectIdString.optional(),
+    tool: z.string().optional(),
     args: z.record(z.string(), z.string()).default({}),
     /** Evaluated against the tool's response; true means this check has passed. */
-    assert: z.string(),
+    assert: z.string().optional(),
+
+    /** page only: the name the site reports, e.g. "booked". */
+    event: z.string().optional(),
+
+    /** reply only: which readings of a reply count as this having happened. */
+    intents: z.array(z.string()).default([]),
+
     /** Once true, never asked again — settled facts do not need re-checking. */
     latch: z.boolean().default(true),
     proposedBy: z.enum(["claude", "human"]).default("claude"),

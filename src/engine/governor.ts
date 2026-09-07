@@ -165,3 +165,37 @@ export async function limitsFor(orgId: string, channelId: string): Promise<RateL
     perDay: governor.dailyCap,
   };
 }
+
+/**
+ * How many messages this channel may still send right now, across every window at once.
+ *
+ * `rateBlock` answers "is it full", which is the right question when messages leave one at
+ * a time: each send is counted before the next one is decided. It is the wrong question
+ * when several go out together — eight concurrent sends all read the same count, all see
+ * room, and all go, so a cap of ten becomes whatever the batch size was.
+ *
+ * Asking for the number instead makes the batch size the thing the limit constrains. The
+ * caller takes min(batch, headroom) and the cap holds however wide the fan-out is.
+ */
+export async function rateHeadroom(
+  orgId: string,
+  channelId: string,
+  limits: RateLimits,
+  now = new Date(),
+): Promise<number> {
+  const db = await getDb();
+  let headroom = Number.POSITIVE_INFINITY;
+
+  for (const [key, ms] of WINDOWS) {
+    const limit = limits[key];
+    if (!limit) continue;
+    const used = await db
+      .collection(C.actions)
+      .countDocuments({ orgId, channelId, sentAt: { $gte: new Date(now.getTime() - ms) } });
+    headroom = Math.min(headroom, limit - used);
+  }
+
+  // No limits configured is not unlimited concurrency. The caller's own batch size is the
+  // remaining bound, and returning Infinity would hand it a fan-out of whatever was due.
+  return Number.isFinite(headroom) ? Math.max(0, headroom) : Number.MAX_SAFE_INTEGER;
+}

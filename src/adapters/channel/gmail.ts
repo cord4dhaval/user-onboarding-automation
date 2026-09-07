@@ -36,11 +36,10 @@ export class GmailAdapter implements ChannelAdapter {
 
   async send(message: OutboundMessage): Promise<SendResult> {
     const from = message.from ?? this.defaultFrom;
-    // Minted here rather than left to the composer, because the sender has to record what
-    // it used: the next message in this conversation references it, and Gmail's own message
-    // id is not the RFC one that other clients thread on.
-    const messageId = newMessageId(from);
-    const raw = await buildRawMime({ ...message, from, messageId });
+    // No Message-ID of our own. Consumer Gmail discards whatever the sender supplies and
+    // stamps its own, so minting one bought a value that named no real message; the id that
+    // matters is read back later, by whoever needs it. See resolveMessageId.
+    const raw = await buildRawMime({ ...message, from });
 
     const res = await fetch(GMAIL_SEND, {
       method: "POST",
@@ -67,27 +66,26 @@ export class GmailAdapter implements ChannelAdapter {
       disposition: "sent",
       detail: body.threadId,
       threadId: body.threadId,
-      // What Gmail actually stamped on it, which is not always what we asked for — see
-      // deliveredMessageId. Storing the id we minted would have later messages reference a
-      // parent that exists in no mailbox.
-      messageId: (body.id && (await this.deliveredMessageId(body.id))) || messageId,
     };
   }
 
   /**
-   * The Message-ID Gmail put on a message it has just sent.
+   * The Message-ID Gmail put on a message it sent.
    *
    * Consumer accounts do not keep the Message-ID the sender supplies: Gmail replaces it with
-   * one of its own at `@mail.gmail.com`. A follow-up that references what we minted would
-   * name a message nobody has, so Gmail would still thread it — by `threadId`, which is its
-   * own mechanism — while every client that rebuilds the tree from `References` would show
-   * the reply as a new conversation.
+   * one of its own at `@mail.gmail.com`. A follow-up that referenced what we submitted would
+   * name a message nobody has — Gmail would still thread it, by `threadId`, which is its own
+   * mechanism, while every client that rebuilds the tree from `References` showed the reply
+   * as a new conversation.
    *
-   * Best effort by design. Reading a message back needs a read scope, and a send-only
-   * deployment has none; falling back to the minted id leaves threading exactly as good as
-   * it was before this call existed.
+   * Called by the first follow-up in a thread rather than after every send, and the answer
+   * is stored, so a conversation costs this round trip once however long it runs.
+   *
+   * Best effort by design. Reading a message back needs a read scope and a send-only
+   * deployment has none; without it threading falls back to `threadId` alone, which is
+   * exactly where this started.
    */
-  private async deliveredMessageId(id: string): Promise<string | undefined> {
+  async resolveMessageId(id: string): Promise<string | undefined> {
     try {
       const res = await fetch(
         `${GMAIL_MESSAGE}/${id}?format=metadata&metadataHeaders=Message-ID`,
@@ -164,13 +162,3 @@ export async function buildRawMime(
   return composed.toString("base64url");
 }
 
-/**
- * An RFC 5322 Message-ID for a message we are about to send.
- *
- * The domain half is taken from the sending address so the id is plausibly ours; some
- * receivers score a Message-ID whose domain matches nothing in the envelope.
- */
-function newMessageId(from: string): string {
-  const domain = /@([^>\s]+)/.exec(from)?.[1] ?? "localhost";
-  return `<${crypto.randomUUID()}@${domain}>`;
-}

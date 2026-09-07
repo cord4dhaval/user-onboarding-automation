@@ -2,6 +2,7 @@ import type { Document } from "mongodb";
 import type { MergeVars } from "./compose.js";
 import { greetingName } from "./names.js";
 import { unsubscribeUrl } from "./unsubscribe.js";
+import { tokenFor } from "./tracking.js";
 
 /**
  * The merge variables a message is rendered with.
@@ -41,5 +42,10 @@ export function mergeVarsFor(person: Document, product: Document | null): MergeV
     // believes they have left and the mail keeps coming. Falls back to the old form
     // only when APP_URL is unset, where nothing here could work anyway.
     opt_out_url: origin ? unsubscribeUrl(origin, personId) : `${site}/unsubscribe?p=${personId}`,
+    // Carried into links that leave for the customer's own site, so a page there can tell
+    // us this person reached it: POST {APP_URL}/api/e/<event>?p=<person_id>&s=<visit_token>.
+    // Signed, because that endpoint can finish a campaign and a bare person id in a URL is
+    // a guess away from finishing somebody else's.
+    visit_token: tokenFor("e", personId),
   };
 }

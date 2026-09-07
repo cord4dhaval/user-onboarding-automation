@@ -28,9 +28,8 @@ export interface SendResult {
    */
   disposition: "sent" | "queued";
   detail?: string;
-  /** The conversation this landed in, and the id later messages must reference to join it. */
+  /** The conversation this landed in. Free in the send response — no extra round trip. */
   threadId?: string;
-  messageId?: string;
 }
 
 /**
@@ -49,4 +48,14 @@ export interface ChannelAdapter {
   send(message: OutboundMessage): Promise<SendResult>;
   /** Present only where the provider delivers asynchronously. */
   checkStatus?(providerMessageId: string): Promise<"queued" | "sending" | "sent" | "failed">;
+  /**
+   * The RFC 5322 Message-ID a provider actually stamped on a message it sent, which is not
+   * the provider's own id for it.
+   *
+   * Asked for lazily, by the first follow-up that needs something to reference, rather than
+   * after every send: most messages never get a second touch, and a round trip spent on all
+   * of them to serve the few is the difference between 25 sends fitting in the cron budget
+   * and not. Resolved once and stored on the action.
+   */
+  resolveMessageId?(providerMessageId: string): Promise<string | undefined>;
 }

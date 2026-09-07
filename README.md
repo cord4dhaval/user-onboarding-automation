@@ -87,6 +87,28 @@ npm run scheduler          # defaults to http://localhost:3001/api/cron/tick
 
 Point it elsewhere with `TICK_URL` — at a deployed app, or at a different port.
 
+### When one tick is not enough
+
+The platform kills the request at sixty seconds, and Hobby cannot raise that. When the
+tick starts running out of budget before it has served every product — the response
+reports fewer `servedProducts` than you have active products, tick after tick — split the
+work across several cron entries on the same minute:
+
+```
+https://your-app.vercel.app/api/cron/tick?shard=0&shards=4
+https://your-app.vercel.app/api/cron/tick?shard=1&shards=4
+https://your-app.vercel.app/api/cron/tick?shard=2&shards=4
+https://your-app.vercel.app/api/cron/tick?shard=3&shards=4
+```
+
+Four independent sixty-second budgets. Each shard takes the products whose id hashes to
+it, so a product stays on the same shard as others are added and removed, and each keeps
+its own rotation cursor. `shards` may be anything from 1 to 64; with no parameters at all
+one tick serves everything, which is the setup above.
+
+Sharding buys wall-clock, not send volume — a mailbox's daily cap is unaffected by how
+many ticks are asking.
+
 ## Testing a recurring input
 
 A spreadsheet arrives once and an MCP server carries live data, so the "API + token" input

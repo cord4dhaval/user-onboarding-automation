@@ -44,8 +44,17 @@ export function unb64url(value: string): string {
   return Buffer.from(value, "base64url").toString("utf8");
 }
 
-/** c = click, o = open, u = unsubscribe. The kind is signed too, so one cannot stand in for another. */
-export type TokenKind = "c" | "o" | "u";
+/**
+ * c = click, o = open, u = unsubscribe, e = site event. The kind is signed too, so one
+ * cannot stand in for another.
+ *
+ * `e` is the only one whose id is a person rather than an action, because the caller is the
+ * customer's own website reporting that somebody reached a page — there is no message
+ * involved by then. It deliberately does not sign the event name: the site is handed one
+ * token in a link and passes it on to whichever page confirms the thing, and a token per
+ * page would mean a link per page.
+ */
+export type TokenKind = "c" | "o" | "u" | "e";
 
 /** Signs a link this app will have to trust later, with no session behind it. */
 export function tokenFor(kind: TokenKind, id: string, target = ""): string {

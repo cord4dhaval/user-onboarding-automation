@@ -91,6 +91,17 @@ export const action = z.object({
       stepIndex: z.number().int().nonnegative().optional(),
       hourLocal: z.number().int().min(0).max(23).optional(),
       fitKnown: z.boolean().optional(),
+      /**
+       * What the message carried, frozen like everything else here.
+       *
+       * `assetKey` is the field rollups group on and is null unless exactly one asset rode
+       * along: grouping on a list would fold "the demo" and "the demo plus a case study"
+       * into one bucket while appearing to have separated them. `assetKeys` keeps the whole
+       * truth for reading a single message back.
+       */
+      assetKey: z.string().nullable().optional(),
+      assetKeys: z.array(z.string()).optional(),
+      assetTier: z.enum(["A", "B", "C", "D"]).nullable().optional(),
     })
     .optional(),
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { FileText, Home, Inbox, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
+import { FileText, Home, Images, Inbox, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
 import type { ReactNode } from "react";
 
 export interface NavCounts {
@@ -24,6 +24,7 @@ const WORK = [
 
 const SETUP = [
   { href: "/templates", label: "Templates", icon: <FileText /> },
+  { href: "/assets", label: "Assets", icon: <Images /> },
   { href: "/brand", label: "Brand", icon: <Palette /> },
   { href: "/channels", label: "Channels", icon: <Send /> },
   { href: "/connections", label: "Connections", icon: <Plug /> },

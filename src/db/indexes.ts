@@ -60,6 +60,12 @@ export async function ensureIndexes(): Promise<void> {
     { name: "cascade_resolution" },
   );
 
+  // The asset menu is built on every lead_card, which is the hottest read a session makes.
+  await db.collection(C.assets).createIndexes([
+    { key: { orgId: 1, productId: 1, status: 1, tier: 1 }, name: "asset_menu" },
+    { key: { orgId: 1, productId: 1, key: 1 }, name: "asset_key", unique: true },
+  ]);
+
   // One kit per product: the send path reads it by this key on every run.
   await db.collection(C.brandKits).createIndex(
     { orgId: 1, productId: 1 },

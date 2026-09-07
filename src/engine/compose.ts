@@ -55,6 +55,101 @@ export interface MergeVars {
  */
 export interface Precomposed extends Partial<ComposedContent> {
   slots?: Record<string, string>;
+  /** What this message carries, in the order the action named them. */
+  assets?: RenderableAsset[];
+}
+
+/**
+ * An asset flattened to just what rendering needs. The picking rules, the tiers and the
+ * usage counters stay in the engine; by the time one reaches here it is a thing to show.
+ */
+export interface RenderableAsset {
+  /** Carried for attribution, not for rendering: what a rollup groups this send under. */
+  key: string;
+  tier: string;
+  kind: string;
+  /** The introducing line the author wrote. Used as alt text, and as link text. */
+  oneLine: string;
+  url?: string;
+  thumbUrl?: string;
+  text?: string;
+  attribution?: string;
+  access?: {
+    bookingUrl?: string;
+    repName?: string;
+    repRole?: string;
+    repEmail?: string;
+    repPhone?: string;
+    availability?: string;
+  };
+}
+
+/**
+ * One asset as blocks the existing renderers already understand.
+ *
+ * Deliberately no new block kind. Everything an asset needs — a picture, a link, a pulled
+ * quote, a table of details, a button — is something a template can already say, and the
+ * HTML renderer has been tuned for years' worth of mail-client quirks in exactly those
+ * shapes. A seventh kind would be a second place for that knowledge to live and drift.
+ */
+function assetBlocks(asset: RenderableAsset, vars: MergeVars): ResolvedBlock[] {
+  const line = merge(asset.oneLine ?? "", vars);
+  const out: ResolvedBlock[] = [];
+
+  if (asset.kind === "quote") {
+    const body = merge(asset.text ?? "", vars);
+    if (!body) return [];
+    out.push({ kind: "callout", text: asset.attribution ? `“${body}” — ${asset.attribution}` : `“${body}”` });
+    return out;
+  }
+
+  if (asset.kind === "stat") {
+    const body = merge(asset.text ?? "", vars);
+    if (!body) return [];
+    out.push({ kind: "callout", text: asset.attribution ? `${body} — ${asset.attribution}` : body });
+    return out;
+  }
+
+  if (asset.kind === "access") {
+    const access = asset.access ?? {};
+    const rows = [
+      access.repName && { label: "You would speak to", value: [access.repName, access.repRole].filter(Boolean).join(", ") },
+      access.availability && { label: "Reachable", value: access.availability },
+      access.repPhone && { label: "Phone", value: access.repPhone },
+      access.repEmail && { label: "Email", value: access.repEmail },
+    ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+    if (rows.length) out.push({ kind: "card", title: line || undefined, rows, accent: true });
+    // Placed before the template's own call to action, so this is the button and the
+    // template's becomes a plain link. When we are handing someone a calendar, booking is
+    // the decision the message is asking for — not whatever the skeleton was asking for.
+    if (access.bookingUrl) out.push({ kind: "cta", text: "Pick a time", url: access.bookingUrl });
+    return out;
+  }
+
+  if (!asset.url) return [];
+
+  if (asset.kind === "image") {
+    out.push({ kind: "image", url: asset.url, alt: line });
+    return out;
+  }
+
+  if (asset.kind === "video") {
+    // The thumbnail links to the video, and the line beneath it links there too. Half of
+    // mail clients will not make an image clickable and none of them will play the video,
+    // so the words are the reliable half and the picture is what makes it look worth a click.
+    // Empty alt on purpose. The line directly beneath says the same thing and is a real
+    // link, so describing the picture too makes a screen reader read the offer twice — and
+    // in the plain-text part, which renders an image as its alt text, it printed twice for
+    // everybody.
+    if (asset.thumbUrl) out.push({ kind: "image", url: asset.thumbUrl, alt: "", href: asset.url });
+    out.push({ kind: "text", text: `[${line || "Watch it"}](${asset.url})` });
+    return out;
+  }
+
+  // document and link: a line that is a link, which is all either of them is.
+  out.push({ kind: "text", text: `[${line || "Take a look"}](${asset.url})` });
+  return out;
 }
 
 /** "Hi Kiran," — a salutation line, not a sentence that happens to start with a name. */
@@ -179,6 +274,11 @@ export function resolveBlocks(
 ): ResolvedTemplate {
   let subject = precomposed?.subject;
   const out: ResolvedBlock[] = [];
+  // Rendered once, up front, so the same list can be dropped at the template's own asset
+  // block or — far more often, since almost no template has one — placed by the fallback
+  // rule below.
+  const carried = (precomposed?.assets ?? []).flatMap((asset) => assetBlocks(asset, vars));
+  let assetsPlaced = carried.length === 0;
   // An unnamed slot takes the composed body wholesale, and only the first one does —
   // repeating it in a second slot would print the same paragraph twice.
   let bodyUsed = false;
@@ -312,10 +412,29 @@ export function resolveBlocks(
       continue;
     }
 
+    if (type === "asset") {
+      // The template said where it wants one. Templates authored before assets existed say
+      // nothing, which is what the fallback below is for.
+      if (!assetsPlaced) {
+        out.push(...carried);
+        assetsPlaced = true;
+      }
+      continue;
+    }
+
     if (type === "system" && block.fixed === "opt_out_block") {
       out.push({ kind: "optout", url: vars.opt_out_url });
       continue;
     }
+  }
+
+  if (!assetsPlaced) {
+    // After the words and before the ask. A picture above the paragraph explaining it is a
+    // picture the reader has already scrolled past, and one below the unsubscribe line is
+    // one nobody sees at all.
+    const anchor = out.findIndex((block) => block.kind === "cta" || block.kind === "optout");
+    if (anchor === -1) out.push(...carried);
+    else out.splice(anchor, 0, ...carried);
   }
 
   return { subject: tidySubject(subject, vars), blocks: out };
@@ -360,8 +479,12 @@ export function renderTemplate(
         if (block.alt) parts.push(block.alt);
         break;
       case "cta":
-        ctaText = block.text;
-        ctaUrl = block.url;
+        // First wins, because the HTML renderer makes the first call to action the button
+        // and every one after it a plain link. Recording the last left the two disagreeing
+        // about what this message was asking for — which nobody noticed until an asset
+        // started contributing a call to action of its own.
+        ctaText ??= block.text;
+        ctaUrl ??= block.url;
         parts.push(`${block.text}: ${block.url}`);
         break;
       case "optout":

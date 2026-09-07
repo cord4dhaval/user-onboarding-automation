@@ -50,6 +50,7 @@ const SAMPLE_VARS: MergeVars = {
   person_id: "sample",
   trial_link: "https://example.com/start",
   opt_out_url: "https://example.com/unsubscribe",
+  visit_token: "sample-token",
 };
 
 export default async function Brand({ params }: { params: Promise<{ id: string }> }) {

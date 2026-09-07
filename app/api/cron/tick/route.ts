@@ -97,13 +97,17 @@ export async function GET(request: NextRequest) {
 
   // Sending and reconciliation run for every product that has anything pending, not only
   // the ones whose sources just fired.
-  const products = await db.collection(C.products).find({ status: "active" }).toArray();
+  const products = shardOf(
+    await db.collection(C.products).find({ status: "active" }).toArray(),
+    request,
+  );
 
   // Rotated, not walked from the top. The loop is bounded by the same wall clock as
   // everything else, so a product early in the list with a large backlog would otherwise
   // consume the budget on every single tick and the products behind it would never send at
   // all. Starting where the last tick stopped gives every product its turn.
-  const cursorDoc = await db.collection(C.audit).findOne({ type: "tick_cursor" });
+  const cursorKey = `tick_cursor${shardSuffix(request)}`;
+  const cursorDoc = await db.collection(C.audit).findOne({ type: cursorKey });
   const startAt = products.length ? Number(cursorDoc?.index ?? 0) % products.length : 0;
   const rotated = [...products.slice(startAt), ...products.slice(0, startAt)];
   let servedProducts = 0;
@@ -276,7 +280,7 @@ export async function GET(request: NextRequest) {
   // Where the next tick starts its product rotation.
   if (products.length) {
     await db.collection(C.audit).updateOne(
-      { type: "tick_cursor" },
+      { type: cursorKey },
       { $set: { index: (startAt + Math.max(servedProducts, 1)) % products.length, updatedAt: now } },
       { upsert: true },
     );
@@ -294,4 +298,51 @@ export async function GET(request: NextRequest) {
     runsClosed: closed,
     report,
   });
+}
+
+/**
+ * Which slice of the products this request is responsible for.
+ *
+ * The tick is bounded by a sixty-second platform limit that a Hobby plan cannot raise, so
+ * the only way to widen the window is to run several of them at once. Four cron entries on
+ * the same minute, `?shard=0&shards=4` through `?shard=3&shards=4`, give four independent
+ * sixty-second budgets and no shared state to contend over.
+ *
+ * Split on the id rather than by position in the list, so a product stays on the same shard
+ * as products are added and removed. Position would reshuffle every product on every
+ * insert, and a message deferred by one shard would come back under another.
+ *
+ * Called with no parameters — the single-cron setup — every product is in the slice.
+ */
+function shardOf<T extends { _id: unknown }>(products: T[], request: NextRequest): T[] {
+  const { shard, shards } = shardParams(request);
+  if (shards <= 1) return products;
+  return products.filter((p) => hashId(String(p._id)) % shards === shard);
+}
+
+/** Distinguishes each shard's rotation cursor. One shared cursor would have every shard
+ * starting where a different shard's products left off, skipping most of its own. */
+function shardSuffix(request: NextRequest): string {
+  const { shard, shards } = shardParams(request);
+  return shards <= 1 ? "" : `:${shard}/${shards}`;
+}
+
+function shardParams(request: NextRequest): { shard: number; shards: number } {
+  const params = request.nextUrl.searchParams;
+  const shards = Math.max(1, Math.min(64, Number(params.get("shards") ?? 1) || 1));
+  const raw = Number(params.get("shard") ?? 0) || 0;
+  // A shard number outside the range would silently serve nothing, which looks exactly
+  // like a working cron that never sends.
+  const shard = Math.max(0, Math.min(shards - 1, raw));
+  return { shard, shards };
+}
+
+/** FNV-1a over the id. Any stable hash would do; this one needs no dependency. */
+function hashId(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
 }

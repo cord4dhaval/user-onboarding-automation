@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
-import { anglePerformance, anglesTriedOn, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
+import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
 import { greetingName } from "../../engine/names.js";
 import { allowedSegments, stampPlaybook } from "../../engine/playbooks.js";
 import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type ThinkingKind } from "../../engine/queue.js";
@@ -13,6 +13,14 @@ import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
 import { listRuns, sumCounters, ROUTINE_KEYS, type RoutineKey } from "../../engine/runlog.js";
+import {
+  accessUnlocked,
+  assetContextFrom,
+  assetContextFor,
+  assetMenuFor,
+  assetRefusals,
+  loadAssets,
+} from "../../engine/assets.js";
 
 /**
  * The surface a Claude routine drives.
@@ -578,7 +586,10 @@ export const TOOLS: ToolDef[] = [
             // the only open question is which of that server's tools to ask.
             verify_connection_id: g.verifyConnectionId ?? null,
             hint: g.verifyHint ?? null,
-            note: "Call verifiers to see what this connection exposes, then set_checks. Until then this campaign cannot tell when anyone succeeds.",
+            note:
+              g.verifyConnectionId
+                ? "Call verifiers to see what this connection exposes, then set_checks. Until then this campaign cannot tell when anyone succeeds."
+                : "No server was picked, which is an answer rather than an omission — this campaign's finish line is not in anybody's system. Write the checks against what this product can observe on its own: kind 'page' for a confirmation page on the customer's site, kind 'reply' for something the person states in words, kind 'human' where nothing can observe it. Until then this campaign cannot tell when anyone succeeds.",
           })),
           need_plan: needPlan.map((g) => ({
             goal_instance_id: String(g._id),
@@ -624,7 +635,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "lead_card",
     description:
-      "Everything about one person in a single call: identity, enrichment, belief, temperature, their goal, every touch sent, and what came back — opens, clicks and the link they followed, with mail-gateway scans reported separately so they are never mistaken for interest.",
+      "Everything about one person in a single call: identity, enrichment, belief, temperature, their goal, every touch sent, and what came back — opens, clicks and the link they followed, with mail-gateway scans reported separately so they are never mistaken for interest. Also lists the assets that may be shown to this person right now, already filtered by their segment, temperature and what they have been sent. The list is what you are allowed to use, not what you have to use — most touches are words alone, and an asset is worth carrying only when it answers something this person actually raised. Never name one that is not on the list.",
     inputSchema: {
       type: "object",
       properties: { product_id: { type: "string" }, person_id: { type: "string" } },
@@ -653,6 +664,13 @@ export const TOOLS: ToolDef[] = [
       const goalDef = goal
         ? await db.collection(C.goals).findOne({ orgId, productId, key: String(goal.goalKey) })
         : null;
+
+      // The menu of things we may show them, narrowed before the session sees it. Doing
+      // this here rather than leaving it to the composer is what stops an expired case
+      // study, a second copy of a video they already have, or a calendar link to somebody
+      // who has never opened anything.
+      const band = (person.temp as { band?: string } | undefined)?.band;
+      const assetsAvailable = await assetMenuFor(orgId, productId, assetContextFrom(person, actions, goalDef));
 
       return {
         person: {
@@ -687,6 +705,24 @@ export const TOOLS: ToolDef[] = [
               cadence_by_temp: goalDef?.cadenceByTemp,
             }
           : null,
+        /**
+         * What may be shown to this person on the next touch, and nothing else.
+         *
+         * Each row carries the three sentences an asset is chosen on — when it applies,
+         * what it proves, and how to introduce it — so the copy leading into an asset is
+         * written knowing what it lands on rather than blind. Choose by asset_id.
+         *
+         * An empty list is not a problem to solve, and a full one is not a quota. Nothing
+         * anywhere requires a touch to carry an asset: a sequence that attaches something
+         * to every message is the one that stops meaning anything by the third.
+         */
+        assets_available: assetsAvailable,
+        /**
+         * Whether this person has earned a way to reach us: a calendar link, a phone
+         * number, a named human. False until they are hot, and separate from the tier cap
+         * because handing over access is not the same decision as sending a heavy asset.
+         */
+        access_unlocked: accessUnlocked(band),
         // Prior claims are supplied so the next message never repeats or contradicts one.
         //
         // And what each one earned. This card promised "every touch sent and what came
@@ -877,7 +913,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "plan_goal",
     description:
-      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Every channel must be one the campaign allows — lead_card lists what is connected and what each can carry. Around a third of the steps must use an angle that is not already proven for this segment, and a plan of three or more steps may not use one angle throughout; both are refused rather than warned about, because spending every step on the current favourite is how the untested angles never get the sends that would prove them. Stored as a new version; the previous plan is kept with your rationale for replacing it.",
+      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Every channel must be one the campaign allows — lead_card lists what is connected and what each can carry. Around a third of the steps must use an angle that is not already proven for this segment, and a plan of three or more steps may not use one angle throughout; both are refused rather than warned about, because spending every step on the current favourite is how the untested angles never get the sends that would prove them. A step may name one asset_id from lead_card's assets_available, and most steps should name none — anything not on that list is refused, with the reason. Stored as a new version; the previous plan is kept with your rationale for replacing it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -893,6 +929,14 @@ export const TOOLS: ToolDef[] = [
               channel: { type: "string" },
               angle: { type: "string" },
               template_key: { type: "string" },
+              asset_id: {
+                type: "string",
+                description:
+                  "Optional. One of lead_card's assets_available, or omitted for a step that is words " +
+                  "alone — which most steps are. Committing it here means the step still carries the " +
+                  "right thing if it fires before anyone writes copy for it.",
+              },
+              why_asset: { type: "string", description: "What that asset answers for this person." },
               why: { type: "string" },
               advance_if: { type: "string" },
             },
@@ -923,6 +967,40 @@ export const TOOLS: ToolDef[] = [
           throw new Error(
             `This campaign may only use ${allowed.join(", ")}. The plan asks for ${[...new Set(stray)].join(", ")}.`,
           );
+        }
+      }
+
+      // Assets are checked at plan time as well as at compose time, because a step can
+      // fire before anybody writes copy for it — the rung's fallback goes out carrying
+      // whatever the plan named. A plan holding an expired case study is a message nobody
+      // reviewed sending an argument that is no longer true.
+      const planSteps = (args.steps ?? []) as Array<{ id?: unknown; asset_id?: unknown; channel?: unknown }>;
+      const planAssets = planSteps
+        .map((st) => ({ id: String(st.asset_id ?? ""), channel: String(st.channel ?? "") }))
+        .filter((st) => st.id);
+      if (planAssets.length > 0) {
+        const context = await assetContextFor(
+          ctx.orgId,
+          String(instance.productId),
+          String(instance.personId),
+          goalDef,
+        );
+        const problems: string[] = [];
+        for (const step of planAssets) {
+          problems.push(
+            ...(await assetRefusals(ctx.orgId, String(instance.productId), context, [step.id], step.channel)),
+          );
+        }
+        // Two steps carrying the same asset is the already-sent rule arriving one plan
+        // early: the second send is the one that reads as nobody keeping track, and it is
+        // easier to catch here than after the first has gone out.
+        const counts = new Map<string, number>();
+        for (const step of planAssets) counts.set(step.id, (counts.get(step.id) ?? 0) + 1);
+        for (const [id, n] of counts) {
+          if (n > 1) problems.push(`${id} is carried by ${n} steps of this plan. One asset, one touch.`);
+        }
+        if (problems.length > 0) {
+          throw new Error(`This plan cannot carry what it names:\n- ${problems.join("\n- ")}`);
         }
       }
 
@@ -985,7 +1063,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "compose_batch",
     description:
-      "Write the actual copy for upcoming touches and queue them. Each becomes a scheduled message; the engine sends it when due, under every guardrail. Never repeat a claim already made to this person.",
+      "Write the actual copy for upcoming touches and queue them. Each becomes a scheduled message; the engine sends it when due, under every guardrail. Never repeat a claim already made to this person. A touch may carry assets from lead_card's assets_available; carrying none is the normal case. Anything not on that list is refused with the reason, and what an asset proves counts as said.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1008,6 +1086,16 @@ export const TOOLS: ToolDef[] = [
                   "your own is dropped at render when it points where the button already does.",
               },
               claims_made: { type: "array", items: { type: "string" } },
+              asset_ids: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Optional. Assets this message carries, from lead_card's assets_available. Omit the " +
+                  "field to keep whatever the plan named for this step; pass an empty array to deliberately " +
+                  "send words alone where the plan had named something. Most messages carry nothing. " +
+                  "Where one is carried, write the copy to lead into it — what it proves is already counted " +
+                  "as said, so do not spend the message arguing it again.",
+              },
               rationale: { type: "string" },
             },
             required: ["step_id", "after_days", "channel", "angle", "body", "rationale"],
@@ -1045,6 +1133,50 @@ export const TOOLS: ToolDef[] = [
         }
       }
 
+      // What the plan already committed for each step. A touch that names no asset keeps
+      // it rather than dropping it: the choice was made with the whole sequence in view,
+      // and composing one message is not a reason to throw that away.
+      const plan = instance.currentPlanId
+        ? await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) })
+        : null;
+      const plannedAsset = new Map<number, string>();
+      for (const step of ((plan?.steps ?? []) as Array<Record<string, unknown>>)) {
+        const assetId = String(step.asset_id ?? step.assetId ?? "");
+        if (assetId) plannedAsset.set(Number(step.id ?? step.step_id), assetId);
+      }
+
+      const carried = new Map<number, string[]>();
+      for (const t of touches) {
+        const named = (t.asset_ids ?? null) as string[] | null;
+        const planned = plannedAsset.get(Number(t.step_id));
+        const ids = (named ?? (planned ? [planned] : [])).map(String).filter(Boolean);
+        carried.set(Number(t.step_id), [...new Set(ids)]);
+      }
+
+      const wanted = [...new Set([...carried.values()].flat())];
+      if (wanted.length > 0) {
+        const goalDef = await db
+          .collection(C.goals)
+          .findOne({ orgId, productId, key: String(instance.goalKey) });
+        const context = await assetContextFor(orgId, productId, String(instance.personId), goalDef);
+        const problems: string[] = [];
+        for (const t of touches) {
+          const ids = carried.get(Number(t.step_id)) ?? [];
+          if (ids.length === 0) continue;
+          problems.push(...(await assetRefusals(orgId, productId, context, ids, String(t.channel))));
+        }
+        if (problems.length > 0) {
+          throw new Error(`These messages cannot carry what they name:\n- ${problems.join("\n- ")}`);
+        }
+      }
+
+      // Loaded once for the whole batch: what each asset claims is folded into the message
+      // that carries it, so the no-repeats rule can see an argument a video made as
+      // clearly as one a sentence made.
+      const assetDocs = new Map(
+        (await loadAssets(orgId, productId, wanted)).map((row) => [String(row._id), row]),
+      );
+
       for (const t of touches) {
         const channelKey = String(t.channel);
         const channel = await db
@@ -1054,6 +1186,10 @@ export const TOOLS: ToolDef[] = [
 
         const actionId = new ObjectId();
         const body = String(t.body);
+        const assetIds = carried.get(Number(t.step_id)) ?? [];
+        const assetClaims = assetIds.flatMap((id) =>
+          ((assetDocs.get(id)?.claims ?? []) as unknown[]).map(String),
+        );
         try {
           await db.collection(C.actions).insertOne({
             _id: actionId,
@@ -1073,10 +1209,10 @@ export const TOOLS: ToolDef[] = [
               bodyMd: "",
               slotText: body,
               personalizationUsed: [],
-              claimsMade: (t.claims_made ?? []) as string[],
+              claimsMade: [...new Set([...((t.claims_made ?? []) as string[]), ...assetClaims])],
               wordCount: body.split(/\s+/).filter(Boolean).length,
             },
-            assetIds: [],
+            assetIds,
             next: {},
             signals: [],
             idempotencyKey: `${goalInstanceId}:step:${String(t.step_id)}`,
@@ -1254,7 +1390,7 @@ TOOLS.push({
 TOOLS.push({
   name: "set_checks",
   description:
-    "Store how a campaign will verify success. Each check names a connection, a tool, its arguments and an assertion. The engine runs them on every tick without a model, so they must be answerable from the tools alone.",
+    "Store how a campaign will verify success. Each check says where its proof comes from. kind 'mcp' names a connection, a tool, its arguments and an assertion. kind 'page' names an event our own site reports for this person — use it when the finish line is a page you own, such as a booking confirmation, and there is no system to ask. kind 'reply' names the reply intents that count, for a finish line the person states in words. kind 'human' is settled by resolve_check and never by the engine — use it only when nothing can observe the thing. The engine runs these on every tick without a model, so they must be answerable without one.",
   inputSchema: {
     type: "object",
     properties: {
@@ -1267,13 +1403,30 @@ TOOLS.push({
           properties: {
             key: { type: "string", description: "Short identifier, e.g. account_created" },
             describedAs: { type: "string", description: "What this proves, in plain words" },
-            connectionId: { type: "string" },
-            tool: { type: "string" },
-            args: { type: "object", description: 'Argument name to value or $ref, e.g. {"query":"$person.email"}' },
-            assert: { type: "string", description: 'exists · count >= 2 · $.plan != trial' },
+            kind: {
+              type: "string",
+              enum: ["mcp", "page", "reply", "human"],
+              description: "Where the proof comes from. Defaults to mcp.",
+            },
+            connectionId: { type: "string", description: "mcp only." },
+            tool: { type: "string", description: "mcp only." },
+            args: { type: "object", description: 'mcp only. Argument name to value or $ref, e.g. {"query":"$person.email"}' },
+            assert: { type: "string", description: 'mcp only. exists · count >= 2 · $.plan != trial' },
+            event: {
+              type: "string",
+              description:
+                "page only. The name the site reports, e.g. \"booked\". The page calls " +
+                "{APP_URL}/api/e/<event>?p={{person_id}}&s={{visit_token}} — put both merge fields in the link " +
+                "the message sends them to, so the site has them to pass on.",
+            },
+            intents: {
+              type: "array",
+              items: { type: "string" },
+              description: "reply only. Which record_reply intents count, e.g. [\"interested\"].",
+            },
             latch: { type: "boolean", description: "True once means true forever. Defaults true." },
           },
-          required: ["key", "describedAs", "connectionId", "tool", "assert"],
+          required: ["key", "describedAs"],
         },
       },
     },
@@ -1286,10 +1439,33 @@ TOOLS.push({
     const checks = (args.checks ?? []) as Array<Record<string, unknown>>;
     if (checks.length === 0) throw new Error("a campaign needs at least one check");
 
+    // Refused rather than stored half-formed. A check missing the fields its own kind runs
+    // on is one the engine will skip silently on every tick, which reads exactly like a
+    // check that keeps coming back false.
+    const malformed = checks
+      .map((c) => {
+        const kind = String(c.kind ?? "mcp");
+        if (kind === "mcp" && (!c.connectionId || !c.tool || !c.assert))
+          return `${String(c.key)} is an mcp check and needs connectionId, tool and assert`;
+        if (kind === "page" && !c.event) return `${String(c.key)} is a page check and needs an event name`;
+        if (kind === "reply" && !Array.isArray(c.intents))
+          return `${String(c.key)} is a reply check and needs the intents that count`;
+        return null;
+      })
+      .filter(Boolean);
+    if (malformed.length > 0) throw new Error(malformed.join("; "));
+
     // Every check is tried against two different people before it is trusted. A check that
     // answers identically for both is not looking at the person — it is describing the
     // caller's own account, and it will pass for everyone forever.
-    const discrimination = await discriminationTest(orgId, productId, checks);
+    //
+    // Only the mcp ones. The other three read this product's own records, keyed by person,
+    // and there is no tool to call and nothing to be blind about.
+    const discrimination = await discriminationTest(
+      orgId,
+      productId,
+      checks.filter((c) => String(c.kind ?? "mcp") === "mcp"),
+    );
     const blind = discrimination.filter((r: DiscriminationResult) => r.verdict === "identical");
     if (blind.length > 0 && args.accept_undiscriminating !== true) {
       throw new Error(
@@ -1303,7 +1479,14 @@ TOOLS.push({
       { orgId, productId, key: String(args.goal_key) },
       {
         $set: {
-          checks: checks.map((c) => ({ ...c, args: c.args ?? {}, latch: c.latch ?? true, proposedBy: "claude" })),
+          checks: checks.map((c) => ({
+            ...c,
+            kind: String(c.kind ?? "mcp"),
+            args: c.args ?? {},
+            intents: c.intents ?? [],
+            latch: c.latch ?? true,
+            proposedBy: "claude",
+          })),
           needsVerificationPlan: false,
           checksWrittenAt: new Date(),
           discrimination,
@@ -2401,7 +2584,7 @@ TOOLS.push({
 TOOLS.push({
   name: "what_works",
   description:
-    "What has actually worked for this product: every segment and angle with what it was sent to, what came back and what converted, plus the cross-product timing priors. Read this before plan_goal. An angle with few sends is untested, not losing — say so rather than abandoning it.",
+    "What has actually worked for this product: every segment and angle with what it was sent to, what came back and what converted, the same record cut by what each message carried, plus the cross-product timing priors. Read this before plan_goal. An angle with few sends is untested, not losing — say so rather than abandoning it, and the same is true of an asset.",
   inputSchema: {
     type: "object",
     properties: {
@@ -2415,7 +2598,11 @@ TOOLS.push({
     const orgId = await assertProduct(productId, ctx);
     const segment = args.segment ? String(args.segment) : undefined;
 
-    const [angles, priors] = await Promise.all([anglePerformance(orgId, productId, segment), summarisePriors()]);
+    const [angles, assets, priors] = await Promise.all([
+      anglePerformance(orgId, productId, segment),
+      assetPerformance(orgId, productId, segment),
+      summarisePriors(),
+    ]);
 
     const totalSent = angles.reduce((n, a) => n + a.sent, 0);
     const totalTrackable = angles.reduce((n, a) => n + a.trackable, 0);
@@ -2435,6 +2622,20 @@ TOOLS.push({
               : a.clicked > 0
                 ? "interest, no conversion"
                 : "no signal",
+      })),
+      /**
+       * The same sends, cut by what they carried.
+       *
+       * Read the pairs, not the rows: an angle appears once with an asset and once without,
+       * and the difference between those two lines is the only evidence there is about
+       * whether carrying something helped. A row on its own says nothing — an asset that
+       * only ever rode on the best angle will look excellent and may have done nothing.
+       */
+      angle_with_asset: assets.map((a) => ({
+        ...a,
+        click_rate: a.trackable > 0 ? Number((a.clicked / a.trackable).toFixed(3)) : null,
+        win_rate: a.sent > 0 ? Number((a.won / a.sent).toFixed(3)) : null,
+        verdict: a.sent < MIN_SAMPLE ? "untested" : a.won > 0 ? "working" : a.clicked > 0 ? "interest, no conversion" : "no signal",
       })),
       // Shared across products and carrying nothing that identifies one: hours and step
       // positions only. It is what a product with no history of its own starts from.

@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { creditAssets } from "./assets.js";
 
 /**
  * What worked.
@@ -92,6 +93,81 @@ export async function anglePerformance(
   }));
 }
 
+export interface AssetRow {
+  angle: string;
+  /** The asset's key, or null for the sends of that angle that carried nothing. */
+  assetKey: string | null;
+  tier: string | null;
+  sent: number;
+  trackable: number;
+  clicked: number;
+  replied: number;
+  won: number;
+}
+
+/**
+ * The same record as `anglePerformance`, cut by what each message carried.
+ *
+ * This is the only question the rollup could not answer before: an angle sent with a demo
+ * video and the same angle sent as words alone were one row, so the video was credited to
+ * the argument and the argument was blamed for the video. Both rows are returned — the
+ * one that carried something and the one that did not — because the comparison is the
+ * whole point and a table of only the carried sends says nothing.
+ *
+ * Sends made before assets existed carry no `assetKey` and land in the null row, which is
+ * correct: they carried nothing.
+ */
+export async function assetPerformance(
+  orgId: string,
+  productId: string,
+  segment?: string,
+): Promise<AssetRow[]> {
+  const db = await getDb();
+  const match: Record<string, unknown> = {
+    orgId,
+    productId,
+    status: { $in: ["sent", "dispatched"] },
+    dryRun: { $ne: true },
+  };
+  if (segment) match["variant.segment"] = segment;
+
+  const rows = await db
+    .collection(C.actions)
+    .aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            angle: "$angle",
+            // A message carrying two assets is deliberately its own bucket rather than
+            // being counted under each: what it proved is that the pair worked, and
+            // splitting it would claim evidence for each half that nobody gathered.
+            assetKey: { $ifNull: ["$variant.assetKey", null] },
+            tier: { $ifNull: ["$variant.assetTier", null] },
+          },
+          sent: { $sum: 1 },
+          trackable: { $sum: { $cond: [{ $eq: ["$tracking.clicks", true] }, 1, 0] } },
+          clicked: { $sum: { $cond: [{ $ifNull: ["$firstClickedAt", false] }, 1, 0] } },
+          replied: { $sum: { $cond: [{ $ifNull: ["$firstRepliedAt", false] }, 1, 0] } },
+          won: { $sum: { $cond: [{ $eq: ["$goalOutcome", "won"] }, 1, 0] } },
+        },
+      },
+      { $sort: { won: -1, clicked: -1, sent: -1 } },
+    ])
+    .toArray();
+
+  return rows.map((r) => ({
+    angle: String(r._id.angle),
+    assetKey: r._id.assetKey === null || r._id.assetKey === undefined ? null : String(r._id.assetKey),
+    tier: r._id.tier === null || r._id.tier === undefined ? null : String(r._id.tier),
+    sent: r.sent,
+    trackable: r.trackable,
+    clicked: r.clicked,
+    replied: r.replied,
+    won: r.won,
+  }));
+}
+
 export interface PriorRow {
   channel: string;
   stepIndex: number;
@@ -171,13 +247,23 @@ export async function stampGoalOutcome(
 
   const actions = await db
     .collection(C.actions)
-    .find(filter, { projection: { channel: 1, variant: 1 } })
+    .find(filter, { projection: { channel: 1, variant: 1, productId: 1, assetIds: 1 } })
     .toArray();
   if (actions.length === 0) return 0;
 
   await db.collection(C.actions).updateMany(filter, { $set: { goalOutcome: outcome } });
   if (outcome === "won") {
     for (const a of actions) await bumpPrior(a as PriorKey, "won");
+
+    // An asset is credited once for the campaign it helped win, not once per message it
+    // rode on. Sending the same case study twice cannot make it look twice as persuasive —
+    // the filter above already refuses to stamp a campaign a second time, and this dedupes
+    // within it.
+    const wonWith = new Set(actions.flatMap((a) => ((a.assetIds ?? []) as unknown[]).map(String)));
+    const productId = actions.find((a) => a.productId)?.productId;
+    if (wonWith.size > 0 && productId) {
+      await creditAssets(orgId, String(productId), [...wonWith], "ledToGoal");
+    }
   }
   return actions.length;
 }

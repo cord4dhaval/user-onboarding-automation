@@ -18,6 +18,8 @@ export const COLLECTIONS = {
   playbooks: "playbooks",
   actions: "actions",
   templates: "templates",
+  /** Everything we can show a person that is not sentences. See schemas/asset.ts. */
+  assets: "assets",
 
   brandKits: "brand_kits",
   brandSources: "brand_sources",

@@ -69,6 +69,9 @@ export default async function Templates({
     person_id: personId,
     trial_link: (config.trialLinkTemplate ?? `${site}/start?p={{person_id}}`).replace("{{person_id}}", personId),
     opt_out_url: `${site}/unsubscribe?p=${personId}`,
+    // A preview never signs anything. The real value comes from mergeVarsFor at send time;
+    // this only stops the field showing as an unmerged {{visit_token}} on screen.
+    visit_token: "sample-token",
   };
 
   const branded = Object.keys(kit.provenance ?? {}).length > 0;

@@ -101,20 +101,30 @@ export default function GoalDrawer({
 
           <label>
             Verified against
-            <select name="verifyConnectionId" defaultValue={existing?.verifyConnectionId ?? verifiers[0]?.id ?? ""}>
-              {verifiers.length === 0 && <option value="">— nothing connected yet —</option>}
+            <select name="verifyConnectionId" defaultValue={existing?.verifyConnectionId ?? ""}>
+              {/* Present even when servers are connected. A campaign whose finish line is a
+                  reply or a page on your own site has nowhere to point a tool, and forcing
+                  it at one produced checks that asked the wrong question and passed
+                  everybody. Nothing is a real answer here. */}
+              <option value="">
+                {verifiers.length === 0 ? "— nothing connected yet —" : "— nothing to verify against —"}
+              </option>
               {verifiers.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.provider} — {v.tools} tools
                 </option>
               ))}
             </select>
-            {verifiers.length === 0 && (
-              <span className="muted" style={{ fontSize: 12.5 }}>
-                <a href={`/products/${productId}/connections`}>Connect a server</a> to let this campaign tell
-                when someone has succeeded. It can still send without one.
-              </span>
-            )}
+            <span className="reason">
+              {verifiers.length === 0 ? (
+                <>
+                  <a href={`/products/${productId}/connections`}>Connect a server</a> to let this campaign tell
+                  when someone has succeeded. It can still send without one.
+                </>
+              ) : (
+                <>Leave this empty for a campaign that sends but never decides on its own who has finished.</>
+              )}
+            </span>
           </label>
 
           <div className="grid">

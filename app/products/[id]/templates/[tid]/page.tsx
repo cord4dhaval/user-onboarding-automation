@@ -58,6 +58,7 @@ export default async function TemplateEditor({ params }: { params: Promise<{ id:
     person_id: "sample",
     trial_link: (config.trialLinkTemplate ?? `${site}/start?p={{person_id}}`).replace("{{person_id}}", "sample"),
     opt_out_url: `${site}/unsubscribe?p=sample`,
+    visit_token: "sample-token",
   };
 
   const rendered = renderTemplate(blocks, vars);

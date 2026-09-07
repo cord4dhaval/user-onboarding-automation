@@ -5,6 +5,7 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { bumpPrior, type PriorKey } from "@/engine/outcomes.js";
 import { notify } from "@/engine/notify.js";
 import { PIXEL, looksAutomated, signalField, unb64url, verify } from "@/engine/tracking.js";
+import { creditAssets } from "@/engine/assets.js";
 
 export const dynamic = "force-dynamic";
 
@@ -96,7 +97,7 @@ async function record(
       },
       {
         returnDocument: "after",
-        projection: { orgId: 1, productId: 1, personId: 1, channel: 1, variant: 1, "content.subject": 1 },
+        projection: { orgId: 1, productId: 1, personId: 1, channel: 1, variant: 1, assetIds: 1, "content.subject": 1 },
       },
     );
     if (!result) return;
@@ -114,6 +115,12 @@ async function record(
     // pixel ten times must not make one ignored message look like ten engaged ones — the
     // filter above already guarantees this runs once.
     if (type === "clicked") await bumpPrior(result as PriorKey, "clicked");
+    // Credited to whatever this message carried, not to the link that was followed. Which
+    // link a click landed on is already recorded on the signal; what an asset is being
+    // judged on here is whether a message carrying it got a person to act at all.
+    if (type === "clicked") {
+      await creditAssets(String(result.orgId), String(result.productId), result.assetIds, "clicked");
+    }
     await db
       .collection(C.people)
       .updateOne(

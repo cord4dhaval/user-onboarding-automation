@@ -1,14 +1,22 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { renderTemplate, resolveBlocks, toOutbound, type ComposedContent, type MergeVars } from "./compose.js";
+import {
+  renderTemplate,
+  resolveBlocks,
+  toOutbound,
+  type ComposedContent,
+  type MergeVars,
+  type RenderableAsset,
+} from "./compose.js";
 import { renderHtml } from "./html.js";
 import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
+import { assetsNeedApproval, creditAssets, highestTier, renderableAssets } from "./assets.js";
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
 import { ConsoleAdapter } from "../adapters/channel/console.js";
-import { limitsFor, rateBlock } from "./governor.js";
+import { limitsFor, rateBlock, rateHeadroom } from "./governor.js";
 import { resolveTemplateFor } from "./templates.js";
 import { applyTracking, trackingAllowed } from "./tracking.js";
 import { bumpPrior } from "./outcomes.js";
@@ -31,6 +39,16 @@ export interface FireSummary {
  * — and short enough that a crash costs minutes rather than the message.
  */
 const STALE_CLAIM_MS = 15 * 60_000;
+
+/**
+ * How many provider calls are allowed in the air at once.
+ *
+ * Eight because the ceiling is the cron budget, not the network: twenty-five sequential
+ * sends at roughly half a second each is most of a sixty-second request, and the same
+ * twenty-five in waves of eight is a few seconds. Higher buys little and makes a provider
+ * more likely to answer with a rate limit, which costs a retry rather than saving a wait.
+ */
+const SEND_CONCURRENCY = 8;
 
 export interface FireOptions {
   orgId: string;
@@ -88,6 +106,34 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     })
     .limit(opts.limit ?? 100)
     .toArray();
+
+  // Sends are network-bound, so they overlap; everything around them stays in order.
+  // Claiming, guards and rendering are local database work measured in single-digit
+  // milliseconds — running those concurrently would buy nothing and cost the sequencing
+  // that makes a double send impossible.
+  const inFlight: Array<Promise<void>> = [];
+  const flush = async (all: boolean) => {
+    if (inFlight.length >= (all ? 1 : SEND_CONCURRENCY)) {
+      await Promise.all(inFlight.splice(0, inFlight.length));
+    }
+  };
+
+  // Rate headroom is read once per channel and then spent down in memory. Re-reading it
+  // per action would count only what has landed, which during a batch is not what has been
+  // committed to.
+  const headroom = new Map<string, number>();
+  const reserve = async (channelId: string): Promise<boolean> => {
+    if (!headroom.has(channelId)) {
+      headroom.set(
+        channelId,
+        await rateHeadroom(opts.orgId, channelId, await limitsFor(opts.orgId, channelId), now),
+      );
+    }
+    const left = headroom.get(channelId) ?? 0;
+    if (left <= 0) return false;
+    headroom.set(channelId, left - 1);
+    return true;
+  };
 
   for (const action of due) {
     // Claim it. The status transition is the lease: a second concurrent run finds nothing
@@ -187,7 +233,15 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // variables the recipient's copy is.
       const vars: MergeVars = mergeVarsFor(person, product);
 
+      // What this message carries, resolved at send rather than at compose: an asset that
+      // was archived or corrected in the days a message sat in the queue should go out as
+      // it is now, not as it was when somebody chose it.
+      const carried = await renderableAssets(opts.orgId, opts.productId, action.assetIds);
       const prior = action.content as Partial<ComposedContent> | undefined;
+      // Kept beside `prior` rather than folded into it: `prior` is written back to the
+      // action when a message is held, and storing a copy of every asset on every action
+      // would be a second, staler copy of the thing we just went and read.
+      const toRender = { ...prior, assets: carried };
       // An answer to something a person wrote is not a campaign touch, and rendering it
       // through the ladder dresses it as one: it inherits the next rung's heading and
       // subject, so a reply to "what does it cost?" arrives titled "one step left" above a
@@ -199,7 +253,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
           ? // A message someone read and approved ships exactly as read. Re-rendering it
             // here would let the words change between the review screen and the recipient.
             (prior as ComposedContent)
-          : renderTemplate(template.blocks as Record<string, unknown>[], vars, prior);
+          : renderTemplate(template.blocks as Record<string, unknown>[], vars, toRender);
 
       const priorClaims = await priorClaimsFor(String(action.goalInstanceId));
       const constraints = template.constraints as { maxWords?: number; noClaims?: string[] } | undefined;
@@ -215,7 +269,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const wantsHtml = !isReply && String(action.format ?? template.format ?? "html") !== "text";
       if (!content.bodyHtml && wantsHtml && String(action.channel) === "email" && caps?.html !== false) {
         content.bodyHtml = renderHtml(
-          resolveBlocks(template.blocks as Record<string, unknown>[], vars, prior),
+          resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender),
           await brandKit(),
         );
       }
@@ -257,14 +311,36 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       }
 
       const approvalMode = (goal?.schedule as { approvalMode?: string } | undefined)?.approvalMode ?? "gate_on";
+      // An asset can demand review on its own, and that demand outranks the campaign's
+      // mode. Auto-send is a decision about routine copy; "hold anything carrying this" is
+      // a decision about one particular thing, usually a way to reach a human.
+      const gated =
+        approvalMode === "gate_on" ||
+        (await assetsNeedApproval(opts.orgId, opts.productId, action.assetIds));
       // The gate is for content nobody has looked at. Re-holding a message a human already
       // approved would loop it back to review forever, and nothing would ever send.
-      if (approvalMode === "gate_on" && !action.reviewedAt && !dryRun) {
+      if (gated && !action.reviewedAt && !dryRun) {
         await db.collection(C.actions).updateOne(
           { _id: action._id },
           { $set: { status: "awaiting_approval", content, validation: check } },
         );
         summary.heldForApproval++;
+        continue;
+      }
+
+      // A slot in the channel's rate window, taken before the send rather than after.
+      // blockedReason asked whether the window was full, which is the right question when
+      // messages leave one at a time and the wrong one when several are in flight: they all
+      // read the same count and all pass. Reserving makes the cap hold at any fan-out.
+      if (!dryRun && !(await reserve(String(action.channelId)))) {
+        await db.collection(C.actions).updateOne(
+          { _id: action._id },
+          {
+            $set: { status: "queued", dueAt: new Date(now.getTime() + 60_000), deferReason: "channel window full" },
+            $unset: { claimedAt: "" },
+          },
+        );
+        summary.deferred++;
         continue;
       }
 
@@ -283,6 +359,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         opts.productId,
         String(action.personId),
         String(action.channel),
+        adapter,
       );
       if (conversation) {
         outbound.threadId = conversation.threadId;
@@ -290,104 +367,119 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         outbound.references = conversation.references;
       }
 
-      let result;
-      try {
-        result = dryRun
-          ? await new ConsoleAdapter().send(outbound)
-          : await adapter.send(outbound);
-      } catch (err) {
-        // Back-pressure from a full provider queue: return it to the queue rather than
-        // spending a touch on a message nobody received.
-        if (err instanceof RetryableSendError) {
-          await db.collection(C.actions).updateOne(
-            { _id: action._id },
-            { $set: { status: "queued", dueAt: new Date(now.getTime() + err.retryAfterSec * 1000), content } },
-          );
-          summary.deferred++;
-          continue;
+      // From here on it is one provider call and the writes that record it. Wrapped so it
+      // can overlap with its neighbours: the work above decided this message may go, and
+      // nothing below it reads state another in-flight send is changing.
+      const dispatch = async () => {
+        let result;
+        try {
+          result = dryRun
+            ? await new ConsoleAdapter().send(outbound)
+            : await adapter.send(outbound);
+        } catch (err) {
+          // Back-pressure from a full provider queue: return it to the queue rather than
+          // spending a touch on a message nobody received.
+          if (err instanceof RetryableSendError) {
+            await db.collection(C.actions).updateOne(
+              { _id: action._id },
+              { $set: { status: "queued", dueAt: new Date(now.getTime() + err.retryAfterSec * 1000), content } },
+            );
+            summary.deferred++;
+            // A deferred message also hands its rate slot back: it never reached the
+            // provider, so nothing was spent and the next action in this batch may have it.
+            headroom.set(String(action.channelId), (headroom.get(String(action.channelId)) ?? 0) + 1);
+            return;
+          }
+          throw err;
         }
-        throw err;
-      }
 
-      // A queued message is not a sent message. It waits at "dispatched" until the
-      // reconciler confirms it with the provider.
-      const variant = variantOf(person, action);
-      const queued = result.disposition === "queued" && !dryRun;
-      await db.collection(C.actions).updateOne(
-        { _id: action._id },
-        {
-          $set: {
-            status: queued ? "dispatched" : "sent",
-            content,
-            // Written back for actions that arrived without one. Which skeleton a message
-            // rendered through is part of reading it afterwards, and re-deriving it later
-            // would give whatever the ladder says today rather than what actually went out.
-            templateId: String(template._id),
-            sentAt: new Date(),
-            providerMessageId: result.providerMessageId,
-            dryRun,
-            // Copied rather than joined later: segment and fit both move as we learn more,
-            // and a rollup keyed on today's values would rewrite what past sends meant.
-            variant,
-            // Records what this message could report back, so silence from an untracked
-            // send is never counted against the angle.
-            tracking: trackingApplied,
-            // The conversation this joined. Stored on the action rather than re-read from
-            // the provider later: the mailbox may be disconnected by then, and a thread we
-            // cannot name is a thread the next message falls out of.
-            ...(result.threadId || result.messageId
-              ? {
-                  thread: {
-                    id: result.threadId,
-                    messageId: result.messageId,
-                    references: [...(outbound.references ?? []), result.messageId].filter(Boolean),
-                  },
-                }
-              : {}),
+        // A queued message is not a sent message. It waits at "dispatched" until the
+        // reconciler confirms it with the provider.
+        const variant = variantOf(person, action, carried);
+        const queued = result.disposition === "queued" && !dryRun;
+        await db.collection(C.actions).updateOne(
+          { _id: action._id },
+          {
+            $set: {
+              status: queued ? "dispatched" : "sent",
+              content,
+              // Written back for actions that arrived without one. Which skeleton a message
+              // rendered through is part of reading it afterwards, and re-deriving it later
+              // would give whatever the ladder says today rather than what actually went out.
+              templateId: String(template._id),
+              sentAt: new Date(),
+              providerMessageId: result.providerMessageId,
+              dryRun,
+              // Copied rather than joined later: segment and fit both move as we learn more,
+              // and a rollup keyed on today's values would rewrite what past sends meant.
+              variant,
+              // Records what this message could report back, so silence from an untracked
+              // send is never counted against the angle.
+              tracking: trackingApplied,
+              // The provider's own handle, which costs nothing — it comes back with the
+              // send. The RFC Message-ID is not stored here: it is not in this response, and
+              // asking for it now would spend a round trip on every message to serve the few
+              // that get a follow-up. conversationFor fetches it if and when one does.
+              ...(result.threadId
+                ? { thread: { id: result.threadId, references: outbound.references ?? [] } }
+                : {}),
+            },
+            // It waited for a window and then went out; the note about waiting is history now.
+            $unset: { deferReason: "" },
           },
-          // It waited for a window and then went out; the note about waiting is history now.
-          $unset: { deferReason: "" },
-        },
-      );
+        );
 
-      // Budget and cap are decremented in the database, never tracked in a caller's head.
-      await db.collection(C.goalInstances).updateOne(
-        { _id: goalInstance._id },
-        {
-          $inc: { "spent.touches": 1 },
-          // Someone just contacted is the most likely to act, so bring their next check
-          // forward rather than waiting out the current interval.
-          $set: { lastContactedAt: new Date(), nextVerifyAt: new Date(Date.now() + 60 * 60_000) },
-        },
-      );
-      // The same spend is recorded against the person, so the cost of pursuing one human
-      // across every campaign they have ever been in is answerable.
-      await db.collection(C.people).updateOne(
-        { _id: person._id },
-        {
-          $inc: { "investment.messages": 1, "investment.usd": Number(action.cost ?? 0) },
-          $set: { lastContactedAt: new Date() },
-        },
-      );
-      await db
-        .collection(C.channels)
-        .updateOne({ _id: channel._id }, { $inc: { "governor.sentToday": 1 } });
+        // Budget and cap are decremented in the database, never tracked in a caller's head.
+        await db.collection(C.goalInstances).updateOne(
+          { _id: goalInstance._id },
+          {
+            $inc: { "spent.touches": 1 },
+            // Someone just contacted is the most likely to act, so bring their next check
+            // forward rather than waiting out the current interval.
+            $set: { lastContactedAt: new Date(), nextVerifyAt: new Date(Date.now() + 60 * 60_000) },
+          },
+        );
+        // The same spend is recorded against the person, so the cost of pursuing one human
+        // across every campaign they have ever been in is answerable.
+        await db.collection(C.people).updateOne(
+          { _id: person._id },
+          {
+            $inc: { "investment.messages": 1, "investment.usd": Number(action.cost ?? 0) },
+            $set: { lastContactedAt: new Date() },
+          },
+        );
+        await db
+          .collection(C.channels)
+          .updateOne({ _id: channel._id }, { $inc: { "governor.sentToday": 1 } });
 
-      // The shared prior: which step, which hour, which channel. Nothing identifying goes
-      // in, so a product that has never sent anything can still start on real mechanics.
-      //
-      // Never on a dry run. This collection is read by every other tenant, and a rehearsal
-      // counted as a send would push a real product towards an hour nobody was mailed at.
-      if (!dryRun) await bumpPrior({ channel: action.channel, variant }, "sent");
+        // The shared prior: which step, which hour, which channel. Nothing identifying goes
+        // in, so a product that has never sent anything can still start on real mechanics.
+        //
+        // Never on a dry run. This collection is read by every other tenant, and a rehearsal
+        // counted as a send would push a real product towards an hour nobody was mailed at.
+        if (!dryRun) await bumpPrior({ channel: action.channel, variant }, "sent");
+        // Counted here rather than at compose, because a message can be composed, held,
+        // and never sent. What an asset earned has to be measured against what it actually
+        // went out on.
+        if (!dryRun) await creditAssets(opts.orgId, opts.productId, action.assetIds, "sent");
+        if (queued) summary.queuedRemotely++;
+        else summary.sent++;
+      };
 
-      if (queued) summary.queuedRemotely++;
-      else summary.sent++;
+      inFlight.push(
+        dispatch().catch(async (err) => {
+          await release(action._id, "failed", { error: err instanceof Error ? err.message : String(err) });
+          summary.failed.push({ person: label, error: err instanceof Error ? err.message : String(err) });
+        }),
+      );
+      await flush(false);
     } catch (err) {
       await release(action._id, "failed", { error: err instanceof Error ? err.message : String(err) });
       summary.failed.push({ person: label, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
+  await flush(true);
   return summary;
 
   function productIdOf(action: Record<string, unknown>): string {
@@ -395,7 +487,11 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
   }
 
   /** The dimensions this send will be judged on, frozen at the moment it goes out. */
-  function variantOf(person: Record<string, unknown>, action: Record<string, unknown>) {
+  function variantOf(
+    person: Record<string, unknown>,
+    action: Record<string, unknown>,
+    carried: RenderableAsset[] = [],
+  ) {
     const belief = person.belief as { segment?: string; fitKnown?: boolean } | undefined;
     const variant: Record<string, unknown> = {
       // People sent to before anyone read them are a real bucket, not a missing value.
@@ -407,6 +503,19 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     // still step one, and saying so is what lets the most common message in the system
     // contribute to the shared timing priors instead of being dropped for want of a key.
     variant.stepIndex = typeof action.planStepId === "number" ? action.planStepId : 1;
+
+    // What rode along, frozen for the same reason everything else here is: an asset can be
+    // renamed, retiered or deleted, and a rollup that read it as it stands today would
+    // rewrite what every past send meant.
+    //
+    // `assetKey` is deliberately a single value and null when a message carried nothing or
+    // carried several. It is the field a rollup groups on, and grouping on an array would
+    // make "the demo" and "the demo plus a case study" the same bucket while looking like
+    // it had answered the question. The full list stays beside it for reading one message.
+    const keys = carried.map((asset) => asset.key).filter(Boolean);
+    variant.assetKeys = keys;
+    variant.assetKey = keys.length === 1 ? keys[0] : null;
+    variant.assetTier = carried.length > 0 ? highestTier(carried.map((asset) => asset.tier)) : null;
     return variant;
   }
 
@@ -515,6 +624,7 @@ async function conversationFor(
   productId: string,
   personId: string,
   channelKey: string,
+  adapter: ChannelAdapter,
 ): Promise<Conversation | undefined> {
   const db = await getDb();
 
@@ -527,11 +637,31 @@ async function conversationFor(
   if (!lastSent) return undefined;
 
   const thread = lastSent.thread as { id?: string; messageId?: string; references?: string[] };
-  const references = (thread.references ?? [thread.messageId]).filter(Boolean) as string[];
+
+  // The parent's RFC Message-ID, fetched the first time anything needs to point at it and
+  // written back so no later touch in this conversation asks again. A provider that cannot
+  // answer — no read scope, message deleted — leaves threading to threadId alone.
+  let parentMessageId = thread.messageId;
+  if (!parentMessageId && lastSent.providerMessageId && adapter.resolveMessageId) {
+    parentMessageId = await adapter.resolveMessageId(String(lastSent.providerMessageId));
+    if (parentMessageId) {
+      await db.collection(C.actions).updateOne(
+        { _id: lastSent._id },
+        {
+          $set: {
+            "thread.messageId": parentMessageId,
+            "thread.references": [...(thread.references ?? []), parentMessageId],
+          },
+        },
+      );
+    }
+  }
+
+  const references = [...(thread.references ?? []), parentMessageId].filter(Boolean) as string[];
   const conversation: Conversation = {
     threadId: thread.id,
-    inReplyTo: thread.messageId,
-    references,
+    inReplyTo: parentMessageId,
+    references: [...new Set(references)],
   };
 
   // Their reply, if it came after our last send and carried an id we can point at. A reply

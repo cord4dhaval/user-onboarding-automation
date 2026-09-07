@@ -17,11 +17,65 @@ import { resolveSecret } from "../crypto/broker.js";
 export interface CheckDef {
   key: string;
   describedAs: string;
-  connectionId: string;
-  tool: string;
-  args: Record<string, string>;
-  assert: string;
+  /** Absent on every check written before the other three kinds existed: those were all mcp. */
+  kind?: "mcp" | "page" | "reply" | "human";
+  connectionId?: string;
+  tool?: string;
+  args?: Record<string, string>;
+  assert?: string;
+  /** page: the name our own site reports when this person reaches it. */
+  event?: string;
+  /** reply: the readings of a reply that count as this having happened. */
+  intents?: string[];
   latch?: boolean;
+}
+
+/**
+ * Whether our own site has reported this person doing the named thing since the campaign
+ * began.
+ *
+ * Since, not ever: someone who booked a call last quarter has not answered this campaign,
+ * and a check that counted them would close it the moment it opened.
+ */
+async function pageReported(
+  orgId: string,
+  personId: string,
+  event: string,
+  since: Date,
+): Promise<boolean> {
+  const db = await getDb();
+  const hit = await db.collection(C.events).findOne({
+    orgId,
+    personId,
+    type: `site_event:${event}`,
+    ts: { $gte: since },
+  });
+  return Boolean(hit);
+}
+
+/**
+ * Whether they said so themselves.
+ *
+ * Reads what `record_reply` already wrote rather than the words again. A session read the
+ * reply once and named what it meant; re-reading it here would be a second opinion nobody
+ * asked for, and the two could disagree.
+ */
+async function replySaidSo(
+  orgId: string,
+  personId: string,
+  intents: string[],
+  since: Date,
+): Promise<boolean> {
+  if (intents.length === 0) return false;
+  const db = await getDb();
+  const hit = await db.collection(C.events).findOne({
+    orgId,
+    personId,
+    type: "reply_recorded",
+    "payload.intent": { $in: intents },
+    ts: { $gte: since },
+  });
+  return Boolean(hit);
 }
 
 export interface VerifySummary {
@@ -218,7 +272,44 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
     // A settled fact is not re-asked. Account created once is created forever.
     if (results[check.key] === true && check.latch !== false) continue;
 
+    // Nobody asks a human check. It sits false until resolve_check writes a verdict, and
+    // the engine leaving it alone is what makes that verdict stick rather than being
+    // overwritten on the next tick.
+    if (check.kind === "human") continue;
+
+    if (check.kind === "page" || check.kind === "reply") {
+      const passed =
+        check.kind === "page"
+          ? await pageReported(orgId, String(instance.personId), String(check.event ?? ""), since)
+          : await replySaidSo(orgId, String(instance.personId), check.intents ?? [], since);
+      ranAny = true;
+      probes[check.key] = {
+        source: check.kind,
+        at: new Date(),
+        engineReading: passed,
+        ...(check.kind === "page" ? { event: check.event } : { intents: check.intents }),
+      };
+
+      if (passed && results[check.key] !== true) {
+        results[check.key] = true;
+        await db.collection(C.events).insertOne({
+          _id: new ObjectId(),
+          orgId,
+          productId: String(instance.productId),
+          personId: String(instance.personId),
+          source: "product",
+          type: `check_passed:${check.key}`,
+          payload: { describedAs: check.describedAs, via: check.kind },
+          ts: new Date(),
+        });
+      } else if (!passed) {
+        results[check.key] = false;
+      }
+      continue;
+    }
+
     try {
+      if (!check.connectionId || !check.tool || !check.assert) continue;
       const connection = await db
         .collection(C.connections)
         .findOne({ _id: new ObjectId(check.connectionId), orgId });
@@ -226,7 +317,7 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
 
       const token = await resolveSecret(orgId, check.connectionId, "engine.verify");
       const client = new McpClient(String(connection.serverUrl), token, await schemasFor(check.connectionId));
-      const sentArgs = resolveArgs(check.args, person, since);
+      const sentArgs = resolveArgs(check.args ?? {}, person, since);
       const payload = await client.callTool(check.tool, sentArgs);
 
       const mismatches = scopeEchoMismatches(sentArgs, payload);

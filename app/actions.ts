@@ -18,6 +18,7 @@ import {
 } from "@/auth/google.js";
 import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
+import { asset } from "@/schemas/asset.js";
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
@@ -2502,4 +2503,153 @@ export async function saveManualBrand(formData: FormData) {
   await rebuildKit(orgId, productId);
   revalidatePath(`/products/${productId}/brand`);
   revalidatePath(`/products/${productId}/templates`);
+}
+
+/**
+ * Assets: the things we can show a person that are not sentences.
+ *
+ * One writer for both create and edit, because an asset is small enough that the two forms
+ * are the same form. The key is derived from the name and then frozen — Claude refers to an
+ * asset by key in its rationale, and a key that moved when somebody renamed a file would
+ * make every earlier rationale point at nothing.
+ */
+export async function saveAsset(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+  const assetId = String(formData.get("assetId") ?? "").trim();
+
+  const text = (field: string) => String(formData.get(field) ?? "").trim();
+  const list = (field: string, sep: RegExp) =>
+    text(field).split(sep).map((v) => v.trim()).filter(Boolean);
+
+  const name = text("name") || "Untitled";
+  const kind = text("kind") || "image";
+
+  // An expiry is a day, not an instant: "good until the 30th" means through the 30th in the
+  // reader's day, so it lands at the end of that day in IST rather than at its midnight.
+  const expiresOn = text("expiresAt");
+  const expiresAt = expiresOn ? fromIstInput(`${expiresOn}T23:59`) : undefined;
+
+  const doc = {
+    orgId,
+    productId,
+    name,
+    kind,
+    tier: text("tier") || "C",
+    file:
+      kind === "quote" || kind === "stat" || kind === "access"
+        ? undefined
+        : {
+            url: text("url"),
+            thumbUrl: text("thumbUrl") || undefined,
+            durationSec: Number(formData.get("durationSec") ?? 0) || undefined,
+          },
+    access:
+      kind === "access"
+        ? {
+            bookingUrl: text("bookingUrl") || undefined,
+            repName: text("repName") || undefined,
+            repRole: text("repRole") || undefined,
+            repEmail: text("repEmail") || undefined,
+            repPhone: text("repPhone") || undefined,
+            availability: text("availability") || undefined,
+          }
+        : undefined,
+    text: text("text") || undefined,
+    attribution: text("attribution") || undefined,
+
+    // The three sentences the whole feature turns on. Required by the schema, so an asset
+    // that a model could not choose between cannot be saved in the first place.
+    useWhen: text("useWhen"),
+    proves: text("proves"),
+    oneLine: text("oneLine"),
+
+    claims: list("claims", /\n+/),
+    forSegment: formData.getAll("forSegment").map(String).filter(Boolean),
+    answers: list("answers", /,/),
+    tags: list("tags", /,/),
+    language: text("language") || "en",
+    channels: formData.getAll("channels").map(String).filter(Boolean),
+    requiresApproval: formData.get("requiresApproval") === "on",
+    expiresAt,
+    origin: "human" as const,
+    status: text("status") || "draft",
+  };
+
+  // Validated against the schema rather than trusted, because this is the one document in
+  // the system a model reads to make a choice. An asset missing `proves` would sit in every
+  // menu forever as a row nothing can pick.
+  const existing = assetId
+    ? await db.collection(C.assets).findOne({ _id: new ObjectId(assetId), orgId, productId })
+    : null;
+  // Keys are unique per product and a name like "Demo" is one people reach for twice. A
+  // second one takes `demo_2` rather than failing on the index with a Mongo error nobody
+  // reading this form could act on.
+  const key = existing ? String(existing.key) : await freeAssetKey(orgId, productId, slugify(text("key") || name));
+  const parsed = asset.parse({
+    ...doc,
+    key,
+    usage: existing?.usage ?? {},
+    createdAt: existing?.createdAt ?? new Date(),
+  });
+
+  if (existing) {
+    // `usage` and `createdAt` are the asset's history and are never rewritten by a save.
+    const { usage: _usage, createdAt: _createdAt, ...editable } = parsed;
+    await db.collection(C.assets).updateOne({ _id: existing._id }, { $set: editable });
+  } else {
+    await db.collection(C.assets).insertOne({ ...parsed, createdBy: (await requireSession()).userId });
+  }
+
+  revalidatePath(`/products/${productId}/assets`);
+}
+
+/** The first unused key in the `demo`, `demo_2`, `demo_3` series. */
+async function freeAssetKey(orgId: string, productId: string, base: string): Promise<string> {
+  const db = await getDb();
+  const stem = base || "asset";
+  for (let n = 1; n < 100; n += 1) {
+    const candidate = n === 1 ? stem : `${stem}_${n}`;
+    const taken = await db.collection(C.assets).countDocuments({ orgId, productId, key: candidate });
+    if (!taken) return candidate;
+  }
+  return `${stem}_${Date.now()}`;
+}
+
+/** Draft ⇄ active ⇄ archived. Only active assets reach a menu. */
+export async function setAssetStatus(productId: string, assetId: string, status: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  await db
+    .collection(C.assets)
+    .updateOne({ _id: new ObjectId(assetId), orgId, productId }, { $set: { status } });
+  revalidatePath(`/products/${productId}/assets`);
+}
+
+/**
+ * Refused while any unsent message still names it.
+ *
+ * A queued or held action carries asset ids, and the block is rendered from the asset at
+ * send time — deleting one underneath a message that is waiting in Review turns it into a
+ * gap nobody notices until the recipient reads it. Archiving takes it out of every future
+ * menu and leaves the messages already written intact, which is what people mean.
+ */
+export async function deleteAsset(productId: string, assetId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+
+  const pending = await db.collection(C.actions).countDocuments({
+    orgId,
+    productId,
+    assetIds: assetId,
+    status: { $in: ["queued", "held", "awaiting_approval", "sending"] },
+  });
+  if (pending > 0) {
+    await setAssetStatus(productId, assetId, "archived");
+    return;
+  }
+
+  await db.collection(C.assets).deleteOne({ _id: new ObjectId(assetId), orgId, productId });
+  revalidatePath(`/products/${productId}/assets`);
 }

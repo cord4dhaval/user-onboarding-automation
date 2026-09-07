@@ -6,6 +6,7 @@ import { renderHtml } from "./html.js";
 import { loadBrandKit } from "./brand.js";
 import { resolveTemplateFor } from "./templates.js";
 import { mergeVarsFor } from "./vars.js";
+import { renderableAssets } from "./assets.js";
 
 /**
  * What a message that has not been rendered yet will say when it goes out.
@@ -49,7 +50,13 @@ export async function previewContent(
 
   const vars = mergeVarsFor(person, product);
   const prior = action.content as Partial<ComposedContent> | undefined;
-  const content = renderTemplate(template.blocks as Record<string, unknown>[], vars, prior);
+  // A reviewer has to see what they are approving, and half the decision on a message that
+  // carries something is the thing it carries. Loaded the same way the sender loads it.
+  const toRender = {
+    ...prior,
+    assets: await renderableAssets(orgId, productId, action.assetIds),
+  };
+  const content = renderTemplate(template.blocks as Record<string, unknown>[], vars, toRender);
 
   const channel = action.channelId
     ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(action.channelId)) })
@@ -60,7 +67,7 @@ export async function previewContent(
   let bodyHtml: string | undefined;
   if (wantsHtml && String(action.channel) === "email" && caps.html !== false) {
     bodyHtml = renderHtml(
-      resolveBlocks(template.blocks as Record<string, unknown>[], vars, prior),
+      resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender),
       await loadBrandKit(orgId, productId),
     );
   }
