@@ -5,6 +5,17 @@ export interface OutboundMessage {
   bodyHtml?: string;
   from?: string;
   replyTo?: string;
+  /**
+   * The conversation this message belongs to, when it is not the first one.
+   *
+   * `threadId` is the provider's own handle and is what actually groups the message in the
+   * recipient's client. `inReplyTo` and `references` are the RFC 5322 headers that every
+   * other mail client threads on, so both are set: a provider id alone threads in Gmail and
+   * nowhere else.
+   */
+  threadId?: string;
+  inReplyTo?: string;
+  references?: string[];
 }
 
 export interface SendResult {
@@ -17,6 +28,9 @@ export interface SendResult {
    */
   disposition: "sent" | "queued";
   detail?: string;
+  /** The conversation this landed in, and the id later messages must reference to join it. */
+  threadId?: string;
+  messageId?: string;
 }
 
 /**
