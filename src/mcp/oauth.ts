@@ -183,6 +183,54 @@ export async function refreshToken(args: {
     body,
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new Error(`token refresh failed: HTTP ${res.status}`);
+  if (!res.ok) throw await refusalFrom(res);
   return (await res.json()) as TokenResponse;
+}
+
+/**
+ * Why a refresh was refused, and whether asking again could ever work.
+ *
+ * The distinction is the whole point: a server that says `invalid_grant` has thrown the
+ * refresh token away and no amount of retrying brings it back, while a 502 from a proxy
+ * says nothing about the token at all. Treating those the same is how one bad minute
+ * turns into a connection that is dead until somebody reconnects it by hand.
+ */
+export class TokenRefreshError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  /** True when the refusal is about this moment rather than about the grant. */
+  readonly transient: boolean;
+
+  constructor(status: number, code: string | undefined, description: string | undefined) {
+    super(
+      `token refresh failed: HTTP ${status}${code ? ` ${code}` : ""}${description ? ` — ${description}` : ""}`,
+    );
+    this.name = "TokenRefreshError";
+    this.status = status;
+    this.code = code;
+    // 5xx and 429 are the server's problem; 408 is ours and equally momentary. Everything
+    // else at 4xx is a judgement about the grant itself.
+    this.transient = status >= 500 || status === 429 || status === 408;
+  }
+}
+
+/**
+ * The OAuth error code out of a failed token response.
+ *
+ * Only the code and its description are read. Token endpoints echo request detail — which
+ * includes the refresh token — back in error bodies, so nothing else from the body travels
+ * any further than this function.
+ */
+async function refusalFrom(res: Response): Promise<TokenRefreshError> {
+  let code: string | undefined;
+  let description: string | undefined;
+  try {
+    const parsed = (await res.json()) as { error?: unknown; error_description?: unknown };
+    if (typeof parsed.error === "string") code = parsed.error;
+    if (typeof parsed.error_description === "string") description = parsed.error_description.slice(0, 200);
+  } catch {
+    // A token endpoint that answers an error with HTML has told us everything it is going
+    // to; the status is the diagnosis.
+  }
+  return new TokenRefreshError(res.status, code, description);
 }

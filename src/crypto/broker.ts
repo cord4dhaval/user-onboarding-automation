@@ -2,7 +2,7 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { openSecret, sealSecret, type SealedSecret } from "./envelope.js";
-import { refreshToken, type AuthServerMetadata } from "../mcp/oauth.js";
+import { refreshToken, TokenRefreshError, type AuthServerMetadata } from "../mcp/oauth.js";
 import { googleClient, refreshGoogleToken } from "../auth/google.js";
 
 /**
@@ -15,15 +15,26 @@ import { googleClient, refreshGoogleToken } from "../auth/google.js";
  */
 export async function resolveSecret(orgId: string, connectionId: string, actor: string): Promise<string> {
   const db = await getDb();
+  // "expired" is included deliberately. It marks a credential whose access token has run
+  // out, not one whose refresh token has — and refusing to look at it is what made a single
+  // failed refresh permanent. If the refresh below works, the credential comes back to
+  // verified on its own; if it cannot, the throw at the bottom of this function is the same
+  // error as before.
   const doc = await db.collection(C.credentials).findOne({
     orgId,
     connectionId,
-    status: { $in: ["verified", "degraded"] },
+    status: { $in: ["verified", "degraded", "expired"] },
   });
   if (!doc) throw new Error(`no usable credential for connection ${connectionId}`);
 
   const refreshed = await refreshIfExpiring(orgId, connectionId, doc);
   if (refreshed) return refreshed;
+
+  // Nothing was refreshed, so what is left is the stored access token. Handing back an
+  // expired one would send with a credential we already know the provider will reject.
+  if (String(doc.status) === "expired") {
+    throw new Error(`no usable credential for connection ${connectionId} — reconnect this server`);
+  }
 
   await db.collection(C.audit).insertOne({
     _id: new ObjectId(),
@@ -96,17 +107,39 @@ async function refreshIfExpiring(
       },
     );
     return tokens.access_token;
-  } catch {
-    // Escalate rather than fail silently: the channel goes degraded and drops out of the
-    // planner's candidate set until someone reconnects it.
-    await db.collection(C.credentials).updateOne({ orgId, connectionId }, { $set: { status: "expired" } });
+  } catch (err) {
+    // A refusal and a bad minute are not the same event, and treating them as one is what
+    // took this product down for fifteen hours: a single failed refresh marked the
+    // credential expired, `resolveSecret` stops looking at expired credentials, and so the
+    // refresh that would have worked on the next send was never attempted again. The
+    // refresh token was valid the whole time — replaying the same call by hand the next
+    // morning returned HTTP 200.
+    const refusal = err instanceof TokenRefreshError ? err : undefined;
+    const transient = refusal ? refusal.transient : true; // a network error is not a verdict
+
+    if (transient) {
+      // Left alone: same status, same refreshAfter, so the next send tries again. The
+      // reason is recorded so a run of these is visible rather than looking like silence.
+      await db
+        .collection(C.credentials)
+        .updateOne({ orgId, connectionId }, { $set: { lastRefreshError: String(refusal ?? err), lastRefreshErrorAt: new Date() } });
+      throw new Error(
+        `token refresh could not be completed (${refusal ? `HTTP ${refusal.status}` : "network"}) — will retry on the next send`,
+      );
+    }
+
+    // A real refusal: the grant is gone and only a human reconnecting brings it back.
+    await db.collection(C.credentials).updateOne(
+      { orgId, connectionId },
+      { $set: { status: "expired", lastRefreshError: String(refusal), lastRefreshErrorAt: new Date() } },
+    );
     await db
       .collection(C.connections)
-      .updateOne({ _id: new ObjectId(connectionId) }, { $set: { status: "degraded" } });
+      .updateOne({ _id: new ObjectId(connectionId) }, { $set: { status: "degraded", lastError: String(refusal) } });
     throw new Error(
       isProvider
-        ? "Google refused the refresh token — reconnect this mailbox"
-        : "OAuth token expired and refresh failed — reconnect this server",
+        ? `Google refused the refresh token (${refusal?.code ?? "no code"}) — reconnect this mailbox`
+        : `${new URL(String(connection.serverUrl)).host} refused the refresh token (${refusal?.code ?? "no code"}) — reconnect this server`,
     );
   }
 }
