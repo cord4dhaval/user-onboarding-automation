@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { TOOLS, type ToolCtx } from "@/mcp/server/tools.js";
 import { resolveAccessToken } from "@/auth/oauth-server.js";
@@ -43,12 +44,17 @@ async function callerFor(request: NextRequest): Promise<ToolCtx | null> {
   const token = header.startsWith("Bearer ") ? header.slice(7) : request.nextUrl.searchParams.get("token");
   if (!token) return null;
 
+  // One connector, many sessions: a scheduled routine and the person setting a product up
+  // hold the same token, so the session id is the only thing that tells them apart. It is
+  // what run boundaries and the routine scope check are drawn on.
+  const sessionId = request.headers.get("mcp-session-id") ?? undefined;
+
   const caller = await resolveAccessToken(token);
-  if (caller) return { orgId: caller.orgId, userId: caller.userId };
+  if (caller) return { orgId: caller.orgId, userId: caller.userId, sessionId };
 
   // Development escape hatch: a single static token, only when one is configured.
   if (process.env.MCP_TOKEN && token === process.env.MCP_TOKEN && process.env.MCP_DEV_ORG_ID) {
-    return { orgId: process.env.MCP_DEV_ORG_ID, userId: "dev" };
+    return { orgId: process.env.MCP_DEV_ORG_ID, userId: "dev", sessionId };
   }
   return null;
 }
@@ -74,11 +80,22 @@ export async function POST(request: NextRequest) {
     NextResponse.json({ jsonrpc: "2.0", id, error: { code, message } });
 
   if (method === "initialize") {
-    return reply({
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: { tools: {} },
-      serverInfo: { name: "conversion-engine", version: "0.1.0" },
-    });
+    // Handing back a session id is what makes one session distinguishable from the next: a
+    // compliant client echoes it on every later call, so a routine's run and a person's run
+    // stop being the same row merely because they share a token.
+    const sessionId = ctx.sessionId ?? randomUUID();
+    return NextResponse.json(
+      {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: { tools: {} },
+          serverInfo: { name: "conversion-engine", version: "0.1.0" },
+        },
+      },
+      { headers: { "Mcp-Session-Id": sessionId } },
+    );
   }
 
   if (method.startsWith("notifications/")) return new NextResponse(null, { status: 202 });
@@ -103,7 +120,7 @@ export async function POST(request: NextRequest) {
     // A routine that has declared itself may only use its own tools. Refused as a tool
     // error rather than a protocol one, so it lands in the run log where a person can see
     // which routine reached for what.
-    const outOfScope = await refuseOutOfScope(ctx.orgId, ctx.userId, name);
+    const outOfScope = await refuseOutOfScope(ctx, name);
     if (outOfScope) {
       await recordToolCall({ ...ctx, tool: name, args, error: outOfScope, ms: 0 });
       return reply({ content: [{ type: "text", text: `Error: ${outOfScope}` }], isError: true });

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Settings } from "lucide-react";
 import Drawer from "../../../../ui/drawer";
 import { Button, SubmitButton } from "../../../../ui/kit";
+import Select from "../../../../ui/select";
 
 export default function SettingsDrawer({
   productId,
@@ -56,10 +57,15 @@ export default function SettingsDrawer({
           {isEmail && (
             <label>
               Format
-              <select name="format" defaultValue={current.format}>
-                <option value="html">Designed HTML</option>
-                <option value="text">Plain text only</option>
-              </select>
+              <Select
+                name="format"
+                value={current.format}
+                ariaLabel="Which version the recipient is shown"
+                options={[
+                  { value: "html", label: "Designed HTML" },
+                  { value: "text", label: "Plain text only" },
+                ]}
+              />
               <span className="hint">
                 Both versions are always written. This decides which one the recipient is shown —
                 HTML carries the text alongside it, so nobody ever gets an empty message.
@@ -69,11 +75,16 @@ export default function SettingsDrawer({
 
           <label>
             Status
-            <select name="status" defaultValue={current.status}>
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="paused">Paused</option>
-            </select>
+            <Select
+              name="status"
+              value={current.status}
+              ariaLabel="Template status"
+              options={[
+                { value: "draft", label: "Draft", hint: "never picked by the cascade" },
+                { value: "active", label: "Active" },
+                { value: "paused", label: "Paused" },
+              ]}
+            />
             <span className="hint">A draft is never picked by the cascade.</span>
           </label>
 

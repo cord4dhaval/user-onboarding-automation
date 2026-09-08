@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Globe, Palette, Plus, Server } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
+import Select from "../../../ui/select";
 
 export interface ConnectionChoice {
   id: string;
@@ -71,13 +72,13 @@ export function AddSourceDrawer({
             <label>
               Connection
               {connections.length ? (
-                <select name="connectionId" required>
-                  {connections.map((connection) => (
-                    <option key={connection.id} value={connection.id}>
-                      {connection.provider}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  name="connectionId"
+                  value={connections[0]?.id ?? ""}
+                  searchable={connections.length > 8}
+                  ariaLabel="Connection this brand source reads through"
+                  options={connections.map((c) => ({ value: c.id, label: c.provider }))}
+                />
               ) : (
                 <span className="hint">
                   No connections yet. <a href={`/products/${productId}/connections?connect=1`}>Add an MCP server</a> first.

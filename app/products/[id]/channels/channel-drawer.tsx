@@ -6,6 +6,7 @@ import { Globe, Mail, Plug, ShieldCheck, Server } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { FormatChoice, SendToolFields } from "./channel-fields";
 import { catalogById, transportsFor, type TransportId } from "@/channels/catalog.js";
+import Select from "../../../ui/select";
 
 export interface ConnectionTools {
   id: string;
@@ -252,13 +253,14 @@ export default function ChannelDrawer({
 
           <label>
             Replies arrive in
-            <select name="inboxConnectionId" required>
-              {readable.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.email}
-                </option>
-              ))}
-            </select>
+            <Select
+              name="inboxConnectionId"
+              value={readable[0]?.id ?? ""}
+              searchable={readable.length > 8}
+              ariaLabel="Mailbox replies arrive in"
+              placeholder="— no readable mailbox connected —"
+              options={readable.map((m) => ({ value: m.id, label: m.email }))}
+            />
             <span className="sub tight">
               The mailbox we read answers from. Required — a domain cannot receive.
             </span>

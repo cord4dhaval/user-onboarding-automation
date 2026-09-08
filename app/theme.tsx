@@ -5,8 +5,11 @@ import { Monitor, Moon, Sun } from "lucide-react";
 
 type Theme = "light" | "dark" | "system";
 
-const LABEL: Record<Theme, string> = { light: "Light", dark: "Dark", system: "System" };
-const NEXT: Record<Theme, Theme> = { system: "light", light: "dark", dark: "system" };
+const OPTIONS: Array<{ key: Theme; label: string; icon: typeof Sun }> = [
+  { key: "light", label: "Light", icon: Sun },
+  { key: "dark", label: "Dark", icon: Moon },
+  { key: "system", label: "System", icon: Monitor },
+];
 
 /**
  * Three states, not two. "System" leaves the root element unstamped so the media query
@@ -23,7 +26,12 @@ export function applyTheme(theme: Theme) {
   }
 }
 
-export default function ThemeToggle() {
+/**
+ * The three options shown at once rather than a button that cycles through them. Inside a
+ * menu there is room to say which state is current and what the alternatives are, which a
+ * single cycling icon can only imply.
+ */
+export function ThemeChoice() {
   const [theme, setTheme] = useState<Theme>("system");
 
   useEffect(() => {
@@ -36,19 +44,22 @@ export default function ThemeToggle() {
   }, []);
 
   return (
-    <button
-      type="button"
-      className="quiet sm"
-      title={`Theme: ${LABEL[theme]}`}
-      aria-label={`Theme: ${LABEL[theme]}. Change`}
-      onClick={() => {
-        const next = NEXT[theme];
-        setTheme(next);
-        applyTheme(next);
-      }}
-    >
-      {theme === "dark" ? <Moon size={15} /> : theme === "light" ? <Sun size={15} /> : <Monitor size={15} />}
-    </button>
+    <div className="seg" role="group" aria-label="Theme">
+      {OPTIONS.map(({ key, label, icon: Icon }) => (
+        <button
+          key={key}
+          type="button"
+          className={key === theme ? "on" : ""}
+          aria-pressed={key === theme}
+          onClick={() => {
+            setTheme(key);
+            applyTheme(key);
+          }}
+        >
+          <Icon size={14} /> {label}
+        </button>
+      ))}
+    </div>
   );
 }
 

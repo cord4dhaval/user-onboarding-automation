@@ -4,6 +4,7 @@ import { useState } from "react";
 import { UserPlus } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
+import Select from "../../../ui/select";
 
 export default function ImportDrawer({
   productId,
@@ -30,10 +31,15 @@ export default function ImportDrawer({
 
           <label>
             How
-            <select value={mode} onChange={(e) => setMode(e.target.value as "paste" | "file")}>
-              <option value="paste">Paste addresses</option>
-              <option value="file">Upload a spreadsheet</option>
-            </select>
+            <Select
+              value={mode}
+              onValueChange={(next) => setMode(next as "paste" | "file")}
+              ariaLabel="How to add these people"
+              options={[
+                { value: "paste", label: "Paste addresses", hint: "one per line" },
+                { value: "file", label: "Upload a spreadsheet", hint: "xlsx or csv" },
+              ]}
+            />
           </label>
 
           {mode === "paste" ? (

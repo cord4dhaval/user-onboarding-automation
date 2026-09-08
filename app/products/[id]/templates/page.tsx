@@ -12,6 +12,7 @@ import { requireSession, scope } from "../../../tenant";
 import BrandBadge from "../../../ui/brand-badge";
 import ClaudeBadge from "../../../ui/claude-badge";
 import { ActionButton } from "../../../ui/kit";
+import Select from "../../../ui/select";
 import TemplateDrawer from "./template-drawer";
 
 export const dynamic = "force-dynamic";
@@ -116,18 +117,22 @@ export default async function Templates({
           <form method="get" className="toolbar">
             <label className="inline">
               Preview against
-              <select name="lead" defaultValue={personId}>
-                <option value="sample">Sample lead — Priya Nair</option>
-                {people.map((p) => (
-                  <option key={String(p._id)} value={String(p._id)}>
-                    {String(p.name ?? p.primaryEmail)}
-                  </option>
-                ))}
-              </select>
+              <Select
+                name="lead"
+                value={personId}
+                submitOnChange
+                searchable={people.length > 8}
+                width={260}
+                ariaLabel="Preview templates against this person"
+                options={[
+                  { value: "sample", label: "Sample lead — Priya Nair" },
+                  ...people.map((p) => ({
+                    value: String(p._id),
+                    label: String(p.name ?? p.primaryEmail),
+                  })),
+                ]}
+              />
             </label>
-            <button type="submit" className="quiet sm">
-              Apply
-            </button>
           </form>
 
           <div className="tw">

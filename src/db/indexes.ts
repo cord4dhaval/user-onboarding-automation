@@ -85,10 +85,15 @@ export async function ensureIndexes(): Promise<void> {
     { name: "routine_identity", unique: true },
   );
 
+  // The open-run lookup gained the session id, so its index changed shape. Mongo refuses a
+  // redefinition under an existing name, so the old one goes before the new one is made.
+  await db.collection(C.routineRuns).dropIndex("open_run").catch(() => undefined);
+
   await db.collection(C.routineRuns).createIndexes([
     { key: { orgId: 1, productId: 1, startedAt: -1 }, name: "run_log" },
-    // Resolving which open run a tool call belongs to, on every single call.
-    { key: { orgId: 1, userId: 1, status: 1, lastCallAt: -1 }, name: "open_run" },
+    // Resolving which open run a tool call belongs to, on every single call. Keyed on the
+    // session too, because one token runs both the scheduled routines and the person.
+    { key: { orgId: 1, userId: 1, sessionId: 1, status: 1, lastCallAt: -1 }, name: "open_run" },
     { key: { status: 1, lastCallAt: 1 }, name: "idle_runs" },
     // Counters are read daily and stay a month; the raw calls below are read twice a year
     // and would be the bulk of the collection, so they go sooner.

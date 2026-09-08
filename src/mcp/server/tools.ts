@@ -36,6 +36,8 @@ import {
 export interface ToolCtx {
   orgId: string;
   userId: string;
+  /** The MCP session this call arrived on, where the client names one. Runs are scoped to it. */
+  sessionId?: string;
 }
 
 export interface ToolDef {

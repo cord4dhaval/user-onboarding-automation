@@ -1,4 +1,4 @@
-import { Bot, Filter, Layers, MessageSquare, MousePointerClick, Mail, Search, Users } from "lucide-react";
+import { Bot, Layers, MessageSquare, MousePointerClick, Mail, Users } from "lucide-react";
 import { audienceCount, queryLibrary, type DeliveryState } from "@/engine/library.js";
 import { peopleEngagement, peopleMatching, type EngagementState } from "@/engine/engagement.js";
 import { replyReach } from "@/engine/reach.js";
@@ -8,7 +8,9 @@ import { deleteAudience, importPeople, saveAudience } from "../../../actions";
 import { requireSession, scope } from "../../../tenant";
 import ClaudeBadge from "../../../ui/claude-badge";
 import ConfirmButton from "../../../ui/confirm";
-import { SubmitButton, Tabs } from "../../../ui/kit";
+import { Tabs } from "../../../ui/kit";
+import Select from "../../../ui/select";
+import FilterSearch from "../../../ui/filter-search";
 import AudienceDrawer from "../audiences/audience-drawer";
 import ImportDrawer from "./import-drawer";
 import { istDay, ist } from "../../../ui/time";
@@ -234,53 +236,68 @@ export default async function Audience({
             })}
           </div>
 
+          {/* One GET form. The search settles before it submits and each menu submits on
+              pick, so there is no Apply button to forget. */}
           <form method="get" className="row" style={{ marginBottom: 18 }}>
-            <div style={{ position: "relative", flex: "0 1 320px" }}>
-              <Search
-                size={15}
-                style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", opacity: .5 }}
-              />
-              <input
-                name="q"
-                defaultValue={q ?? ""}
-                placeholder="Search name, email or company"
-                style={{ paddingLeft: 33 }}
-              />
-            </div>
-            <select name="state" defaultValue={state ?? ""} style={{ maxWidth: 200 }}>
-              <option value="">Everyone ({everyone})</option>
-              {STATES.map((st) => (
-                <option key={st} value={st}>{st} ({counts[st] ?? 0})</option>
-              ))}
-            </select>
-            <select name="campaign" defaultValue={campaign ?? ""} style={{ maxWidth: 220 }}>
-              <option value="">Any campaign</option>
-              {goals.map((g) => (
-                <option key={String(g.key)} value={String(g.key)}>{String(g.name ?? g.key)}</option>
-              ))}
-            </select>
-            <select name="delivery" defaultValue={deliveryKey ?? ""} style={{ maxWidth: 220 }}>
-              <option value="">Any delivery</option>
-              {DELIVERY.map((d) => (
-                <option
-                  key={d.key}
-                  value={d.key}
-                  disabled={d.key === "delivered" && everConfirmed === 0}
-                >
-                  {d.key === "delivered" && everConfirmed === 0
-                    ? "delivered — this channel never confirms"
-                    : d.label}
-                </option>
-              ))}
-            </select>
-            <select name="engagement" defaultValue={engagementKey ?? ""} style={{ maxWidth: 220 }}>
-              <option value="">Any response</option>
-              {ENGAGEMENT.map((e) => (
-                <option key={e.key} value={e.key}>{e.label}</option>
-              ))}
-            </select>
+            <FilterSearch
+              defaultValue={q ?? ""}
+              placeholder="Search name, email or company"
+              ariaLabel="Search people by name, email or company"
+            />
+            <Select
+              name="state"
+              value={state ?? ""}
+              submitOnChange
+              width={190}
+              ariaLabel="Filter by lifecycle state"
+              options={[
+                { value: "", label: `Everyone (${everyone})` },
+                ...STATES.map((st) => ({ value: st, label: `${st} (${counts[st] ?? 0})` })),
+              ]}
+            />
+            <Select
+              name="campaign"
+              value={campaign ?? ""}
+              submitOnChange
+              searchable={goals.length > 8}
+              width={200}
+              ariaLabel="Filter by campaign"
+              options={[
+                { value: "", label: "Any campaign" },
+                ...goals.map((g) => ({ value: String(g.key), label: String(g.name ?? g.key) })),
+              ]}
+            />
+            <Select
+              name="delivery"
+              value={deliveryKey ?? ""}
+              submitOnChange
+              width={210}
+              ariaLabel="Filter by delivery state"
+              options={[
+                { value: "", label: "Any delivery" },
+                ...DELIVERY.map((d) => ({
+                  value: d.key,
+                  label: d.label,
+                  disabled: d.key === "delivered" && everConfirmed === 0,
+                  hint:
+                    d.key === "delivered" && everConfirmed === 0
+                      ? "this channel never confirms"
+                      : undefined,
+                })),
+              ]}
+            />
+            <Select
+              name="engagement"
+              value={engagementKey ?? ""}
+              submitOnChange
+              width={200}
+              ariaLabel="Filter by response"
+              options={[
+                { value: "", label: "Any response" },
+                ...ENGAGEMENT.map((e) => ({ value: e.key, label: e.label })),
+              ]}
+            />
             {tab && <input type="hidden" name="tab" value={tab} />}
-            <SubmitButton variant="quiet" icon={<Filter />} pendingLabel="Filtering…">Filter</SubmitButton>
           </form>
 
           {state && (

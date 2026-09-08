@@ -15,6 +15,7 @@ import { requireSession} from "../../../../tenant";
 import { RefreshCw, Save } from "lucide-react";
 import { SubmitButton } from "../../../../ui/kit";
 import { ist } from "../../../../ui/time";
+import Select from "../../../../ui/select";
 
 export const dynamic = "force-dynamic";
 
@@ -170,9 +171,14 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
                   <input type="hidden" name="verb" value={verb.key} />
                   <label>
                     Tool
-                    <select name="tool" defaultValue={chosen?.name}>
-                      {pool.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
-                    </select>
+                    <Select
+                      name="tool"
+                      value={chosen?.name ?? pool[0]?.name ?? ""}
+                      searchable={pool.length > 8}
+                      ariaLabel={`Tool bound to ${verb.key}`}
+                      placeholder="— nothing this connection exposes —"
+                      options={pool.map((t) => ({ value: t.name, label: t.name }))}
+                    />
                   </label>
                   {Object.keys(props).map((arg) => (
                     <label key={arg}>

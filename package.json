@@ -28,6 +28,7 @@
     "test:signals": "tsx --env-file=.env src/scripts/signal-test.ts",
     "gmail:check": "tsx --env-file=.env src/scripts/gmail-check.ts",
     "verify:orchestration": "tsx --env-file=.env src/scripts/verify-orchestration.ts",
+    "verify:scope": "tsx --env-file=.env src/scripts/verify-scope.ts",
     "repair:dead": "tsx --env-file=.env src/scripts/repair-dead-actions.ts",
     "dedupe:review": "tsx --env-file=.env src/scripts/dedupe-review-queue.ts",
     "backfill:notices": "tsx --env-file=.env src/scripts/backfill-engagement-notices.ts",

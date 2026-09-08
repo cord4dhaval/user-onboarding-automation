@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Spinner } from "./kit";
+import Select from "./select";
 
 interface BusyState {
   busy: boolean;
@@ -80,30 +81,33 @@ export function BusyLink({
   );
 }
 
-/** A `<select>` that navigates on change, with the same pending signal as a BusyLink. */
+/** A menu that navigates on pick, with the same pending signal as a BusyLink. */
 export function BusySelect({
   value,
   options,
   name,
+  width,
+  ariaLabel,
 }: {
   value: string;
   options: Array<{ value: string; label: string; href: string }>;
   name?: string;
+  width?: number | string;
+  ariaLabel?: string;
 }) {
   const { go } = useBusy();
   return (
-    <select
+    <Select
       name={name}
       value={value}
-      onChange={(event) => {
-        const picked = options.find((o) => o.value === event.target.value);
+      width={width}
+      ariaLabel={ariaLabel}
+      options={options.map((o) => ({ value: o.value, label: o.label }))}
+      onValueChange={(next) => {
+        const picked = options.find((o) => o.value === next);
         if (picked) go(picked.href);
       }}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-    </select>
+    />
   );
 }
 

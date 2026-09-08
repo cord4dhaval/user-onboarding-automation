@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Globe, Plug, Upload, Users } from "lucide-react";
 import type { ReactNode } from "react";
+import Select from "../../../ui/select";
 
 export interface ToolChoice {
   value: string;
@@ -66,14 +67,18 @@ export default function InputPicker({
       {type === "audience" && (
         <label>
           Which audience
-          <select name="audienceId" defaultValue={audiences[0]?.id}>
-            {audiences.length === 0 && <option value="">— none built yet —</option>}
-            {audiences.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} — {a.size} {a.size === 1 ? "person" : "people"} ({a.kind})
-              </option>
-            ))}
-          </select>
+          <Select
+            name="audienceId"
+            value={audiences[0]?.id ?? ""}
+            searchable={audiences.length > 8}
+            ariaLabel="Audience this campaign draws from"
+            placeholder="— none built yet —"
+            options={audiences.map((a) => ({
+              value: a.id,
+              label: a.name,
+              hint: `${a.size} ${a.size === 1 ? "person" : "people"} · ${a.kind}`,
+            }))}
+          />
           <span className="muted" style={{ fontSize: 12.5 }}>
             {audiences.length === 0 ? (
               <>
@@ -89,14 +94,18 @@ export default function InputPicker({
       {type === "mcp" && (
         <label>
           Which tool returns the leads
-          <select name="mcpTool" defaultValue={toolChoices[0]?.value}>
-            {toolChoices.length === 0 && <option value="">— no discovered tools —</option>}
-            {toolChoices.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.likely ? `★ ${t.label}` : t.label}
-              </option>
-            ))}
-          </select>
+          <Select
+            name="mcpTool"
+            value={toolChoices[0]?.value ?? ""}
+            searchable={toolChoices.length > 8}
+            ariaLabel="Tool that fetches new people"
+            placeholder="— no discovered tools —"
+            options={toolChoices.map((t) => ({
+              value: t.value,
+              label: t.label,
+              hint: t.likely ? "likely the one you want" : undefined,
+            }))}
+          />
           {toolChoices.length === 0 && (
             <span className="muted" style={{ fontSize: 12.5 }}>
               <a href={`/products/${productId}/connections`}>Connect a server</a> and run Discover tools first.
@@ -161,13 +170,18 @@ export default function InputPicker({
       {recurring && (
         <label>
           Check for new people
-          <select name="fetchEverySec" defaultValue="600">
-            <option value="300">Every 5 minutes</option>
-            <option value="600">Every 10 minutes</option>
-            <option value="1800">Every 30 minutes</option>
-            <option value="3600">Every hour</option>
-            <option value="86400">Once a day</option>
-          </select>
+          <Select
+            name="fetchEverySec"
+            value="600"
+            ariaLabel="How often to fetch"
+            options={[
+              { value: "300", label: "Every 5 minutes" },
+              { value: "600", label: "Every 10 minutes" },
+              { value: "1800", label: "Every 30 minutes" },
+              { value: "3600", label: "Every hour" },
+              { value: "86400", label: "Once a day" },
+            ]}
+          />
         </label>
       )}
     </>

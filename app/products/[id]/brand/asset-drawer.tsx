@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pencil, Plus } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
+import Select, { MultiSelect } from "../../../ui/select";
 
 export interface AssetDraft {
   id: string;
@@ -99,24 +100,35 @@ export default function AssetDrawer({
           <div className="grid">
             <label>
               Kind
-              <select name="kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-                <option value="document">Document</option>
-                <option value="link">Link</option>
-                <option value="quote">Quote</option>
-                <option value="stat">Stat</option>
-                <option value="access">Access — how to reach us</option>
-              </select>
+              <Select
+                name="kind"
+                value={kind}
+                onValueChange={setKind}
+                ariaLabel="Kind of asset"
+                options={[
+                  { value: "image", label: "Image" },
+                  { value: "video", label: "Video" },
+                  { value: "document", label: "Document" },
+                  { value: "link", label: "Link" },
+                  { value: "quote", label: "Quote" },
+                  { value: "stat", label: "Stat" },
+                  { value: "access", label: "Access", hint: "how to reach us" },
+                ]}
+              />
             </label>
             <label>
               Tier
-              <select name="tier" defaultValue={existing?.tier ?? (access ? "A" : "C")}>
-                <option value="D">D — ambient, costs a glance</option>
-                <option value="C">C — generic, reads in a minute</option>
-                <option value="B">B — invested, asks for attention</option>
-                <option value="A">A — personal, asks for trust</option>
-              </select>
+              <Select
+                name="tier"
+                value={existing?.tier ?? (access ? "A" : "C")}
+                ariaLabel="What this asset asks of the reader"
+                options={[
+                  { value: "D", label: "D — ambient", hint: "costs a glance" },
+                  { value: "C", label: "C — generic", hint: "reads in a minute" },
+                  { value: "B", label: "B — invested", hint: "asks for attention" },
+                  { value: "A", label: "A — personal", hint: "asks for trust" },
+                ]}
+              />
             </label>
           </div>
 
@@ -230,15 +242,24 @@ export default function AssetDrawer({
           <div className="grid">
             <label>
               For segments <span className="muted">— none means all</span>
-              <select name="forSegment" multiple defaultValue={existing?.forSegment ?? []} size={Math.min(4, Math.max(2, segmentKeys.length))}>
-                {segmentKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
+              <MultiSelect
+                name="forSegment"
+                values={existing?.forSegment ?? []}
+                placeholder="All segments"
+                searchable={segmentKeys.length > 8}
+                ariaLabel="Segments this asset may be shown to"
+                options={segmentKeys.map((k) => ({ value: k, label: k }))}
+              />
             </label>
             <label>
               Channels
-              <select name="channels" multiple defaultValue={existing?.channels ?? ["email"]} size={Math.min(4, Math.max(2, channelKeys.length))}>
-                {channelKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
+              <MultiSelect
+                name="channels"
+                values={existing?.channels ?? ["email"]}
+                placeholder="No channel"
+                ariaLabel="Channels this asset may go out on"
+                options={channelKeys.map((k) => ({ value: k, label: k }))}
+              />
             </label>
           </div>
 
@@ -260,11 +281,16 @@ export default function AssetDrawer({
             </label>
             <label>
               State
-              <select name="status" defaultValue={existing?.status ?? "draft"}>
-                <option value="draft">Draft — never picked</option>
-                <option value="active">Active — may be picked</option>
-                <option value="archived">Archived</option>
-              </select>
+              <Select
+                name="status"
+                value={existing?.status ?? "draft"}
+                ariaLabel="Asset state"
+                options={[
+                  { value: "draft", label: "Draft", hint: "never picked" },
+                  { value: "active", label: "Active", hint: "may be picked" },
+                  { value: "archived", label: "Archived" },
+                ]}
+              />
             </label>
           </div>
 

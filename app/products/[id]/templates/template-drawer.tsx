@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
+import Select from "../../../ui/select";
 
 /**
  * Six fields, and four of them have a sane default. The blocks are where a template is
@@ -44,21 +45,32 @@ export default function TemplateDrawer({
 
           <label>
             Channel
-            <select name="channel" value={channel} onChange={(e) => setChannel(e.target.value)}>
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="slack">Slack</option>
-            </select>
+            <Select
+              name="channel"
+              value={channel}
+              onValueChange={setChannel}
+              ariaLabel="Channel this template is written for"
+              options={[
+                { value: "email", label: "Email" },
+                { value: "sms", label: "SMS" },
+                { value: "whatsapp", label: "WhatsApp" },
+                { value: "slack", label: "Slack" },
+              ]}
+            />
           </label>
 
           {channel === "email" && (
             <label>
               Format
-              <select name="format" defaultValue="html">
-                <option value="html">Designed HTML</option>
-                <option value="text">Plain text only</option>
-              </select>
+              <Select
+                name="format"
+                value="html"
+                ariaLabel="Which version the recipient is shown"
+                options={[
+                  { value: "html", label: "Designed HTML" },
+                  { value: "text", label: "Plain text only" },
+                ]}
+              />
               <span className="hint">
                 Both are always written; this decides which one the recipient is shown.
               </span>
@@ -73,10 +85,16 @@ export default function TemplateDrawer({
 
           <label>
             Scope
-            <select name="scope" value={scope} onChange={(e) => setScope(e.target.value)}>
-              <option value="product_default">Product default</option>
-              <option value="segment">One segment</option>
-            </select>
+            <Select
+              name="scope"
+              value={scope}
+              onValueChange={setScope}
+              ariaLabel="Who this template applies to"
+              options={[
+                { value: "product_default", label: "Product default" },
+                { value: "segment", label: "One segment" },
+              ]}
+            />
             <span className="hint">A segment template overrides the default for people it matches.</span>
           </label>
 
@@ -84,13 +102,13 @@ export default function TemplateDrawer({
             <label>
               Segment
               {segmentKeys.length ? (
-                <select name="segmentKey" required>
-                  {segmentKeys.map((key) => (
-                    <option key={key} value={key}>
-                      {key}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  name="segmentKey"
+                  value={segmentKeys[0] ?? ""}
+                  searchable={segmentKeys.length > 8}
+                  ariaLabel="Segment this template overrides for"
+                  options={segmentKeys.map((key) => ({ value: key, label: key }))}
+                />
               ) : (
                 <input name="segmentKey" placeholder="agency_owner" required />
               )}

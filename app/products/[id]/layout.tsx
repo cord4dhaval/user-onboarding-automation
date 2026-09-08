@@ -1,12 +1,10 @@
 import type { ReactNode } from "react";
-import { LogOut, Settings, Zap } from "lucide-react";
+import { Settings, Zap } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { getProduct, requireSession } from "../../tenant";
-import { logOut } from "../../auth-actions";
-import ThemeToggle from "../../theme";
+import { getAccount, getProduct, requireSession } from "../../tenant";
+import AccountMenu from "../../ui/account-menu";
 import Notifications from "../../ui/notifications";
-import { SubmitButton } from "../../ui/kit";
 import { ToastProvider } from "../../ui/toast";
 import Nav from "./nav";
 
@@ -34,7 +32,8 @@ export default async function ProductLayout({
   }
 
   const db = await getDb();
-  const [products, review] = await Promise.all([
+  const [account, products, review] = await Promise.all([
+    getAccount(session),
     db.collection(C.products).find({ orgId: session.orgId }).sort({ createdAt: 1 }).toArray(),
     db
       .collection(C.actions)
@@ -73,11 +72,7 @@ export default async function ProductLayout({
 
           <span className="spacer" />
           <Notifications productId={id} />
-          <ThemeToggle />
-          <span className="muted" style={{ fontSize: 13 }}>{session.email}</span>
-          <form action={logOut}>
-            <SubmitButton variant="quiet" size="sm" icon={<LogOut />} aria-label="Sign out" />
-          </form>
+          <AccountMenu name={account.name} email={account.email} orgName={account.orgName} />
         </header>
 
         <main className="page">{children}</main>

@@ -441,7 +441,7 @@ export default async function PersonPage({
           {past.map((entry, i) => (
             <div key={i}>
               <span className="t-when" title={istLong(entry.at)}>{ist(entry.at)}</span>
-              <span className={`t-mark ${entry.mark ?? ""}`} />
+              <span className={`t-mark ${entry.mark ? `m-${entry.mark}` : ""}`} />
               <span>{entry.node}</span>
             </div>
           ))}
@@ -459,7 +459,7 @@ export default async function PersonPage({
               return (
                 <div key={String(action._id)} className="future">
                   <span className="t-when" title={istLong(action.dueAt)}>{ist(action.dueAt)}</span>
-                  <span className="t-mark next" />
+                  <span className="t-mark m-next" />
                   <span>
                     <div className="t-line">
                       <strong>{content.subject ?? `Message on ${String(action.channel)}`}</strong>

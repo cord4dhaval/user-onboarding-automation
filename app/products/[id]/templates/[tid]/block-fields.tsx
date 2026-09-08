@@ -1,5 +1,7 @@
 "use client";
 
+import Select from "../../../../ui/select";
+
 /**
  * The editable fields for one block, keyed by type.
  *
@@ -58,11 +60,16 @@ export default function BlockFields({ block }: { block: Record<string, unknown> 
       <>
         <label>
           Level
-          <select name="level" defaultValue={String(block.level ?? 1)}>
-            <option value="1">1 — display</option>
-            <option value="2">2 — section</option>
-            <option value="3">3 — small</option>
-          </select>
+          <Select
+            name="level"
+            value={String(block.level ?? 1)}
+            ariaLabel="Heading level"
+            options={[
+              { value: "1", label: "1 — display" },
+              { value: "2", label: "2 — section" },
+              { value: "3", label: "3 — small" },
+            ]}
+          />
         </label>
         <label>
           Fixed text <span className="muted">— leave empty to have Claude write it</span>
@@ -86,11 +93,16 @@ export default function BlockFields({ block }: { block: Record<string, unknown> 
       <>
         <label>
           Style
-          <select name="style" defaultValue={String(block.style ?? "bullet")}>
-            <option value="bullet">Bullets</option>
-            <option value="check">Ticks</option>
-            <option value="strike">Struck through</option>
-          </select>
+          <Select
+            name="style"
+            value={String(block.style ?? "bullet")}
+            ariaLabel="List style"
+            options={[
+              { value: "bullet", label: "Bullets" },
+              { value: "check", label: "Ticks" },
+              { value: "strike", label: "Struck through" },
+            ]}
+          />
         </label>
         <label>
           Items <span className="muted">— one per line</span>

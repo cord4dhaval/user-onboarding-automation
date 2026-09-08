@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plug, Plus, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
+import Select from "../../../ui/select";
 
 type Probe = { oauth: boolean; dcr: boolean; error?: string };
 
@@ -158,14 +159,23 @@ export default function ConnectionDrawer({
 
           <label>
             Method
-            <select value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option value="oauth">
-                {creating ? "OAuth — approve on the provider's own screen" : "OAuth — sign in as the new account"}
-              </option>
-              <option value="token">
-                {creating ? "Access token — paste a bearer token" : "Access token — paste the new account's token"}
-              </option>
-            </select>
+            <Select
+              value={method}
+              onValueChange={setMethod}
+              ariaLabel="How to authenticate"
+              options={[
+                {
+                  value: "oauth",
+                  label: "OAuth",
+                  hint: creating ? "approve on the provider's own screen" : "sign in as the new account",
+                },
+                {
+                  value: "token",
+                  label: "Access token",
+                  hint: creating ? "paste a bearer token" : "paste the new account's token",
+                },
+              ]}
+            />
           </label>
 
           {method === "oauth" ? (

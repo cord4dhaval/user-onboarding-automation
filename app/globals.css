@@ -556,6 +556,57 @@ button.destructive { background: var(--bad); border-color: var(--bad); color: #f
 .bell-panel li a { font-size: 13px; }
 .bell-panel li button { margin-left: auto; padding: 2px 7px; }
 
+/* ── account menu ─────────────────────────────────────────────────────────── */
+/* One control for identity, navigation, theme and the way out. The avatar is the only
+   thing the top bar spends on an account that is read once a session. */
+.acct { position: relative; display: inline-flex; }
+.avatar {
+  width: 30px; height: 30px; padding: 0; flex: none;
+  display: inline-grid; place-items: center;
+  border-radius: 999px; border: 1px solid var(--rule);
+  background: var(--accent-soft); color: var(--accent);
+  font-family: var(--font-mono), monospace; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  cursor: pointer;
+}
+.avatar:hover { border-color: var(--accent); filter: none; }
+.avatar.lg { width: 36px; height: 36px; font-size: 12.5px; cursor: default; }
+
+.acct-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: 262px; max-width: 90vw;
+  background: var(--ground); border: 1px solid var(--rule); border-radius: var(--r);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.acct-id {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--rule); font-size: 14px;
+}
+.acct-id > div { min-width: 0; display: flex; flex-direction: column; }
+.acct-id strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Email and workspace are for confirming which account this is, not for reading. */
+.acct-email {
+  font-size: 12px; color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.acct-links { display: flex; flex-direction: column; padding: 6px; border-bottom: 1px solid var(--rule); }
+.acct-links a {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px; border-radius: var(--r-sm);
+  color: var(--ink-2); font-size: 13.5px;
+}
+.acct-links a:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+.acct-links svg { flex: none; opacity: .8; }
+
+.acct-theme {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 11px 14px; border-bottom: 1px solid var(--rule);
+}
+.acct-theme .seg { display: flex; }
+.acct-theme .seg button { flex: 1; justify-content: center; gap: 5px; padding: 5px 6px; }
+
+.acct-out { padding: 7px 8px; }
+.acct-out button { width: 100%; justify-content: flex-start; gap: 9px; padding: 7px 8px; }
+
 /* ── claude badge ─────────────────────────────────────────────────────────── */
 .claude-badge {
   display: inline-flex; align-items: center; gap: 5px;
@@ -566,45 +617,49 @@ button.destructive { background: var(--bad); border-color: var(--bad); color: #f
 .claude-note { color: var(--ink-3); font-weight: 400; }
 
 /* ── timeline ─────────────────────────────────────────────────────────────── */
-.timeline { display: flex; flex-direction: column; margin-bottom: 22px; }
+.timeline { display: flex; flex-direction: column; margin-bottom: 18px; }
+/* The stamp column is wide enough for the whole stamp on one line: wrapping it to two
+   was costing every entry a line of height it did not need. */
 .timeline > div {
-  display: grid; grid-template-columns: 116px 14px 1fr; gap: 10px;
-  align-items: start; padding: 7px 0; font-size: 14px;
+  display: grid; grid-template-columns: 124px 12px minmax(0, 1fr); gap: 9px;
+  align-items: start; padding: 3px 0; font-size: 13.5px;
 }
 .timeline .t-when {
-  font-family: var(--font-mono), monospace; font-size: 11.5px;
+  font-family: var(--font-mono), monospace; font-size: 10.5px; white-space: nowrap;
   color: var(--ink-3); padding-top: 3px; font-variant-numeric: tabular-nums;
 }
 /* A single column: filled markers for what happened, hollow for what is scheduled. */
 .timeline .t-mark { position: relative; display: flex; justify-content: center; height: 100%; }
 .timeline .t-mark::before {
-  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
   background: var(--ink-3); margin-top: 6px; z-index: 1;
 }
 .timeline .t-mark::after {
-  content: ""; position: absolute; top: 6px; bottom: -8px; width: 1px; background: var(--rule);
+  content: ""; position: absolute; top: 6px; bottom: -4px; width: 1px; background: var(--rule);
 }
 .timeline > div:last-child .t-mark::after { display: none; }
-.timeline .t-mark.signal::before { background: var(--good); }
-.timeline .t-mark.next::before { background: transparent; border: 1.5px dashed var(--accent); }
+.timeline .t-mark.m-signal::before { background: var(--good); }
+.timeline .t-mark.m-next::before { background: transparent; border: 1.5px dashed var(--accent); }
 .timeline .future strong { color: var(--ink-2); }
 /* Something they did, not something we did. Green marker, and the heading takes the
    colour too — a lead's own action should be findable in a long timeline at a glance. */
-.timeline .t-mark.bad::before { background: var(--bad); }
+.timeline .t-mark.m-bad::before { background: var(--bad); }
 .timeline strong { display: inline-flex; align-items: center; gap: 6px; }
 .timeline strong.hit { color: var(--good); }
 .timeline strong svg { flex: none; opacity: .75; }
 .timeline strong.hit svg { opacity: 1; }
 /* The subject and its preview control share a line, so the button never pushes the
    detail lines out of the column they belong to. */
-.timeline .t-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.timeline .t-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .timeline .t-line button { padding: 2px 8px; font-size: 12px; }
-.timeline .t-detail { font-size: 12.5px; margin-top: 3px; line-height: 1.5; }
+/* The reason a message was chosen runs to a paragraph. Capped, so it reads as a note on
+   the entry rather than as the widest thing on the page. */
+.timeline .t-detail { font-size: 12px; margin-top: 2px; line-height: 1.45; max-width: 84ch; }
 .timeline .t-detail .mono { word-break: break-all; }
 .timeline .responded { margin-top: 5px; }
 /* Their words, verbatim. Indented rather than boxed: it is a quotation, not a panel. */
 .timeline .t-quote {
-  margin: 6px 0 0; padding: 8px 12px; border-left: 2px solid var(--good);
+  margin: 5px 0 0; padding: 7px 11px; border-left: 2px solid var(--good);
   background: var(--surface-2); border-radius: 0 var(--r-sm) var(--r-sm) 0;
   font-size: 13px; line-height: 1.6; white-space: pre-wrap; color: var(--ink-2);
   max-width: 72ch;
@@ -1242,7 +1297,7 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 /* ── add product ───────────────────────────────────────────────────────────── */
 
 .page.narrow { --page-max: 880px; }
-.topbar .email { font-size: 13px; }
+
 
 /* The recommended path, marked as one. Two options presented identically is a decision
    the reader has to make with no information. */
@@ -1286,19 +1341,35 @@ details > summary:hover { color: var(--ink); }
    list it is meant to filter. One control, searched, is the same shape at any count. */
 .combo { position: relative; }
 
+/* The search box in a filter row. The icon doubles as the pending signal, so a settle
+   that is still in flight is visible without a second control appearing. */
+.filter-search { position: relative; display: flex; align-items: center; }
+.filter-search > svg, .filter-search > .spin {
+  position: absolute; left: 11px; color: var(--ink-3); pointer-events: none;
+}
+.filter-search input { padding-left: 34px; }
+
 .combo-trigger {
   display: inline-flex; align-items: center; gap: 8px;
   font: inherit; font-size: 13.5px; cursor: pointer;
   padding: 7px 10px; border-radius: var(--r-sm);
   border: 1px solid var(--rule); background: var(--surface); color: var(--ink);
 }
-.combo-trigger:hover { border-color: var(--ink-3); }
+/* The trigger is a control, not an action: it takes the field's surface, not the
+   accent fill that every bare <button> gets. */
+.combo-trigger { width: 100%; justify-content: flex-start; font-weight: 500; align-self: stretch; }
+.combo-trigger:hover { border-color: var(--ink-3); filter: none; }
+.combo-trigger .combo-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-trigger .combo-caret { margin-left: auto; flex: none; }
+.combo-trigger > svg:first-child { color: var(--ink-3); flex: none; }
 .combo-trigger[aria-expanded="true"] { border-color: var(--accent); }
 .combo-label { font-weight: 500; }
 .combo-caret { color: var(--ink-3); }
 
+/* Positioned from JavaScript against its trigger and portalled out of any scrolling
+   parent, so the offsets here are only a fallback. Above the drawer, which sits at 51. */
 .combo-menu {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; width: 300px;
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 70; width: max(100%, 300px);
   border: 1px solid var(--rule); border-radius: var(--r);
   background: var(--surface); box-shadow: var(--shadow); overflow: hidden;
 }
@@ -1311,16 +1382,24 @@ details > summary:hover { color: var(--ink); }
 .combo-list { max-height: 300px; overflow-y: auto; padding: 4px; }
 
 .combo-item {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: flex-start; gap: 8px; width: 100%;
   padding: 7px 8px; border-radius: var(--r-sm);
-  font-size: 13.5px; color: var(--ink); text-decoration: none;
+  font-size: 13.5px; font-weight: 400; color: var(--ink); text-decoration: none;
+  /* Undoes the filled accent every bare <button> gets. */
+  background: none; border: 0; justify-content: flex-start; text-align: left; align-self: stretch;
 }
-.combo-item:hover { background: var(--surface-2); text-decoration: none; }
+.combo-item:hover:not(:disabled) { background: var(--surface-2); text-decoration: none; filter: none; }
+.combo-item:disabled { opacity: .45; cursor: default; }
 .combo-item.on { background: var(--accent-soft); color: var(--accent); }
 .combo-item svg { flex: none; }
 /* Keeps every label on one column whether or not it carries a tick. */
 .combo-tick { width: 14px; flex: none; }
-.combo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-name { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* What the label could not say in three words, on the line under it. */
+.combo-hint { font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+.combo-item.on .combo-hint { color: var(--accent); opacity: .8; }
+.combo-menu.combo-end { left: auto; right: 0; }
+.combo-list .combo-item svg { margin-top: 2px; }
 .combo-none { padding: 12px 8px; font-size: 13px; margin: 0; }
 
 /* ── changing a message from its drawer ────────────────────────────────────── */

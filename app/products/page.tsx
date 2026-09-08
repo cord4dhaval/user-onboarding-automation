@@ -1,32 +1,26 @@
-import { LogOut } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { createProduct } from "../actions";
-import { requireSession } from "../tenant";
-import { logOut } from "../auth-actions";
-import ThemeToggle from "../theme";
-import { SubmitButton } from "../ui/kit";
+import { getAccount, requireSession } from "../tenant";
+import AccountMenu from "../ui/account-menu";
 import AddProduct from "./add-product";
 
 export const dynamic = "force-dynamic";
 
 export default async function Products() {
-  const { orgId, email } = await requireSession();
+  const session = await requireSession();
   const db = await getDb();
-  const products = await db.collection(C.products).find({ orgId }).sort({ createdAt: 1 }).toArray();
+  const [account, products] = await Promise.all([
+    getAccount(session),
+    db.collection(C.products).find({ orgId: session.orgId }).sort({ createdAt: 1 }).toArray(),
+  ]);
 
   return (
     <div>
       <header className="topbar">
         <span className="brand">Engine</span>
         <span className="spacer" />
-        <ThemeToggle />
-        <span className="muted email">{email}</span>
-        <form action={logOut}>
-          <SubmitButton variant="quiet" size="sm" icon={<LogOut />}>
-            Sign out
-          </SubmitButton>
-        </form>
+        <AccountMenu name={account.name} email={account.email} orgName={account.orgName} />
       </header>
 
       <main className="page narrow">

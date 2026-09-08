@@ -6,6 +6,7 @@ import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
 import { FormatChoice, SendToolFields, type ToolChoice } from "./channel-fields";
 import { WINDOW_LABEL, windowTime, type UsageWindow } from "./windows";
+import Select from "../../../ui/select";
 
 export interface ChannelSettings {
   id: string;
@@ -123,20 +124,24 @@ export default function ChannelSettingsDrawer({
             <div className="grid">
               <label>
                 Channel
-                <select name="key" defaultValue={channel.key}>
-                  <option value="email">email</option>
-                  <option value="whatsapp">whatsapp</option>
-                  <option value="sms">sms</option>
-                  <option value="in_app">in_app</option>
-                  <option value="push">push</option>
-                </select>
+                <Select
+                  name="key"
+                  value={channel.key}
+                  ariaLabel="Channel kind"
+                  options={["email", "whatsapp", "sms", "in_app", "push"].map((k) => ({ value: k, label: k }))}
+                />
               </label>
               <label>
                 Status
-                <select name="status" defaultValue={channel.status}>
-                  <option value="healthy">healthy — sends and is planned into</option>
-                  <option value="disabled">disabled — nothing sends or is planned</option>
-                </select>
+                <Select
+                  name="status"
+                  value={channel.status}
+                  ariaLabel="Channel status"
+                  options={[
+                    { value: "healthy", label: "healthy", hint: "sends and is planned into" },
+                    { value: "disabled", label: "disabled", hint: "nothing sends or is planned" },
+                  ]}
+                />
               </label>
             </div>
 

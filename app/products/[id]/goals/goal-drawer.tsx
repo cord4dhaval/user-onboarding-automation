@@ -5,6 +5,7 @@ import { Pencil, Plus } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
 import InputPicker, { type AudienceChoice, type ToolChoice } from "./input-picker";
+import Select from "../../../ui/select";
 
 export interface VerifierChoice {
   id: string;
@@ -101,20 +102,26 @@ export default function GoalDrawer({
 
           <label>
             Verified against
-            <select name="verifyConnectionId" defaultValue={existing?.verifyConnectionId ?? ""}>
-              {/* Present even when servers are connected. A campaign whose finish line is a
-                  reply or a page on your own site has nowhere to point a tool, and forcing
-                  it at one produced checks that asked the wrong question and passed
-                  everybody. Nothing is a real answer here. */}
-              <option value="">
-                {verifiers.length === 0 ? "— nothing connected yet —" : "— nothing to verify against —"}
-              </option>
-              {verifiers.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.provider} — {v.tools} tools
-                </option>
-              ))}
-            </select>
+            {/* The empty option is present even when servers are connected. A campaign whose
+                finish line is a reply or a page on your own site has nowhere to point a tool,
+                and forcing it at one produced checks that asked the wrong question and passed
+                everybody. Nothing is a real answer here. */}
+            <Select
+              name="verifyConnectionId"
+              value={existing?.verifyConnectionId ?? ""}
+              ariaLabel="What to verify the finish line against"
+              options={[
+                {
+                  value: "",
+                  label: verifiers.length === 0 ? "— nothing connected yet —" : "— nothing to verify against —",
+                },
+                ...verifiers.map((v) => ({
+                  value: v.id,
+                  label: v.provider,
+                  hint: `${v.tools} tools`,
+                })),
+              ]}
+            />
             <span className="reason">
               {verifiers.length === 0 ? (
                 <>
@@ -130,17 +137,22 @@ export default function GoalDrawer({
           <div className="grid">
             <label>
               First message
-              <select name="firstTouchTemplate" defaultValue={existing?.firstTouchTemplate}>
-                {templateKeys.length === 0 && <option value="welcome">welcome</option>}
-                {templateKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
+              <Select
+                name="firstTouchTemplate"
+                value={existing?.firstTouchTemplate ?? templateKeys[0] ?? "welcome"}
+                searchable={templateKeys.length > 8}
+                ariaLabel="Template the first message uses"
+                options={(templateKeys.length ? templateKeys : ["welcome"]).map((k) => ({ value: k, label: k }))}
+              />
             </label>
             <label>
               Sent by
-              <select name="primaryChannel" defaultValue={existing?.primaryChannel ?? channelKeys[0] ?? "email"}>
-                {channelKeys.length === 0 && <option value="email">email</option>}
-                {channelKeys.map((k) => <option key={k} value={k}>{k}</option>)}
-              </select>
+              <Select
+                name="primaryChannel"
+                value={existing?.primaryChannel ?? channelKeys[0] ?? "email"}
+                ariaLabel="Channel this campaign sends on"
+                options={(channelKeys.length ? channelKeys : ["email"]).map((k) => ({ value: k, label: k }))}
+              />
             </label>
           </div>
 
@@ -158,10 +170,15 @@ export default function GoalDrawer({
 
           <label>
             Before sending
-            <select name="approvalMode" defaultValue={existing?.approvalMode ?? "gate_on"}>
-              <option value="gate_on">Hold each for review</option>
-              <option value="auto_send">Send automatically</option>
-            </select>
+            <Select
+              name="approvalMode"
+              value={existing?.approvalMode ?? "gate_on"}
+              ariaLabel="Whether messages wait for a person"
+              options={[
+                { value: "gate_on", label: "Hold each for review", hint: "nothing leaves unapproved" },
+                { value: "auto_send", label: "Send automatically", hint: "the engine sends on its own clock" },
+              ]}
+            />
           </label>
 
           <SubmitButton pendingLabel={isEdit ? "Saving…" : "Creating…"}>

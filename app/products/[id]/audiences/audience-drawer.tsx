@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pencil, Plus } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, SubmitButton } from "../../../ui/kit";
+import Select from "../../../ui/select";
 
 const STATES = ["new", "active", "cooling", "dormant"] as const;
 const TEMPS = ["hot", "warm", "cold", "dead"] as const;
@@ -59,10 +60,16 @@ export default function AudienceDrawer({
 
           <label>
             Kind
-            <select name="kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="dynamic">Dynamic — membership updates itself</option>
-              <option value="static">Static — a fixed list you pick</option>
-            </select>
+            <Select
+              name="kind"
+              value={kind}
+              onValueChange={setKind}
+              ariaLabel="How membership is decided"
+              options={[
+                { value: "dynamic", label: "Dynamic", hint: "membership updates itself" },
+                { value: "static", label: "Static", hint: "a fixed list you pick" },
+              ]}
+            />
           </label>
 
           {kind === "dynamic" ? (
@@ -118,13 +125,18 @@ export default function AudienceDrawer({
                   control here was a checkbox that counted an image load as interest. */}
               <label>
                 What they did back
-                <select name="responded" defaultValue={String(f.responded ?? "")}>
-                  <option value="">Anyone, responded or not</option>
-                  <option value="clicked">Clicked a link</option>
-                  <option value="replied">Wrote back</option>
-                  <option value="any">Clicked or wrote back</option>
-                  <option value="never">Never responded</option>
-                </select>
+                <Select
+                  name="responded"
+                  value={String(f.responded ?? "")}
+                  ariaLabel="What they did back"
+                  options={[
+                    { value: "", label: "Anyone, responded or not" },
+                    { value: "clicked", label: "Clicked a link" },
+                    { value: "replied", label: "Wrote back" },
+                    { value: "any", label: "Clicked or wrote back" },
+                    { value: "never", label: "Never responded" },
+                  ]}
+                />
                 <span className="muted" style={{ fontSize: 12.5 }}>
                   Mail-gateway scans are never counted here — only what a person did.
                 </span>

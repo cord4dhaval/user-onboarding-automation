@@ -6,6 +6,7 @@ import {scope, requireSession} from "../../../tenant";
 import { Pause, Play, Plus } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { istShort } from "../../../ui/time";
+import Select from "../../../ui/select";
 
 export const dynamic = "force-dynamic";
 
@@ -118,35 +119,51 @@ export default async function Sources({ params }: { params: Promise<{ id: string
           <label>Name<input name="name" placeholder="TeamGrid new signups" required /></label>
           <label>
             Connection
-            <select name="connectionId">
-              {fetchable.length === 0 && <option value="">— none with a bound fetch tool —</option>}
-              {fetchable.map((c) => (
-                <option key={String(c._id)} value={String(c._id)}>{String(c.provider)}</option>
-              ))}
-            </select>
+            <Select
+              name="connectionId"
+              value={fetchable[0] ? String(fetchable[0]._id) : ""}
+              ariaLabel="Connection this source pulls through"
+              placeholder="— none with a bound fetch tool —"
+              options={fetchable.map((c) => ({ value: String(c._id), label: String(c.provider) }))}
+            />
           </label>
           <label>
             Kind
-            <select name="kind">
-              <option value="mcp_source">mcp_source</option>
-              <option value="api_pull">api_pull</option>
-              <option value="webhook_push">webhook_push</option>
-              <option value="excel_upload">excel_upload</option>
-            </select>
+            <Select
+              name="kind"
+              value="mcp_source"
+              ariaLabel="How this source hands us leads"
+              options={[
+                { value: "mcp_source", label: "mcp_source", hint: "a bound tool on a connection" },
+                { value: "api_pull", label: "api_pull", hint: "we call their endpoint on a timer" },
+                { value: "webhook_push", label: "webhook_push", hint: "they call us" },
+                { value: "excel_upload", label: "excel_upload", hint: "a spreadsheet, by hand" },
+              ]}
+            />
           </label>
           <label>
             Trigger mode
-            <select name="triggerMode">
-              <option value="realtime">realtime — first touch ignores quiet hours</option>
-              <option value="batch">batch — first touch waits for a civil hour</option>
-            </select>
+            <Select
+              name="triggerMode"
+              value="realtime"
+              ariaLabel="When the first touch may go out"
+              options={[
+                { value: "realtime", label: "realtime", hint: "first touch ignores quiet hours" },
+                { value: "batch", label: "batch", hint: "first touch waits for a civil hour" },
+              ]}
+            />
           </label>
           <label>Fetch interval (seconds)<input name="intervalSec" type="number" defaultValue={600} min={60} /></label>
           <label>
             Goal for new leads
-            <select name="defaultGoalKey">
-              {goals.map((g) => <option key={String(g.key)} value={String(g.key)}>{String(g.key)}</option>)}
-            </select>
+            <Select
+              name="defaultGoalKey"
+              value={goals[0] ? String(goals[0].key) : ""}
+              searchable={goals.length > 8}
+              ariaLabel="Campaign new leads from this source join"
+              placeholder="— no campaigns yet —"
+              options={goals.map((g) => ({ value: String(g.key), label: String(g.key) }))}
+            />
           </label>
           <label>
             Field map <span className="muted">(ours → theirs)</span>

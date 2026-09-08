@@ -187,6 +187,20 @@ interface OpenRunInput {
   productId: string;
   kind: RunKind;
   at: Date;
+  sessionId?: string;
+}
+
+/**
+ * Which runs belong to this caller.
+ *
+ * The session id is the only thing that separates a person working in Claude from the
+ * scheduled routine running an hour later: both authorise the same connector, so the token
+ * — and therefore orgId and userId — is identical for the two of them. A caller that sends
+ * no session id is matched only against runs that had none either, so a routine's open run
+ * can never capture a session that arrived after it.
+ */
+function callerScope(orgId: string, userId: string, sessionId?: string): Document {
+  return { orgId, userId, sessionId: sessionId ?? null };
 }
 
 async function openRun(input: OpenRunInput): Promise<ObjectId> {
@@ -197,6 +211,7 @@ async function openRun(input: OpenRunInput): Promise<ObjectId> {
     orgId: input.orgId,
     productId: input.productId,
     userId: input.userId,
+    sessionId: input.sessionId ?? null,
     routine: input.kind,
     status: "running" satisfies RunStatus,
     startedAt: input.at,
@@ -226,6 +241,7 @@ async function resolveRun(
   tool: string,
   args: Document,
   at: Date,
+  sessionId?: string,
 ): Promise<{ runId: ObjectId; productId: string }> {
   const db = await getDb();
   const argProductId = typeof args.product_id === "string" ? args.product_id : "";
@@ -236,7 +252,11 @@ async function resolveRun(
   const open = await db
     .collection(C.routineRuns)
     .findOne(
-      { orgId, userId, status: "running", lastCallAt: { $gte: new Date(at.getTime() - IDLE_CLOSE_MS) } },
+      {
+        ...callerScope(orgId, userId, sessionId),
+        status: "running",
+        lastCallAt: { $gte: new Date(at.getTime() - IDLE_CLOSE_MS) },
+      },
       { sort: { lastCallAt: -1 } },
     );
 
@@ -254,7 +274,7 @@ async function resolveRun(
 
     if (open) await finish(open, at);
     return {
-      runId: await openRun({ orgId, userId, productId: argProductId, kind: declared, at }),
+      runId: await openRun({ orgId, userId, productId: argProductId, kind: declared, at, sessionId }),
       productId: argProductId,
     };
   }
@@ -262,7 +282,7 @@ async function resolveRun(
   if (open) return adopt(open, argProductId);
 
   return {
-    runId: await openRun({ orgId, userId, productId: argProductId, kind: "ad-hoc", at }),
+    runId: await openRun({ orgId, userId, productId: argProductId, kind: "ad-hoc", at, sessionId }),
     productId: argProductId,
   };
 }
@@ -319,13 +339,21 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   maintain: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works"],
 };
 
-/** Which routine, if any, the caller is currently running as. Ad-hoc sessions return null. */
-export async function currentRoutine(orgId: string, userId: string): Promise<RoutineKey | null> {
+/** Which routine, if any, this session is currently running as. Ad-hoc sessions return null. */
+export async function currentRoutine(
+  orgId: string,
+  userId: string,
+  sessionId?: string,
+): Promise<RoutineKey | null> {
   const db = await getDb();
   const open = await db
     .collection(C.routineRuns)
     .findOne(
-      { orgId, userId, status: "running", lastCallAt: { $gte: new Date(Date.now() - IDLE_CLOSE_MS) } },
+      {
+        ...callerScope(orgId, userId, sessionId),
+        status: "running",
+        lastCallAt: { $gte: new Date(Date.now() - IDLE_CLOSE_MS) },
+      },
       { sort: { lastCallAt: -1 }, projection: { routine: 1 } },
     );
   const routine = open ? String(open.routine) : "";
@@ -335,9 +363,19 @@ export async function currentRoutine(orgId: string, userId: string): Promise<Rou
 /**
  * Refuses a tool that belongs to a different routine. Returns the reason, or null to allow.
  * A person driving the tools by hand is never restricted — only a declared routine is.
+ *
+ * That distinction rests entirely on the session id, because a scheduled routine and the
+ * person setting a product up authorise the same connector and arrive with the same token.
+ * A client that identifies no session is therefore never refused: onboarding a product runs
+ * add_product, upsert_template and draft_campaign from an ad-hoc session, and blocking that
+ * because a routine happened to be mid-run an hour earlier is the worse of the two mistakes.
  */
-export async function refuseOutOfScope(orgId: string, userId: string, tool: string): Promise<string | null> {
-  const routine = await currentRoutine(orgId, userId);
+export async function refuseOutOfScope(
+  caller: { orgId: string; userId: string; sessionId?: string },
+  tool: string,
+): Promise<string | null> {
+  if (!caller.sessionId) return null;
+  const routine = await currentRoutine(caller.orgId, caller.userId, caller.sessionId);
   if (!routine) return null;
   if (ROUTINE_TOOLS[routine].includes(tool)) return null;
 
@@ -352,6 +390,8 @@ export async function refuseOutOfScope(orgId: string, userId: string, tool: stri
 export interface ToolCallRecord {
   orgId: string;
   userId: string;
+  /** The MCP session the call arrived on, when the client names one. */
+  sessionId?: string;
   tool: string;
   args: Document;
   result?: unknown;
@@ -370,7 +410,14 @@ export async function recordToolCall(record: ToolCallRecord): Promise<void> {
   try {
     const db = await getDb();
     const at = record.at ?? new Date();
-    const { runId, productId } = await resolveRun(record.orgId, record.userId, record.tool, record.args, at);
+    const { runId, productId } = await resolveRun(
+      record.orgId,
+      record.userId,
+      record.tool,
+      record.args,
+      at,
+      record.sessionId,
+    );
 
     await db.collection(C.routineCalls).insertOne({
       _id: new ObjectId(),

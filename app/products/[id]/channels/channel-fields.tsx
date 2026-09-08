@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Select from "../../../ui/select";
 
 export interface ToolArg {
   name: string;
@@ -59,11 +60,14 @@ export function SendToolFields({
     <>
       <label>
         Which tool sends the message
-        <select name="sendTool" value={picked} onChange={(e) => setPicked(e.target.value)}>
-          {choices.map((c) => (
-            <option key={c.value} value={c.value}>{c.label}</option>
-          ))}
-        </select>
+        <Select
+          name="sendTool"
+          value={picked}
+          onValueChange={setPicked}
+          searchable={choices.length > 8}
+          ariaLabel="Tool that sends the message"
+          options={choices.map((c) => ({ value: c.value, label: c.label }))}
+        />
         <span className="muted" style={{ fontSize: 13 }}>
           {selected?.description
             ? selected.description.slice(0, 180)
@@ -118,10 +122,16 @@ export function FormatChoice({ current = "html" }: { current?: "html" | "text" }
   return (
     <label>
       <span>What this channel sends</span>
-      <select name="format" value={format} onChange={(e) => setFormat(e.target.value as "html" | "text")}>
-        <option value="html">Designed email — brand colours, buttons, layout</option>
-        <option value="text">Plain text — no HTML part at all</option>
-      </select>
+      <Select
+        name="format"
+        value={format}
+        onValueChange={(next) => setFormat(next as "html" | "text")}
+        ariaLabel="What this channel sends"
+        options={[
+          { value: "html", label: "Designed email", hint: "brand colours, buttons, layout" },
+          { value: "text", label: "Plain text", hint: "no HTML part at all" },
+        ]}
+      />
       <span className="muted" style={{ fontSize: 13 }}>
         {format === "html"
           ? "Only choose this where the provider actually accepts an HTML body."
