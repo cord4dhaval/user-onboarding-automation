@@ -1167,14 +1167,17 @@ export async function connectSesDomain(formData: FormData) {
   const domainArn = identityArn(domain);
   const configArn = configurationSetArn(identity.configurationSetName);
   let tenantReady = false;
+  let tenantReason: string | undefined;
   if (tenant && domainArn && configArn) {
     // Both, or neither. SendEmail with a TenantName is refused unless every resource it
     // references belongs to that tenant, so associating only the identity would produce a
     // channel that cannot send at all — strictly worse than no tenant.
-    const associated =
-      (await associateWithTenant(tenant.tenantName, domainArn)) &&
-      (await associateWithTenant(tenant.tenantName, configArn));
-    tenantReady = associated;
+    const identityBound = await associateWithTenant(tenant.tenantName, domainArn);
+    const configBound = identityBound.ok
+      ? await associateWithTenant(tenant.tenantName, configArn)
+      : { ok: false, reason: identityBound.reason };
+    tenantReady = configBound.ok;
+    tenantReason = configBound.reason;
   }
   const from = String(formData.get("from") ?? "").trim() || `hello@${domain}`;
   if (!from.endsWith(`@${domain}`)) {
@@ -1209,7 +1212,9 @@ export async function connectSesDomain(formData: FormData) {
         : {
             tenantSkipped: !tenant
               ? "Amazon refused to create a tenant — this domain sends on the account's shared reputation."
-              : "Tenant created but its resources could not be associated, so sending stays account-level.",
+              : `Tenant created but its resources could not be associated, so sending stays account-level.${
+                  tenantReason ? ` ${tenantReason}` : ""
+                }`,
           }),
     },
     accountEmail: from,

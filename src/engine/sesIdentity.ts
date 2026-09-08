@@ -284,6 +284,16 @@ export function configSetNameFor(productId: string): string {
   return `product-${productId}`;
 }
 
+/** Creates the configuration set for a product if it is not already there. Exposed because
+ * a resource cannot be associated with a tenant before it exists, and the sandbox test
+ * builds its own without going through createIdentity. */
+export async function ensureConfigSet(productId: string): Promise<string> {
+  const env = sesEnv();
+  const name = configSetNameFor(productId);
+  await ensureConfigurationSet(client(env), name, env);
+  return name;
+}
+
 async function ensureConfigurationSet(ses: SESv2Client, name: string, env: SesEnv): Promise<void> {
   try {
     await ses.send(new CreateConfigurationSetCommand({ ConfigurationSetName: name }));
@@ -366,14 +376,22 @@ export async function createTenant(
  * associated, because SendEmail with a TenantName fails unless every resource it references
  * belongs to that tenant — a half-associated tenant is a channel that cannot send at all.
  */
-export async function associateWithTenant(tenantName: string, resourceArn: string): Promise<boolean> {
+export async function associateWithTenant(
+  tenantName: string,
+  resourceArn: string,
+): Promise<{ ok: boolean; reason?: string }> {
   try {
     await client().send(
       new CreateTenantResourceAssociationCommand({ TenantName: tenantName, ResourceArn: resourceArn }),
     );
-    return true;
+    return { ok: true };
   } catch (err) {
-    return (err as { name?: string })?.name === "AlreadyExistsException";
+    // Already associated is success on a second connect for the same product.
+    if ((err as { name?: string })?.name === "AlreadyExistsException") return { ok: true };
+    // Returned rather than swallowed. A tenant that silently fails to bind leaves sending on
+    // the account's shared reputation, which is the failure this whole feature exists to
+    // avoid — and "associations failed" with no reason is not something anyone can act on.
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
 }
 

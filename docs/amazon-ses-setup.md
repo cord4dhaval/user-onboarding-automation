@@ -72,13 +72,32 @@ Set it in the console's region picker and use the same value for `AWS_REGION`.
         "ses:CreateConfigurationSetEventDestination",
         "ses:UpdateConfigurationSetEventDestination"
       ], "Resource": "*" },
-    { "Sid": "Send", "Effect": "Allow", "Action": ["ses:SendEmail"], "Resource": "*" },
+    { "Sid": "Tenants", "Effect": "Allow", "Action": [
+        "ses:CreateTenant", "ses:GetTenant", "ses:DeleteTenant", "ses:ListTenants",
+        "ses:CreateTenantResourceAssociation", "ses:DeleteTenantResourceAssociation",
+        "ses:PutTenantSuppressionAttributes",
+        "ses:GetReputationEntity", "ses:UpdateReputationEntityCustomerManagedStatus"
+      ], "Resource": "*" },
+    { "Sid": "Send", "Effect": "Allow", "Action": [
+        "ses:SendEmail", "ses:SendRawEmail"
+      ], "Resource": "*" },
     { "Sid": "Account", "Effect": "Allow", "Action": ["ses:GetAccount"], "Resource": "*" }
   ]
 }
 ```
 
 Name it `conversion-engine-ses-policy`, attach it, create the user.
+
+Two of those are easy to leave out and both fail late rather than at setup:
+
+- **`ses:SendRawEmail`** is a separate action from `ses:SendEmail`, and the one that
+  actually matters here. Every message goes out as raw MIME, because that is the only
+  content shape with somewhere to put `In-Reply-To` and `References` — a provider that
+  cannot carry those headers cannot hold a conversation. Without it, verification and
+  tenants all succeed and the first real send is refused.
+- **The `Tenants` block** decides whether each customer gets its own suppression list and
+  its own reputation entity. Missing it does not fail: sending falls back to the account's
+  shared reputation, where one customer's bought list can suspend everybody.
 
 Then **the user → Security credentials → Create access key → Application running outside
 AWS**. Copy both values now; the secret is shown once and never again.
@@ -138,24 +157,47 @@ Expect an answer in about 24 hours. Approved accounts typically start at 50,000 
 ## 7. Environment
 
 ```
-AWS_REGION=us-east-1
+AWS_REGION=ap-south-1
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
-SES_EVENT_TOPIC_ARN=arn:aws:sns:us-east-1:123456789012:ses-events
+AWS_ACCOUNT_ID=134163282831
+SES_EVENT_TOPIC_ARN=arn:aws:sns:ap-south-1:134163282831:ses-events
 ```
 
 In `.env` locally, and in the Vercel project settings for the deployment. The Channels page
-offers "your own domain" the moment the three AWS variables are set; the topic ARN is
-optional and only wires up event reporting.
+offers "your own domain" the moment the three AWS variables are set.
+
+`AWS_ACCOUNT_ID` is needed to build the ARNs a tenant association takes; without it the
+account id is read out of the topic ARN, and without either one tenants are skipped and
+sending falls back to the account's shared reputation. `SES_EVENT_TOPIC_ARN` only wires up
+event reporting.
 
 ## 8. Prove it works
 
 Domain verification runs in the sandbox, so all of this can be tested before AWS answers.
 
 ```bash
-npm run ses:check                    # account state, region, sandbox or production
+npm run ses:check                    # region, account, sandbox status, whether tenants are allowed
 npm run ses:check -- yourdomain.com  # create the identity and print the DNS records
 ```
+
+The first needs no domain either: it answers whether this account may create tenants, which
+decides how much isolation the design gets, and waiting for somebody who owns a domain
+before finding that out is a day spent on nothing.
+
+To prove the send path before anybody owns a domain, SES will verify a single address by
+mailing it a link:
+
+```bash
+npm run ses:sandbox -- you@example.com            # verify the address
+npm run ses:sandbox -- you@example.com --send     # send one real message to it
+npm run ses:sandbox -- you@example.com --cleanup  # remove the identity again
+```
+
+That exercises the adapter, the MIME builder, the tenant and both of its resource
+associations, and the Message-ID later replies thread against. It cannot prove DKIM
+alignment — only a domain can — and in the sandbox both ends have to be verified, so the
+address mails itself.
 
 ---
 

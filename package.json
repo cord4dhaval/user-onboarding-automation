@@ -19,6 +19,7 @@
     "seed:demo": "tsx --env-file=.env src/scripts/seed-demo.ts",
     "adopt": "tsx --env-file=.env src/scripts/adopt-connections.ts",
     "ses:check": "tsx --env-file=.env src/scripts/ses-check.ts",
+    "ses:sandbox": "tsx --env-file=.env src/scripts/ses-sandbox.ts",
     "backfill:mailbox": "tsx --env-file=.env src/scripts/backfill-mailbox.ts",
     "backfill:outcomes": "tsx --env-file=.env src/scripts/backfill-outcomes.ts",
     "test:track": "tsx --env-file=.env src/scripts/test-tracking.ts",

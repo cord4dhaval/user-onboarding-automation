@@ -108,10 +108,15 @@ async function main() {
     if (!domainArn || !configArn) {
       line("associations", "SKIPPED — no account id, so ARNs cannot be built");
     } else {
-      const both =
-        (await associateWithTenant(tenant.tenantName, domainArn)) &&
-        (await associateWithTenant(tenant.tenantName, configArn));
-      line("associations", both ? "identity and configuration set associated" : "FAILED — sending stays account-level");
+      const identityBound = await associateWithTenant(tenant.tenantName, domainArn);
+      const configBound = identityBound.ok
+        ? await associateWithTenant(tenant.tenantName, configArn)
+        : identityBound;
+      line(
+        "associations",
+        configBound.ok ? "identity and configuration set associated" : "FAILED — sending stays account-level",
+      );
+      if (!configBound.ok) line("why", configBound.reason ?? "no reason given");
     }
   }
 
