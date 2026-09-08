@@ -153,6 +153,21 @@ export async function buildRawMime(
     replyTo: message.replyTo,
     messageId: message.messageId,
     inReplyTo: message.inReplyTo,
+    // RFC 8058, written as headers rather than through nodemailer's `list` option: that
+    // option is handled by the transport, and this composer is used on its own, so it was
+    // silently dropped — the pair went out as List-Unsubscribe-Post with nothing to post to.
+    //
+    // Both or neither. List-Unsubscribe alone is the older two-step kind that Gmail and
+    // Yahoo no longer surface, and the pair is what the bulk sender rules ask for. The URL
+    // has to answer POST without asking anything further, which is what /api/u/[id] does.
+    ...(message.listUnsubscribeUrl
+      ? {
+          headers: {
+            "List-Unsubscribe": `<${message.listUnsubscribeUrl}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
+        }
+      : {}),
     // Oldest first, and the message being answered last: that order is what clients walk to
     // rebuild the conversation, and a shuffled chain reads as a broken one.
     references: message.references?.length ? message.references : undefined,

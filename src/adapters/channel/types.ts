@@ -16,6 +16,16 @@ export interface OutboundMessage {
   threadId?: string;
   inReplyTo?: string;
   references?: string[];
+  /**
+   * Where this person leaves, as a header rather than only as a link in the body.
+   *
+   * Gmail and Yahoo require it of anyone sending them bulk mail, and they enforce it by
+   * placing their own unsubscribe control next to the sender's name — which is a better
+   * outcome than the alternative the reader reaches for, which is the spam button. A
+   * complaint costs far more than an unsubscribe: it is the number that suspends a sending
+   * account, and it is attributed for months.
+   */
+  listUnsubscribeUrl?: string;
 }
 
 export interface SendResult {

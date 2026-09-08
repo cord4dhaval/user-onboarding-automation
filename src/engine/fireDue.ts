@@ -351,6 +351,16 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const outbound = toOutbound(content, email, channel.from as string | undefined);
       outbound.replyTo = channel.replyTo as string | undefined;
 
+      // The same address the body's opt-out link points at, promoted to a header so Gmail
+      // and Yahoo can offer their own unsubscribe control beside the sender's name. Where
+      // they cannot, the reader's remaining option is the spam button — and a complaint is
+      // the number that suspends a sending account, where an unsubscribe costs one lead.
+      //
+      // Never on a rehearsal or a reply. A dry run must not advertise a live one-click URL,
+      // and an answer to something a person wrote is one side of a conversation rather than
+      // bulk mail: an unsubscribe control under it reads as a form letter.
+      if (!dryRun && !isReply) outbound.listUnsubscribeUrl = vars.opt_out_url;
+
       // Continue the conversation this person is already in, rather than starting a third
       // one beside it. A follow-up that arrives as a fresh message reads as nobody having
       // seen what they wrote, which is the opposite of what a reply-driven sequence is for.
