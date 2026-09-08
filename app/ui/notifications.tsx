@@ -2,10 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { NotificationRow } from "@/engine/notify.js";
-import { Bell, CheckCheck, X } from "lucide-react";
+import { Bell, CheckCheck, CircleAlert, CircleCheck, Inbox, X } from "lucide-react";
 import { Button } from "./kit";
 
 const POLL_MS = 15000;
+
+/**
+ * Severity is read from the icon rather than from a stripe down the edge of the row:
+ * a stripe is a colour with no name on it, and three of them stacked read as decoration.
+ */
+const SEVERITY_ICON = {
+  critical: <CircleAlert size={16} />,
+  action: <Inbox size={16} />,
+  good: <CircleCheck size={16} />,
+} as const;
 
 /**
  * The bell. Colour follows the worst severity present, so a glance is enough to know
@@ -109,6 +119,9 @@ export default function Notifications({ productId }: { productId: string }) {
             <ul>
               {items.map((n) => (
                 <li key={n.id} className={n.severity}>
+                  <span className="ic" aria-hidden="true">
+                    {SEVERITY_ICON[n.severity as keyof typeof SEVERITY_ICON] ?? <Inbox size={16} />}
+                  </span>
                   <div>
                     <strong>{n.title}</strong>
                     {n.count > 1 && <span className="pill" style={{ marginLeft: 6 }}>×{n.count}</span>}

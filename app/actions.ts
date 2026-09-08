@@ -2866,7 +2866,7 @@ export async function saveAsset(formData: FormData) {
     await db.collection(C.assets).insertOne({ ...parsed, createdBy: (await requireSession()).userId });
   }
 
-  revalidatePath(`/products/${productId}/assets`);
+  revalidatePath(`/products/${productId}/brand`);
 }
 
 /** The first unused key in the `demo`, `demo_2`, `demo_3` series. */
@@ -2888,7 +2888,7 @@ export async function setAssetStatus(productId: string, assetId: string, status:
   await db
     .collection(C.assets)
     .updateOne({ _id: new ObjectId(assetId), orgId, productId }, { $set: { status } });
-  revalidatePath(`/products/${productId}/assets`);
+  revalidatePath(`/products/${productId}/brand`);
 }
 
 /**
@@ -2915,5 +2915,5 @@ export async function deleteAsset(productId: string, assetId: string, _formData?
   }
 
   await db.collection(C.assets).deleteOne({ _id: new ObjectId(assetId), orgId, productId });
-  revalidatePath(`/products/${productId}/assets`);
+  revalidatePath(`/products/${productId}/brand`);
 }

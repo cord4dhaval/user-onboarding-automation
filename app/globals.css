@@ -23,6 +23,10 @@
   --color-accent-fill: var(--accent-fill);
   --color-accent-soft: var(--accent-soft);
   --color-accent-ink: var(--accent-ink);
+  --color-cta: var(--cta);
+  --color-cta-fill: var(--cta-fill);
+  --color-cta-soft: var(--cta-soft);
+  --color-cta-ink: var(--cta-ink);
   --color-hot: var(--hot);
   --color-warm: var(--warm);
   --color-cold: var(--cold);
@@ -32,6 +36,10 @@
   --radius-DEFAULT: var(--r);
   --radius-lg: var(--r-lg);
   --shadow-panel: var(--shadow);
+  --shadow-e1: var(--e1);
+  --shadow-e2: var(--e2);
+  --shadow-e3: var(--e3);
+  --shadow-e4: var(--e4);
 }
 
 /* ── tokens ───────────────────────────────────────────────────────────────────
@@ -43,101 +51,137 @@
    colour carries meaning rather than decoration; blue is the single brand colour
    and never stands in for a state. */
 :root {
-  --ground: #F8F9FC;
+  --ground: #F1F5F5;
   --surface: #FFFFFF;
-  --surface-2: #EFF1F7;
-  --surface-3: #E4E8F2;
-  --ink: #0D1220;
-  --ink-2: #4E566B;
-  --ink-3: #828AA0;
-  --rule: #E2E6F0;
-  --rule-soft: #EFF1F7;
-  /* A navy this deep needs no split in light mode — 8.3:1 as text on the ground and
-     8.7:1 behind white as a fill, so --accent and --accent-fill are the same value.
-     They separate again on the dark ground, where a navy that dark disappears. */
-  --accent: #1E40AF;
-  --accent-fill: #1E40AF;
-  --accent-soft: #E8EDFB;
+  --surface-2: #E4EDED;
+  --surface-3: #D5E3E3;
+  --ink: #0B1F22;
+  --ink-2: #3F5C60;
+  --ink-3: #74908F;
+  --rule: #D8E5E5;
+  --rule-soft: #E4EDED;
+  /* A teal this deep needs no split in light mode — 8.9:1 as text on the ground and
+     9.4:1 behind white as a fill, so --accent and --accent-fill are the same value.
+     They separate again on the dark ground, where a teal that dark disappears. */
+  --accent: #026873;
+  --accent-fill: #026873;
+  --accent-soft: #D8EDEF;
   --accent-ink: #FFFFFF;
-  --hot: #E5342B;
-  --warm: #B87503;
-  --cold: #3F7FA6;
-  --good: #0D8A56;
-  --bad: #D11C48;
-  --hot-soft: #FDECEA;
-  --warm-soft: #FBF2DF;
-  --cold-soft: #EAF2F7;
-  --good-soft: #E2F4EC;
-  --bad-soft: #FCE8EE;
-  --shadow: 0 1px 2px rgba(13, 18, 32, .05), 0 10px 28px -20px rgba(13, 18, 32, .28);
+  /* The one colour on the console that is not teal, spent only on the action that
+     sends. A cyan CTA beside a teal accent reads as the same button twice. */
+  --cta: #4D7C0F;
+  --cta-fill: #4D7C0F;
+  --cta-soft: #EDF5DC;
+  --cta-ink: #FFFFFF;
+  --hot: #C0431C;
+  --warm: #92600B;
+  --cold: #35657F;
+  --good: #14714E;
+  --bad: #B3123C;
+  --hot-soft: #FBE7DF;
+  --warm-soft: #F5EEDC;
+  --cold-soft: #E2EDF2;
+  --good-soft: #DAEDE4;
+  --bad-soft: #FBE2E9;
+  /* Four steps rather than one, so a drawer can sit above a panel that sits above a
+     row. --shadow stays as the name every existing rule already asks for. */
+  --e1: 0 1px 3px rgba(11, 31, 34, .08);
+  --e2: 0 4px 8px -2px rgba(11, 31, 34, .10);
+  --e3: 0 10px 22px -6px rgba(11, 31, 34, .14);
+  --e4: 0 24px 48px -12px rgba(11, 31, 34, .22);
+  --shadow: var(--e2);
 
-  --r-sm: 5px;
-  --r: 8px;
-  --r-lg: 12px;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
   --sidebar: 218px;
+  --page-max: 1180px;
+  --gutter: max(26px, calc((100% - var(--page-max)) / 2));
+
+  /* Motion, in one place. Every hover in the console reads from these three. */
+  --dur: 220ms;
+  --ease: cubic-bezier(.2, .7, .3, 1);
+  --lift: -4px;
+  --hover-scale: 1.012;
 }
 
 /* System default: no stamp on the root element, so only the media query separates
    the two. An explicit light choice must still beat a dark OS. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ground: #0A0E1A;
-    --surface: #101626;
-    --surface-2: #161D30;
-    --surface-3: #1D2540;
-    --ink: #EDEFF6;
-    --ink-2: #9BA3B8;
-    --ink-3: #6B7387;
-    --rule: #1E2536;
-    --rule-soft: #151A28;
-    /* Text and fill separate here: #1E40AF is 2.2:1 against this ground, so links
-       take a lighter step and the fill takes the deepest navy that still clears the
+    --ground: #06181B;
+    --surface: #0C2327;
+    --surface-2: #122E33;
+    --surface-3: #193C42;
+    --ink: #E6F2F2;
+    --ink-2: #93AFB1;
+    --ink-3: #678284;
+    --rule: #17383D;
+    --rule-soft: #0F282C;
+    /* Text and fill separate here: #026873 is 1.9:1 against this ground, so links
+       take a lighter step and the fill takes the deepest teal that still clears the
        3:1 boundary rule for a control. */
-    --accent: #6B8AFF;
-    --accent-fill: #3B62E8;
-    --accent-soft: #141B33;
-    --accent-ink: #FFFFFF;
-    --hot: #FF6B5E;
-    --warm: #E8A33D;
+    --accent: #34D3D3;
+    --accent-fill: #0E7C89;
+    --accent-soft: #0B2A2D;
+    --accent-ink: #04211F;
+    --cta: #A3E635;
+    --cta-fill: #A3E635;
+    --cta-soft: #1B2410;
+    --cta-ink: #131A04;
+    --hot: #FF7F5C;
+    --warm: #E0A93F;
     --cold: #6FA8C0;
-    --good: #2ECC8F;
-    --bad: #FF4D74;
-    --hot-soft: #2A1512;
+    --good: #35D18F;
+    --bad: #FF5E7D;
+    --hot-soft: #2E1610;
     --warm-soft: #2A2210;
-    --cold-soft: #14232B;
-    --good-soft: #0D2820;
-    --bad-soft: #2C111C;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px -20px rgba(0, 0, 0, .9);
+    --cold-soft: #10242B;
+    --good-soft: #082621;
+    --bad-soft: #2C1119;
+    --e1: 0 1px 3px rgba(0, 0, 0, .6);
+    --e2: 0 4px 8px -2px rgba(0, 0, 0, .65);
+    --e3: 0 10px 22px -6px rgba(0, 0, 0, .7);
+    --e4: 0 24px 48px -12px rgba(0, 0, 0, .8);
+    --shadow: var(--e2);
   }
 }
 :root[data-theme="dark"] {
-  --ground: #0A0E1A;
-  --surface: #101626;
-  --surface-2: #161D30;
-  --surface-3: #1D2540;
-  --ink: #EDEFF6;
-  --ink-2: #9BA3B8;
-  --ink-3: #6B7387;
-  --rule: #1E2536;
-  --rule-soft: #151A28;
-  /* Text and fill separate here: #1E40AF is 2.2:1 against this ground, so links
-     take a lighter step and the fill takes the deepest navy that still clears the
+  --ground: #06181B;
+  --surface: #0C2327;
+  --surface-2: #122E33;
+  --surface-3: #193C42;
+  --ink: #E6F2F2;
+  --ink-2: #93AFB1;
+  --ink-3: #678284;
+  --rule: #17383D;
+  --rule-soft: #0F282C;
+  /* Text and fill separate here: #026873 is 1.9:1 against this ground, so links
+     take a lighter step and the fill takes the deepest teal that still clears the
      3:1 boundary rule for a control. */
-  --accent: #6B8AFF;
-  --accent-fill: #3B62E8;
-  --accent-soft: #141B33;
-  --accent-ink: #FFFFFF;
-  --hot: #FF6B5E;
-  --warm: #E8A33D;
+  --accent: #34D3D3;
+  --accent-fill: #0E7C89;
+  --accent-soft: #0B2A2D;
+  --accent-ink: #04211F;
+  --cta: #A3E635;
+  --cta-fill: #A3E635;
+  --cta-soft: #1B2410;
+  --cta-ink: #131A04;
+  --hot: #FF7F5C;
+  --warm: #E0A93F;
   --cold: #6FA8C0;
-  --good: #2ECC8F;
-  --bad: #FF4D74;
-  --hot-soft: #2A1512;
+  --good: #35D18F;
+  --bad: #FF5E7D;
+  --hot-soft: #2E1610;
   --warm-soft: #2A2210;
-  --cold-soft: #14232B;
-  --good-soft: #0D2820;
-  --bad-soft: #2C111C;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 28px -20px rgba(0, 0, 0, .9);
+  --cold-soft: #10242B;
+  --good-soft: #082621;
+  --bad-soft: #2C1119;
+  --e1: 0 1px 3px rgba(0, 0, 0, .6);
+  --e2: 0 4px 8px -2px rgba(0, 0, 0, .65);
+  --e3: 0 10px 22px -6px rgba(0, 0, 0, .7);
+  --e4: 0 24px 48px -12px rgba(0, 0, 0, .8);
+  --shadow: var(--e2);
 }
 
 /* ── base ─────────────────────────────────────────────────────────────────── */
@@ -162,7 +206,6 @@ a:hover { text-decoration: underline; }
 
 h1, h2, h3, h4 {
   font-family: var(--font-display), "Helvetica Neue", Arial, sans-serif;
-  font-variation-settings: "wdth" 94;
   margin: 0;
   text-wrap: balance;
 }
@@ -186,35 +229,31 @@ code {
 .num { font-variant-numeric: tabular-nums; }
 
 /* ── shell ────────────────────────────────────────────────────────────────── */
-.app { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 100vh; }
-/* One column, and the nav row takes only the height it needs — a stretched grid row would
-   leave a screen-height gap above the page. */
-@media (max-width: 860px) { .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; } }
+/* One column at every width. The navigation is a strip across the top rather than a
+   rail down the side: the review queue is six columns wide and every pixel the nav
+   gave back went to it. The grid rows are auto/auto/1fr — nav, header, page — so
+   neither strip stretches to fill height it does not need. */
+.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr; min-height: 100vh; }
 
-/* No rule between the sidebar, the header and the page. One unbroken surface reads as a
-   single app; three panes stitched together with hairlines read as three. Structure comes
-   from the active pill, the type scale and whitespace instead. */
+/* The same items the rail held, in one scrolling row. Section groups are dropped
+   because a horizontal strip has no room to label them and the order already says
+   which is daily work and which is setup. */
 .side {
   background: var(--ground);
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 14px 10px;
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 2px;
+  padding: 9px var(--gutter);
+  position: sticky; top: 0; z-index: 21;
+  overflow-x: auto; overflow-y: hidden;
+  border-bottom: 1px solid var(--rule-soft);
+  scrollbar-width: none;
 }
-/* Under the breakpoint the sidebar becomes one scrolling strip of the same items, rather
-   than a block of wrapped links that pushes the page half a screen down. */
-@media (max-width: 860px) {
-  .side {
-    position: sticky; top: 0; height: auto; z-index: 21;
-    flex-direction: row; flex-wrap: nowrap; align-items: center;
-    overflow-x: auto; overflow-y: hidden; padding: 9px 14px;
-    scrollbar-width: none;
-  }
-  .side::-webkit-scrollbar { display: none; }
-  .side .group { display: none; }
-  .side a { white-space: nowrap; padding: 7px 11px; }
-  .side .brand { padding: 0 12px 0 0 !important; }
-  .side .foot { margin-top: 0; padding-top: 0; }
-}
+.side::-webkit-scrollbar { display: none; }
+.side .group { display: none; }
+.side a { white-space: nowrap; padding: 7px 11px; }
+.side .brand { padding: 0 16px 0 0 !important; }
+/* Settings is the one item that belongs at the far end rather than in reading order. */
+.side .foot { margin-left: auto; display: flex; padding-left: 10px; }
+
 .side .group {
   font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .12em;
   text-transform: uppercase; color: var(--ink-3); padding: 16px 10px 6px;
@@ -230,19 +269,18 @@ code {
   margin-left: auto; font-family: var(--font-mono), monospace; font-size: 11px;
   background: var(--warm-soft); color: var(--warm); padding: 1px 6px; border-radius: 999px;
 }
-.side .foot { margin-top: auto; padding-top: 12px; }
 .side svg { flex: none; opacity: .8; }
 .side a[aria-current="page"] svg { opacity: 1; }
 
 .topbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 26px;
-  background: var(--ground); position: sticky; top: 0; z-index: 20;
+  padding: 12px var(--gutter);
+  background: var(--ground);
 }
 .topbar .spacer { margin-left: auto; }
 .brand {
   display: inline-flex; align-items: center;
-  font-family: var(--font-display), sans-serif; font-variation-settings: "wdth" 90;
+  font-family: var(--font-display), sans-serif;
   font-weight: 800; letter-spacing: -.03em; font-size: 16px; color: var(--ink); text-decoration: none;
 }
 .side .brand svg { color: var(--accent); opacity: 1; }
@@ -250,10 +288,11 @@ code {
 .crumb { color: var(--ink-3); }
 
 .app > div { min-width: 0; }
-.page { padding: 26px 26px 80px; max-width: 1180px; }
+.page { padding: 26px var(--gutter) 80px; }
 @media (max-width: 860px) {
-  .page { padding: 20px 16px 60px; }
-  .topbar { padding: 10px 16px; }
+  :root { --gutter: 16px; }
+  .page { padding: 20px var(--gutter) 60px; }
+  .topbar { padding: 10px var(--gutter); }
   .head { flex-wrap: wrap; }
 }
 
@@ -263,6 +302,19 @@ code {
   border-radius: var(--r); padding: 15px 17px;
 }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+
+/* Motion, in one rule rather than scattered per component. Nothing here changes what
+   is on screen — only how the change arrives, so a click never reads as a dead click.
+   The reduced-motion block near the top switches all of it off. */
+.card, .tile, .panel, .signal, .choice, .pick-item, .alert-row, tbody tr, .tabs a, .seg a, .seg button {
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+              border-color var(--dur) ease, background var(--dur) ease;
+}
+/* Only things that are themselves objects lift. A row tints; it does not float. */
+.card:not(.demo-card):hover, .tile:hover, .panel:hover, .signal:hover {
+  transform: translateY(var(--lift)) scale(var(--hover-scale));
+  box-shadow: var(--e3);
+}
 /* Standalone rather than scoped to a parent, so any card can carry a label. */
 .label {
   font-family: var(--font-mono), monospace;
@@ -270,24 +322,25 @@ code {
   color: var(--ink-3); margin-bottom: 6px;
 }
 .value {
-  font-family: var(--font-display), sans-serif; font-variation-settings: "wdth" 94;
+  font-family: var(--font-display), sans-serif;
   font-size: 30px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
   line-height: 1.05;
 }
 
 .tw {
-  border: 1px solid var(--rule); border-radius: var(--r);
-  overflow: hidden; background: var(--surface); margin-bottom: 18px;
+  border: 0; border-radius: 0; background: transparent; margin-bottom: 18px;
 }
 .tw.scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+/* No rule under every row. Three hundred hairlines down a queue is three hundred
+   lines to read past; the row's own padding separates it, and the hover does the
+   rest. The header keeps its rule, because that one is a boundary and not a repeat. */
+th, td { text-align: left; padding: 13px 14px; border-bottom: 0; vertical-align: top; }
 th {
   font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ink-3); font-weight: 500; background: var(--ground); white-space: nowrap;
-  border-bottom-color: var(--rule);
+  color: var(--ink-3); font-weight: 500; background: transparent; white-space: nowrap;
+  padding-bottom: 9px; border-bottom: 1px solid var(--rule);
 }
-tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--surface-2); }
 thead tr:hover { background: none; }
 
@@ -483,15 +536,22 @@ button.destructive { background: var(--bad); border-color: var(--bad); color: #f
   padding: 11px 14px; border-bottom: 1px solid var(--rule); font-size: 14px;
 }
 .bell-panel ul { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
+/* Severity is carried by the icon tile, not by a stripe down the edge. Each row
+   declares its own tone once; the tile below is the only rule that spends it. */
 .bell-panel li {
   display: flex; gap: 10px; align-items: flex-start;
   padding: 11px 14px; border-bottom: 1px solid var(--rule-soft); font-size: 13.5px;
-  border-left: 3px solid transparent;
+  --tone: var(--ink-3); --tone-soft: var(--surface-2);
 }
 .bell-panel li:last-child { border-bottom: 0; }
-.bell-panel li.critical { border-left-color: var(--bad); }
-.bell-panel li.action { border-left-color: var(--warm); }
-.bell-panel li.good { border-left-color: var(--good); }
+.bell-panel li.critical { --tone: var(--bad); --tone-soft: var(--bad-soft); }
+.bell-panel li.action { --tone: var(--warm); --tone-soft: var(--warm-soft); }
+.bell-panel li.good { --tone: var(--good); --tone-soft: var(--good-soft); }
+.bell-panel li .ic {
+  flex: none; width: 28px; height: 28px; border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  background: var(--tone-soft); color: var(--tone);
+}
 .bell-panel li > div { flex: 1; min-width: 0; }
 .bell-panel li a { font-size: 13px; }
 .bell-panel li button { margin-left: auto; padding: 2px 7px; }
@@ -926,33 +986,33 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
    step nearest the surface still clears 2:1 — so intensity grows with the stage in
    both modes rather than flipping meaning when the theme does. */
 :root {
-  --viz-1: #2B4CB8;
-  --viz-1-soft: #E6EBFA;
-  --viz-grid: #E6E9F2;
-  --viz-step-1: #93A9E6;
-  --viz-step-2: #6683D8;
-  --viz-step-3: #3B5CC4;
-  --viz-step-4: #223E92;
+  --viz-1: #026873;
+  --viz-1-soft: #D8EDEF;
+  --viz-grid: #DCE9E9;
+  --viz-step-1: #9CC8CB;
+  --viz-step-2: #6BABB1;
+  --viz-step-3: #2E8792;
+  --viz-step-4: #024E58;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --viz-1: #4A6FF0;
-    --viz-1-soft: #121A33;
-    --viz-grid: #1B2233;
-    --viz-step-1: #2C4189;
-    --viz-step-2: #3D57AE;
-    --viz-step-3: #4F6FD6;
-    --viz-step-4: #6B8AFF;
+    --viz-1: #34D3D3;
+    --viz-1-soft: #0D2E31;
+    --viz-grid: #143034;
+    --viz-step-1: #10484F;
+    --viz-step-2: #17646D;
+    --viz-step-3: #22929B;
+    --viz-step-4: #34D3D3;
   }
 }
 :root[data-theme="dark"] {
-  --viz-1: #4A6FF0;
-  --viz-1-soft: #121A33;
-  --viz-grid: #1B2233;
-  --viz-step-1: #2C4189;
-  --viz-step-2: #3D57AE;
-  --viz-step-3: #4F6FD6;
-  --viz-step-4: #6B8AFF;
+  --viz-1: #34D3D3;
+  --viz-1-soft: #0D2E31;
+  --viz-grid: #143034;
+  --viz-step-1: #10484F;
+  --viz-step-2: #17646D;
+  --viz-step-3: #22929B;
+  --viz-step-4: #34D3D3;
 }
 
 .viz { position: relative; width: 100%; }
@@ -1041,8 +1101,8 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 }
 .toast {
   display: flex; align-items: flex-start; gap: 10px;
-  background: var(--ground); border: 1px solid var(--rule); border-left: 3px solid var(--ink-3);
-  border-radius: var(--r); box-shadow: var(--shadow);
+  background: var(--ground); border: 1px solid var(--rule);
+  border-radius: var(--r); box-shadow: var(--e3);
   padding: 12px 14px; font-size: 13.5px;
   opacity: 1;
   animation: toast-in 160ms ease-out;
@@ -1050,12 +1110,13 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 /* Transform only. A tab that is throttled or occluded can freeze an animation on its
    first frame, and a toast frozen at opacity 0 is a toast that never arrived. */
 @keyframes toast-in { from { transform: translateY(10px); } to { transform: none; } }
-.toast.good { border-left-color: var(--good); }
-.toast.good > svg { color: var(--good); }
-.toast.bad { border-left-color: var(--bad); }
-.toast.bad > svg { color: var(--bad); }
-.toast.info > svg { color: var(--accent); }
-.toast > svg { flex: none; margin-top: 1px; }
+.toast { --tone: var(--accent); --tone-soft: var(--accent-soft); }
+.toast.good { --tone: var(--good); --tone-soft: var(--good-soft); }
+.toast.bad { --tone: var(--bad); --tone-soft: var(--bad-soft); }
+.toast > svg {
+  flex: none; box-sizing: content-box; padding: 6px; border-radius: var(--r-sm);
+  background: var(--tone-soft); color: var(--tone);
+}
 .toast > div { flex: 1; min-width: 0; }
 .toast-body { color: var(--ink-3); font-size: 12.5px; margin-top: 1px; }
 .toast-close {
@@ -1072,10 +1133,10 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
   --normal-border: var(--rule);
   --normal-text: var(--ink);
   --success-bg: var(--ground);
-  --success-border: var(--good);
+  --success-border: var(--rule);
   --success-text: var(--ink);
   --error-bg: var(--ground);
-  --error-border: var(--bad);
+  --error-border: var(--rule);
   --error-text: var(--ink);
   --border-radius: var(--r);
   font-family: inherit;
@@ -1087,9 +1148,14 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 }
 [data-sonner-toast] [data-title] { font-weight: 600; }
 [data-sonner-toast] [data-description] { color: var(--ink-3); font-size: 12.5px; margin-top: 1px; }
-[data-sonner-toast] [data-icon] { margin-top: 1px; }
-[data-sonner-toast][data-type="success"] [data-icon] { color: var(--good); }
-[data-sonner-toast][data-type="error"] [data-icon] { color: var(--bad); }
+[data-sonner-toast] { --tone: var(--accent); --tone-soft: var(--accent-soft); }
+[data-sonner-toast][data-type="success"] { --tone: var(--good); --tone-soft: var(--good-soft); }
+[data-sonner-toast][data-type="error"] { --tone: var(--bad); --tone-soft: var(--bad-soft); }
+[data-sonner-toast] [data-icon] {
+  margin: 0; flex: none; width: 28px; height: 28px; border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  background: var(--tone-soft); color: var(--tone);
+}
 [data-sonner-toast] [data-close-button] {
   background: var(--surface); border-color: var(--rule); color: var(--ink-3);
 }
@@ -1104,7 +1170,7 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 .tile-top .label { margin: 0; }
 .tile-top svg { color: var(--ink-3); }
 .tile-value {
-  font-family: var(--font-display), sans-serif; font-variation-settings: "wdth" 94;
+  font-family: var(--font-display), sans-serif;
   font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
@@ -1175,7 +1241,7 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
 
 /* ── add product ───────────────────────────────────────────────────────────── */
 
-.page.narrow { max-width: 880px; margin: 0 auto; }
+.page.narrow { --page-max: 880px; }
 .topbar .email { font-size: 13px; }
 
 /* The recommended path, marked as one. Two options presented identically is a decision
