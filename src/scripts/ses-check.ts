@@ -5,6 +5,7 @@ import {
   createTenant,
   associateWithTenant,
   identityArn,
+  deleteTenant,
   identityStatus,
   productionAccess,
   sesConfigured,
@@ -51,8 +52,30 @@ async function main() {
     console.log("  only sending to unverified recipients is blocked. See step 6 of the setup doc.");
   }
 
+  // Before the domain, and without needing one. Whether this account may create tenants is
+  // the question that decides how much isolation the design gets, and it is answerable with
+  // credentials alone — waiting for somebody to own a domain before finding out would be a
+  // day lost to nothing.
+  console.log("\n── tenants ──");
+  const probe = await createTenant("probe");
+  if (!probe) {
+    line("tenants", "REFUSED");
+    line("", "every customer would send on the account's shared reputation:");
+    line("", "one bad list could suspend sending for all of them.");
+    line("", "check whether your pricing plan includes tenants.");
+  } else {
+    line("tenants", `available — created ${probe.tenantName}`);
+    line("suppression", "per tenant, on bounce and complaint");
+    // Removed again straight away. A probe that leaves a tenant behind is a tenant whose
+    // name matches no product, and the next person to read the console has to work out
+    // whether it matters.
+    await deleteTenant(probe.tenantName);
+    line("cleanup", "probe tenant removed");
+  }
+
   if (!domain) {
-    console.log("\nPass a domain to register one: npm run ses:check -- example.com\n");
+    console.log("\nEverything above needs no domain. To register one and print its DNS:");
+    console.log("  npm run ses:check -- example.com\n");
     return;
   }
 
@@ -70,10 +93,10 @@ async function main() {
     console.log(`              ${" ".repeat(5)} ${record.value}${priority}\n`);
   }
 
-  // The tenant this product would send as. Exercised here because a plan that does not
-  // include tenants fails at exactly this call, and finding that out now is worth more than
-  // finding it out when a customer connects a domain.
-  console.log("\n── tenant ──");
+  // The tenant this domain would actually send as, and the associations that make it
+  // usable. Separate from the probe above: that one answered "are tenants allowed", this
+  // one answers "can this domain be bound to one".
+  console.log("\n── tenant association ──");
   const tenant = await createTenant("ses-check");
   if (!tenant) {
     line("tenant", "REFUSED — sending would fall back to the account's shared reputation");
