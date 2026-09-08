@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { grantedCapabilities } from "../auth/google.js";
+import { productionAccess } from "./sesIdentity.js";
 
 /**
  * Whether a channel is actually able to do the job, decided from what it is wired to rather
@@ -63,6 +64,26 @@ export async function evaluateChannel(orgId: string, channelId: string): Promise
       reasons.push("sending from your own domain still needs a Gmail account connected, so replies can be read");
     } else if (!grantedCapabilities((inbox.scopes ?? []) as string[]).read) {
       reasons.push("the connected Gmail account cannot read replies — reconnect it and allow reading");
+    }
+
+    // A verified domain in a sandboxed account is a channel that passes every check and
+    // fails every real send: Amazon refuses each message to an address nobody verified, one
+    // at a time, after the touch has already been spent. Reported here instead, so the
+    // engine skips the channel and no campaign discovers it a message at a time.
+    try {
+      const account = await productionAccess();
+      if (!account.enabled) {
+        reasons.push(
+          "this AWS account is still in the Amazon SES sandbox, so it can only send to addresses you have verified — request production access",
+        );
+      }
+      if (!account.sendingEnabled) {
+        reasons.push("Amazon has paused sending for this account — check the SES reputation dashboard");
+      }
+    } catch {
+      // Deliberately not a reason. Asking AWS can fail for a minute at a time, and flipping
+      // a working channel to degraded over a transient error would stop a campaign that is
+      // fine. A send that really cannot go still fails with the provider's own words.
     }
   }
 

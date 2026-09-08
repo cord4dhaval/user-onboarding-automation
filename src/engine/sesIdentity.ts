@@ -270,13 +270,31 @@ export async function deleteIdentity(domain: string): Promise<void> {
  * rejected per-message. Reading it once and saying so on the channel is the difference
  * between that and a customer watching their campaign fail one message at a time.
  */
-export async function productionAccess(): Promise<{ enabled: boolean; sendingEnabled: boolean; quota?: number }> {
+export interface AccountAccess {
+  enabled: boolean;
+  sendingEnabled: boolean;
+  quota?: number;
+}
+
+/**
+ * Cached because the health check asks on every channel and the answer changes about twice
+ * in an account's life — once when production access is granted, and again if Amazon ever
+ * pauses sending. A minute of staleness costs nothing; a call to AWS inside a page render,
+ * per channel, costs a page.
+ */
+let cached: { at: number; value: AccountAccess } | null = null;
+const ACCOUNT_TTL_MS = 60_000;
+
+export async function productionAccess(force = false): Promise<AccountAccess> {
+  if (!force && cached && Date.now() - cached.at < ACCOUNT_TTL_MS) return cached.value;
   const account = await client().send(new GetAccountCommand({}));
-  return {
+  const value: AccountAccess = {
     enabled: account.ProductionAccessEnabled ?? false,
     sendingEnabled: account.SendingEnabled ?? false,
     quota: account.SendQuota?.Max24HourSend,
   };
+  cached = { at: Date.now(), value };
+  return value;
 }
 
 /** One per product, so a bounce arrives already attributed to whose sending caused it. */

@@ -294,6 +294,14 @@ export async function GET(request: NextRequest) {
   const domains = await pollPendingIdentities(now);
   if (domains.length) report.push({ sesIdentities: domains });
 
+  // Every SES channel, not only the ones whose domain is still pending. Production access
+  // being granted changes nothing locally — no callback, no event — so a channel held back
+  // for the sandbox would stay degraded until somebody edited it by hand, hours after AWS
+  // said yes. The account status behind this is cached for a minute, so re-asking per tick
+  // is one call, not one per channel.
+  const rechecked = await refreshSesChannels();
+  if (rechecked.length) report.push({ sesChannels: rechecked });
+
   // A routine that finished two minutes ago should not still read as running.
   const closed = await closeIdleRuns(now);
 
@@ -429,6 +437,45 @@ async function pollPendingIdentities(now: Date): Promise<Array<Record<string, un
     } catch (err) {
       out.push({ domain, error: err instanceof Error ? err.message : String(err) });
     }
+  }
+
+  return out;
+}
+
+
+/**
+ * Re-decides whether each SES channel can send.
+ *
+ * The inputs move without telling us: production access is granted by a human at AWS, a
+ * mailbox can lose its read scope, Amazon can pause an account's sending. None of them
+ * reach this deployment as an event, so the only way a channel comes back is by asking
+ * again on a clock.
+ */
+async function refreshSesChannels(): Promise<Array<Record<string, unknown>>> {
+  if (!sesConfigured()) return [];
+  const db = await getDb();
+  const out: Array<Record<string, unknown>> = [];
+
+  const sesConnections = await db
+    .collection(C.connections)
+    .find({ authType: "ses" })
+    .project({ _id: 1, orgId: 1 })
+    .toArray();
+  if (sesConnections.length === 0) return [];
+
+  const channels = await db
+    .collection(C.channels)
+    .find({ connectionId: { $in: sesConnections.map((c) => String(c._id)) } })
+    .limit(25)
+    .toArray();
+
+  for (const channel of channels) {
+    const before = String(channel.status);
+    const health = await refreshChannelHealth(String(channel.orgId), String(channel._id));
+    const after = health.healthy ? "healthy" : "degraded";
+    // Only a change is worth a line in the report. A tick that lists every healthy channel
+    // every minute is a log nobody reads.
+    if (before !== after) out.push({ channel: String(channel._id), was: before, now: after, reasons: health.reasons });
   }
 
   return out;
