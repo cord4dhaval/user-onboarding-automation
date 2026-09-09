@@ -507,24 +507,36 @@ export default async function PersonPage({
             Every version is kept. A replan writes a new one and says why the previous was abandoned, so a
             message sent months ago still has its reasoning attached.
           </p>
-          {plans.map((plan) => (
-            <div className="card" key={String(plan._id)} style={{ marginBottom: 12 }}>
-              <div className="row" style={{ marginBottom: 6 }}>
-                <span className="label" style={{ margin: 0 }}>version {String(plan.version)}</span>
-                <ClaudeBadge />
-                <span className="muted" style={{ fontSize: 12.5 }}>{ist(plan.createdAt)}</span>
+          {plans.map((plan) => {
+            // A plan is stored as whatever the session handed over, and one arrived with no
+            // steps at all. The page must still open: a person whose history cannot be read
+            // is worse than a plan that is shown as empty.
+            const steps = Array.isArray(plan.steps) ? (plan.steps as Array<Record<string, unknown>>) : [];
+            return (
+              <div className="card" key={String(plan._id)} style={{ marginBottom: 12 }}>
+                <div className="row" style={{ marginBottom: 6 }}>
+                  <span className="label" style={{ margin: 0 }}>version {String(plan.version)}</span>
+                  <ClaudeBadge />
+                  <span className="muted" style={{ fontSize: 12.5 }}>{ist(plan.createdAt)}</span>
+                </div>
+                <p style={{ marginBottom: 8 }}>{String(plan.rationale ?? "")}</p>
+                {steps.length === 0 ? (
+                  <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+                    Written with no steps. Nothing can be scheduled from this version.
+                  </p>
+                ) : (
+                  <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13.5 }}>
+                    {steps.map((step, i) => (
+                      <li key={i}>
+                        <strong>{String(step.angle)}</strong> on {String(step.channel)}, day {String(step.after_days ?? step.afterDays ?? "?")}
+                        <div className="muted">{String(step.why ?? "")}</div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </div>
-              <p style={{ marginBottom: 8 }}>{String(plan.rationale)}</p>
-              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13.5 }}>
-                {(plan.steps as Array<Record<string, unknown>>).map((step, i) => (
-                  <li key={i}>
-                    <strong>{String(step.angle)}</strong> on {String(step.channel)}, day {String(step.after_days ?? step.afterDays ?? "?")}
-                    <div className="muted">{String(step.why ?? "")}</div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ))}
+            );
+          })}
         </>
       )}
     </>

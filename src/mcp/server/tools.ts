@@ -951,6 +951,21 @@ export const TOOLS: ToolDef[] = [
     async handler(args, ctx) {
       const db = await getDb();
       const goalInstanceId = String(args.goal_instance_id);
+
+      // Refused before anything is read, let alone written. A plan once arrived with no
+      // steps and a rationale of "undefined"; it was stored, the tool then crashed on the
+      // reply, and every page that listed this person's plans crashed after it.
+      const planSteps = Array.isArray(args.steps)
+        ? (args.steps as Array<{ id?: unknown; asset_id?: unknown; channel?: unknown; angle?: unknown }>)
+        : [];
+      if (planSteps.length === 0) {
+        throw new Error("A plan needs at least one step. Nothing was written.");
+      }
+      const rationale = typeof args.rationale === "string" ? args.rationale.trim() : "";
+      if (!rationale || rationale === "undefined") {
+        throw new Error("A plan needs a rationale in words. Nothing was written.");
+      }
+
       const instance = await db
         .collection(C.goalInstances)
         .findOne({ _id: new ObjectId(goalInstanceId), orgId: ctx.orgId });
@@ -963,8 +978,7 @@ export const TOOLS: ToolDef[] = [
         .findOne({ orgId: ctx.orgId, productId: String(instance.productId), key: String(instance.goalKey) });
       const allowed = (goalDef?.allowedChannels ?? []) as string[];
       if (allowed.length > 0) {
-        const steps = (args.steps ?? []) as Array<{ channel?: string }>;
-        const stray = steps.map((st) => String(st.channel)).filter((ch) => !allowed.includes(ch));
+        const stray = planSteps.map((st) => String(st.channel)).filter((ch) => !allowed.includes(ch));
         if (stray.length > 0) {
           throw new Error(
             `This campaign may only use ${allowed.join(", ")}. The plan asks for ${[...new Set(stray)].join(", ")}.`,
@@ -976,7 +990,6 @@ export const TOOLS: ToolDef[] = [
       // fire before anybody writes copy for it — the rung's fallback goes out carrying
       // whatever the plan named. A plan holding an expired case study is a message nobody
       // reviewed sending an argument that is no longer true.
-      const planSteps = (args.steps ?? []) as Array<{ id?: unknown; asset_id?: unknown; channel?: unknown }>;
       const planAssets = planSteps
         .map((st) => ({ id: String(st.asset_id ?? ""), channel: String(st.channel ?? "") }))
         .filter((st) => st.id);
@@ -1014,7 +1027,7 @@ export const TOOLS: ToolDef[] = [
         .collection(C.people)
         .findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { belief: 1 } });
       const segment = (person?.belief as { segment?: string } | undefined)?.segment;
-      const angles = ((args.steps ?? []) as Array<{ angle?: string }>).map((st) => String(st.angle));
+      const angles = planSteps.map((st) => String(st.angle));
       const block = await explorationBlock(ctx.orgId, String(instance.productId), segment, angles);
       if (block) throw new Error(block);
 
@@ -1049,8 +1062,8 @@ export const TOOLS: ToolDef[] = [
         productId: String(instance.productId),
         goalInstanceId,
         version,
-        steps: args.steps,
-        rationale: String(args.rationale),
+        steps: planSteps,
+        rationale,
         createdBy: "claude",
         createdAt: new Date(),
       });
@@ -1058,7 +1071,7 @@ export const TOOLS: ToolDef[] = [
         .collection(C.goalInstances)
         .updateOne({ _id: instance._id }, { $set: { currentPlanId: String(planId) } });
 
-      return { plan_id: String(planId), version, steps: (args.steps as unknown[]).length };
+      return { plan_id: String(planId), version, steps: planSteps.length };
     },
   },
 
@@ -1109,6 +1122,21 @@ export const TOOLS: ToolDef[] = [
     async handler(args, ctx) {
       const db = await getDb();
       const goalInstanceId = String(args.goal_instance_id);
+
+      // Refused before anything is read, let alone written. A plan once arrived with no
+      // steps and a rationale of "undefined"; it was stored, the tool then crashed on the
+      // reply, and every page that listed this person's plans crashed after it.
+      const planSteps = Array.isArray(args.steps)
+        ? (args.steps as Array<{ id?: unknown; asset_id?: unknown; channel?: unknown; angle?: unknown }>)
+        : [];
+      if (planSteps.length === 0) {
+        throw new Error("A plan needs at least one step. Nothing was written.");
+      }
+      const rationale = typeof args.rationale === "string" ? args.rationale.trim() : "";
+      if (!rationale || rationale === "undefined") {
+        throw new Error("A plan needs a rationale in words. Nothing was written.");
+      }
+
       const instance = await db
         .collection(C.goalInstances)
         .findOne({ _id: new ObjectId(goalInstanceId), orgId: ctx.orgId });
