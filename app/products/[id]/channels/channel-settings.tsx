@@ -28,7 +28,17 @@ export interface ChannelSettings {
   returnMessageId?: string;
   /** Which connection it goes through, named so a rebind is not a silent move. */
   through?: string;
+  /** Who this channel is allowed to write to. */
+  audience: string[];
+  /** People currently bound to it, so switching it off is a decision with a size. */
+  assignedLeads: number;
 }
+
+const AUDIENCES = [
+  { value: "cold", label: "cold", hint: "strangers, first contact" },
+  { value: "warm_lead", label: "warm lead", hint: "engaged, not signed up" },
+  { value: "existing_user", label: "existing user", hint: "already using the product" },
+] as const;
 
 /**
  * Editing a live channel.
@@ -144,8 +154,43 @@ export default function ChannelSettingsDrawer({
                 />
               </label>
             </div>
+            {channel.assignedLeads > 0 && (
+              <p className="sub tight">
+                {channel.assignedLeads} {channel.assignedLeads === 1 ? "person is" : "people are"} being
+                written to from here. Disabling moves the ones who have not replied to another mailbox, on a
+                new thread; anyone who has replied is held until this comes back, rather than being answered
+                from an address they have never seen.
+              </p>
+            )}
 
             <FormatChoice current={channel.html ? "html" : "text"} />
+
+            {/* Which people this mailbox is for.
+                The engine has filtered on this since channels existed and nothing ever set
+                it, so a mailbox bought to cold-mail strangers and the address a product's
+                own users already reply to were one pool. Cold outbound belongs on a sending
+                identity that can afford to be complained about; existing users belong on
+                the one they know. */}
+            <fieldset className="fieldset">
+              <legend>Who this channel writes to</legend>
+              {AUDIENCES.map((a) => (
+                <label key={a.value} className="check">
+                  <input
+                    type="checkbox"
+                    name="audience"
+                    value={a.value}
+                    defaultChecked={channel.audience.includes(a.value)}
+                  />
+                  {a.label}
+                  <span className="muted"> · {a.hint}</span>
+                </label>
+              ))}
+            </fieldset>
+            <p className="sub tight">
+              A lead is bound to one mailbox at their first message and stays there for the
+              whole sequence, so this decides which people it is ever given — not which
+              individual messages. Unticking everything leaves it serving everyone.
+            </p>
 
             <label>
               Cap per 24 hours <span className="muted">(rolling, not per calendar day)</span>

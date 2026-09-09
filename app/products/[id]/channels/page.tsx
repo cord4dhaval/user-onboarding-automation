@@ -56,13 +56,22 @@ export default async function Channels({
   const db = await getDb();
   const s = scope(orgId, id);
 
-  const [channels, connections, bindings] = await Promise.all([
+  const [channels, connections, bindings, assignedRows] = await Promise.all([
     db.collection(C.channels).find(s).toArray(),
     // Every connection, not just MCP servers: a Gmail one has no server URL, and filtering
     // it out here was what left its row saying "native" under Through instead of naming it.
     db.collection(C.connections).find(s).toArray(),
     db.collection(C.mcpBindings).find({ orgId }).toArray(),
+    // How many people each mailbox is currently the sender for. A daily count says how busy
+    // a channel was this morning; this says how much of the product is depending on it, which
+    // is the number that matters when someone is deciding whether to switch it off.
+    db
+      .collection(C.people)
+      .aggregate([{ $match: s }, { $group: { _id: "$assignedChannelId", n: { $sum: 1 } } }])
+      .toArray(),
   ]);
+
+  const assignedByChannel = new Map(assignedRows.map((r) => [String(r._id), Number(r.n)]));
 
   const bindingFor = (connectionId: string) =>
     bindings.find((b) => String(b.connectionId) === connectionId);
@@ -166,6 +175,8 @@ export default async function Channels({
       | { send?: { tool?: string; args?: Record<string, string>; returns?: { message_id?: string } } }
       | undefined)?.send;
     const usage = usageByChannel.get(String(c._id)) ?? [];
+    const audience = ((c.policy as { audience?: string[] } | undefined)?.audience ?? []) as string[];
+    const assigned = assignedByChannel.get(String(c._id)) ?? 0;
     const daily = usage.find((w) => w.label === "daily");
     // The first limit with nothing left is the one currently stopping sends.
     const blocked = usage.find((w) => w.free === 0);
@@ -194,6 +205,18 @@ export default async function Channels({
           <span className={`pill ${caps.html ? "ok" : ""}`}>
             {caps.html ? "designed email" : "plain text"}
           </span>
+        </div>
+
+        {/* Who this mailbox is for, and how many people it already speaks for. Both are
+            invisible otherwise: a channel serving nobody looks identical to one serving
+            everyone, and switching one off is a different decision at 4 leads and at 400. */}
+        <div className="channel-line">
+          {audience.map((a) => (
+            <span className="pill" key={a}>
+              {a.replace("_", " ")}
+            </span>
+          ))}
+          <span className="pill">{assigned} leads assigned</span>
         </div>
 
         {/* What the number means, not what it counts. "47/50" alone reads as a calendar-day
@@ -271,6 +294,8 @@ export default async function Channels({
               perHour: gov.perHour ?? undefined,
               maxSubjectLength: (caps.maxSubjectLength as number | undefined) ?? undefined,
               maxBodyLength: (caps.maxBodyLength as number | undefined) ?? undefined,
+              audience,
+              assignedLeads: assigned,
               sendTool: send ? `${String(c.connectionId)}::${send.tool}` : undefined,
               sendArgs: send?.args,
               returnMessageId: send?.returns?.message_id,

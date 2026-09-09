@@ -368,7 +368,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         opts.orgId,
         opts.productId,
         String(action.personId),
-        String(action.channel),
+        String(action.channelId),
         adapter,
       );
       if (conversation) {
@@ -637,12 +637,18 @@ interface Conversation {
  * build the tree from headers show the answer above the question.
  *
  * Returns undefined for a first touch, which is a new conversation by definition.
+ *
+ * Scoped to one channel document rather than to the channel kind. Thread handles belong to
+ * the mailbox that minted them, so a person whose sender was switched off and who was moved
+ * to another mailbox must start a new conversation there — asked by kind, this found the old
+ * mailbox's thread and handed it to an account that has never seen it, which the provider
+ * answers with a 404 and the send is lost.
  */
 async function conversationFor(
   orgId: string,
   productId: string,
   personId: string,
-  channelKey: string,
+  channelId: string,
   adapter: ChannelAdapter,
 ): Promise<Conversation | undefined> {
   const db = await getDb();
@@ -658,7 +664,7 @@ async function conversationFor(
       orgId,
       productId,
       personId,
-      channel: channelKey,
+      channelId,
       status: { $in: ["sent", "dispatched"] },
       $or: [{ "thread.id": { $exists: true } }, { "thread.messageId": { $exists: true } }, { providerMessageId: { $exists: true } }],
     })

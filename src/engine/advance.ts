@@ -3,7 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
-import { pickChannelFrom, loadChannels } from "./channels.js";
+import { pickChannelFrom, loadChannels, persistAssignments, skipReason, type PooledChannel } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
 
 /**
@@ -185,7 +185,7 @@ export async function advance(
 
   // Channels are the same handful of documents for everyone in the batch, so they are read
   // once per campaign and the per-person decision is made in memory.
-  const channelsByGoal = new Map<string, Record<string, unknown>[]>();
+  const channelsByGoal = new Map<string, PooledChannel[]>();
   for (const goal of goals) {
     channelsByGoal.set(
       String(goal.key),
@@ -195,6 +195,10 @@ export async function advance(
 
   const advancedIds: ObjectId[] = [];
   const toInsert: Document[] = [];
+  // Mailboxes handed out in this pass, written back once at the end. The pick is already
+  // counted in memory, so a batch spreads itself even before any of this reaches the
+  // database.
+  const assignments: Array<{ personId: string; channelId: string }> = [];
   const handOver: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
 
   for (const instance of instances) {
@@ -277,9 +281,10 @@ export async function advance(
       pickChannelFrom(channels, allowed.filter((key) => key === String(step.channel)), person as never) ??
       pickChannelFrom(channels, allowed, person as never);
     if (!pick) {
-      summary.skipped.push({ goalInstanceId, reason: "no healthy channel" });
+      summary.skipped.push({ goalInstanceId, reason: skipReason(person as never, channels) });
       continue;
     }
+    if (pick.assigned) assignments.push({ personId: String(person._id), channelId: pick.channelId });
 
     toInsert.push({
       _id: new ObjectId(),
@@ -305,6 +310,10 @@ export async function advance(
       idempotencyKey: `${goalInstanceId}:step:${step.id}`,
     });
   }
+
+  // Before the actions, so an insert that fails partway still leaves every person pointing
+  // at the mailbox their queued row names.
+  await persistAssignments(assignments);
 
   if (advancedIds.length) {
     await db

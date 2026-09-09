@@ -1392,6 +1392,14 @@ export async function updateChannel(productId: string, channelId: string, formDa
   put("from", String(formData.get("from") ?? "").trim());
   put("replyTo", String(formData.get("replyTo") ?? "").trim());
 
+  // Who this channel is allowed to talk to. The engine has filtered on this since channels
+  // existed, but nothing ever wrote it, so every channel served everyone and a mailbox
+  // bought for cold outreach and the one the product's own users already know were the
+  // same pool. An empty selection would silence the channel entirely, so it falls back to
+  // what a channel has always been created with rather than saving nobody.
+  const audience = formData.getAll("audience").map(String).filter(Boolean);
+  fields["policy.audience"] = audience.length > 0 ? audience : ["cold", "warm_lead", "existing_user"];
+
   // Rebinding the send tool. Only MCP channels have one, and the binding lives on the
   // connection rather than the channel — so this is also how a channel is moved to a
   // different server, and why the drawer says which connection it belongs to.

@@ -6,3 +6,6 @@ next-env.d.ts
 
 # Local build used only by `npm run is:deployed` — regenerate with `npm run build:check`.
 .next-check
+
+# Prune dumps: real lead data, never committed.
+backups/

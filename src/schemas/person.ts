@@ -125,6 +125,20 @@ export const person = z.object({
   investment: investment.default({}),
   lastContactedAt: z.date().optional(),
   lastSignalAt: z.date().optional(),
+  /** Set by the inbound poller when they answer. Absent means they never have. */
+  lastReplyAt: z.date().optional(),
+
+  /**
+   * The one mailbox that talks to this person, fixed at their first touch.
+   *
+   * Sending a sequence from whichever channel happened to be free per message breaks it in
+   * two ways: provider thread handles belong to one mailbox, so a follow-up sent from a
+   * different account cannot join the conversation it is answering, and the person sees a
+   * new address picking up a thread they were having with someone else. So the choice is
+   * made once, per person, and everything after it follows.
+   */
+  assignedChannelId: objectIdString.optional(),
+  assignedAt: z.date().optional(),
 
   /** Set on ingest, cleared once Claude has classified and planned. */
   needsClassification: z.boolean().default(true),

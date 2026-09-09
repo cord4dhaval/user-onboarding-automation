@@ -225,6 +225,17 @@ export default async function Review({
   const instanceIds = campaign ? await runsFor(campaign) : undefined;
   const channelKey = channels.some((c) => String(c.key) === channelParam) ? channelParam : undefined;
 
+  // Which mailbox each row will actually leave from.
+  //
+  // The row said "email", which is the kind of channel and not the sender — true of every
+  // row on the page and therefore worth nothing. Once a product sends from several
+  // mailboxes that is the fact somebody approving needs: the same message from a cold
+  // outreach address and from the address the customer already knows are different
+  // decisions, and the queue was the one place that could not tell you which it was.
+  const senderById = new Map(
+    channels.map((c) => [String(c._id), String(c.from ?? `${String(c.key)} · provider default sender`)]),
+  );
+
   // One box over two collections. The reviewer hunting a row does not know or care whether
   // what they remember is on the person or on the message, so a name, an email address and
   // a subject line all answer to the same search.
@@ -568,7 +579,7 @@ export default async function Review({
                     <th>Engagement</th>
                     <th>Campaign</th>
                     <th>Subject</th>
-                    <th>Channel</th>
+                    <th>Sending from</th>
                     <th>{decidable ? "Scheduled (IST)" : "Status"}</th>
                     <th>{decidable ? "Actions" : "Updated (IST)"}</th>
                     {!decidable && <th />}
@@ -580,7 +591,8 @@ export default async function Review({
                     const name = String(person?.name ?? person?.primaryEmail ?? "Unknown");
                     const email = String(person?.primaryEmail ?? "");
                     const goalKey = String(run?.goalKey ?? "—");
-                    const meta = `${goalKey} · ${String(action.channel)} · angle ${String(action.angle)}`;
+                    const sender = senderById.get(String(action.channelId)) ?? String(action.channel);
+                    const meta = `${goalKey} · ${sender} · angle ${String(action.angle)}`;
                     const state = statusOf(action);
                     // What happened, not merely when it was due: a sent message is dated by
                     // its send, a decided one by its decision.
@@ -605,7 +617,14 @@ export default async function Review({
                           <div className="muted" style={{ fontSize: 12.5 }}>angle {String(action.angle)}</div>
                         </td>
                         <td className="cell-wide">{content.subject ?? <span className="muted">no subject</span>}</td>
-                        <td><span className="pill">{String(action.channel)}</span></td>
+                        {/* The mailbox, not the kind of channel. "email" was true of every
+                            row on the page; which address it leaves from is the thing that
+                            differs, and once cold outreach and the product's own sender are
+                            both connected it is the difference somebody is approving. */}
+                        <td>
+                          <span className="pill">{String(action.channel)}</span>
+                          <div className="muted" style={{ fontSize: 12.5 }}>{sender}</div>
+                        </td>
 
                         {decidable ? (
                           <td className="num" title={istLong(action.dueAt as string)}>
