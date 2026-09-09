@@ -10,6 +10,7 @@ import {
   createHttpChannel,
   createSmtpChannel,
   deleteChannel,
+  setChannelEnabled,
   recheckSesDomain,
   restartSesDomain,
   startGoogleOAuth,
@@ -19,6 +20,8 @@ import { grantedCapabilities } from "@/auth/google.js";
 import SesRecords from "./ses-records";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
+import { ActionButton } from "../../../ui/kit";
+import { Power, PowerOff } from "lucide-react";
 import ChannelCards from "./channel-cards";
 import ChannelSettingsDrawer from "./channel-settings";
 import { WINDOW_LABEL, windowTime, type UsageWindow } from "./windows";
@@ -177,77 +180,113 @@ export default async function Channels({
     const usage = usageByChannel.get(String(c._id)) ?? [];
     const audience = ((c.policy as { audience?: string[] } | undefined)?.audience ?? []) as string[];
     const assigned = assignedByChannel.get(String(c._id)) ?? 0;
+    // One word for both flags. They are written together and mean nothing apart: a channel
+    // the planner skips but the send path would still use is not a state anyone wants.
+    const live = c.status === "healthy" && c.enabled !== false;
     const daily = usage.find((w) => w.label === "daily");
     // The first limit with nothing left is the one currently stopping sends.
     const blocked = usage.find((w) => w.free === 0);
 
     return (
-      <div className="channel-conn" key={String(c._id)}>
-        <div className="channel-line">
-          <span className="status">
-            <span className={`dot ${c.status === "healthy" ? "ok" : "bad"}`} />
-            {String(c.status)}
-          </span>
-          {/* The sender, which is the value someone came to this page to check. */}
+      <div className={`channel-conn${live ? "" : " is-off"}`} key={String(c._id)}>
+        {/* Sender first, switch last, on one line. The address is what someone came to the
+            page to read; the switch is what they came to change. Everything between them
+            used to sit above both. */}
+        <div className="channel-line channel-top">
+          <span className={`dot ${live ? "ok" : "bad"}`} />
           <strong>{String(c.from ?? "provider default sender")}</strong>
+          <ActionButton
+            action={setChannelEnabled.bind(null, id, String(c._id), !live)}
+            variant="quiet"
+            size="sm"
+            icon={live ? <Power /> : <PowerOff />}
+            pendingLabel={live ? "Switching off…" : "Switching on…"}
+            toast={{
+              tone: live ? "info" : "good",
+              title: live ? `${String(c.from ?? "Channel")} switched off` : `${String(c.from ?? "Channel")} switched on`,
+              body: live
+                ? "Nothing new will be planned onto it, and nothing queued on it will send."
+                : "It can be planned onto and can send again.",
+            }}
+          >
+            {live ? "On" : "Off"}
+          </ActionButton>
         </div>
 
-        <div className="channel-line">
-          {daily ? (
-            <span className={`pill ${blocked ? "bad" : "ok"}`}>
-              {daily.used}/{daily.limit}
+        {/* Five rows of loose pills became a labelled grid.
+            Every value here answers a different question — who it writes to, how many
+            people it speaks for, what it has spent, what it can carry, what it goes
+            through — and as bare pills they read as one undifferentiated cloud where the
+            only way to tell "cold" from "designed email" was already knowing. */}
+        <dl className="channel-facts">
+          <dt>Writes to</dt>
+          <dd>
+            {audience.length > 0 ? (
+              audience.map((a) => (
+                <span className="pill" key={a}>
+                  {a.replace("_", " ")}
+                </span>
+              ))
+            ) : (
+              <span className="pill bad">nobody</span>
+            )}
+          </dd>
+
+          <dt>Assigned</dt>
+          <dd>
+            {assigned} {assigned === 1 ? "lead" : "leads"}
+          </dd>
+
+          <dt>Sent today</dt>
+          <dd>
+            {daily ? (
+              <>
+                <span className={`pill ${blocked ? "bad" : "ok"}`}>
+                  {daily.used}/{daily.limit}
+                </span>
+                {/* What the number means, not what it counts. "47/50" alone reads as a
+                    calendar-day tally, and this one is a rolling window that refills a
+                    slot at a time. */}
+                <span className="muted">
+                  {blocked
+                    ? `${WINDOW_LABEL[blocked.label] ?? blocked.label} full${
+                        blocked.freesAt ? ` · frees ${windowTime(blocked.freesAt)}` : ""
+                      }`
+                    : `${daily.free} can send now`}
+                </span>
+              </>
+            ) : (
+              <span className="pill">no cap</span>
+            )}
+          </dd>
+
+          <dt>Carries</dt>
+          <dd>
+            {/* Read-only here. What a channel can carry decides what every campaign on it
+                composes, so the choice lives in its settings rather than as a list toggle. */}
+            <span className="muted">
+              {caps.html ? "designed email" : "plain text"} ·{" "}
+              {caps.trackingOpens ? "opens" : "no opens"} ·{" "}
+              {/* What the channel reports, as against what it was recorded as reporting.
+                  `inboundReplies` is set when the channel is created and never revisited,
+                  and it said "no replies" on a connection whose server does offer the
+                  mailbox tool and whose replies have been read every ten minutes since.
+                  The discovered tool list is the fact; the stored flag was a guess. */}
+              {reads.has(String(c.connectionId)) ? "reads replies" : "cannot read replies"}
+              {caps.asyncDelivery ? " · queued, reconciled" : ""}
             </span>
-          ) : (
-            <span className="pill">no cap</span>
-          )}
-          {/* Read-only here. What a channel can carry decides what every campaign on it
-              composes, so the choice lives in its settings rather than as a list toggle. */}
-          <span className={`pill ${caps.html ? "ok" : ""}`}>
-            {caps.html ? "designed email" : "plain text"}
-          </span>
-        </div>
+          </dd>
 
-        {/* Who this mailbox is for, and how many people it already speaks for. Both are
-            invisible otherwise: a channel serving nobody looks identical to one serving
-            everyone, and switching one off is a different decision at 4 leads and at 400. */}
-        <div className="channel-line">
-          {audience.map((a) => (
-            <span className="pill" key={a}>
-              {a.replace("_", " ")}
+          <dt>Through</dt>
+          <dd>
+            {/* Named honestly: a card headed Gmail can hold an SMTP or endpoint channel on
+                the same key, and it should say so rather than borrow the vendor's name. */}
+            <span className="muted">
+              {channelLabel(String(c.key), connection ? String(connection.provider) : undefined)} ·{" "}
+              {String(connection?.provider ?? c.kind)} · {String(c.kind)}
             </span>
-          ))}
-          <span className="pill">{assigned} leads assigned</span>
-        </div>
-
-        {/* What the number means, not what it counts. "47/50" alone reads as a calendar-day
-            tally, and this one is a rolling window that refills a slot at a time. */}
-        {daily && (
-          <p className="channel-meta">
-            {blocked
-              ? `${WINDOW_LABEL[blocked.label] ?? blocked.label} full${
-                  blocked.freesAt ? ` · frees ${windowTime(blocked.freesAt)}` : ""
-                }`
-              : `${daily.free} can send now`}
-          </p>
-        )}
-
-        <p className="channel-meta">
-          {/* Named honestly: a card headed Gmail can hold an SMTP or endpoint channel on
-              the same key, and it should say so rather than borrow the vendor's name. */}
-          {channelLabel(String(c.key), connection ? String(connection.provider) : undefined)} ·{" "}
-          {String(connection?.provider ?? c.kind)} · {String(c.key)} · {String(c.kind)}
-        </p>
-
-        <p className="channel-meta">
-          {/* What the channel reports, as against what it was recorded as reporting.
-              `inboundReplies` is set when the channel is created and never revisited, and
-              it said "no replies" on a connection whose server does offer the mailbox tool
-              and whose replies have been read every ten minutes since. The discovered tool
-              list is the fact; the stored flag was a guess made once. */}
-          {caps.trackingOpens ? "opens" : "no opens"} ·{" "}
-          {reads.has(String(c.connectionId)) ? "replies" : "no replies"}
-          {caps.asyncDelivery ? " · queued, reconciled" : ""}
-        </p>
+          </dd>
+        </dl>
 
         {/* A domain that has not verified is the reason this channel is not sending, so the
             records sit on the card itself rather than behind an edit drawer. */}

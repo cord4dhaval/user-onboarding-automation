@@ -114,46 +114,22 @@ export default function ChannelSettingsDrawer({
             }}
             className="stack"
           >
-            {channel.kind === "mcp" && toolChoices.length > 0 && (
-              <>
-                <SendToolFields
-                  choices={toolChoices}
-                  defaultValue={channel.sendTool}
-                  currentArgs={channel.sendArgs}
-                  defaultReturnPath={channel.returnMessageId}
-                />
-                {/* The binding is per connection, not per channel, so this is worth saying
-                    out loud rather than discovering after another channel changes with it. */}
-                <p className="sub" style={{ margin: 0 }}>
-                  The mapping belongs to the connection: any other channel sending through the same server
-                  changes with it. Picking a tool on a different server moves this channel to that server.
-                </p>
-              </>
-            )}
-
-            <div className="grid">
-              <label>
-                Channel
-                <Select
-                  name="key"
-                  value={channel.key}
-                  ariaLabel="Channel kind"
-                  options={["email", "whatsapp", "sms", "in_app", "push"].map((k) => ({ value: k, label: k }))}
-                />
-              </label>
-              <label>
-                Status
-                <Select
-                  name="status"
-                  value={channel.status}
-                  ariaLabel="Channel status"
-                  options={[
-                    { value: "healthy", label: "healthy", hint: "sends and is planned into" },
-                    { value: "disabled", label: "disabled", hint: "nothing sends or is planned" },
-                  ]}
-                />
-              </label>
-            </div>
+            {/* Sections, in the order somebody actually uses them.
+                Everything here was one flat column that opened on seven argument-mapping
+                fields, so the two controls people came for — is it on, and who does it
+                write to — were below the fold on the channel most likely to need them. */}
+            <label>
+              Status
+              <Select
+                name="status"
+                value={channel.status}
+                ariaLabel="Channel status"
+                options={[
+                  { value: "healthy", label: "healthy", hint: "sends and is planned into" },
+                  { value: "disabled", label: "disabled", hint: "nothing sends or is planned" },
+                ]}
+              />
+            </label>
             {channel.assignedLeads > 0 && (
               <p className="sub tight">
                 {channel.assignedLeads} {channel.assignedLeads === 1 ? "person is" : "people are"} being
@@ -163,8 +139,7 @@ export default function ChannelSettingsDrawer({
               </p>
             )}
 
-            <FormatChoice current={channel.html ? "html" : "text"} />
-
+            <h3 className="drawer-section">Audience</h3>
             {/* Which people this mailbox is for.
                 The engine has filtered on this since channels existed and nothing ever set
                 it, so a mailbox bought to cold-mail strangers and the address a product's
@@ -192,11 +167,12 @@ export default function ChannelSettingsDrawer({
               individual messages. Unticking everything leaves it serving everyone.
             </p>
 
+            <h3 className="drawer-section">Limits</h3>
             <label>
               Cap per 24 hours <span className="muted">(rolling, not per calendar day)</span>
               <input name="dailyCap" type="number" min={0} defaultValue={channel.dailyCap} required />
             </label>
-            <p className="sub" style={{ margin: 0 }}>
+            <p className="sub tight">
               Match these to what the provider actually allows. Setting a cap above the provider&apos;s own
               limit does not raise it — it moves the rejection from here to them, where it costs sender
               reputation.
@@ -212,6 +188,8 @@ export default function ChannelSettingsDrawer({
               </label>
             </div>
 
+            <h3 className="drawer-section">Message</h3>
+            <FormatChoice current={channel.html ? "html" : "text"} />
             <label>
               From <span className="muted">(blank if the provider controls it)</span>
               <input name="from" defaultValue={channel.from ?? ""} placeholder="TeamGrid <hi@teamgrid.ai>" />
@@ -243,6 +221,48 @@ export default function ChannelSettingsDrawer({
                 />
               </label>
             </div>
+
+            {/* Folded away, and correctly so. The send-tool mapping is set once when the
+                channel is connected and touched again only when a provider changes its
+                arguments; the channel kind is close to never. Both were open at the top of
+                this drawer, which is why finding Status meant scrolling past seven fields
+                nobody was looking for. */}
+            <details className="drawer-advanced">
+              <summary>Advanced</summary>
+              <div className="stack">
+                {channel.kind === "mcp" && toolChoices.length > 0 && (
+                  <>
+                    <SendToolFields
+                      choices={toolChoices}
+                      defaultValue={channel.sendTool}
+                      currentArgs={channel.sendArgs}
+                      defaultReturnPath={channel.returnMessageId}
+                    />
+                    {/* The binding is per connection, not per channel, so this is worth
+                        saying out loud rather than discovering after another channel
+                        changes with it. */}
+                    <p className="sub tight">
+                      The mapping belongs to the connection: any other channel sending through the same
+                      server changes with it. Picking a tool on a different server moves this channel to
+                      that server.
+                    </p>
+                  </>
+                )}
+                <label>
+                  Channel kind
+                  <Select
+                    name="key"
+                    value={channel.key}
+                    ariaLabel="Channel kind"
+                    options={["email", "whatsapp", "sms", "in_app", "push"].map((k) => ({ value: k, label: k }))}
+                  />
+                  <span className="muted">
+                    What campaigns ask for by name. Changing it moves this channel out of every campaign
+                    that names the old one.
+                  </span>
+                </label>
+              </div>
+            </details>
 
             <div className="drawer-foot">
               <SubmitButton pendingLabel="Saving…">Save channel</SubmitButton>

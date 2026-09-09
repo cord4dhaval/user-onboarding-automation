@@ -1448,6 +1448,33 @@ export async function updateChannel(productId: string, channelId: string, formDa
 }
 
 /**
+ * On and off, from the row rather than from inside a form.
+ *
+ * Switching a mailbox off was three clicks and a scroll: open the drawer, find Status among
+ * the send-tool mapping, save. It is the control people reach for most and it was the one
+ * buried deepest — someone retiring a sender or pausing one that is being complained about
+ * is not editing settings, they are flipping a switch, and the queue is waiting while they
+ * look for it.
+ *
+ * `enabled` and `status` move together, as they do on save: one keeps the planner from
+ * choosing it, the other keeps the send path from using it if something already did.
+ */
+export async function setChannelEnabled(
+  productId: string,
+  channelId: string,
+  enabled: boolean,
+  _formData?: FormData,
+) {
+  const { orgId } = await requireSession();
+  const db = await getDb();
+  await db.collection(C.channels).updateOne(
+    { _id: new ObjectId(channelId), orgId, productId },
+    { $set: { enabled, status: enabled ? "healthy" : "disabled" } },
+  );
+  revalidatePath(`/products/${productId}/channels`);
+}
+
+/**
  * Removes a channel and everything that only existed to serve it.
  *
  * Deleting the channel row alone is not a delete. A mailbox connected through the Gmail
