@@ -616,7 +616,25 @@ export default async function Review({
                           {totals.find((t) => t.key === goalKey)?.name ?? goalKey}
                           <div className="muted" style={{ fontSize: 12.5 }}>angle {String(action.angle)}</div>
                         </td>
-                        <td className="cell-wide">{content.subject ?? <span className="muted">no subject</span>}</td>
+                        {/* "no subject" read as a broken row, and it is not one.
+                            A tier-2 touch is queued with no copy on purpose: which rung of
+                            the ladder it lands on is decided at send time from how far
+                            through the sequence this person actually is, so the subject
+                            genuinely does not exist yet and will when it goes. Saying that
+                            is the difference between a queue somebody approves and one
+                            they stop trusting. */}
+                        <td className="cell-wide">
+                          {content.subject ? (
+                            content.subject
+                          ) : (
+                            <>
+                              <span className="pill">not written yet</span>
+                              <div className="muted" style={{ fontSize: 12.5 }}>
+                                sends the template rung for their touch — Preview shows which
+                              </div>
+                            </>
+                          )}
+                        </td>
                         {/* The mailbox, not the kind of channel. "email" was true of every
                             row on the page; which address it leaves from is the thing that
                             differs, and once cold outreach and the product's own sender are

@@ -94,11 +94,25 @@ export default async function Channels({
   // whether replies get read — not the capability flag stamped on the channel at creation.
   const reads = new Set(
     connections
-      .filter((c) =>
-        ((bindingFor(String(c._id))?.discoveredTools ?? []) as McpTool[]).some(
-          (t) => String(t.name) === "get_email_tokens",
-        ),
-      )
+      .filter((c) => {
+        // An MCP server reads replies if it offers the tool for it.
+        if (
+          ((bindingFor(String(c._id))?.discoveredTools ?? []) as McpTool[]).some(
+            (t) => String(t.name) === "get_email_tokens",
+          )
+        ) {
+          return true;
+        }
+        // A Gmail mailbox reads them through the Gmail API, on the scope its owner granted
+        // — it has no MCP tools at all. Tested only for the tool, this said "cannot read
+        // replies" on every mailbox connected by signing in, including ones the inbound
+        // poller has been reading every ten minutes. The card was wrong, not the mailbox.
+        return (
+          c.authType === "oauth2" &&
+          c.provider === "google" &&
+          grantedCapabilities((c.scopes ?? []) as string[]).read
+        );
+      })
       .map((c) => String(c._id)),
   );
 
