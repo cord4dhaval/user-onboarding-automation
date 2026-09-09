@@ -6,6 +6,7 @@ import { greetingName } from "../../engine/names.js";
 import { allowedSegments, stampPlaybook } from "../../engine/playbooks.js";
 import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type ThinkingKind } from "../../engine/queue.js";
 import { backlog } from "../../engine/dispatch.js";
+import { dueAtFor, type CadenceBand } from "../../engine/cadence.js";
 import { suppress } from "../../engine/suppression.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue } from "../../engine/fireDue.js";
@@ -1183,11 +1184,12 @@ export const TOOLS: ToolDef[] = [
         carried.set(Number(t.step_id), [...new Set(ids)]);
       }
 
+      const goalDef = await db
+        .collection(C.goals)
+        .findOne({ orgId, productId, key: String(instance.goalKey) });
+
       const wanted = [...new Set([...carried.values()].flat())];
       if (wanted.length > 0) {
-        const goalDef = await db
-          .collection(C.goals)
-          .findOne({ orgId, productId, key: String(instance.goalKey) });
         const context = await assetContextFor(orgId, productId, String(instance.personId), goalDef);
         const problems: string[] = [];
         for (const t of touches) {
@@ -1207,7 +1209,49 @@ export const TOOLS: ToolDef[] = [
         (await loadAssets(orgId, productId, wanted)).map((row) => [String(row._id), row]),
       );
 
-      for (const t of touches) {
+      // When each message may go. The offset a session writes is measured from the
+      // previous message, not from this call: composed with after_days of 0, two steps for
+      // one person were due the same minute, approved together, and sent five seconds
+      // apart into the same inbox. Each touch is paced from the latest of their last
+      // message, anything already waiting for them, and the touch before it in this batch,
+      // through the same cadence the engine uses everywhere else.
+      const person = await db
+        .collection(C.people)
+        .findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { temp: 1, lastContactedAt: 1 } });
+      const waiting = await db
+        .collection(C.actions)
+        .find(
+          {
+            orgId,
+            productId,
+            personId: String(instance.personId),
+            status: { $in: ["queued", "awaiting_approval", "sending"] },
+          },
+          { projection: { dueAt: 1 } },
+        )
+        .toArray();
+      const stamps = [person?.lastContactedAt, ...waiting.map((w) => w.dueAt)]
+        .map((value) => (value ? new Date(String(value)) : null))
+        .filter((date): date is Date => !!date && !Number.isNaN(date.getTime()));
+      let anchor: Date | null = stamps.length > 0 ? new Date(Math.max(...stamps.map((d) => d.getTime()))) : null;
+      const band = (person?.temp as { band?: string } | undefined)?.band;
+      const cadence = goalDef?.cadenceByTemp as Record<string, CadenceBand> | undefined;
+      const planOffset = new Map<number, number>();
+      for (const step of ((plan?.steps ?? []) as Array<Record<string, unknown>>)) {
+        planOffset.set(Number(step.id ?? step.step_id), Number(step.after_days ?? step.afterDays ?? 3));
+      }
+      const ordered = [...touches].sort((a, b) => Number(a.step_id) - Number(b.step_id));
+      const dueAts: string[] = [];
+
+      for (const t of ordered) {
+        const dueAt = dueAtFor({
+          offsetDays: Number(t.after_days ?? planOffset.get(Number(t.step_id)) ?? 3),
+          band,
+          lastContactedAt: anchor,
+          configured: cadence,
+        });
+        anchor = dueAt;
+
         const channelKey = String(t.channel);
         const channel = await db
           .collection(C.channels)
@@ -1247,16 +1291,17 @@ export const TOOLS: ToolDef[] = [
             signals: [],
             idempotencyKey: `${goalInstanceId}:step:${String(t.step_id)}`,
             status: "queued",
-            dueAt: new Date(Date.now() + Number(t.after_days ?? 1) * 86_400_000),
+            dueAt,
             cost: 0,
           });
           queued.push(String(actionId));
+          dueAts.push(dueAt.toISOString());
         } catch (err) {
           // A duplicate key means this step is already queued — the index doing its job.
           if (!(err instanceof Error && err.message.includes("E11000"))) throw err;
         }
       }
-      return { queued: queued.length, action_ids: queued };
+      return { queued: queued.length, action_ids: queued, due_at: dueAts };
     },
   },
 

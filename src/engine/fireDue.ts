@@ -17,6 +17,7 @@ import { assetsNeedApproval, creditAssets, highestTier, renderableAssets } from 
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
 import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, rateBlock, rateHeadroom } from "./governor.js";
+import { bandFor, type CadenceBand } from "./cadence.js";
 import { resolveTemplateFor } from "./templates.js";
 import { applyTracking, trackingAllowed } from "./tracking.js";
 import { bumpPrior } from "./outcomes.js";
@@ -49,6 +50,24 @@ const STALE_CLAIM_MS = 15 * 60_000;
  * more likely to answer with a rate limit, which costs a retry rather than saving a wait.
  */
 const SEND_CONCURRENCY = 8;
+const DAY_MS = 86_400_000;
+
+/** The most recent of several timestamps, in whatever shape they were stored. */
+function latestOf(values: unknown[]): Date | null {
+  let best: Date | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const date = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(date.getTime())) continue;
+    if (!best || date > best) best = date;
+  }
+  return best;
+}
+
+function gapLabel(days: number): string {
+  if (days < 1) return `${Math.round(days * 24)}-hour`;
+  return days === 1 ? "one-day" : `${days}-day`;
+}
 
 export interface FireOptions {
   orgId: string;
@@ -134,6 +153,13 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     headroom.set(channelId, left - 1);
     return true;
   };
+
+  // People written to in this run, with the moment they were claimed. Sends overlap, and
+  // the person's lastContactedAt lands only after a send returns, so two messages to one
+  // person in the same batch would both pass a check that read the database alone. On
+  // 9 September two approved steps for one person were claimed in the same second and both
+  // went out, five seconds apart, into the same inbox.
+  const contactedThisRun = new Map<string, Date>();
 
   for (const action of due) {
     // Claim it. The status transition is the lease: a second concurrent run finds nothing
@@ -223,6 +249,37 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const goal = await db
         .collection(C.goals)
         .findOne({ orgId: opts.orgId, productId: opts.productId, key: String(goalInstance.goalKey) });
+
+      // One message per person per gap, enforced at the one point nothing can bypass. A
+      // plan, a compose call and a reviewer can each put a second message in front of
+      // someone before the first has had its gap; every one of them passes through here.
+      // An answer to something they wrote is exempt: that is a conversation, not a
+      // campaign touch, and holding it for the band would be the worse rudeness.
+      if (String(action.angle) !== "reply") {
+        const band = bandFor(
+          (person.temp as { band?: string } | undefined)?.band,
+          goal?.cadenceByTemp as Record<string, CadenceBand> | undefined,
+        );
+        const last = latestOf([contactedThisRun.get(String(person._id)), person.lastContactedAt]);
+        const earliest =
+          last && band.minGapDays < 999 ? new Date(last.getTime() + band.minGapDays * DAY_MS) : null;
+        if (earliest && earliest > now) {
+          await db.collection(C.actions).updateOne(
+            { _id: action._id },
+            {
+              $set: {
+                status: "queued",
+                dueAt: earliest,
+                deferReason: `waiting out the ${gapLabel(band.minGapDays)} gap since their last message`,
+              },
+              $unset: { claimedAt: "" },
+            },
+          );
+          summary.deferred++;
+          continue;
+        }
+        contactedThisRun.set(String(person._id), now);
+      }
 
       // The trial link comes from the product's own config rather than a hardcoded host,
       // so a second product does not silently send people to the first one's site.

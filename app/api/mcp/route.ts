@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { TOOLS, type ToolCtx } from "@/mcp/server/tools.js";
+import { checkArgs } from "@/mcp/argcheck.js";
 import { resolveAccessToken } from "@/auth/oauth-server.js";
 import { appOrigin } from "@/auth/origin.js";
 import { recordToolCall, refuseOutOfScope } from "@/engine/runlog.js";
@@ -124,6 +125,18 @@ export async function POST(request: NextRequest) {
     if (outOfScope) {
       await recordToolCall({ ...ctx, tool: name, args, error: outOfScope, ms: 0 });
       return reply({ content: [{ type: "text", text: `Error: ${outOfScope}` }], isError: true });
+    }
+
+    // Checked against the tool's own schema before the handler sees it. A call missing a
+    // required argument used to reach the handler, which read it as undefined and in one
+    // case wrote it: a plan with no steps and a rationale of "undefined", stored, and then
+    // a crash on the reply. This checker already guarded calls this server makes to other
+    // servers; it had never been turned on its own.
+    const malformed = checkArgs(tool.inputSchema, args);
+    if (malformed.length > 0) {
+      const message = `${name}: ${malformed.join("; ")}`;
+      await recordToolCall({ ...ctx, tool: name, args, error: message, ms: 0 });
+      return reply({ content: [{ type: "text", text: `Error: ${message}` }], isError: true });
     }
 
     try {
