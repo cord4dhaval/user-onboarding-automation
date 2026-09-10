@@ -1,9 +1,7 @@
 import { ObjectId } from "mongodb";
 import { NextResponse, type NextRequest } from "next/server";
-import { getDb } from "@/db/client.js";
-import { COLLECTIONS as C } from "@/db/collections.js";
 import { verify } from "@/engine/tracking.js";
-import { verifyCampaign } from "@/engine/verify.js";
+import { recordSiteEvent } from "@/engine/siteEvents.js";
 
 export const dynamic = "force-dynamic";
 
@@ -23,64 +21,13 @@ export const dynamic = "force-dynamic";
  * A repeat inside a minute is dropped. A thank-you page that a person refreshes four times
  * is one booking, and four events would read as a queue of them.
  */
-const REPEAT_WINDOW_MS = 60_000;
-
 async function record(request: NextRequest, event: string): Promise<NextResponse> {
-  const name = event.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 40);
-  if (!name) return new NextResponse(null, { status: 404, headers: cors() });
-
   const personId = request.nextUrl.searchParams.get("p") ?? "";
   const signature = request.nextUrl.searchParams.get("s") ?? "";
   if (!ObjectId.isValid(personId)) return new NextResponse(null, { status: 404, headers: cors() });
   if (!verify("e", personId, "", signature)) return new NextResponse(null, { status: 404, headers: cors() });
-
-  const db = await getDb();
-  const person = await db
-    .collection(C.people)
-    .findOne({ _id: new ObjectId(personId) }, { projection: { orgId: 1, productId: 1 } });
-  // A valid signature for a person who has since been deleted. Nothing to record against.
-  if (!person) return new NextResponse(null, { status: 404, headers: cors() });
-
-  const orgId = String(person.orgId);
-  const productId = String(person.productId);
-  const type = `site_event:${name}`;
-  const now = new Date();
-
-  const recent = await db
-    .collection(C.events)
-    .findOne({ orgId, personId, type, ts: { $gte: new Date(now.getTime() - REPEAT_WINDOW_MS) } });
-
-  if (!recent) {
-    await db.collection(C.events).insertOne({
-      _id: new ObjectId(),
-      orgId,
-      productId,
-      personId,
-      source: "product",
-      type,
-      payload: { event: name, referer: request.headers.get("referer") ?? null },
-      ts: now,
-    });
-
-    // Checked immediately rather than on the next tick. The whole point of this endpoint is
-    // that somebody just did the thing the campaign was driving at, and a person who books
-    // a call and then receives the next chase an hour later has been told nobody noticed.
-    const active = await db
-      .collection(C.goalInstances)
-      .find({ orgId, productId, personId, status: "active" })
-      .project({ _id: 1 })
-      .toArray();
-    for (const instance of active) {
-      try {
-        await verifyCampaign(orgId, String(instance._id));
-      } catch {
-        // A verifier that cannot answer must never turn a recorded fact into a 500. The
-        // event is written; the next tick will read it.
-      }
-    }
-  }
-
-  return new NextResponse(null, { status: 204, headers: cors() });
+  const ok = await recordSiteEvent(personId, event, request.headers.get("referer"));
+  return new NextResponse(null, { status: ok ? 204 : 404, headers: cors() });
 }
 
 /** Called from a page on the customer's own domain, so the browser asks first. */

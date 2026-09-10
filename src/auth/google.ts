@@ -43,6 +43,15 @@ export const GOOGLE_SCOPE_TIERS = {
   read: ["https://www.googleapis.com/auth/gmail.modify"],
   /** Aliases and vacation settings. Restricted: CASA, same assessment as read. */
   manage: ["https://www.googleapis.com/auth/gmail.settings.basic"],
+  /**
+   * Booking. Sensitive, same class as send, no CASA. freebusy reads only the shape of the
+   * calendar — when it is busy, never with what — and events creates the meeting the lead
+   * picked, with a Meet link, on the mailbox owner's own calendar.
+   */
+  calendar: [
+    "https://www.googleapis.com/auth/calendar.freebusy",
+    "https://www.googleapis.com/auth/calendar.events",
+  ],
 } as const;
 
 export type ScopeTier = keyof typeof GOOGLE_SCOPE_TIERS;
@@ -55,7 +64,7 @@ export type ScopeTier = keyof typeof GOOGLE_SCOPE_TIERS;
  * Set GOOGLE_SCOPE_TIERS=identity,send to run send-only while CASA is outstanding.
  */
 export function configuredScopes(): string[] {
-  const raw = (process.env.GOOGLE_SCOPE_TIERS ?? "identity,send,read,manage")
+  const raw = (process.env.GOOGLE_SCOPE_TIERS ?? "identity,send,read,manage,calendar")
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean) as ScopeTier[];
@@ -70,6 +79,7 @@ export function grantedCapabilities(scopes: string[]): {
   send: boolean;
   read: boolean;
   manage: boolean;
+  calendar: boolean;
 } {
   const has = (s: string) => scopes.includes(s) || scopes.includes("https://mail.google.com/");
   return {
@@ -78,6 +88,10 @@ export function grantedCapabilities(scopes: string[]): {
       has("https://www.googleapis.com/auth/gmail.modify") ||
       has("https://www.googleapis.com/auth/gmail.readonly"),
     manage: has("https://www.googleapis.com/auth/gmail.settings.basic"),
+    // Both halves, or nothing: offering times we cannot then book is worse than no button.
+    calendar:
+      (scopes.includes("https://www.googleapis.com/auth/calendar.freebusy") || scopes.includes("https://www.googleapis.com/auth/calendar")) &&
+      (scopes.includes("https://www.googleapis.com/auth/calendar.events") || scopes.includes("https://www.googleapis.com/auth/calendar")),
   };
 }
 

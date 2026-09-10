@@ -60,6 +60,26 @@ export const accessDetails = z.object({
   repPhone: z.string().optional(),
   /** "Weekdays, 10-6 IST" — printed beside the link so nobody calls into silence. */
   availability: z.string().optional(),
+  /**
+   * When set, the booking is ours: slots come from this connection's Google Calendar
+   * free/busy and the meeting is created there. Without it, bookingUrl is somebody else's
+   * page and the campaign only learns of a booking if that page reports it.
+   */
+  calendar: z
+    .object({
+      connectionId: objectIdString,
+      timezone: z.string().default("Asia/Kolkata"),
+      startHour: z.number().int().min(0).max(23).default(10),
+      endHour: z.number().int().min(1).max(24).default(18),
+      durationMin: z.number().int().positive().default(15),
+      /** ISO weekdays, 1 = Monday. */
+      weekdays: z.array(z.number().int().min(1).max(7)).default([1, 2, 3, 4, 5]),
+      lookaheadDays: z.number().int().positive().default(7),
+      minLeadHours: z.number().nonnegative().default(3),
+    })
+    .optional(),
+  meetingTitle: z.string().optional(),
+  meetingDescription: z.string().optional(),
 });
 
 export const assetFile = z.object({

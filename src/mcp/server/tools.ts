@@ -280,7 +280,10 @@ async function assertProduct(productId: string, ctx: ToolCtx): Promise<string> {
     .collection(C.products)
     .findOne({ _id: new ObjectId(productId), orgId: ctx.orgId });
   if (!product) throw new Error(`product ${productId} not found`);
-  return ctx.orgId;
+  // The product id, not the org id. Returning the org here filed every template, brand
+  // read and preview under the organisation, where the engine's product-scoped queries
+  // could never find them — a session would write a template and the sender would not see it.
+  return productId;
 }
 
 /**

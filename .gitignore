@@ -9,3 +9,6 @@ next-env.d.ts
 
 # Prune dumps: real lead data, never committed.
 backups/
+
+# Crawled marketing and app screenshots (82 MB, contains rendered customer data). public/assets is separate and tracked.
+/assets/

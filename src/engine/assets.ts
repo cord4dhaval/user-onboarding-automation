@@ -1,5 +1,6 @@
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
+import { calendarSettingsFrom, slotsFor } from "./booking.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { RenderableAsset } from "./compose.js";
 
@@ -329,23 +330,36 @@ export async function renderableAssets(
   const rows = await loadAssets(orgId, productId, ids);
   const byId = new Map(rows.map((row) => [String(row._id), row]));
 
-  return ids
-    .map((id) => byId.get(id))
-    .filter((row): row is Document => Boolean(row) && row!.status !== "archived")
-    .map((row) => {
-      const file = (row.file ?? {}) as { url?: string; thumbUrl?: string };
-      return {
-        key: String(row.key),
-        tier: String(row.tier),
-        kind: String(row.kind),
-        oneLine: String(row.oneLine ?? ""),
-        url: file.url,
-        thumbUrl: file.thumbUrl,
-        text: row.text ? String(row.text) : undefined,
-        attribution: row.attribution ? String(row.attribution) : undefined,
-        access: (row.access ?? undefined) as RenderableAsset["access"],
-      };
+  const out: RenderableAsset[] = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row || row.status === "archived") continue;
+    const file = (row.file ?? {}) as { url?: string; thumbUrl?: string };
+    const stored = (row.access ?? undefined) as (NonNullable<RenderableAsset["access"]> & { calendar?: Record<string, unknown> }) | undefined;
+    // The calendar settings stay in the engine; the renderer only ever sees the slots they produced.
+    const { calendar: _calendar, ...access } = stored ?? {};
+    let slots: Array<{ label: string; url: string }> | undefined;
+    // An access asset with a calendar behind it offers real times. Read at render, so a mail
+    // sent this afternoon offers what is open this afternoon; empty when the connection has
+    // no calendar scope yet, and the asset then renders as a plain "Pick a time".
+    const settings = calendarSettingsFrom(stored as Record<string, unknown> | undefined);
+    if (access.bookingUrl && settings) {
+      const open = await slotsFor(orgId, settings, 2).catch(() => []);
+      slots = open.map((slot) => ({ label: slot.label, url: `${access.bookingUrl}&slot=${encodeURIComponent(slot.start.toISOString())}` }));
+    }
+    out.push({
+      key: String(row.key),
+      tier: String(row.tier),
+      kind: String(row.kind),
+      oneLine: String(row.oneLine ?? ""),
+      url: file.url,
+      thumbUrl: file.thumbUrl,
+      text: row.text ? String(row.text) : undefined,
+      attribution: row.attribution ? String(row.attribution) : undefined,
+      access: stored ? { ...access, slots } : undefined,
     });
+  }
+  return out;
 }
 
 /**

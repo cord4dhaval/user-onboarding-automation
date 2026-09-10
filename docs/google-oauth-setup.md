@@ -44,6 +44,8 @@ Workspace, in which case *Internal* skips verification entirely.
 | --- | --- | --- | --- |
 | `openid`, `email`, `profile` | Which account connected | — | Nothing |
 | `.../auth/gmail.send` | Sending | Sensitive | Brand verification |
+| `.../auth/calendar.freebusy` | Booking: when the calendar is busy, never with what | Sensitive | Brand verification |
+| `.../auth/calendar.events` | Booking: create the meeting the lead picked, with a Meet link | Sensitive | Brand verification |
 | `.../auth/gmail.modify` | Replies, bounce notices, labelling threads read | **Restricted** | Verification **plus** an annual CASA security assessment |
 | `.../auth/gmail.settings.basic` | The mailbox's verified send-as aliases | **Restricted** | Same CASA assessment |
 
@@ -54,6 +56,16 @@ Restricted scopes are the expensive half. Two ways to sequence this:
   variable — though every already-connected customer must reconnect to grant the new scope.
 - **Ask for everything now.** Keep the default `identity,send,read,manage`. Nothing is
   blocked while you are in testing mode, and no customer is ever asked to consent twice.
+
+### Booking needs the calendar tier
+
+Also enable **Google Calendar API** under APIs & Services → Library. The `calendar` tier is
+requested by default (`GOOGLE_SCOPE_TIERS` unset, or listing `calendar`). A mailbox connected
+before the tier existed keeps sending; it just cannot offer times. Connect the same address
+again from the channels page to widen it — the channel keeps its history and moves to the
+new grant. What the tier unlocks: an access asset with `calendar` settings offers the next
+open times as buttons in the mail, `/api/book` confirms one, the meeting lands on the
+mailbox owner's own calendar with a Meet link, and the person's sequence stops.
 
 ## 5. Test users
 

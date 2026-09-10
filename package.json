@@ -37,7 +37,9 @@
     "prune:leads": "tsx --env-file=.env src/scripts/prune-leads.ts",
     "reclassify:signals": "tsx --env-file=.env src/scripts/reclassify-signals.ts",
     "build:check": "NEXT_DIST_DIR=.next-check next build",
-    "is:deployed": "tsx --env-file=.env src/scripts/is-deployed.ts"
+    "is:deployed": "tsx --env-file=.env src/scripts/is-deployed.ts",
+    "grab:assets": "tsx src/scripts/grab-assets.ts",
+    "grab:app": "tsx src/scripts/grab-app-screens.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1127.0",
@@ -61,8 +63,10 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.9.0",
+    "@types/ws": "^8.18.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "ws": "^8.21.3"
   }
 }

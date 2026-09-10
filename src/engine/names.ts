@@ -45,7 +45,32 @@ function tidyCase(word: string): string {
  * "there" is not a failure: "Hi there," is a normal way to open a message, and it is far
  * better than confidently addressing someone as their own job title.
  */
+/**
+ * Words that mark the whole string as a business, not a person. A lead form that asked for
+ * a name and got "Maharashtra Gas Company" or "I P Travel Lines" produced "Hi Maharashtra"
+ * and "Hi Travel"; one of these anywhere in the name means there is nobody to greet.
+ */
+const COMPANY_WORDS = new Set([
+  "company", "co", "ltd", "limited", "pvt", "private", "llp", "llc", "inc", "corp", "corporation",
+  "group", "forum", "lines", "travel", "travels", "tours", "gas", "motors", "cars", "solutions",
+  "technologies", "technology", "tech", "media", "decor", "collection", "collections", "carriers",
+  "logistics", "industries", "enterprises", "enterprise", "consultants", "consulting", "developers",
+  "studio", "studios", "agency", "associates", "surgical", "hospital", "clinic", "school", "academy",
+  "institute", "university", "foundation", "trust", "bank", "finance", "financial", "capital",
+  "exports", "imports", "traders", "trading", "works", "mills", "textiles", "jewellers", "jewellery",
+  "realty", "homes", "builders", "infra", "infratech", "energy", "solar", "power", "systems",
+  "services", "hr", "team", "sales", "support", "info", "admin", "office", "&", "and",
+]);
+
+function looksLikeCompany(words: string[]): boolean {
+  if (words.some((w) => COMPANY_WORDS.has(w.toLowerCase().replace(/[.,]/g, "")))) return true;
+  // "Dare2Gear | Adventure Redefined": a digit inside a word, or a pipe, is a brand, not a person.
+  return words.some((w) => /\d/.test(w) || w.includes("|"));
+}
+
 export function greetingName(fullName: string | undefined | null, fallback = "there"): string {
+  const raw = String(fullName ?? "").split(/[\s,]+/).filter(Boolean);
+  if (looksLikeCompany(raw)) return fallback;
   const words = String(fullName ?? "")
     // Brackets and quotes are punctuation someone pasted in. An apostrophe is not:
     // O'Brien and D'Souza lose their first syllable without it.

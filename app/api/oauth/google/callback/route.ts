@@ -136,16 +136,32 @@ async function ensureChannel(
   orgId: string,
   connection: Record<string, unknown>,
   email: string,
-  caps: { send: boolean; read: boolean; manage: boolean },
+  caps: { send: boolean; read: boolean; manage: boolean; calendar: boolean },
 ) {
   const db = await getDb();
-  const existing = await db
-    .collection(C.channels)
-    .findOne({ orgId, connectionId: String(connection._id) });
+  // The same mailbox connected again — to widen scope, or after a token died — is a
+  // reconnect, not a second channel. Its channel moves to the new connection and keeps its
+  // history, caps and display name; only the address part of `from` is matched.
+  const existing =
+    (await db.collection(C.channels).findOne({ orgId, connectionId: String(connection._id) })) ??
+    (await db.collection(C.channels).findOne({
+      orgId,
+      productId: String(connection.productId),
+      kind: "native",
+      $or: [{ from: email }, { fromAddress: email }, { from: new RegExp(`<${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}>$`, "i") }],
+    }));
   if (existing) {
     await db.collection(C.channels).updateOne(
       { _id: existing._id },
-      { $set: { status: "healthy", from: email, "capabilities.inboundReplies": caps.read } },
+      {
+        $set: {
+          status: "healthy",
+          connectionId: String(connection._id),
+          fromAddress: email,
+          "capabilities.inboundReplies": caps.read,
+          "capabilities.calendar": caps.calendar,
+        },
+      },
     );
     return;
   }
@@ -173,6 +189,9 @@ async function ensureChannel(
       // needs read scope — so this is only honest when read scope was granted.
       bounceWebhook: false,
       inboundReplies: caps.read,
+      // Free/busy and event creation on this mailbox's own calendar; what the booking
+      // page and the two-slot buttons in a mail run on.
+      calendar: caps.calendar,
       consentRequired: false,
       fromDomain: "caller_controlled",
       asyncDelivery: false,

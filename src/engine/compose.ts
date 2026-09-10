@@ -81,6 +81,8 @@ export interface RenderableAsset {
     repEmail?: string;
     repPhone?: string;
     availability?: string;
+    /** Open times computed at render from the connected calendar; each links straight to its confirm page. */
+    slots?: Array<{ label: string; url: string }>;
   };
 }
 
@@ -130,7 +132,12 @@ function assetBlocks(asset: RenderableAsset, vars: MergeVars): ResolvedBlock[] {
     // Placed before the template's own call to action, so this is the button and the
     // template's becomes a plain link. When we are handing someone a calendar, booking is
     // the decision the message is asking for — not whatever the skeleton was asking for.
-    if (access.bookingUrl) out.push({ kind: "cta", text: "Pick a time", url: url(access.bookingUrl)! });
+    //
+    // With a calendar behind it the first open time is the button and the next is a link,
+    // so the decision is which time, not whether. "Pick another time" opens the full list.
+    const slots = access.slots ?? [];
+    for (const slot of slots.slice(0, 2)) out.push({ kind: "cta", text: slot.label, url: url(slot.url)! });
+    if (access.bookingUrl) out.push({ kind: "cta", text: slots.length ? "Pick another time" : "Pick a time", url: url(access.bookingUrl)! });
     return out;
   }
 
