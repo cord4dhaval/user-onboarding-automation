@@ -106,6 +106,16 @@ export const template = z.object({
   /** Resolution is a cascade: person override beats segment beats product default. */
   scope: z.enum(["product_default", "segment", "person_override"]),
   segmentKey: z.string().optional(),
+  /**
+   * Several first mails competing for the same slot. A campaign's firstTouch or a playbook
+   * step names the family; the engine picks the variant nobody has sent this person yet,
+   * weighted by what has won so far (`stats.alpha` / `stats.beta`). Each variant is its
+   * own key, so "already sent" and "next unused" fall out of the existing rung logic.
+   */
+  family: z.string().optional(),
+  variant: z.string().optional(),
+  /** Empty means any segment. Named segments are the only ones this variant is offered to. */
+  forSegments: z.array(z.string()).default([]),
   personId: objectIdString.optional(),
   version: z.number().int().positive().default(1),
   parentId: objectIdString.optional(),

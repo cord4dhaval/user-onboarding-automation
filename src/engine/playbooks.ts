@@ -28,6 +28,8 @@ export interface PlaybookStep {
   why: string;
   /** Optional: the ladder rung to render through. Left unset, send time decides. */
   templateKey?: string;
+  /** Optional: no_open · no_click · warm · cold. A failed gate skips the step for good. */
+  gate?: string;
 }
 
 export interface Playbook extends Document {

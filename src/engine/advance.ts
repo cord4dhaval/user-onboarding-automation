@@ -72,7 +72,35 @@ export function tierFor(person: Document, goalInstance: Document): Tier {
  * an angle somebody clicked is not spent, it reached them and the ask was wrong — and that
  * is a judgement for the routine that rewrote their plan, not for this loop.
  */
-export function nextStep(plan: Document | null, written: Set<number>, delivered: Set<string> = new Set()): Document | null {
+export interface StepEngagement {
+  opened: boolean;
+  clicked: boolean;
+  band?: string;
+}
+
+/**
+ * Whether a step's gate lets it fire for this person right now.
+ *
+ *   no_open    only while nothing we sent has been opened — a second first impression
+ *   no_click   only while nothing has been clicked
+ *   warm       only once they are warm or hot
+ *   cold       only while they are neither
+ *
+ * A gate that fails skips the step for good: the situation it was written for did not
+ * happen. Unknown gates pass, so an older plan keeps running.
+ */
+export function gateOpen(gate: unknown, e: StepEngagement | undefined): boolean {
+  const g = String(gate ?? "").trim().toLowerCase();
+  if (!g || !e) return true;
+  const warm = e.band === "warm" || e.band === "hot";
+  if (g === "no_open") return !e.opened;
+  if (g === "no_click") return !e.clicked;
+  if (g === "warm") return warm;
+  if (g === "cold") return !warm;
+  return true;
+}
+
+export function nextStep(plan: Document | null, written: Set<number>, delivered: Set<string> = new Set(), engagement?: StepEngagement): Document | null {
   const steps = ((plan?.steps ?? []) as Document[]).slice().sort((a, b) => Number(a.id ?? 0) - Number(b.id ?? 0));
   const planStarted = steps.some((step) => written.has(Number(step.id ?? step.step_id ?? 0)));
 
@@ -81,6 +109,7 @@ export function nextStep(plan: Document | null, written: Set<number>, delivered:
     if (!Number.isFinite(id) || id === 0) continue;
     if (written.has(id)) continue;
     if (!planStarted && delivered.has(String(step.angle ?? "").toLowerCase())) continue;
+    if (!gateOpen(step.gate, engagement)) continue;
     return { ...step, id };
   }
   return null;
@@ -151,7 +180,7 @@ export async function advance(
       .collection(C.actions)
       .find(
         { ...s, goalInstanceId: { $in: instanceIds } },
-        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1 } },
+        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1, firstOpenedAt: 1, firstClickedAt: 1 } },
       )
       .toArray(),
   ]);
@@ -162,12 +191,18 @@ export async function advance(
 
   const pendingBy = new Map<string, number>();
   const writtenBy = new Map<string, Set<number>>();
+  /** What this person did with what we sent, for the gates on their remaining steps. */
+  const engagementBy = new Map<string, { opened: boolean; clicked: boolean }>();
   /** Angles this person has already been given, whatever produced them. */
   const deliveredBy = new Map<string, Set<string>>();
   for (const action of actionRows) {
     const key = String(action.goalInstanceId);
     if (["queued", "awaiting_approval", "sending"].includes(String(action.status))) {
       pendingBy.set(key, (pendingBy.get(key) ?? 0) + 1);
+    }
+    if (action.firstOpenedAt || action.firstClickedAt) {
+      const e = engagementBy.get(key) ?? { opened: false, clicked: false };
+      engagementBy.set(key, { opened: e.opened || Boolean(action.firstOpenedAt), clicked: e.clicked || Boolean(action.firstClickedAt) });
     }
     const step = Number(action.planStepId);
     if (Number.isFinite(step)) {
@@ -240,16 +275,22 @@ export async function advance(
       continue;
     }
 
-    const tier = tierFor(person, instance);
+    let tier = tierFor(person, instance);
     if (tier === 3) {
       summary.parked++;
       continue;
     }
+    // A campaign can decide everyone in it is worth a written message — an ad-lead
+    // campaign, where every person chose to click — and then the engine renders nothing
+    // after the welcome; a session writes each step against what the person did.
+    if (goal.composeAll === true) tier = 1;
 
+    const bandNow = (person.temp as { band?: string } | undefined)?.band;
     const step = nextStep(
       planById.get(String(instance.currentPlanId)) ?? null,
       writtenBy.get(goalInstanceId) ?? new Set(),
       deliveredBy.get(goalInstanceId) ?? new Set(),
+      { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: bandNow },
     );
     if (!step) {
       summary.skipped.push({ goalInstanceId, reason: "plan exhausted" });

@@ -3143,7 +3143,8 @@ TOOLS.push({
             channel: { type: "string" },
             angle: { type: "string" },
             why: { type: "string" },
-            template_key: { type: "string", description: "Optional. Left unset, send time picks the ladder rung." },
+            template_key: { type: "string", description: "Optional. Left unset, send time picks the ladder rung. A template family name (e.g. \"welcome\") picks the next variant this person has not had yet." },
+            gate: { type: "string", enum: ["no_open", "no_click", "warm", "cold"], description: "Optional. no_open: only while nothing we sent was opened. no_click: only while nothing was clicked. warm: only once warm or hot. cold: only while neither. A failed gate skips the step for good." },
           },
           required: ["id", "offset_days", "channel", "angle", "why"],
         },
@@ -3180,6 +3181,7 @@ TOOLS.push({
       angle: String(step.angle ?? ""),
       why: String(step.why ?? ""),
       templateKey: step.template_key ? String(step.template_key) : undefined,
+      gate: step.gate ? String(step.gate) : undefined,
     }));
     if (steps.length === 0) throw new Error("a playbook needs at least one step");
 

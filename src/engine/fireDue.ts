@@ -13,12 +13,12 @@ import { renderHtml } from "./html.js";
 import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
-import { assetsNeedApproval, creditAssets, highestTier, renderableAssets } from "./assets.js";
+import { assetsNeedApproval, assetsForRender, creditAssets, highestTier } from "./assets.js";
 import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
 import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, rateBlock, rateHeadroom } from "./governor.js";
 import { bandFor, type CadenceBand } from "./cadence.js";
-import { resolveTemplateFor } from "./templates.js";
+import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTracking, trackingAllowed } from "./tracking.js";
 import { bumpPrior } from "./outcomes.js";
 import { localHour } from "./time.js";
@@ -293,7 +293,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // What this message carries, resolved at send rather than at compose: an asset that
       // was archived or corrected in the days a message sat in the queue should go out as
       // it is now, not as it was when somebody chose it.
-      const carried = await renderableAssets(opts.orgId, opts.productId, action.assetIds);
+      const carried = await assetsForRender(opts.orgId, opts.productId, action.assetIds, template.blocks);
       const prior = action.content as Partial<ComposedContent> | undefined;
       // Kept beside `prior` rather than folded into it: `prior` is written back to the
       // action when a message is held, and storing a copy of every asset on every action
@@ -538,6 +538,9 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         // and never sent. What an asset earned has to be measured against what it actually
         // went out on.
         if (!dryRun) await creditAssets(opts.orgId, opts.productId, action.assetIds, "sent");
+        // The template's own count, so variants of one first mail can be compared on what
+        // actually went out; wins and silence are graded 48 hours later.
+        if (!dryRun) await creditTemplate(action.templateId, "sent");
         if (queued) summary.queuedRemotely++;
         else summary.sent++;
       };

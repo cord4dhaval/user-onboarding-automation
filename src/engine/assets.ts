@@ -422,3 +422,31 @@ export async function accessAssetFor(
   const eligible = await eligibleAssets(orgId, productId, context);
   return eligible.find((row) => row.kind === "access") ?? null;
 }
+
+
+/**
+ * Assets a template asks for by key. An `asset` block with `ref: "shot_today_story"`
+ * places that screen there, for everybody, without a session choosing it — the way a
+ * segment's welcome carries the three screens that segment converts on.
+ */
+export async function assetIdsForRefs(orgId: string, productId: string, blocks: unknown): Promise<string[]> {
+  const keys = ((blocks ?? []) as Array<Record<string, unknown>>)
+    .filter((b) => b && b.type === "asset" && typeof b.ref === "string" && b.ref)
+    .map((b) => String(b.ref));
+  if (keys.length === 0) return [];
+  const db = await getDb();
+  const rows = await db
+    .collection(C.assets)
+    .find({ orgId, productId, key: { $in: keys }, status: "active" })
+    .project({ _id: 1, key: 1 })
+    .toArray();
+  const byKey = new Map(rows.map((r) => [String(r.key), String(r._id)]));
+  return keys.map((k) => byKey.get(k)).filter((id): id is string => Boolean(id));
+}
+
+/** What a render carries: what the action chose, plus what the template pins by key. */
+export async function assetsForRender(orgId: string, productId: string, assetIds: unknown, blocks: unknown): Promise<RenderableAsset[]> {
+  const chosen = ((assetIds ?? []) as unknown[]).map(String).filter(Boolean);
+  const pinned = await assetIdsForRefs(orgId, productId, blocks);
+  return renderableAssets(orgId, productId, [...new Set([...chosen, ...pinned])]);
+}

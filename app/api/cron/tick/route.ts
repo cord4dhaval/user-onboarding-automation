@@ -14,6 +14,7 @@ import { checkRoutineHealth } from "@/engine/routines.js";
 import { refreshBrandSource } from "@/engine/brand.js";
 import { claim, complete, fail, orgsWithWork, reapLeases } from "@/engine/queue.js";
 import { advance } from "@/engine/advance.js";
+import { gradeTemplateSilence } from "@/engine/templates.js";
 import { detectWork, watchdog } from "@/engine/detect.js";
 import { dispatch } from "@/engine/dispatch.js";
 import { notify } from "@/engine/notify.js";
@@ -108,6 +109,16 @@ export async function GET(request: NextRequest) {
   // everything else, so a product early in the list with a large backlog would otherwise
   // consume the budget on every single tick and the products behind it would never send at
   // all. Starting where the last tick stopped gives every product its turn.
+  // Variants are judged 48 hours after each send: click or reply is a win, silence a loss.
+  // One bounded pass per tick, before the products, so the numbers a first-touch pick
+  // reads are at most a minute old.
+  let templateGrades = { graded: 0, won: 0, lost: 0 };
+  try {
+    templateGrades = await gradeTemplateSilence(now);
+  } catch (err) {
+    report.push({ templateGrading: err instanceof Error ? err.message : String(err) });
+  }
+
   const cursorKey = `tick_cursor${shardSuffix(request)}`;
   const cursorDoc = await db.collection(C.audit).findOne({ type: cursorKey });
   const startAt = products.length ? Number(cursorDoc?.index ?? 0) % products.length : 0;

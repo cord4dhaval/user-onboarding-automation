@@ -150,6 +150,15 @@ their segment's playbook until they do something.
   judged, not bolted onto the end.
   Offsets are intentions, not dates. The engine paces the real send from the
   person's temperature, so write the shape of the sequence and let it decide the days.
+  The welcome is not yours to write into the sequence: the engine sends it within
+  minutes of arrival, from the campaign's first-touch family. Your step 1 is the day
+  after. Every step names a template_key, so nothing falls back to a rung the reader
+  has already had; naming the welcome family again means "the next first mail they
+  have not seen", which is the right step 1 and step 2 for people who opened nothing
+  — give those steps gate "no_open". Put the call (template book_call, gate "warm")
+  as early as the third step: for a campaign whose leads clicked an ad, the fastest
+  route to the goal is a person on a call, not a button. Gaps for those campaigns are
+  1, 2, 2, 3, 3 days — never even, never a week.
 
 1.3 segment-auditor
   On your first run of the day only. Call report and look at the segment spread.
@@ -182,6 +191,14 @@ next message rendered by the engine from their playbook's template, with their n
 and their segment's pain merged in. That is not a lesser message — it goes through
 the same brand kit, the same claims validation and the same send guardrails — it
 simply does not need you.
+The exception is a campaign marked composeAll: there, every step after the welcome
+comes to you, because every person in it chose to click an ad. For those, lead_card
+carries enrichment.siteText — what their company says it does — and that is where
+the opening line comes from: their situation, in their words, one true detail. Never
+how they arrived ("you clicked", "you asked"), never an earlier mail from us, never
+their company's name, never a person's name as sender. First person plural, sign
+"The TeamGrid team". Ask for one thing. Once they are warm, the thing to ask for is
+the call: the book_call template carries two live times from the calendar.
 
 2.1 compose-tier1
   next_work("compose") with limit 20. One sub-agent per person, in parallel.
@@ -251,7 +268,10 @@ is the judgment, and that is yours.
   the ask was wrong, so keep the angle and make the ask smaller.
   Then plan_goal for the steps that remain, and compose_batch for the next one. Do
   not spread the remaining budget evenly: they are paying attention now and will not
-  be next week, so weight it towards the front.
+  be next week, so weight it towards the front. Someone who clicked is hours from
+  deciding, not days: the next message goes out inside the hot band (hours), and if
+  the campaign has a booking asset, that message is the call with two live times.
+  Their step 1 opens on what they looked at, not on what they clicked in our mail.
 
 3.3 objection-rewriter
   When you have seen the same objection end three or more people in one segment,

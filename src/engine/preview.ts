@@ -6,7 +6,7 @@ import { renderHtml } from "./html.js";
 import { loadBrandKit } from "./brand.js";
 import { resolveTemplateFor } from "./templates.js";
 import { mergeVarsFor } from "./vars.js";
-import { renderableAssets } from "./assets.js";
+import { assetsForRender } from "./assets.js";
 
 /**
  * What a message that has not been rendered yet will say when it goes out.
@@ -54,7 +54,7 @@ export async function previewContent(
   // carries something is the thing it carries. Loaded the same way the sender loads it.
   const toRender = {
     ...prior,
-    assets: await renderableAssets(orgId, productId, action.assetIds),
+    assets: await assetsForRender(orgId, productId, action.assetIds, template.blocks),
   };
   const content = renderTemplate(template.blocks as Record<string, unknown>[], vars, toRender);
 

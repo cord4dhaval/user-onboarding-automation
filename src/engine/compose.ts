@@ -291,8 +291,11 @@ export function resolveBlocks(
   // Rendered once, up front, so the same list can be dropped at the template's own asset
   // block or — far more often, since almost no template has one — placed by the fallback
   // rule below.
-  const carried = (precomposed?.assets ?? []).flatMap((asset) => assetBlocks(asset, vars));
-  let assetsPlaced = carried.length === 0;
+  // Pinned by key where the template says, the rest at the first unnamed asset block or
+  // before the call to action. `remaining` shrinks as blocks claim their asset.
+  const remaining = [...(precomposed?.assets ?? [])];
+  const carriedBlocks = () => remaining.splice(0).flatMap((asset) => assetBlocks(asset, vars));
+  let assetsPlaced = remaining.length === 0;
   // An unnamed slot takes the composed body wholesale, and only the first one does —
   // repeating it in a second slot would print the same paragraph twice.
   let bodyUsed = false;
@@ -427,10 +430,19 @@ export function resolveBlocks(
     }
 
     if (type === "asset") {
+      const ref = typeof block.ref === "string" && block.ref ? block.ref : undefined;
+      if (ref) {
+        // This block wants one asset by key. Absent — not loaded, not active, tier not
+        // allowed — the block renders nothing, and the text around it still reads.
+        const at = remaining.findIndex((asset) => asset.key === ref);
+        if (at >= 0) out.push(...assetBlocks(remaining.splice(at, 1)[0]!, vars));
+        if (remaining.length === 0) assetsPlaced = true;
+        continue;
+      }
       // The template said where it wants one. Templates authored before assets existed say
       // nothing, which is what the fallback below is for.
       if (!assetsPlaced) {
-        out.push(...carried);
+        out.push(...carriedBlocks());
         assetsPlaced = true;
       }
       continue;
@@ -442,10 +454,11 @@ export function resolveBlocks(
     }
   }
 
-  if (!assetsPlaced) {
+  if (!assetsPlaced && remaining.length > 0) {
     // After the words and before the ask. A picture above the paragraph explaining it is a
     // picture the reader has already scrolled past, and one below the unsubscribe line is
     // one nobody sees at all.
+    const carried = carriedBlocks();
     const anchor = out.findIndex((block) => block.kind === "cta" || block.kind === "optout");
     if (anchor === -1) out.push(...carried);
     else out.splice(anchor, 0, ...carried);

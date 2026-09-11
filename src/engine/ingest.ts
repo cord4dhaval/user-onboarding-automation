@@ -7,6 +7,8 @@ import { loadChannels, pickChannelFrom, persistAssignments } from "./channels.js
 import { nextSendableAt } from "./time.js";
 import { mailboxFields } from "./mailbox.js";
 import { stampPlaybook } from "./playbooks.js";
+import { chooseVariant } from "./templates.js";
+import { readSitesFor } from "./enrich.js";
 import type { ChannelKey } from "../schemas/common.js";
 
 export interface IngestSummary {
@@ -16,6 +18,7 @@ export interface IngestSummary {
   suppressed: number;
   filteredOut: number;
   firstTouchesQueued: number;
+  sitesRead?: number;
   /** Arrivals given their segment's whole sequence at ingest, with no model in the path. */
   playbooksStamped: number;
   /** People who had already reached this goal, so nothing was sent to them again. */
@@ -380,6 +383,15 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     { ordered: false },
   );
 
+  // Their own website, read once now, so the session that writes to them has something to
+  // open with. Bounded and non-fatal: a slow host costs one lead a hook, not the batch.
+  try {
+    const sites = await readSitesFor(starting.map((e) => e.person));
+    summary.sitesRead = sites.read;
+  } catch {
+    /* a hook is optional; the welcome is not */
+  }
+
   await queueFirstTouches({
     source,
     goal,
@@ -416,7 +428,7 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
  * Channels and templates are the same few documents for everyone in the batch, so they
  * are read once and the per-person decision is made in memory.
  */
-async function queueFirstTouches(args: {
+export async function queueFirstTouches(args: {
   source: SourceDoc;
   goal: GoalDoc;
   now: Date;
@@ -436,7 +448,7 @@ async function queueFirstTouches(args: {
     .find({
       orgId: source.orgId,
       productId: source.productId,
-      key: goal.firstTouch.templateKey,
+      $or: [{ key: goal.firstTouch.templateKey }, { family: goal.firstTouch.templateKey }],
       channel: { $in: goal.firstTouch.channels },
       status: "active",
     })
@@ -455,8 +467,15 @@ async function queueFirstTouches(args: {
     // A lead who has just arrived has no segment yet — they are classified later — so the
     // product default is the only honest pick for them.
     const candidates = templates.filter((t) => t.channel === pick.key);
-    const segment = typeof person.segment === "string" ? person.segment : undefined;
+    // Classification writes the segment under belief; a source can also hand one in on the
+    // row. Either is better than the product default, and a person re-entered after a
+    // campaign was rebuilt has usually been read already.
+    const belief = person.belief as { segment?: unknown } | undefined;
+    const segment =
+      typeof belief?.segment === "string" ? belief.segment : typeof person.segment === "string" ? person.segment : undefined;
+    // A family of first mails picks by segment and by what has won; a single key behaves as before.
     const template =
+      chooseVariant(candidates, { family: goal.firstTouch.templateKey, segment }) ||
       (segment && candidates.find((t) => t.scope === "segment" && t.segmentKey === segment)) ||
       candidates.find((t) => t.scope === "product_default") ||
       candidates[0];

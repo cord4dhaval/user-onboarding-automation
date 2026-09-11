@@ -173,6 +173,14 @@ export async function resolveTemplateFor(pick: TemplatePick): Promise<Document |
 
   const used = new Set(pick.usedKeys ?? []);
 
+  // A family of variants, or a single named rung: the picker handles both, and returns
+  // nothing once every variant has been sent to this person, so the named-rung logic
+  // below still decides what a spent rung does.
+  if (pick.rungKey) {
+    const variant = chooseVariant(candidates, { family: pick.rungKey, segment: pick.segment, usedKeys: used });
+    if (variant) return variant;
+  }
+
   // Named rung wins outright, and falls back to nothing rather than to the ladder. A
   // message asking for the access rung is asking to hand over a calendar; quietly sending
   // the day-four value proof instead would be a different message to a different purpose.
@@ -368,4 +376,160 @@ export async function generateDefaultTemplates(
   }
 
   return written;
+}
+
+
+/* ---------- variants: several first mails, and the numbers decide ---------- */
+
+/** Marsaglia–Tsang gamma sampler, shape ≥ 1. Enough for Beta draws with integer-ish counts. */
+function gammaSample(shape: number, rnd: () => number): number {
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x = 0;
+    let v = 0;
+    do {
+      const u1 = rnd() || 1e-12;
+      const u2 = rnd();
+      x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = rnd();
+    if (u < 1 - 0.0331 * x ** 4) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+
+export function betaSample(alpha: number, beta: number, rnd: () => number = Math.random): number {
+  const a = gammaSample(Math.max(alpha, 1), rnd);
+  const b = gammaSample(Math.max(beta, 1), rnd);
+  return a / (a + b);
+}
+
+export interface VariantPick {
+  /** The family name, or a plain key: both resolve, so callers need not know which they hold. */
+  family: string;
+  segment?: string;
+  usedKeys?: Set<string>;
+  rnd?: () => number;
+}
+
+/**
+ * Which variant this person gets.
+ *
+ * One document per key, the segment's own copy where it has one. Variants already sent to
+ * the person are out, so a playbook step that names the family again gets the next unused
+ * one — three different first impressions before anyone is written off. Variants whose
+ * `forSegments` names other segments are out. What is left is drawn by Thompson sampling
+ * on each variant's alpha and beta: equal at the start, and after a few dozen sends the
+ * winner is drawn most of the time while the others keep getting the sends that would
+ * prove them. No model anywhere in this.
+ */
+export function chooseVariant(candidates: Document[], pick: VariantPick): Document | null {
+  const inFamily = candidates.filter((t) => String(t.family ?? "") === pick.family || String(t.key) === pick.family);
+  if (inFamily.length === 0) return null;
+
+  const byKey = new Map<string, Document>();
+  for (const t of inFamily) {
+    if (t.scope === "segment" && t.segmentKey !== pick.segment) continue;
+    if (t.scope === "person_override") continue;
+    const key = String(t.key);
+    const current = byKey.get(key);
+    const mine = t.scope === "segment";
+    const currentMine = current?.scope === "segment";
+    if (!current || (mine && !currentMine)) byKey.set(key, t);
+  }
+
+  const pool = [...byKey.values()].filter((t) => {
+    if (pick.usedKeys?.has(String(t.key))) return false;
+    const only = ((t.forSegments ?? []) as unknown[]).map(String);
+    return only.length === 0 || (pick.segment !== undefined && only.includes(pick.segment));
+  });
+  if (pool.length === 0) return null;
+  if (pool.length === 1) return pool[0]!;
+
+  const rnd = pick.rnd ?? Math.random;
+  let best = pool[0]!;
+  let bestDraw = -1;
+  for (const t of pool) {
+    const stats = (t.stats ?? {}) as { alpha?: number; beta?: number };
+    const draw = betaSample(Number(stats.alpha ?? 1), Number(stats.beta ?? 1), rnd);
+    if (draw > bestDraw) {
+      bestDraw = draw;
+      best = t;
+    }
+  }
+  return best;
+}
+
+export type TemplateMetric = "sent" | "replied" | "converted" | "alpha" | "beta";
+
+/** One counter on one template. Never throws: a statistic must not fail a send. */
+export async function creditTemplate(templateId: unknown, metric: TemplateMetric, by = 1): Promise<void> {
+  if (!templateId || !ObjectId.isValid(String(templateId))) return;
+  try {
+    const db = await getDb();
+    await db.collection(C.templates).updateOne({ _id: new ObjectId(String(templateId)) }, { $inc: { [`stats.${metric}`]: by } });
+  } catch {
+    /* bookkeeping */
+  }
+}
+
+/** Every template that reached a person whose campaign just succeeded gets the win. */
+export async function creditTemplatesOf(orgId: string, goalInstanceId: string, metric: TemplateMetric): Promise<number> {
+  const db = await getDb();
+  const sent = await db
+    .collection(C.actions)
+    .find({ orgId, goalInstanceId, status: { $in: ["sent", "dispatched"] }, templateId: { $exists: true } })
+    .project({ templateId: 1 })
+    .toArray();
+  const ids = [...new Set(sent.map((a) => String(a.templateId)))];
+  await Promise.all(ids.map((id) => creditTemplate(id, metric)));
+  return ids.length;
+}
+
+/**
+ * Forty-eight hours after a send, the variant is graded once: a click or a reply inside
+ * the window is a win (alpha), silence is a loss (beta). Graded here, in one place, rather
+ * than at click time, so a message clicked twice is not a variant that won twice, and a
+ * message nobody opened is counted against the variant instead of vanishing.
+ */
+export async function gradeTemplateSilence(now = new Date(), limit = 500): Promise<{ graded: number; won: number; lost: number }> {
+  const db = await getDb();
+  const cutoff = new Date(now.getTime() - 48 * 3_600_000);
+  const due = await db
+    .collection(C.actions)
+    .find({ status: { $in: ["sent", "dispatched"] }, templateId: { $exists: true }, sentAt: { $lte: cutoff }, templateGraded: { $ne: true } })
+    .project({ templateId: 1, personId: 1, sentAt: 1, firstClickedAt: 1, firstOpenedAt: 1 })
+    .limit(limit)
+    .toArray();
+  const out = { graded: 0, won: 0, lost: 0 };
+  if (due.length === 0) return out;
+
+  const people = await db
+    .collection(C.people)
+    .find({ _id: { $in: [...new Set(due.map((a) => String(a.personId)))].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id)) } })
+    .project({ lastReplyAt: 1 })
+    .toArray();
+  const replyBy = new Map(people.map((p) => [String(p._id), p.lastReplyAt ? new Date(String(p.lastReplyAt)) : null]));
+
+  for (const a of due) {
+    const sentAt = new Date(String(a.sentAt));
+    const windowEnd = new Date(sentAt.getTime() + 48 * 3_600_000);
+    const reply = replyBy.get(String(a.personId)) ?? null;
+    const replied = Boolean(reply && reply > sentAt && reply <= windowEnd);
+    const clicked = Boolean(a.firstClickedAt);
+    if (clicked || replied) {
+      await creditTemplate(a.templateId, "alpha");
+      if (replied) await creditTemplate(a.templateId, "replied");
+      out.won++;
+    } else {
+      await creditTemplate(a.templateId, "beta");
+      out.lost++;
+    }
+    await db.collection(C.actions).updateOne({ _id: a._id }, { $set: { templateGraded: true, templateGradedAt: now, templateGrade: clicked || replied ? "won" : "lost" } });
+    out.graded++;
+  }
+  return out;
 }

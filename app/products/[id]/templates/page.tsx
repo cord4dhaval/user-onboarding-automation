@@ -180,6 +180,12 @@ export default async function Templates({
                       <td>
                         {String(t.scope)}
                         {t.segmentKey ? <span className="cell-sub">{String(t.segmentKey)}</span> : null}
+                        {t.family ? (
+                          <span className="cell-sub" title={`One of several first mails in the "${String(t.family)}" family; the engine picks the variant this person has not had, weighted by wins`}>
+                            {String(t.family)} · variant {String(t.variant ?? "?")}
+                            {t.stats ? ` · ${Number((t.stats as { sent?: number }).sent ?? 0)} sent` : ""}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="cell-wide">
                         {rendered.subject && <strong>{rendered.subject}</strong>}
