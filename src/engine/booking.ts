@@ -183,6 +183,38 @@ export function slotsFromBusy(busy: Array<{ start: Date; end: Date }>, settings:
   return out;
 }
 
+/**
+ * Whether one specific time can still be booked: inside hours, on the half hour, far enough
+ * out, and free. Asked for the slot a mail offered days ago, which may no longer be among
+ * the first few the list would show today and is still perfectly bookable.
+ */
+export async function isSlotOpen(orgId: string, settings: CalendarSettings, start: Date, now = new Date()): Promise<"open" | "taken" | "invalid" | "no_calendar"> {
+  if (Number.isNaN(start.getTime())) return "invalid";
+  if (start.getTime() < now.getTime() + settings.minLeadHours * 3_600_000) return "invalid";
+  if (start.getTime() > now.getTime() + (settings.lookaheadDays + 1) * 86_400_000) return "invalid";
+  const p = partsIn(start, settings.timezone);
+  if (!settings.weekdays.includes(p.weekday)) return "invalid";
+  if (p.min % 30 !== 0) return "invalid";
+  const minutes = p.h * 60 + p.min;
+  if (minutes < settings.startHour * 60 || minutes + settings.durationMin > settings.endHour * 60) return "invalid";
+  const token = await calendarToken(orgId, settings);
+  if (!token) return "no_calendar";
+  try {
+    const busy = await busyRanges(token, start, new Date(start.getTime() + settings.durationMin * 60_000));
+    return busy.length ? "taken" : "open";
+  } catch {
+    return "no_calendar";
+  }
+}
+
+/** A booking that is still ahead of us. Someone who booked on Monday and clicks again on Tuesday is shown it, not a second form. */
+export function upcomingBooking(person: Record<string, unknown> | null, now = new Date()): Booking | null {
+  const b = (person?.booking ?? null) as (Booking & { cancelledAt?: Date }) | null;
+  if (!b?.eventId || b.cancelledAt) return null;
+  const end = new Date(b.end ?? b.start);
+  return end.getTime() > now.getTime() ? b : null;
+}
+
 export interface Booking {
   eventId: string;
   meetLink?: string;
@@ -265,7 +297,7 @@ export async function book(input: {
     severity: "good",
     title: `Call booked: ${booking.label}`,
     body: `${String(person.name ?? email)} picked a time. Invite and Meet link sent from the connected calendar.`,
-    href: `/products/${input.productId}/people/${input.personId}`,
+    href: `/products/${input.productId}/library/${input.personId}`,
     dedupeKey: `booked:${input.personId}:${event.id}`,
   });
   return { ok: true, booking };

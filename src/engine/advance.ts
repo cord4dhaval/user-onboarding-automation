@@ -215,6 +215,14 @@ export async function advance(
       continue;
     }
 
+    // Somebody booked a call: a person has the conversation now, and the next automated
+    // chase would land in the middle of it. The campaign stays open so its checks can still
+    // close it; only the sequence stops.
+    if (instance.handedOverAt) {
+      summary.parked++;
+      continue;
+    }
+
     const budget = (goal.budget ?? {}) as { touches?: number };
     const spent = Number((instance.spent as { touches?: number } | undefined)?.touches ?? 0);
     if (budget.touches !== undefined && spent >= budget.touches) {

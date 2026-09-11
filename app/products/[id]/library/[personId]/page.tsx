@@ -54,6 +54,9 @@ export default async function PersonPage({
     | { segment: string; confidence: number; painHypothesis?: string; objectionsLikely?: string[]; reasoning?: string }
     | undefined;
   const temp = person.temp as { band: string; score: number } | undefined;
+  const booking = person.booking && !(person.booking as { cancelledAt?: Date }).cancelledAt
+    ? (person.booking as { label: string; meetLink?: string })
+    : null;
   const inv = (person.investment ?? {}) as Record<string, number>;
   const arrivals = (person.arrivals ?? []) as Array<{ kind: string; at: string; detail?: string }>;
   const objections = (person.objections ?? []) as Array<{ text: string; at: string; source: string }>;
@@ -299,6 +302,14 @@ export default async function PersonPage({
             </span>
           )}
           {temp && <span className="muted" style={{ fontSize: 12.5 }}>{explainTemp(person.temp as Document)}</span>}
+          {/* A booked call is the one event that hands this person to a human, so it sits
+              beside the lifecycle where a reader looks first. Label and link come from the
+              booking itself; the calendar event is the record, this is the pointer to it. */}
+          {booking && (
+            <span className="pill ok" title={booking.meetLink ? `Meet: ${booking.meetLink}` : undefined}>
+              {booking.meetLink ? <a href={booking.meetLink} target="_blank" rel="noreferrer">call booked · {booking.label}</a> : <>call booked · {booking.label}</>}
+            </span>
+          )}
           {person.lifecycle !== "suppressed" && (
             <ConfirmButton
               icon={<Ban />}
