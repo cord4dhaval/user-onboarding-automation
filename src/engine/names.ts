@@ -69,13 +69,17 @@ function looksLikeCompany(words: string[]): boolean {
 }
 
 export function greetingName(fullName: string | undefined | null, fallback = "there"): string {
-  const raw = String(fullName ?? "").split(/[\s,]+/).filter(Boolean);
+  // Underscores and dots between the parts are how a form or a mailbox glues a name
+  // together ("Vandana_Tiwari", "vandana.tiwari"); split on them the way we split on a
+  // space, or the greeting reads "Hi Vandana_Tiwari,". The dot in "Dr." goes the same way
+  // and the honorific check below still catches the bare word.
+  const raw = String(fullName ?? "").split(/[\s,_.]+/).filter(Boolean);
   if (looksLikeCompany(raw)) return fallback;
   const words = String(fullName ?? "")
     // Brackets and quotes are punctuation someone pasted in. An apostrophe is not:
     // O'Brien and D'Souza lose their first syllable without it.
     .replace(/[(){}[\]<>"]/g, " ")
-    .split(/[\s,]+/)
+    .split(/[\s,_.]+/)
     .filter(Boolean);
 
   for (const word of words) {
@@ -93,7 +97,7 @@ export function greetingName(fullName: string | undefined | null, fallback = "th
 /** The whole name, cleaned the same way, for places that address someone in full. */
 export function displayName(fullName: string | undefined | null, fallback = "there"): string {
   const words = String(fullName ?? "")
-    .split(/\s+/)
+    .split(/[\s_]+/)
     .filter(Boolean)
     .map(tidyCase);
   return words.length > 0 ? words.join(" ") : fallback;
