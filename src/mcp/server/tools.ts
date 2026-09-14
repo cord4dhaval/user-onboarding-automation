@@ -3,6 +3,7 @@ import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
 import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
 import { greetingName } from "../../engine/names.js";
+import { planViewFor } from "../../engine/planView.js";
 import { allowedSegments, stampPlaybook } from "../../engine/playbooks.js";
 import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type ThinkingKind } from "../../engine/queue.js";
 import { backlog } from "../../engine/dispatch.js";
@@ -712,6 +713,10 @@ export const TOOLS: ToolDef[] = [
               budget: goalDef?.budget,
               success: goalDef?.success,
               cadence_by_temp: goalDef?.cadenceByTemp,
+              // The plan as the engine reads it: each step's state, which one is next by
+              // the same gates and rules advance() applies, and whether it is a session's
+              // to write or the engine's to render. compose_batch refuses anything else.
+              plan: await planViewFor(goal, actions.filter((a) => String(a.goalInstanceId) === String(goal._id)), band),
             }
           : null,
         /**
@@ -1178,6 +1183,31 @@ export const TOOLS: ToolDef[] = [
           if (!planIds.has(Number(t.step_id))) {
             throw new Error(`step ${String(t.step_id)} is not in this person's plan; its steps are ${[...planIds].sort((a, b) => a - b).join(", ")}. Write for the step the work item names.`);
           }
+        }
+        // And the step must be one a session may write now: not already written, not
+        // behind a gate the person has not passed, and not a family of variants the
+        // engine sends itself. lead_card shows the same view, so a refusal here means the
+        // card was not read.
+        const priorActions = await db.collection(C.actions).find({ orgId, productId, goalInstanceId }).toArray();
+        const personBand = (
+          await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { "temp.band": 1 } })
+        )?.temp?.band as string | undefined;
+        const view = await planViewFor(instance, priorActions, personBand);
+        for (const t of touches) {
+          const st = view?.steps.find((v) => v.step_id === Number(t.step_id));
+          if (!st) continue;
+          if (st.engine_renders) {
+            throw new Error(`step ${st.step_id} is the engine's: it sends the next "${st.template_key}" variant itself. Write the steps after it, or nothing. Nothing was written.`);
+          }
+          if (st.state === "closed") {
+            throw new Error(`step ${st.step_id} is behind the "${st.gate}" gate, which this person has not passed. Nothing was written.`);
+          }
+          if (st.state !== "open") {
+            throw new Error(`step ${st.step_id} is already ${st.state} for this person. Nothing was written.`);
+          }
+        }
+        if (view && view.waiting > 0) {
+          throw new Error(`a message is already waiting for this person (${view.waiting} queued or in review). Nothing was written.`);
         }
       }
       const plannedAsset = new Map<number, string>();
@@ -3024,9 +3054,31 @@ TOOLS.push({
     // Filtered after the claim rather than before it: narrowing the lease query by product
     // would let a session quietly take only its favourite product's work and leave the rest
     // leased to nobody. Anything not wanted is released immediately.
-    const mine = wanted ? claimed.filter((j) => String(j.productId ?? "") === wanted) : claimed;
+    let mine = wanted ? claimed.filter((j) => String(j.productId ?? "") === wanted) : claimed;
     const notMine = claimed.filter((j) => !mine.includes(j));
     if (notMine.length) await releaseAll(notMine.map((j) => j._id));
+
+    // A compose job whose person already has a message waiting is finished here, not
+    // handed out. The engine queues the steps that are its own (a welcome variant, say)
+    // after the job was raised, and a session given such a job would write a second
+    // message for somebody who has not yet received the first.
+    let stale = 0;
+    if (kind === "compose") {
+      const keep = [];
+      for (const job of mine) {
+        const goalInstanceId = str((job.payload as Record<string, unknown> | undefined)?.goalInstanceId);
+        const waiting = goalInstanceId
+          ? await db.collection(C.actions).countDocuments({ orgId: ctx.orgId, goalInstanceId, status: { $in: ["queued", "awaiting_approval", "sending"] } })
+          : 0;
+        if (waiting > 0) {
+          await completeAll([job._id]);
+          stale++;
+        } else {
+          keep.push(job);
+        }
+      }
+      mine = keep;
+    }
 
     const items = [];
     for (const job of mine) {
@@ -3073,6 +3125,8 @@ TOOLS.push({
       // Said plainly rather than left to be inferred from an empty page. A backlog nobody
       // can see is how this system lost nine thousand people once already.
       still_waiting: waiting,
+      // Jobs finished on the spot because a message was already waiting for that person.
+      stale_finished: stale,
       items,
       note:
         items.length === 0
