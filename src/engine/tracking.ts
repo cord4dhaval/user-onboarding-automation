@@ -175,17 +175,33 @@ export const MACHINE_WINDOW_MS = 90_000;
  * only ever adds to what latency already catches, and never overrides it.
  */
 const MACHINE_AGENT =
-  /(bot|crawler|spider|slurp|proofpoint|barracuda|mimecast|forcepoint|symantec|trendmicro|fireeye|safelinks|urldefense|googleimageproxy|yahoomailproxy|curl|wget|python-requests|okhttp|go-http-client|axios|headlesschrome|phantomjs)/i;
+  /(bot|crawler|spider|slurp|proofpoint|barracuda|mimecast|forcepoint|symantec|trendmicro|fireeye|safelinks|urldefense|curl|wget|python-requests|okhttp|go-http-client|axios|headlesschrome|phantomjs)/i;
+
+/**
+ * The image fetchers Gmail and Yahoo use for every picture in a message.
+ *
+ * They are not scanners. Gmail fetches a message's images through its proxy when the reader
+ * opens the message, not when it is delivered, so for an open this agent is the reader. It
+ * used to sit in the machine list above, which filed every open by a Gmail or Google
+ * Workspace reader as a machine's: the open count stayed at zero, "only if not opened"
+ * steps kept firing at people who had opened, and opens never warmed anyone. For an open it
+ * now only has to pass the latency test like any browser; for a click, where no proxy is
+ * involved, it still marks a machine.
+ */
+const IMAGE_PROXY = /(googleimageproxy|yahoomailproxy)/i;
 
 export interface MachineCheck {
   /** When the message was handed to the provider. Absent means it was never sent. */
   sentAt?: Date | string | null;
   at: Date;
   userAgent?: string | null;
+  /** Which signal this is. Unset keeps the strict reading, where an image proxy counts as a machine. */
+  kind?: "opened" | "clicked";
 }
 
-export function looksAutomated({ sentAt, at, userAgent }: MachineCheck): boolean {
+export function looksAutomated({ sentAt, at, userAgent, kind }: MachineCheck): boolean {
   if (userAgent && MACHINE_AGENT.test(userAgent)) return true;
+  if (userAgent && IMAGE_PROXY.test(userAgent) && kind !== "opened") return true;
   if (!sentAt) return false;
   const sent = sentAt instanceof Date ? sentAt : new Date(String(sentAt));
   if (Number.isNaN(sent.getTime())) return false;

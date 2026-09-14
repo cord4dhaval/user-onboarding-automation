@@ -84,7 +84,7 @@ async function record(
       .findOne({ _id: new ObjectId(actionId) }, { projection: { sentAt: 1 } });
     if (!action) return;
 
-    const machine = looksAutomated({ sentAt: action.sentAt as Date | undefined, at: now, userAgent: agent });
+    const machine = looksAutomated({ sentAt: action.sentAt as Date | undefined, at: now, userAgent: agent, kind: type });
     const field = signalField(type, machine);
 
     const result = await db.collection(C.actions).findOneAndUpdate(
