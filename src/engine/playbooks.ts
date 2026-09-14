@@ -69,6 +69,23 @@ export async function playbookFor(
   return ((bySegment || fallback) ?? null) as Playbook | null;
 }
 
+/** The fields that make two steps the same sequence; order matters, wording does not. */
+function stepKey(step: unknown): string {
+  const s = (step && typeof step === "object" ? step : {}) as Record<string, unknown>;
+  return [
+    String(s.channel ?? ""),
+    String(s.angle ?? ""),
+    String(s.offsetDays ?? s.offset_days ?? s.after_days ?? ""),
+    String(s.templateKey ?? s.template_key ?? ""),
+    String(s.gate ?? ""),
+  ].join("|");
+}
+
+export function sameSteps(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((step, i) => stepKey(step) === stepKey(b[i]));
+}
+
 export interface StampResult {
   stamped: boolean;
   reason: string;
@@ -126,6 +143,18 @@ export async function stampPlaybook(input: {
     const spent = Number((instance.spent as { touches?: number } | undefined)?.touches ?? 0);
     if (spent > 1) {
       return { stamped: false, reason: `sequence already ${spent} touches in`, planId: String(current._id) };
+    }
+    // A segment playbook written as a copy of the default is a different document with the
+    // same steps. Stamping it wrote a "version 2" that changed nothing, skipped the queued
+    // steps and re-queued the same ones — a replan the history page then had to explain.
+    // Same steps means the person is already running this sequence; say so and leave the
+    // plan, its queue and its provenance alone.
+    if (sameSteps(current.steps, playbook.steps)) {
+      return {
+        stamped: false,
+        reason: `already running these steps (${playbook.segmentKey} playbook matches the current plan)`,
+        planId: String(current._id),
+      };
     }
   }
 

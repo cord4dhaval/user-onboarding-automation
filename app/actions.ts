@@ -576,7 +576,8 @@ export async function createGoal(formData: FormData) {
           fetchEverySec: Number(formData.get("fetchEverySec") ?? 600),
           tickEverySec: Number(formData.get("tickEverySec") ?? 600),
           bufferDepth: 3,
-          approvalMode: String(formData.get("approvalMode") ?? "gate_on"),
+          // Anything but an explicit auto_send is stored as review, so a stray value holds.
+          approvalMode: formData.get("approvalMode") === "auto_send" ? "auto_send" : "gate_on",
         },
         // Confidence buys patience, not pressure. Someone read as a near-certain fit will
         // convert on a calm sequence; someone read at 5% will not convert on one at all, so
@@ -2354,7 +2355,7 @@ export async function updateGoal(formData: FormData) {
         verifyConnectionId,
         verifyHint: String(formData.get("verifyHint") ?? existing?.verifyHint ?? "").trim() || undefined,
         firstTouch: { templateKey: String(formData.get("firstTouchTemplate")), channels },
-        "schedule.approvalMode": String(formData.get("approvalMode") ?? "gate_on"),
+        "schedule.approvalMode": formData.get("approvalMode") === "auto_send" ? "auto_send" : "gate_on",
         "failure.silenceDays": Number(formData.get("silenceDays") ?? existing?.failure?.silenceDays ?? 30),
         ...(verifierChanged ? { checks: [], needsVerificationPlan: true } : {}),
       },

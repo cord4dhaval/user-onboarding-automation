@@ -1539,7 +1539,12 @@ export const TOOLS: ToolDef[] = [
       const status = args.decision === "approve" ? "queued" : "skipped";
       const result = await db
         .collection(C.actions)
-        .updateMany({ _id: { $in: ids }, orgId: ctx.orgId, status: "awaiting_approval" }, { $set: { status } });
+        // reviewedAt is what tells the sender a person has decided. Without it an approved
+        // message returns to queued, meets the gate again on the next tick, and is held again.
+        .updateMany(
+          { _id: { $in: ids }, orgId: ctx.orgId, status: "awaiting_approval" },
+          { $set: { status, reviewedAt: new Date() } },
+        );
       return { updated: result.modifiedCount, decision: args.decision };
     },
   },

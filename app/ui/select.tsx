@@ -110,7 +110,10 @@ function ComboMenu({
       id={id}
       role="listbox"
       aria-multiselectable={multiselectable}
-      style={{ position: "fixed", top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width }}
+      // The unused edge is written as "auto", not left out. Left out, the stylesheet's fallback
+      // `top: calc(100% + 6px)` survives — on a fixed box that is the viewport's height — so a
+      // menu flipped above its trigger got a top below the screen and collapsed to its border.
+      style={{ position: "fixed", top: pos.top ?? "auto", bottom: pos.bottom ?? "auto", left: pos.left, width: pos.width }}
     >
       {children}
     </div>,

@@ -112,7 +112,7 @@ export const goal = z.object({
     tickEverySec: z.number().int().positive(),
     quietHours: z.tuple([z.number().int(), z.number().int()]).optional(),
     bufferDepth: z.number().int().positive().default(3),
-    approvalMode: z.enum(["gate_on", "auto_below_risk", "auto_send"]).default("gate_on"),
+    approvalMode: z.enum(["gate_on", "auto_send"]).default("gate_on"),
   }),
 
   /** Cadence tightens as confidence drops: the people least likely to convert get the most pressure, since a calm sequence would not reach them at all. Never past the weekly cap. */

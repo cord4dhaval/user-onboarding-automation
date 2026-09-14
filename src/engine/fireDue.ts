@@ -394,8 +394,11 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // An asset can demand review on its own, and that demand outranks the campaign's
       // mode. Auto-send is a decision about routine copy; "hold anything carrying this" is
       // a decision about one particular thing, usually a way to reach a human.
+      //
+      // Only an explicit "auto_send" skips review. A missing or unrecognised mode holds, so a
+      // bad write can cost a delay but never sends mail nobody agreed to send unread.
       const gated =
-        approvalMode === "gate_on" ||
+        approvalMode !== "auto_send" ||
         (await assetsNeedApproval(opts.orgId, opts.productId, action.assetIds));
       // The gate is for content nobody has looked at. Re-holding a message a human already
       // approved would loop it back to review forever, and nothing would ever send.

@@ -202,6 +202,12 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                         <span className="status"><span className="dot" /> Paused</span>
                       ) : !usable ? (
                         <span className="status"><span className="dot bad" /> No channel</span>
+                      ) : feeding.length === 0 && active > 0 ? (
+                        // Moving the source to another campaign stops new arrivals, not the
+                        // people already on their plans — that is not a broken campaign.
+                        <span className="status" title="No source feeds this campaign any more. People already in it keep getting their plan; nobody new will enter.">
+                          <span className="dot ok" /> Running · no new leads
+                        </span>
                       ) : feeding.length === 0 ? (
                         <span className="status"><span className="dot bad" /> No input</span>
                       ) : importing ? (
@@ -221,7 +227,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                       )}
                       <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
                         {budget.touches} msg · {budget.days}d
-                        <div>{sch.approvalMode === "gate_on" ? "review each" : "auto-send"}</div>
+                        <div>{sch.approvalMode === "auto_send" ? "auto-send" : "review each"}</div>
                       </div>
                     </td>
 
