@@ -14,6 +14,7 @@ import { checkRoutineHealth } from "@/engine/routines.js";
 import { refreshBrandSource } from "@/engine/brand.js";
 import { claim, complete, fail, orgsWithWork, reapLeases } from "@/engine/queue.js";
 import { advance } from "@/engine/advance.js";
+import { nudgeStartedRegistrations } from "@/engine/nudges.js";
 import { gradeTemplateSilence } from "@/engine/templates.js";
 import { detectWork, watchdog } from "@/engine/detect.js";
 import { dispatch } from "@/engine/dispatch.js";
@@ -160,6 +161,10 @@ export async function GET(request: NextRequest) {
     // They run here rather than inside an hourly routine because an hourly routine can only
     // see the slice it managed to read, and the slice it read was chosen by disk order.
     const advanced = await advance(orgId, productId, 100, now, deadline(0.25));
+    // One reminder for somebody who started registering and left. It reads events the register
+    // page reported, so it is arithmetic on this clock rather than work for a routine, and it
+    // must never cost the rest of the tick.
+    await nudgeStartedRegistrations(orgId, productId, now).catch(() => null);
     const detected = await detectWork(orgId, productId, now, deadline(0.25));
     const late = await watchdog(orgId, productId, now);
     if (late.overdue > 0) {

@@ -10,6 +10,7 @@ import { unsubscribePerson } from "./unsubscribe.js";
 import { suppress } from "./suppression.js";
 import { grantedCapabilities } from "../auth/google.js";
 import { detectMovement } from "./detect.js";
+import { answerSimpleReply, replyIntent } from "./replyIntents.js";
 
 /**
  * Reads replies.
@@ -40,6 +41,8 @@ export interface InboundSummary {
   recorded: number;
   /** Scheduled messages pulled back because the person wrote to us first. */
   heldForReply: number;
+  /** One-word replies the engine answered itself (\"call\", \"later\"). */
+  autoAnswered: number;
   unsubscribed: number;
   /** Hard bounces found and suppressed. Soft ones are counted nowhere: they mean nothing yet. */
   bounced: number;
@@ -332,7 +335,7 @@ export async function pollReplies(
     examined: 0,
     matched: 0,
     recorded: 0,
-    heldForReply: 0,
+    heldForReply: 0, autoAnswered: 0,
     unsubscribed: 0,
     bounced: 0,
     errors: [],
@@ -433,7 +436,7 @@ export async function pollReplies(
       const at = message.internalDate ? new Date(Number(message.internalDate)) : new Date();
       const text = newTextOnly(bodyOf(message));
 
-      await db.collection(C.events).insertOne({
+      const recorded = await db.collection(C.events).insertOne({
         orgId,
         productId,
         personId,
@@ -463,6 +466,10 @@ export async function pollReplies(
         if (result.found && !result.alreadyDone) summary.unsubscribed++;
         continue;
       }
+
+      // "call" and "later" are answers the mails ask for in one word. Read here, before the
+      // owner is told, so the mail to the owner can say what has already been done.
+      const intent = replyIntent(text);
 
       // Somebody who writes back is the strongest signal this system ever gets, and the
       // two things that follow from it must not wait for a session an hour away.
@@ -494,7 +501,11 @@ export async function pollReplies(
           "",
           text ? text.slice(0, 1200) : "(no text found in the reply)",
           "",
-          `Answer them from ${mailbox.email}. Their queued mails are on hold.`,
+          intent === "call"
+            ? `They asked for a call. The booking times are queued as a reply from ${mailbox.email}, following the campaign's review setting, and the sequence has stopped.`
+            : intent === "later"
+              ? `They asked to hear back later. One check-in is queued for 30 days from now, and the sequence has stopped.`
+              : `Answer them from ${mailbox.email}. Their queued mails are on hold.`,
         ],
         href: `/products/${productId}/library/${personId}`,
       });
@@ -505,6 +516,13 @@ export async function pollReplies(
       summary.heldForReply += held.modifiedCount;
 
       // Then the answer itself is queued as urgent work, which bypasses fairness entirely.
+      if (intent) {
+        const answered = await answerSimpleReply(intent, { orgId, productId, personId, messageId: id, at, eventId: recorded.insertedId });
+        if (answered) {
+          summary.autoAnswered++;
+          continue;
+        }
+      }
       await detectMovement(orgId, productId, { personId, reason: "replied" });
     }
   }
