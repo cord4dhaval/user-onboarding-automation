@@ -392,9 +392,9 @@ export default async function Channels({
         <div>
           <h1>Channels</h1>
           <p className="sub tight">
-            How messages leave. Pick a channel below to connect it. Gmail connects in one click; WhatsApp and SMS
-            are not live natively yet. Already running your own sending — SMTP, an HTTP endpoint, an MCP send
-            tool — connect that instead, on any of them.
+            How messages leave. Pick a channel below to connect it. Gmail connects in one click; WhatsApp takes
+            your provider&apos;s endpoint and token, and SMS is not live yet. Already running your own sending —
+            SMTP, an HTTP endpoint, an MCP send tool — connect that instead, on any of them.
           </p>
         </div>
       </div>

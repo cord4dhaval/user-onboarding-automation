@@ -97,12 +97,13 @@ export const CHANNEL_CATALOG: ChannelOption[] = [
     channelKey: "whatsapp",
     label: "WhatsApp",
     typeLabel: "WhatsApp",
-    status: "soon",
+    status: "live",
     blurb: "Template messages, and free-form inside the 24-hour reply window.",
-    // No sign-in here yet: Meta's flow needs a Business number and approved templates
-    // before there is anything to consent to, so offering it would be a dead end.
+    // No sign-in here: Meta's flow needs a Business number and approved templates before
+    // there is anything to consent to, so offering it would be a dead end. What the tenant
+    // brings instead is their provider's token and endpoint — Wati, Gupshup, AiSensy and
+    // Meta's own Cloud API are all one HTTP call with a bearer token.
     transports: ["http", "mcp"],
-    waitingOn: "Business API number and template approval",
   },
   {
     id: "sms",

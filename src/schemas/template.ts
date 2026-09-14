@@ -120,6 +120,22 @@ export const template = z.object({
   version: z.number().int().positive().default(1),
   parentId: objectIdString.optional(),
   blocks: z.array(block).min(1),
+  /**
+   * The provider's own approved template, for channels that send by name rather than by
+   * body.
+   *
+   * WhatsApp is the case this exists for: outside the 24-hour reply window Meta accepts
+   * only a template it has already approved, matched by name, with its parameters supplied
+   * separately. The blocks above still render — they are what the reviewer reads and what
+   * an in-window free-form message sends — but the send itself carries this instead.
+   *
+   * `params` maps the provider's parameter name to a merge variable key, so the same
+   * approved template serves every person without a second row per recipient. A value that
+   * names no known variable is passed through as written, which is how a constant is set.
+   */
+  providerTemplate: z
+    .object({ name: z.string(), params: z.record(z.string(), z.string()).default({}) })
+    .optional(),
   constraints: z.object({
     maxWords: z.number().int().positive().optional(),
     readingLevel: z.number().int().positive().optional(),

@@ -21,11 +21,54 @@ export interface ConnectionTools {
   boundSendTool?: string;
 }
 
-const EXAMPLE_PAYLOAD = JSON.stringify(
-  { from: "$channel.from", to: "$person.email", subject: "$content.subject", text: "$content.body" },
-  null,
-  2,
-);
+/**
+ * A starting payload per channel, rather than one email-shaped example for all of them.
+ *
+ * The mapping is the part of an HTTP channel most likely to be wrong, and a WhatsApp body
+ * looks nothing like a mail body: it carries an approved template name and named parameters
+ * instead of a subject and prose. Handing someone the email shape and letting them work out
+ * the difference from a provider's docs is where the wrong field names come from.
+ */
+const EXAMPLE_PAYLOADS: Record<string, unknown> = {
+  email: { from: "$channel.from", to: "$person.email", subject: "$content.subject", text: "$content.body" },
+  // Wati's v3 shape, which Gupshup and AiSensy differ from only in field names. The
+  // recipient travels in the body, so the endpoint stays the same for every person.
+  whatsapp: {
+    channel: "$channel.from",
+    template_name: "$template.name",
+    broadcast_name: "$content.subject",
+    recipients: [
+      {
+        phone_number: "$person.phoneDigits",
+        custom_params: [{ name: "first_name", value: "$person.first_name" }],
+      },
+    ],
+  },
+  sms: { to: "$person.phoneDigits", from: "$channel.from", body: "$content.body" },
+};
+
+/**
+ * A recognisable provider and endpoint per channel, for the same reason the payload differs:
+ * a WhatsApp form suggesting a mail API is a form nobody trusts the rest of.
+ */
+const HTTP_HINTS: Record<string, { provider: string; endpoint: string } | undefined> & {
+  email: { provider: string; endpoint: string };
+} = {
+  email: { provider: "resend", endpoint: "https://api.resend.com/emails" },
+  whatsapp: {
+    provider: "wati",
+    endpoint: "https://live-mt-server.wati.io/<tenant>/api/ext/v3/messageTemplates/send",
+  },
+  sms: { provider: "twilio", endpoint: "https://api.twilio.com/2010-04-01/Messages.json" },
+};
+
+function httpHint(channelKey: string): { provider: string; endpoint: string } {
+  return HTTP_HINTS[channelKey] ?? HTTP_HINTS.email;
+}
+
+function examplePayload(channelKey: string): string {
+  return JSON.stringify(EXAMPLE_PAYLOADS[channelKey] ?? EXAMPLE_PAYLOADS.email, null, 2);
+}
 
 const TRANSPORT_ICONS: Record<TransportId, React.ReactNode> = {
   oauth: <ShieldCheck />,
@@ -289,7 +332,11 @@ export default function ChannelDrawer({
               <input type="hidden" name="productId" value={productId} />
               {channelKey}
 
-              <SendToolFields choices={choices} defaultValue={suggested} />
+              <SendToolFields
+                choices={choices}
+                defaultValue={suggested}
+                channelKey={option?.channelKey ?? "email"}
+              />
 
               <FormatChoice />
               <label>
@@ -341,13 +388,32 @@ export default function ChannelDrawer({
           </p>
           <label>
             Which service <span className="muted">(so two endpoints can be told apart)</span>
-            <input name="provider" placeholder="resend" required />
+            <input name="provider" placeholder={httpHint(option?.channelKey ?? "email").provider} required />
           </label>
-          <label>Endpoint<input name="endpointUrl" type="url" placeholder="https://api.resend.com/emails" required /></label>
+          <label>
+            Endpoint
+            <input
+              name="endpointUrl"
+              type="url"
+              placeholder={httpHint(option?.channelKey ?? "email").endpoint}
+              required
+            />
+          </label>
           <label>Token<input name="token" type="password" placeholder="bearer token" required /></label>
           <label>
             Payload <span className="muted">(their field names, our values)</span>
-            <textarea name="payloadTemplate" defaultValue={EXAMPLE_PAYLOAD} className="payload" />
+            {option?.channelKey === "whatsapp" && (
+              <span className="muted">
+                <code>$template.name</code> is the template Meta approved, taken from whichever template this
+                touch renders. Outside the 24-hour reply window a message without one is held rather than
+                sent, because Meta would reject it and count the rejection against the number.
+              </span>
+            )}
+            <textarea
+              name="payloadTemplate"
+              defaultValue={examplePayload(option?.channelKey ?? "email")}
+              className="payload"
+            />
           </label>
           <div className="grid">
             <label>

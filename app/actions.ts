@@ -2154,6 +2154,14 @@ export async function createHttpChannel(formData: FormData) {
   const token = String(formData.get("token") ?? "");
   if (!endpointUrl || !token) throw new Error("An endpoint and a token are both required.");
 
+  const key = String(formData.get("key") ?? "email");
+  // WhatsApp's rules are Meta's, not the tenant's, so they are set from the channel kind
+  // rather than offered as checkboxes someone would have to know to tick. Outside the
+  // 24-hour window only an approved template may go, and messaging anyone who has not
+  // opted in is what gets a number's quality rating cut and then the number banned.
+  const messagingRules =
+    key === "whatsapp" ? { consentRequired: true, windowRules: "24h" } : { consentRequired: false };
+
   let payloadTemplate: Record<string, unknown>;
   try {
     payloadTemplate = JSON.parse(String(formData.get("payloadTemplate") ?? "{}")) as Record<string, unknown>;
@@ -2201,7 +2209,7 @@ export async function createHttpChannel(formData: FormData) {
     orgId,
     productId,
     connectionId: String(connectionId),
-    key: String(formData.get("key") ?? "email"),
+    key,
     kind: "native",
     from: String(formData.get("from") ?? "") || undefined,
     replyTo: String(formData.get("replyTo") ?? "") || undefined,
@@ -2214,13 +2222,19 @@ export async function createHttpChannel(formData: FormData) {
       trackingClicks: false,
       bounceWebhook: false,
       inboundReplies: false,
-      consentRequired: false,
+      ...messagingRules,
       fromDomain: "caller_controlled",
       maxSubjectLength: optionalNumber(formData, "maxSubjectLength"),
       maxBodyLength: optionalNumber(formData, "maxBodyLength"),
     },
     governor: governorFrom(formData),
-    policy: { audience: ["cold", "warm_lead", "existing_user"] },
+    // Cold outbound on WhatsApp is not the trade cold outbound on email is. Meta bans the
+    // number rather than filtering the message, and the ban takes every warm conversation
+    // on it too — so a WhatsApp channel starts out serving people who opted in, and
+    // widening it is a decision someone makes deliberately on the row.
+    policy: {
+      audience: key === "whatsapp" ? ["warm_lead", "existing_user"] : ["cold", "warm_lead", "existing_user"],
+    },
     status: "healthy",
     enabled: true,
   });
@@ -2401,6 +2415,33 @@ function refreshTemplate(productId: string, templateId: string) {
   revalidatePath(`/products/${productId}/templates/${templateId}`);
 }
 
+/**
+ * The approved template a provider sends by name, where it has one.
+ *
+ * Only WhatsApp uses this today, and only outside the 24-hour reply window — but the field
+ * is read off the form for every channel rather than gated on the key, because a provider
+ * that works the same way is one row away and gating it here would be the thing to
+ * remember and forget.
+ *
+ * A malformed parameter map is not worth failing a template creation over: the blocks are
+ * the template, this is a routing detail, and it is editable afterwards.
+ */
+function providerTemplateFrom(formData: FormData): Record<string, unknown> {
+  const providerName = String(formData.get("providerTemplateName") ?? "").trim();
+  if (!providerName) return {};
+
+  let params: Record<string, string> = {};
+  const raw = String(formData.get("providerTemplateParams") ?? "").trim();
+  if (raw) {
+    try {
+      params = JSON.parse(raw) as Record<string, string>;
+    } catch {
+      params = {};
+    }
+  }
+  return { providerTemplate: { name: providerName, params } };
+}
+
 export async function createTemplate(formData: FormData) {
   const db = await getDb();
   const orgId = await currentOrg();
@@ -2439,6 +2480,7 @@ export async function createTemplate(formData: FormData) {
     ...(scope === "segment" && segmentKey ? { segmentKey } : {}),
     version: 1,
     blocks,
+    ...providerTemplateFrom(formData),
     constraints: { maxWords: isEmail ? 140 : 45, noClaims: [] },
     assetIds: [],
     stats: { sent: 0, replied: 0, converted: 0, alpha: 1, beta: 1 },

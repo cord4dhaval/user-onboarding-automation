@@ -77,6 +77,30 @@ export default function TemplateDrawer({
             </label>
           )}
 
+          {channel === "whatsapp" && (
+            <>
+              <label>
+                Approved template name <span className="muted">(from your provider)</span>
+                <input name="providerTemplateName" placeholder="day_three_nudge_v1" />
+                <span className="hint">
+                  Meta accepts only a template it has already approved once the 24-hour reply window has
+                  closed. Without one, this template can be sent inside the window and is held outside it.
+                </span>
+              </label>
+              <label>
+                Parameters <span className="muted">(their name, our variable)</span>
+                <textarea
+                  name="providerTemplateParams"
+                  defaultValue={'{\n  "first_name": "first_name"\n}'}
+                  rows={4}
+                />
+                <span className="hint">
+                  A value naming a merge variable is filled in per person; anything else is sent as written.
+                </span>
+              </label>
+            </>
+          )}
+
           <label>
             Stage
             <input name="stage" defaultValue="first_touch" />

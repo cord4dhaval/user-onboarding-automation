@@ -26,6 +26,21 @@ export interface OutboundMessage {
    * account, and it is attributed for months.
    */
   listUnsubscribeUrl?: string;
+  /**
+   * The merge variables this message was rendered with.
+   *
+   * Carried alongside the rendered body because not every provider takes a body. WhatsApp
+   * outside the reply window accepts an approved template name and a set of named
+   * parameters and nothing else, so the values have to survive the render rather than being
+   * dissolved into prose. Adapters that send text ignore this.
+   */
+  vars?: Record<string, string>;
+  /**
+   * The provider's own approved template, where the channel sends by name rather than by
+   * content. Set only for channels whose provider works that way; absent means send the
+   * body above.
+   */
+  providerTemplate?: { name: string; params: Record<string, string> };
 }
 
 export interface SendResult {

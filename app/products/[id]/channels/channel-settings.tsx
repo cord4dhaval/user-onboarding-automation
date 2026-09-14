@@ -237,6 +237,7 @@ export default function ChannelSettingsDrawer({
                       defaultValue={channel.sendTool}
                       currentArgs={channel.sendArgs}
                       defaultReturnPath={channel.returnMessageId}
+                      channelKey={channel.key}
                     />
                     {/* The binding is per connection, not per channel, so this is worth
                         saying out loud rather than discovering after another channel

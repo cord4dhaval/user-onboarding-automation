@@ -18,10 +18,21 @@ export interface ToolChoice {
   args: ToolArg[];
 }
 
-/** A first guess only — every field stays editable, and nothing is filtered out. */
-export function guessRef(argName: string): string {
+/**
+ * A first guess only — every field stays editable, and nothing is filtered out.
+ *
+ * The channel decides what "to" means. A WhatsApp send tool taking a `to` was guessed as
+ * an email address, which is a mapping that looks right in the drawer and fails on every
+ * message, so the guess is made per channel rather than once for all of them.
+ */
+export function guessRef(argName: string, channelKey = "email"): string {
   const n = argName.toLowerCase();
-  if (/^(to|recipient|email|to_email|address)$/.test(n)) return "$person.email";
+  const phoneChannel = channelKey === "whatsapp" || channelKey === "sms";
+  if (/phone|msisdn|whatsapp|number/.test(n)) return "$person.phoneDigits";
+  if (/^(to|recipient|email|to_email|address)$/.test(n)) {
+    return phoneChannel ? "$person.phoneDigits" : "$person.email";
+  }
+  if (/template/.test(n)) return "$template.name";
   if (/subject|title/.test(n)) return "$content.subject";
   if (/html/.test(n)) return "$content.bodyHtml";
   if (/^(text|body|message|content)$/.test(n)) return "$content.body";
@@ -43,12 +54,15 @@ export function SendToolFields({
   defaultValue,
   currentArgs,
   defaultReturnPath,
+  channelKey = "email",
 }: {
   choices: ToolChoice[];
   defaultValue?: string;
   /** What this channel passes today, so an edit starts from the truth, not from a guess. */
   currentArgs?: Record<string, string>;
   defaultReturnPath?: string;
+  /** Decides what a bare `to` is guessed as: an inbox on email, a number on WhatsApp. */
+  channelKey?: string;
 }) {
   const [picked, setPicked] = useState(defaultValue ?? choices[0]?.value ?? "");
   const selected = choices.find((c) => c.value === picked);
@@ -93,8 +107,8 @@ export function SendToolFields({
               </span>
               <input
                 name={`arg:${arg.name}`}
-                defaultValue={(sameTool ? currentArgs?.[arg.name] : undefined) ?? guessRef(arg.name)}
-                placeholder="$person.email"
+                defaultValue={(sameTool ? currentArgs?.[arg.name] : undefined) ?? guessRef(arg.name, channelKey)}
+                placeholder={guessRef("to", channelKey)}
                 required={arg.required}
               />
               {arg.description ? <span className="muted">{arg.description.slice(0, 140)}</span> : null}

@@ -1,3 +1,4 @@
+import { sendContext } from "./context.js";
 import { RetryableSendError, type ChannelAdapter, type OutboundMessage, type SendResult } from "./types.js";
 
 export interface HttpChannelConfig {
@@ -69,11 +70,7 @@ export class HttpChannelAdapter implements ChannelAdapter {
 
 /** Walks the template, replacing "$content.subject" style leaves with real values. */
 function fill(template: Record<string, unknown>, message: OutboundMessage): Record<string, unknown> {
-  const context: Record<string, unknown> = {
-    person: { email: message.to },
-    content: { subject: message.subject, body: message.bodyText, bodyHtml: message.bodyHtml },
-    channel: { from: message.from, replyTo: message.replyTo },
-  };
+  const context = sendContext(message);
 
   const walk = (value: unknown): unknown => {
     if (typeof value === "string") return value.startsWith("$") ? pluck(context, value) ?? "" : value;

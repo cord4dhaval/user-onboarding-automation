@@ -1,5 +1,6 @@
 import type { McpClient } from "../../mcp/client.js";
 import { invoke, type Binding } from "../../mcp/binding.js";
+import { sendContext } from "./context.js";
 import { RetryableSendError, type ChannelAdapter, type OutboundMessage, type SendResult } from "./types.js";
 
 /**
@@ -23,15 +24,7 @@ export class McpChannelAdapter implements ChannelAdapter {
   async send(message: OutboundMessage): Promise<SendResult> {
     let mapped: Record<string, unknown>;
     try {
-      mapped = await invoke(this.client, this.binding, "send", {
-        person: { email: message.to },
-        content: {
-          subject: message.subject,
-          body: message.bodyText,
-          bodyHtml: message.bodyHtml,
-        },
-        channel: { from: message.from, replyTo: message.replyTo },
-      });
+      mapped = await invoke(this.client, this.binding, "send", sendContext(message));
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
       // Providers signal a full queue as an ordinary error; it means wait, not give up.

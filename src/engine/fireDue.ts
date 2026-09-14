@@ -9,6 +9,7 @@ import {
   type MergeVars,
   type RenderableAsset,
 } from "./compose.js";
+import { addressFor, identityValue } from "./address.js";
 import { renderHtml } from "./html.js";
 import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
@@ -217,11 +218,23 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       }
 
       const name = String(person.name ?? "");
-      const email = String(person.primaryEmail ?? "");
+      // Whatever addresses this channel: an inbox on email, a phone number on WhatsApp or
+      // SMS. Reading primaryEmail unconditionally is what handed a WhatsApp adapter an
+      // address it could only reject, one message at a time, with nothing on the row to
+      // explain it.
+      const address = addressFor(person, String(action.channel));
+      if (!address) {
+        const kind = String(action.channel) === "email" ? "email address" : "phone number";
+        await release(action._id, "skipped", { skipReason: `no ${kind} on this person` });
+        summary.blocked.push({ person: name || label, reason: `no ${kind}` });
+        continue;
+      }
 
       const block = await blockedReason({
         orgId: opts.orgId,
-        email,
+        address,
+        person,
+        template,
         goalInstance,
         channel,
         now,
@@ -405,8 +418,28 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         ? await opts.adapterFor(String(action.channelId), String(action.channel))
         : new ConsoleAdapter();
 
-      const outbound = toOutbound(content, email, channel.from as string | undefined);
+      const outbound = toOutbound(content, address, channel.from as string | undefined);
       outbound.replyTo = channel.replyTo as string | undefined;
+
+      // The values behind the rendered words, carried through to the adapter. A provider
+      // that takes prose ignores them; one that takes named parameters has nothing else to
+      // work from, because by this point the prose has already absorbed them.
+      outbound.vars = {
+        ...(vars as unknown as Record<string, string>),
+        email: String(person.primaryEmail ?? ""),
+        phone: identityValue(person, "phone"),
+      };
+      const approved = template.providerTemplate as { name: string; params?: Record<string, string> } | undefined;
+      if (approved?.name) {
+        outbound.providerTemplate = {
+          name: approved.name,
+          // A parameter naming a merge variable takes its value; one that names nothing
+          // known is a constant the template author typed, and is passed through as written.
+          params: Object.fromEntries(
+            Object.entries(approved.params ?? {}).map(([param, ref]) => [param, outbound.vars?.[ref] ?? ref]),
+          ),
+        };
+      }
 
       // The same address the body's opt-out link points at, promoted to a header so Gmail
       // and Yahoo can offer their own unsubscribe control beside the sender's name. Where
@@ -621,12 +654,15 @@ interface Blocked {
 
 async function blockedReason(args: {
   orgId: string;
-  email: string;
+  /** Whatever addresses this channel — suppression is keyed on the identity, not on email. */
+  address: string;
+  person: Record<string, unknown>;
+  template: Record<string, unknown>;
   goalInstance: Record<string, unknown>;
   channel: Record<string, unknown>;
   now: Date;
 }): Promise<Blocked | null> {
-  if (await isSuppressed(args.orgId, [args.email])) return { reason: "on the suppression list" };
+  if (await isSuppressed(args.orgId, [args.address])) return { reason: "on the suppression list" };
 
   const gi = args.goalInstance as { status: string; deadline: Date; spent: { touches: number }; goalKey: string };
   if (gi.status !== "active") return { reason: `goal instance is ${gi.status}` };
@@ -641,6 +677,9 @@ async function blockedReason(args: {
   // may clear. Neither is a clock, so both wait for a human rather than a timer.
   if (args.channel.status !== "healthy") return { reason: `channel is ${String(args.channel.status)}` };
 
+  const outsideWindow = windowBlock(args.channel, args.person, args.template, args.now);
+  if (outsideWindow) return outsideWindow;
+
   // Provider limits are enforced here, in code, from what was actually sent.
   const channelId = String(args.channel._id);
   const limits = await limitsFor(args.orgId, channelId);
@@ -648,6 +687,47 @@ async function blockedReason(args: {
   if (rate) return { reason: rate.reason, retryAt: rate.retryAt };
 
   return null;
+}
+
+/**
+ * WhatsApp-style reply windows, enforced rather than described.
+ *
+ * `capabilities.windowRules` has been on the channel since the schema was written and was
+ * read by nothing: the planner could see it, the send path could not, so a WhatsApp channel
+ * happily handed Meta free-form prose hours after the window shut and collected a rejection
+ * per person. Meta's rule is that outside the window only an approved template may go, and
+ * the quality rating that gets a number banned is fed by exactly these attempts.
+ *
+ * Written as "24h" on the channel and parsed here, so a provider with a different window —
+ * or a channel with none — needs no code.
+ *
+ * This is a verdict, not a clock. The window does not reopen on a timer; it reopens when
+ * the person writes back, which may be never. Deferring would hold the message forever and
+ * report it as pending the whole time.
+ */
+function windowBlock(
+  channel: Record<string, unknown>,
+  person: Record<string, unknown>,
+  template: Record<string, unknown>,
+  now: Date,
+): Blocked | null {
+  const rules = (channel.capabilities as { windowRules?: string } | undefined)?.windowRules;
+  const hours = Number(/^(\d+)h$/.exec(rules ?? "")?.[1] ?? 0);
+  if (!hours) return null;
+
+  // An approved template is accepted whether the window is open or shut, so nothing below
+  // can block it.
+  if ((template.providerTemplate as { name?: string } | undefined)?.name) return null;
+
+  const lastReply = person.lastReplyAt ? new Date(person.lastReplyAt as Date) : undefined;
+  const open = lastReply !== undefined && now.getTime() - lastReply.getTime() < hours * 3_600_000;
+  if (open) return null;
+
+  return {
+    reason: lastReply
+      ? `the ${hours}h reply window closed and this template has no approved provider template`
+      : `outside the ${hours}h reply window — they have never replied, and this template has no approved provider template`,
+  };
 }
 
 /** Everything already claimed in this goal instance, so a later touch cannot repeat it. */
