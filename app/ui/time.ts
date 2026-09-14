@@ -118,6 +118,22 @@ export function istDay(value: When, empty = "—"): string {
   return date ? dayStamp.format(date) : empty;
 }
 
+/** `Tue 15 Sep` — a planned send, where the weekday is what a reader plans around. */
+const weekdayDay = new Intl.DateTimeFormat("en-US", {
+  timeZone: IST_ZONE,
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+
+export function istWeekday(value: When, empty = "—"): string {
+  const date = parse(value);
+  if (!date) return empty;
+  const parts = weekdayDay.formatToParts(date);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("weekday")} ${part("day")} ${part("month")}`;
+}
+
 export function istAxisDay(value: When): string {
   const date = parse(value);
   return date ? axisDay.format(date) : "";

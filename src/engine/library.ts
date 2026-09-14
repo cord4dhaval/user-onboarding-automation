@@ -185,6 +185,9 @@ export interface PersonHistory {
     goals: Map<string, Document>;
     templatesById: Map<string, string>;
     templatesByKey: Map<string, string>;
+    /** The preview line under a subject — what the email is about, in the email's own words. */
+    blurbsById: Map<string, string>;
+    blurbsByKey: Map<string, string>;
     sources: Map<string, string>;
   };
 }
@@ -223,7 +226,7 @@ export async function personHistory(orgId: string, productId: string, personId: 
     db
       .collection(C.templates)
       .find({ orgId, productId })
-      .project({ key: 1, name: 1, scope: 1, status: 1, version: 1 })
+      .project({ key: 1, name: 1, scope: 1, status: 1, version: 1, blocks: 1 })
       .toArray(),
     db
       .collection(C.sources)
@@ -241,9 +244,20 @@ export async function personHistory(orgId: string, productId: string, personId: 
   // expects is the live product-wide one, so those win, and the newest version among them.
   const rank = (t: Document) =>
     (t.status === "active" ? 4 : 0) + (t.scope === "product_default" ? 2 : 0) + Number(t.version ?? 0) / 1000;
+  const blurbOf = (t: Document): string | undefined => {
+    const preheader = ((t.blocks ?? []) as Array<{ type?: string; fallback?: string }>).find((b) => b.type === "preheader");
+    return preheader?.fallback ? String(preheader.fallback) : undefined;
+  };
   const templatesByKey = new Map<string, string>();
+  const blurbsByKey = new Map<string, string>();
+  const blurbsById = new Map<string, string>();
   for (const t of [...templates].sort((a, b) => rank(a) - rank(b))) {
     if (t.name) templatesByKey.set(String(t.key), String(t.name));
+    const blurb = blurbOf(t);
+    if (blurb) {
+      blurbsByKey.set(String(t.key), blurb);
+      blurbsById.set(String(t._id), blurb);
+    }
   }
 
   return {
@@ -257,6 +271,8 @@ export async function personHistory(orgId: string, productId: string, personId: 
       goals: new Map(goals.map((g) => [String(g.key), g])),
       templatesById: new Map(templates.filter((t) => t.name).map((t) => [String(t._id), String(t.name)])),
       templatesByKey,
+      blurbsById,
+      blurbsByKey,
       sources: new Map(sources.map((s) => [String(s._id), String(s.name ?? "")])),
     },
   };

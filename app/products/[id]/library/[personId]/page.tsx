@@ -20,7 +20,7 @@ import { requireSession } from "../../../../tenant";
 import ConfirmButton from "../../../../ui/confirm";
 import ClaudeBadge from "../../../../ui/claude-badge";
 import PreviewDrawer from "../../review/preview-drawer";
-import { ist, istDay, istLong } from "../../../../ui/time";
+import { ist, istDay, istLong, istWeekday } from "../../../../ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -591,10 +591,7 @@ export default async function PersonPage({
       {plans.length > 0 && (
         <>
           <h2>The plan</h2>
-          <p className="sub">
-            The emails we plan to send, in order, and why each one. When the plan changes, the older versions stay
-            below so you can see what was planned before.
-          </p>
+          <p className="sub">Every email we plan to send them, and when. If the plan changes, older versions stay at the bottom.</p>
           {campaigns.map((campaign) => {
             const own = plans.filter((p) => String(p.goalInstanceId) === String(campaign._id));
             const current = own.find((p) => String(p._id) === String(campaign.currentPlanId)) ?? own.at(-1);
@@ -606,16 +603,56 @@ export default async function PersonPage({
               clicked: campaignActions.some((a) => Boolean(a.firstClickedAt)),
               band: temp?.band,
             };
+            const rows = planRows(current, campaignActions, engagement, (key, action) => ({
+              name:
+                (action ? names.templatesById.get(String(action.templateId)) : undefined) ??
+                names.templatesByKey.get(String(key ?? "")) ??
+                humanize(key),
+              blurb:
+                (action ? names.blurbsById.get(String(action.templateId)) : undefined) ??
+                names.blurbsByKey.get(String(key ?? "")) ??
+                null,
+            }));
+            const lastIndex = rows.map((row) => row.state !== "skipped").lastIndexOf(true);
+            const goal = names.goals.get(String(campaign.goalKey));
             return (
               <div key={String(campaign._id)}>
                 {campaigns.length > 1 && <h3>{campaignName.get(String(campaign._id))}</h3>}
-                <PlanCard
-                  plan={current}
-                  current
-                  segments={names.segments}
-                  templateName={(key) => names.templatesByKey.get(key)}
-                  stateOf={(step) => stepState(step, campaignActions, engagement)}
-                />
+                {/* Read as a calendar, not a recipe. The card used to open on "PLAN 3 · in use ·
+                    standard plan" and give each step as a gap after the one before, so the
+                    reader had to add days up to learn when anything would arrive. */}
+                <div className="card plan-card">
+                  <p className="plan-lead">{planHeadline(rows)}</p>
+                  <p className="muted cell-note">
+                    Emails stop as soon as they reply
+                    {goal?.success?.describedAs ? ` or the goal is reached (${lowerFirst(String(goal.success.describedAs))})` : ""}.
+                    Dates after the next email are our best estimate.
+                  </p>
+                  <div className="timeline plan-timeline">
+                    {rows.map((row, i) => (
+                      <div key={row.key} className={row.state === "later" ? "future" : row.state === "skipped" ? "future skipped" : ""}>
+                        <span className="t-when" title={row.date ? istLong(row.date) : undefined}>
+                          {row.date ? istWeekday(row.date) : "—"}
+                        </span>
+                        <span className={`t-mark ${PLAN_MARK[row.state]}`} />
+                        <span title={row.why ?? undefined}>
+                          <div className="t-line">
+                            <strong>{row.name}</strong>
+                            {row.state === "sent" && <span className="pill ok">sent</span>}
+                            {row.state === "next" && <span className="pill accent">next</span>}
+                            {i === lastIndex && row.state !== "sent" && <span className="muted cell-note">last email</span>}
+                          </div>
+                          {row.blurb ? <div className="t-detail">{sentence(row.blurb)}</div> : null}
+                          {row.note ? <div className="muted t-detail">{row.note}</div> : null}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="muted cell-note">
+                    {planSummary(current, names.segments)} · updated {ist(current.createdAt)}
+                    {current.createdBy === "claude" ? <> <ClaudeBadge note="wrote this plan" /></> : null}
+                  </p>
+                </div>
                 {older.length > 0 && (
                   <details className="plan-older">
                     <summary>Earlier versions of this plan ({older.length})</summary>
@@ -639,21 +676,17 @@ export default async function PersonPage({
 }
 
 /**
- * One version of a plan. Only the version in use carries where each step stands; an older
- * one is kept for what it intended, and its steps were never going to be sent from here.
+ * A plan that is no longer in use, kept for what it intended. Its steps were never going to
+ * be sent from here, so it carries no dates and no state.
  */
 function PlanCard({
   plan,
-  current = false,
   segments,
   templateName,
-  stateOf,
 }: {
   plan: Document;
-  current?: boolean;
   segments: Map<string, string>;
   templateName: (key: string) => string | undefined;
-  stateOf?: (step: Document) => { label: string; tone: string };
 }) {
   // A plan is stored as whatever the session handed over, and one arrived with no
   // steps at all. The page must still open: a person whose history cannot be read
@@ -662,17 +695,10 @@ function PlanCard({
   return (
     <div className="card plan-card">
       <div className="row">
-        <span className="label plan-label">plan {String(plan.version)}</span>
-        {current && <span className="pill accent">in use</span>}
+        <span className="label plan-label">version {String(plan.version)}</span>
         {/* Only a plan Claude actually wrote gets Claude's mark. Every plan used to carry
             it, including the ones stamped unchanged from a playbook. */}
-        {plan.createdBy === "claude" ? (
-          <ClaudeBadge note="wrote this plan" />
-        ) : plan.createdBy === "human" ? (
-          <span className="pill">written by your team</span>
-        ) : (
-          <span className="pill">standard plan</span>
-        )}
+        {plan.createdBy === "claude" ? <ClaudeBadge note="wrote this plan" /> : null}
         <span className="muted cell-note">made {ist(plan.createdAt)}</span>
       </div>
       <p>{planSummary(plan, segments)}</p>
@@ -681,14 +707,12 @@ function PlanCard({
       ) : (
         <ol className="plan-steps">
           {steps.map((step, i) => {
-            const state = stateOf?.(step);
             const gate = gateLabel(step.gate);
             return (
               <li key={i}>
                 <div className="plan-step-line">
                   <strong>{templateName(String(step.templateKey ?? "")) ?? templateName(String(step.angle)) ?? humanize(step.angle)}</strong>
                   <span className="muted">{[waitLabel(step), gate].filter(Boolean).join(" · ")}</span>
-                  {state && <span className={`pill ${state.tone}`}>{state.label}</span>}
                 </div>
                 {step.why ? <div className="muted">{String(step.why)}</div> : null}
               </li>
@@ -821,43 +845,130 @@ function gateLabel(gate: unknown): string | null {
   }
 }
 
+interface PlanRow {
+  key: string;
+  date: Date | null;
+  name: string;
+  blurb: string | null;
+  why: string | null;
+  state: "sent" | "next" | "later" | "skipped";
+  note: string | null;
+}
+
+const PLAN_MARK: Record<PlanRow["state"], string> = { sent: "", next: "m-next", later: "m-later", skipped: "m-later" };
+
+const DAY_MS = 86_400_000;
+
 /**
- * Where one step of the plan in use stands, decided by the same gate the engine checks
- * before it writes the step.
+ * The plan in use as dated rows: what went out, what is next, and what follows.
+ *
+ * The first email goes out before any plan exists, so it is not one of its steps; it is
+ * added at the top, or the plan would open on the second email with no sign that anything
+ * had been sent. A step with nothing written yet is dated from the one before it, using the
+ * same gap the engine waits, and a step whose gate has already shut is shown as skipped
+ * rather than dropped.
  */
-function stepState(
-  step: Document,
+function planRows(
+  plan: Document,
   campaignActions: Document[],
   engagement: { opened: boolean; clicked: boolean; band?: string },
-): { label: string; tone: string } {
-  const action = campaignActions
-    .filter((a) => Number(a.planStepId) === Number(step.id))
-    .sort((a, b) => stamp(b.dueAt) - stamp(a.dueAt))[0];
-  if (action) {
-    const status = String(action.status);
-    if (status === "sent" || status === "dispatched") return { label: `sent ${ist(action.sentAt ?? action.dueAt)}`, tone: "ok" };
-    if (status === "queued") return { label: `next · ${ist(action.dueAt)}`, tone: "accent" };
-    if (status === "awaiting_approval") return { label: "waiting for your review", tone: "accent" };
-    if (status === "sending") return { label: "sending now", tone: "accent" };
-    return { label: "not sent", tone: "" };
+  label: (key: unknown, action?: Document) => { name: string; blurb: string | null },
+): PlanRow[] {
+  const rows: PlanRow[] = campaignActions
+    .filter((a) => a.planStepId == null && a.replacedPlanStepId == null && ["sent", "dispatched"].includes(String(a.status)))
+    .sort((a, b) => stamp(a.sentAt ?? a.dueAt) - stamp(b.sentAt ?? b.dueAt))
+    .map((a) => ({ key: String(a._id), date: toDate(a.sentAt ?? a.dueAt), ...label(a.angle, a), why: null, state: "sent", note: null }));
+
+  let previous = rows.at(-1)?.date ?? null;
+  const steps = (Array.isArray(plan.steps) ? (plan.steps as Document[]) : []).slice().sort((a, b) => Number(a.id) - Number(b.id));
+  for (const step of steps) {
+    const action = campaignActions
+      .filter((a) => Number(a.planStepId) === Number(step.id))
+      .sort((a, b) => stamp(b.dueAt) - stamp(a.dueAt))[0];
+    const base = { key: `step-${String(step.id)}`, ...label(step.templateKey ?? step.angle, action), why: step.why ? String(step.why) : null };
+    const status = String(action?.status ?? "");
+
+    if (action && (status === "sent" || status === "dispatched")) {
+      const date = toDate(action.sentAt ?? action.dueAt);
+      rows.push({ ...base, date, state: "sent", note: null });
+      previous = date;
+    } else if (action && ["queued", "awaiting_approval", "sending"].includes(status)) {
+      const date = toDate(action.dueAt);
+      rows.push({
+        ...base,
+        date,
+        state: "later",
+        note: status === "awaiting_approval" ? "Waiting for your review before it goes out." : gateNote(step.gate),
+      });
+      previous = date;
+    } else if (action) {
+      rows.push({ ...base, date: null, state: "skipped", note: "Not sent." });
+    } else if (!gateOpen(step.gate, engagement) && ["no_open", "no_click"].includes(String(step.gate))) {
+      rows.push({
+        ...base,
+        date: null,
+        state: "skipped",
+        note: step.gate === "no_open" ? "Skipped: they already opened an email." : "Skipped: they already clicked a link.",
+      });
+    } else {
+      const days = Number(step.offsetDays ?? step.after_days ?? step.afterDays);
+      const date = previous && Number.isFinite(days) ? new Date(previous.getTime() + days * DAY_MS) : null;
+      rows.push({ ...base, date, state: "later", note: gateNote(step.gate) });
+      previous = date;
+    }
   }
-  if (!gateOpen(step.gate, engagement)) {
-    const gate = String(step.gate ?? "").toLowerCase();
-    if (gate === "no_open") return { label: "will not send: they opened an email", tone: "" };
-    if (gate === "no_click") return { label: "will not send: they clicked a link", tone: "" };
-    return { label: "waiting on their interest", tone: "" };
-  }
-  return { label: "later", tone: "" };
+
+  const next = rows.find((row) => row.state === "later");
+  if (next) next.state = "next";
+  return rows;
 }
+
+/** One sentence that says where the plan is: "1 of 6 emails sent. Next one Tue 15 Sep, last one Mon 21 Sep." */
+function planHeadline(rows: PlanRow[]): string {
+  const sent = rows.filter((row) => row.state === "sent").length;
+  const coming = rows.filter((row) => row.state === "next" || row.state === "later");
+  if (coming.length === 0) {
+    return sent === 0 ? "Nothing planned yet." : `All ${sent} ${sent === 1 ? "email" : "emails"} sent. Nothing left to send.`;
+  }
+  const when = (row: PlanRow | undefined) => (row?.date ? istWeekday(row.date) : null);
+  let text = `${sent} of ${sent + coming.length} emails sent. Next one ${when(coming[0]) ?? "once they qualify"}`;
+  if (coming.length > 1 && when(coming.at(-1))) text += `, last one ${when(coming.at(-1))}`;
+  return `${text}.`;
+}
+
+/** The condition a step still waits on, as a full sentence under it. */
+function gateNote(gate: unknown): string | null {
+  switch (String(gate ?? "").trim().toLowerCase()) {
+    case "no_open": return "Skipped if they open an email before this.";
+    case "no_click": return "Skipped if they click a link before this.";
+    case "warm": return "Only sent once they show interest.";
+    case "cold": return "Only sent if they go quiet.";
+    default: return null;
+  }
+}
+
+/** A preview line is written lower-case, the way it reads in an inbox. Under a heading it wants capitals. */
+function sentence(text: string): string {
+  return text.replace(/(^|[.!?]\s+)([a-z])/g, (_, lead: string, letter: string) => lead + letter.toUpperCase());
+}
+
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+const toDate = (value: unknown): Date | null => {
+  const at = stamp(value);
+  return at ? new Date(at) : null;
+};
 
 function planSummary(plan: Document, segments: Map<string, string>): string {
   const rationale = String(plan.rationale ?? "").trim();
   if (plan.createdBy === "claude" || plan.createdBy === "human") return rationale;
   const segment = /the (\S+) playbook/i.exec(rationale)?.[1];
   if (segment && segment !== "default") {
-    return `The standard emails for leads in the “${segments.get(segment) ?? humanize(segment)}” group.`;
+    return `Standard plan for the “${segments.get(segment) ?? humanize(segment)}” group`;
   }
-  return "The standard emails every lead in this campaign gets.";
+  return "Standard plan for every lead in this campaign";
 }
 
 /**
