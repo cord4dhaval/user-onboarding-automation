@@ -1674,3 +1674,4 @@ textarea.payload { min-height: 130px; }
 /* Planned and not yet written: an outline, so it never reads as something that happened. */
 .timeline .t-mark.m-later::before { background: transparent; border: 1.5px solid var(--ink-3); }
 .timeline .skipped strong { color: var(--ink-3); text-decoration: line-through; }
+.timeline .t-when .t-time { display: block; }

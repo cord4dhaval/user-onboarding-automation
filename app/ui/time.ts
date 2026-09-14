@@ -134,6 +134,19 @@ export function istWeekday(value: When, empty = "—"): string {
   return `${part("weekday")} ${part("day")} ${part("month")}`;
 }
 
+/** `8:57 AM` — the time under a `Tue 15 Sep`, where a leading zero is noise. */
+const timeOfDay = new Intl.DateTimeFormat("en-US", {
+  timeZone: IST_ZONE,
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+
+export function istTime(value: When, empty = "—"): string {
+  const date = parse(value);
+  return date ? timeOfDay.format(date) : empty;
+}
+
 export function istAxisDay(value: When): string {
   const date = parse(value);
   return date ? axisDay.format(date) : "";

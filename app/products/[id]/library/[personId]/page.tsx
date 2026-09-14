@@ -5,6 +5,7 @@ import {
   Bot,
   CircleCheck,
   CircleSlash,
+  Clock,
   Mail,
   MailX,
   MessageSquare,
@@ -20,7 +21,7 @@ import { requireSession } from "../../../../tenant";
 import ConfirmButton from "../../../../ui/confirm";
 import ClaudeBadge from "../../../../ui/claude-badge";
 import PreviewDrawer from "../../review/preview-drawer";
-import { ist, istDay, istLong, istWeekday } from "../../../../ui/time";
+import { ist, istDay, istLong, istTime, istWeekday } from "../../../../ui/time";
 
 export const dynamic = "force-dynamic";
 
@@ -114,16 +115,18 @@ export default async function PersonPage({
   for (const arrival of arrivals) {
     const sourceName = arrival.sourceId ? names.sources.get(arrival.sourceId) : undefined;
     const detail = [
-      arrival.intent === "form" ? "Asked through a form" : null,
-      sourceName ? `from the “${humanize(sourceName)}” list` : `from ${ARRIVAL_KIND[arrival.kind] ?? humanize(arrival.kind)}`,
+      arrival.intent === "form" ? "They filled in a form." : null,
+      sourceName
+        ? `Added from the “${humanize(sourceName)}” list.`
+        : `Added from ${ARRIVAL_KIND[arrival.kind] ?? humanize(arrival.kind).toLowerCase()}.`,
       arrival.detail ?? null,
     ].filter(Boolean);
     past.push({
       at: new Date(String(arrival.at)),
       node: (
         <>
-          <strong><UserPlus size={13} /> Became a lead</strong>
-          <div className="muted t-detail">{detail.join(" · ")}</div>
+          <strong><UserPlus size={13} /> They became a lead</strong>
+          <div className="muted t-detail">{detail.join(" ")}</div>
         </>
       ),
     });
@@ -139,7 +142,7 @@ export default async function PersonPage({
       node: (
         <>
           <div className="t-line">
-            <strong><Send size={13} /> {content.subject ?? emailName(action)}</strong>
+            <strong><Send size={13} /> We sent “{emailName(action)}”</strong>
             {/* The message itself, exactly as it arrived. "What did we actually send
                 this person" was previously answerable only from the review queue, which
                 a sent message has already left. */}
@@ -152,13 +155,15 @@ export default async function PersonPage({
               fetchMessage={heldMessage}
             />
           </div>
-          <div className="muted t-detail">
-            {[`“${emailName(action)}” email`, goal, deliveryLabel(action), outcome?.grade ? `rated ${outcome.grade}` : null]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
-          <Result action={action} />
-          {why ? <div className="muted t-detail">Why this email: {why}</div> : null}
+          {content.subject || campaigns.length > 1 ? (
+            <div className="muted t-detail">
+              {[content.subject ? `Subject: “${content.subject}”` : null, campaigns.length > 1 ? goal : null]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
+          ) : null}
+          <Result action={action} delivery={`${deliveryLabel(action)}${outcome?.grade ? ` Rated ${outcome.grade}.` : ""}`} />
+          {why ? <div className="muted t-detail">Why: {why}</div> : null}
         </>
       ),
     });
@@ -175,7 +180,7 @@ export default async function PersonPage({
       node: (
         <>
           <div className="t-line">
-            <strong><CircleSlash size={13} /> {content.subject ?? emailName(action)}</strong>
+            <strong><CircleSlash size={13} /> “{content.subject ?? emailName(action)}” was not sent</strong>
             <PreviewDrawer
               productId={id}
               actionId={String(action._id)}
@@ -185,7 +190,7 @@ export default async function PersonPage({
               fetchMessage={heldMessage}
             />
           </div>
-          <div className="muted t-detail">Not sent: {reason.text}</div>
+          <div className="muted t-detail">{reason.text}</div>
         </>
       ),
     });
@@ -200,10 +205,10 @@ export default async function PersonPage({
         at: signal.at,
         node: (
           <>
-            <strong className="muted"><Bot size={13} /> Checked by their mail scanner</strong>
+            <strong className="muted"><Bot size={13} /> Their mail scanner checked our email</strong>
             <div className="muted t-detail">
-              Their mail system {signal.type === "clicked" ? "opened the link" : "loaded the images"} seconds after we
-              sent it, before anyone could read it. Not counted as interest.
+              It {signal.type === "clicked" ? "opened the link" : "loaded the images"} seconds after we sent it, before a
+              person could read it. We do not count this as interest.
             </div>
           </>
         ),
@@ -217,18 +222,18 @@ export default async function PersonPage({
       node:
         signal.type === "clicked" ? (
           <>
-            <strong className="hit"><MousePointerClick size={13} /> Clicked a link</strong>
+            <strong className="hit"><MousePointerClick size={13} /> They clicked a link</strong>
             <div className="muted t-detail">
-              {signal.subject ? `in “${signal.subject}”` : "in an earlier email"}
+              {signal.subject ? `In “${signal.subject}”` : "In an earlier email"}
               {signal.url ? <> · <span className="mono">{signal.url}</span></> : null}
             </div>
           </>
         ) : (
           <>
-            <strong><Mail size={13} /> Opened</strong>
+            <strong><Mail size={13} /> They opened an email</strong>
             <div className="muted t-detail">
-              {signal.subject ? `“${signal.subject}” · ` : ""}
-              may not be a person — some mail apps open emails on their own
+              {signal.subject ? `“${signal.subject}”. ` : ""}
+              This may not be a person: some mail apps open emails on their own.
             </div>
           </>
         ),
@@ -246,8 +251,8 @@ export default async function PersonPage({
         mark: "signal",
         node: (
           <>
-            <strong className="hit"><MessageSquare size={13} /> Replied</strong>
-            <div className="muted t-detail">{payload.subject ? String(payload.subject) : "no subject"}</div>
+            <strong className="hit"><MessageSquare size={13} /> They replied</strong>
+            <div className="muted t-detail">{payload.subject ? `Subject: “${String(payload.subject)}”` : "No subject."}</div>
             {/* Their own words, kept whole. A reply summarised into "replied" is the one
                 piece of writing in this system that nobody should have to go and find. */}
             {payload.text ? <blockquote className="t-quote">{String(payload.text).slice(0, 1200)}</blockquote> : null}
@@ -263,8 +268,10 @@ export default async function PersonPage({
         mark: "bad",
         node: (
           <>
-            <strong><Ban size={13} /> Unsubscribed</strong>
-            <div className="muted t-detail">{String(payload.reason ?? "asked us to stop")} · we will never email them again</div>
+            <strong><Ban size={13} /> They unsubscribed</strong>
+            <div className="muted t-detail">
+              {payload.reason ? sentence(String(payload.reason)).replace(/\.?$/, ". ") : ""}We will never email them again.
+            </div>
           </>
         ),
       });
@@ -277,8 +284,8 @@ export default async function PersonPage({
         mark: "bad",
         node: (
           <>
-            <strong><MailX size={13} /> Email bounced</strong>
-            <div className="muted t-detail">{String(payload.recipient ?? email)} does not accept email</div>
+            <strong><MailX size={13} /> Our email bounced</strong>
+            <div className="muted t-detail">{String(payload.recipient ?? email)} does not accept email.</div>
           </>
         ),
       });
@@ -291,8 +298,8 @@ export default async function PersonPage({
         mark: "signal",
         node: (
           <>
-            <strong className="hit"><CircleCheck size={13} /> {humanize(type.slice("check_passed:".length))}</strong>
-            <div className="muted t-detail">Confirmed.</div>
+            <strong className="hit"><CircleCheck size={13} /> Confirmed: {humanize(type.slice("check_passed:".length)).toLowerCase()}</strong>
+            <div className="muted t-detail">This counts toward the campaign goal.</div>
           </>
         ),
       });
@@ -305,6 +312,29 @@ export default async function PersonPage({
         <>
           <strong>{humanize(type)}</strong>
           {payload.check ? <div className="muted t-detail">{humanize(payload.check)}</div> : null}
+        </>
+      ),
+    });
+  }
+
+  // Only the latest check is stored, so only the latest is shown. A check that passed has its
+  // own entry above; this one says what is still not true, and when we look again. Without it
+  // the page said "what we checked" and then showed no check at all.
+  for (const campaign of campaigns) {
+    const pending = Object.entries((campaign.checkResults ?? {}) as Record<string, boolean>)
+      .filter(([, passed]) => !passed)
+      .map(([key]) => humanize(key).toLowerCase());
+    if (!campaign.lastVerifiedAt || pending.length === 0) continue;
+    past.push({
+      at: new Date(String(campaign.lastVerifiedAt)),
+      node: (
+        <>
+          <strong className="muted"><Clock size={13} /> We checked: not {pending.join(" or ")} yet</strong>
+          {campaign.status === "active" && campaign.nextVerifyAt ? (
+            <div className="muted t-detail">
+              We check again {istWeekday(campaign.nextVerifyAt)} at {istTime(campaign.nextVerifyAt)}.
+            </div>
+          ) : null}
         </>
       ),
     });
@@ -512,17 +542,14 @@ export default async function PersonPage({
       )}
 
       <h2>Activity</h2>
-      <p className="sub">
-        Everything that happened with this lead, oldest first: the emails we sent, what they did, and what we
-        checked. Open any email to see it exactly as they got it.
-      </p>
+      <p className="sub">What happened with this lead, oldest first. Open any email to see exactly what they got.</p>
       {past.length === 0 ? (
         <div className="empty"><strong>Nothing yet</strong>We have not emailed them.</div>
       ) : (
         <div className="timeline">
           {past.map((entry, i) => (
             <div key={i}>
-              <span className="t-when" title={istLong(entry.at)}>{ist(entry.at)}</span>
+              <WhenCell at={entry.at} />
               <span className={`t-mark ${entry.mark ? `m-${entry.mark}` : ""}`} />
               <span>{entry.node}</span>
             </div>
@@ -533,19 +560,19 @@ export default async function PersonPage({
       {upcoming.length > 0 && (
         <>
           <h2>Coming up</h2>
-          <p className="sub">Not sent yet. If they reply, anything still waiting here is cancelled.</p>
+          <p className="sub">Emails waiting to go out. If they reply, these are cancelled.</p>
           <div className="timeline">
             {upcoming.map((action) => {
               const content = (action.content ?? {}) as { subject?: string };
               const due = stamp(action.dueAt);
-              const gate = gateLabel(stepFor(action)?.gate);
+              const gate = gateNote(stepFor(action)?.gate);
               return (
                 <div key={String(action._id)} className="future">
-                  <span className="t-when" title={istLong(action.dueAt)}>{ist(action.dueAt)}</span>
+                  <WhenCell at={action.dueAt} />
                   <span className="t-mark m-next" />
                   <span>
                     <div className="t-line">
-                      <strong>{content.subject ?? emailName(action)}</strong>
+                      <strong>We will send “{emailName(action)}”</strong>
                       <PreviewDrawer
                         productId={id}
                         actionId={String(action._id)}
@@ -555,18 +582,18 @@ export default async function PersonPage({
                         fetchMessage={heldMessage}
                       />
                     </div>
+                    {content.subject ? <div className="muted t-detail">Subject: “{content.subject}”</div> : null}
                     <div className="muted t-detail">
                       {[
-                        content.subject ? `“${emailName(action)}” email` : null,
                         action.status === "awaiting_approval"
-                          ? "waiting for your review"
+                          ? "Waiting for your review before it goes out."
                           : due > Date.now()
-                            ? "planned"
-                            : "going out now",
+                            ? `Goes out ${istWeekday(action.dueAt)} at ${istTime(action.dueAt)}.`
+                            : "Going out now.",
                         gate,
                       ]
                         .filter(Boolean)
-                        .join(" · ")}
+                        .join(" ")}
                     </div>
                     {/* A signal against a message nobody approved means its tracking link
                         was reached some other way — a preview, a test, a link shared on.
@@ -830,7 +857,7 @@ function interestReasons(s: { fit: boolean; form: boolean; sent: number; opened:
 function whyLabel(rationale: unknown): string | null {
   const text = String(rationale ?? "").trim();
   if (!text) return null;
-  if (/^first touch for goal/i.test(text)) return "the first email of this campaign.";
+  if (/^first touch for goal/i.test(text)) return "it is the first email of this campaign.";
   return text;
 }
 
@@ -993,7 +1020,7 @@ const stamp = (value: unknown): number => {
  * The timeline carries every signal as its own entry, but a reader scanning for "did this
  * one land" should not have to look further down the page for the answer.
  */
-function Result({ action }: { action: Document }) {
+function Result({ action, delivery }: { action: Document; delivery: string }) {
   const tracking = (action.tracking ?? {}) as { opens?: boolean; clicks?: boolean };
   const opened = action.firstOpenedAt;
   const clicked = action.firstClickedAt;
@@ -1001,33 +1028,45 @@ function Result({ action }: { action: Document }) {
   if (!opened && !clicked) {
     const scanned = action.firstMachineClickedAt ?? action.firstMachineOpenedAt;
     return (
-      <div className="t-detail">
-        <span className="muted">
-          {scanned
-            ? `No response from them yet. Their mail scanner checked the links ${ist(scanned)}.`
-            : tracking.clicks && !tracking.opens
-              ? "No clicks on this one yet."
-              : tracking.clicks || tracking.opens
-                ? "No response to this one yet."
-                : "We cannot see opens or clicks for this email."}
-        </span>
+      <div className="muted t-detail">
+        {delivery}{" "}
+        {scanned
+          ? "No response from them yet, only their mail scanner."
+          : tracking.clicks && !tracking.opens
+            ? "No clicks yet."
+            : tracking.clicks || tracking.opens
+              ? "No opens or clicks yet."
+              : "We cannot see if they opened or clicked it."}
       </div>
     );
   }
 
   return (
-    <div className="t-detail responded">
-      {clicked ? (
-        <span className="pill hot" title={istLong(clicked)}>
-          <MousePointerClick /> clicked {ist(clicked)}
-        </span>
-      ) : null}
-      {opened ? (
-        <span className="pill warm" title={istLong(opened)}>
-          <Mail /> opened {ist(opened)}
-        </span>
-      ) : null}
-    </div>
+    <>
+      <div className="muted t-detail">{delivery}</div>
+      <div className="t-detail responded">
+        {clicked ? (
+          <span className="pill hot" title={istLong(clicked)}>
+            <MousePointerClick /> they clicked · {istWeekday(clicked)}, {istTime(clicked)}
+          </span>
+        ) : null}
+        {opened ? (
+          <span className="pill warm" title={istLong(opened)}>
+            <Mail /> they opened · {istWeekday(opened)}, {istTime(opened)}
+          </span>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/** When a timeline entry happened: the day on one line and the time under it. */
+function WhenCell({ at }: { at: Date | string }) {
+  return (
+    <span className="t-when" title={istLong(at)}>
+      {istWeekday(at)}
+      <span className="t-time">{istTime(at)}</span>
+    </span>
   );
 }
 
@@ -1040,28 +1079,28 @@ function Result({ action }: { action: Document }) {
  */
 function deliveryLabel(action: Record<string, unknown>): string {
   const status = String(action.status);
-  if (status === "dispatched") return "handed to the mail service, not confirmed yet";
-  if (status === "failed") return `failed${action.error ? `: ${String(action.error)}` : ""}`;
-  if (status !== "sent") return humanize(status).toLowerCase();
-  if (action.confirmedAt) return "delivered";
-  return action.providerMessageId ? "sent, delivery not confirmed yet" : "sent, the mail service gives no status";
+  if (status === "dispatched") return "Handed to the mail service, not confirmed yet.";
+  if (status === "failed") return `Sending failed${action.error ? `: ${String(action.error)}` : ""}.`;
+  if (status !== "sent") return `${humanize(status)}.`;
+  if (action.confirmedAt) return "Delivered.";
+  return action.providerMessageId ? "Sent, delivery not confirmed yet." : "Sent. The mail service gives no delivery status.";
 }
 
 /** Why a message never went out. The stored reasons are written for the engine's log. */
 function notSentLabel(action: Record<string, unknown>): { text: string; bad: boolean } {
-  if (action.status === "failed") return { text: `sending failed${action.error ? ` (${String(action.error)})` : ""}`, bad: true };
+  if (action.status === "failed") return { text: `Sending failed${action.error ? ` (${String(action.error)})` : ""}.`, bad: true };
   const reason = String(action.skipReason ?? "");
   const missing = /^no (\w+) on this person/.exec(reason);
-  if (missing) return { text: `we do not have their ${missing[1]}`, bad: false };
+  if (missing) return { text: `We do not have their ${missing[1]}.`, bad: false };
   const known: Record<string, { text: string; bad: boolean }> = {
-    booked_call: { text: "they booked a call", bad: false },
-    "they replied; waiting on a human answer": { text: "they replied, so it waits for you to answer", bad: false },
-    hard_bounce: { text: "their address does not accept email", bad: true },
-    "campaign already succeeded": { text: "they already reached the goal", bad: false },
-    "campaign ended": { text: "the campaign ended", bad: false },
-    unsubscribed: { text: "they unsubscribed", bad: true },
-    "plan replaced by playbook stamp": { text: "the plan changed before it was due", bad: false },
+    booked_call: { text: "They booked a call, so it was no longer needed.", bad: false },
+    "they replied; waiting on a human answer": { text: "They replied, so it waits for you to answer them.", bad: false },
+    hard_bounce: { text: "Their address does not accept email.", bad: true },
+    "campaign already succeeded": { text: "They already reached the goal.", bad: false },
+    "campaign ended": { text: "The campaign ended first.", bad: false },
+    unsubscribed: { text: "They unsubscribed.", bad: true },
+    "plan replaced by playbook stamp": { text: "The plan changed before it was due.", bad: false },
   };
   if (known[reason]) return known[reason];
-  return { text: reason ? humanize(reason).toLowerCase() : "turned down in review", bad: true };
+  return { text: reason ? `Reason: ${humanize(reason)}.` : "It was turned down in review.", bad: true };
 }
