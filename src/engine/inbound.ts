@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { notify } from "./notify.js";
+import { mailOwner } from "./ownerMail.js";
 import { resolveSecret } from "../crypto/broker.js";
 import { McpClient } from "../mcp/client.js";
 import { schemasFor } from "../mcp/schemas.js";
@@ -460,6 +461,20 @@ export async function pollReplies(
         dedupeKey: `engagement:replied:${personId}`,
         title: `${String(person.name ?? person.primaryEmail ?? from)} replied`,
         body: text ? `${text.slice(0, 160).replace(/\s+/g, " ").trim()}${text.length > 160 ? "…" : ""}` : undefined,
+        href: `/products/${productId}/library/${personId}`,
+      });
+      // And told again in their own inbox, the same minute, so a human can answer from the
+      // mailbox the reply arrived in before any routine runs. Off unless OWNER_NOTIFY_EMAIL
+      // is set.
+      await mailOwner(orgId, productId, {
+        subject: `Reply from ${String(person.name ?? from)}: ${headerOf(message.payload, "Subject") || "(no subject)"}`,
+        lines: [
+          `${String(person.name ?? "")} <${from}> replied to ${mailbox.email}:`,
+          "",
+          text ? text.slice(0, 1200) : "(no text found in the reply)",
+          "",
+          `Answer them from ${mailbox.email}. Their queued mails are on hold.`,
+        ],
         href: `/products/${productId}/library/${personId}`,
       });
       const held = await db.collection(C.actions).updateMany(
