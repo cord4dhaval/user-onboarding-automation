@@ -1649,3 +1649,23 @@ textarea.payload { min-height: 130px; }
 .drawer-advanced > summary:hover { color: var(--ink); }
 .drawer-advanced[open] > summary { border-bottom: 1px solid var(--rule-soft); margin-bottom: 12px; }
 .drawer-advanced > .stack { padding-bottom: 14px; }
+
+/* ── lead page ────────────────────────────────────────────────────────────────
+   The rules the page used to carry as inline styles, plus the plan's step lines. */
+.person-sub { margin-bottom: 0; }
+.person-sub a { color: inherit; }
+.person-sub a:hover { color: var(--ink); text-decoration: underline; }
+.temp-why { font-size: 12.5px; }
+.stat-row { margin-bottom: 24px; }
+.belief { display: grid; gap: 6px; margin-bottom: 18px; }
+.belief p { margin: 0; }
+.belief-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.cell-note { font-size: 12px; }
+.plan-card { display: grid; gap: 8px; margin-bottom: 12px; }
+.plan-card p { margin: 0; }
+.plan-card .plan-label { margin: 0; }
+.plan-steps { margin: 0; padding-left: 20px; font-size: 13.5px; display: grid; gap: 10px; }
+.plan-step-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.plan-empty { font-size: 13.5px; }
+.plan-older { margin-bottom: 12px; }
+.plan-older > .plan-card { margin: 10px 0 0; }

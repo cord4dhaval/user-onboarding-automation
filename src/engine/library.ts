@@ -175,6 +175,18 @@ export interface PersonHistory {
   actions: Document[];
   plans: Document[];
   events: Document[];
+  /**
+   * What the stored keys are called. The page used to print `agency_owner`,
+   * `teamgrid_leads_v2` and `mcp_source` as they sit in the database, which only the
+   * person who wrote them could read.
+   */
+  names: {
+    segments: Map<string, string>;
+    goals: Map<string, Document>;
+    templatesById: Map<string, string>;
+    templatesByKey: Map<string, string>;
+    sources: Map<string, string>;
+  };
 }
 
 /**
@@ -202,7 +214,52 @@ export async function personHistory(orgId: string, productId: string, personId: 
     db.collection(C.events).find({ orgId, personId }).sort({ ts: 1 }).limit(200).toArray(),
   ]);
 
-  return { person, campaigns, actions, plans, events };
+  const sourceIds = ((person.arrivals ?? []) as Array<{ sourceId?: string }>)
+    .map((a) => a.sourceId)
+    .filter((id): id is string => Boolean(id && ObjectId.isValid(id)));
+  const [product, goals, templates, sources] = await Promise.all([
+    ObjectId.isValid(productId) ? db.collection(C.products).findOne({ _id: new ObjectId(productId) }) : null,
+    db.collection(C.goals).find({ orgId, productId }).toArray(),
+    db
+      .collection(C.templates)
+      .find({ orgId, productId })
+      .project({ key: 1, name: 1, scope: 1, status: 1, version: 1 })
+      .toArray(),
+    db
+      .collection(C.sources)
+      .find({ _id: { $in: sourceIds.map((id) => new ObjectId(id)) } })
+      .project({ name: 1 })
+      .toArray(),
+  ]);
+
+  const segments = new Map<string, string>();
+  for (const s of ((product?.config?.segments ?? []) as Array<{ key: string; name: string }>)) {
+    segments.set(s.key, s.name);
+  }
+
+  // A key has several rows — old versions, paused ones, one per segment. The name a reader
+  // expects is the live product-wide one, so those win, and the newest version among them.
+  const rank = (t: Document) =>
+    (t.status === "active" ? 4 : 0) + (t.scope === "product_default" ? 2 : 0) + Number(t.version ?? 0) / 1000;
+  const templatesByKey = new Map<string, string>();
+  for (const t of [...templates].sort((a, b) => rank(a) - rank(b))) {
+    if (t.name) templatesByKey.set(String(t.key), String(t.name));
+  }
+
+  return {
+    person,
+    campaigns,
+    actions,
+    plans,
+    events,
+    names: {
+      segments,
+      goals: new Map(goals.map((g) => [String(g.key), g])),
+      templatesById: new Map(templates.filter((t) => t.name).map((t) => [String(t._id), String(t.name)])),
+      templatesByKey,
+      sources: new Map(sources.map((s) => [String(s._id), String(s.name ?? "")])),
+    },
+  };
 }
 
 /** Records an arrival without ever creating a second record for the same human. */
