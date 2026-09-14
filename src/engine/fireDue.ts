@@ -1,4 +1,4 @@
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import {
@@ -195,6 +195,11 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // land in, so the skeleton is chosen here, from how far through the sequence this
       // person actually is. Treating a missing id as a failure instead cost this product
       // 71 messages and would have cost it the 92 still queued behind them.
+      // A plan step that names a template (or a family of variants) renders through it. Only
+      // a step naming nothing falls back to the ladder rung for how far the person is; that
+      // fallback used to serve every composed step, so a "privacy" message written by a
+      // session went out inside the "one step left" onboarding frame.
+      const rungKey = await stepTemplateKey(goalInstance, action);
       const template = action.templateId
         ? await db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) })
         : await resolveTemplateFor({
@@ -207,6 +212,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             // two disagree whenever a touch failed or was re-sent, and the disagreement
             // was reaching real people as the welcome mail arriving twice.
             usedKeys: await rungsSentTo(String(person._id)),
+            ...(rungKey ? { rungKey } : {}),
           });
 
       if (!template) {
@@ -748,6 +754,17 @@ async function priorClaimsFor(goalInstanceId: string): Promise<string[]> {
  * on send, so a message that failed, or one sent while the counter was behind, leaves the
  * next render pointing at a rung the reader has already had.
  */
+/** The template key the person's plan put on this action's step, if the plan named one. */
+async function stepTemplateKey(goalInstance: Document, action: Document): Promise<string | undefined> {
+  const stepId = Number(action.planStepId);
+  if (!Number.isFinite(stepId) || !goalInstance.currentPlanId) return undefined;
+  const db = await getDb();
+  const plan = await db.collection(C.plans).findOne({ _id: new ObjectId(String(goalInstance.currentPlanId)) }, { projection: { steps: 1 } });
+  const step = ((plan?.steps ?? []) as Array<Record<string, unknown>>).find((st) => Number(st.id ?? st.step_id) === stepId);
+  const key = step?.templateKey ?? step?.template_key;
+  return typeof key === "string" && key ? key : undefined;
+}
+
 async function rungsSentTo(personId: string): Promise<string[]> {
   const db = await getDb();
   const sent = await db

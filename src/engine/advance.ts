@@ -220,6 +220,11 @@ export async function advance(
 
   // Channels are the same handful of documents for everyone in the batch, so they are read
   // once per campaign and the per-person decision is made in memory.
+  /** Template families with variants on this product: a step naming one stays engine-rendered. */
+  const familyKeys = new Set(
+    (await db.collection(C.templates).find({ ...s, status: "active", family: { $exists: true, $ne: null } }).project({ family: 1 }).toArray()).map((t) => String(t.family)),
+  );
+
   const channelsByGoal = new Map<string, PooledChannel[]>();
   for (const goal of goals) {
     channelsByGoal.set(
@@ -292,6 +297,10 @@ export async function advance(
       deliveredBy.get(goalInstanceId) ?? new Set(),
       { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: bandNow },
     );
+    // A step that names a family of variants ("the next welcome they have not seen") is
+    // the engine's to render: the variant IS the message, picked by segment and by what
+    // has won. Handing it to a session would replace a tested first mail with freehand.
+    if (step && tier === 1 && familyKeys.has(String(step.templateKey ?? ""))) tier = 2;
     if (!step) {
       summary.skipped.push({ goalInstanceId, reason: "plan exhausted" });
       continue;

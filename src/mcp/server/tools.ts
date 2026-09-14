@@ -1130,20 +1130,6 @@ export const TOOLS: ToolDef[] = [
       const db = await getDb();
       const goalInstanceId = String(args.goal_instance_id);
 
-      // Refused before anything is read, let alone written. A plan once arrived with no
-      // steps and a rationale of "undefined"; it was stored, the tool then crashed on the
-      // reply, and every page that listed this person's plans crashed after it.
-      const planSteps = Array.isArray(args.steps)
-        ? (args.steps as Array<{ id?: unknown; asset_id?: unknown; channel?: unknown; angle?: unknown }>)
-        : [];
-      if (planSteps.length === 0) {
-        throw new Error("A plan needs at least one step. Nothing was written.");
-      }
-      const rationale = typeof args.rationale === "string" ? args.rationale.trim() : "";
-      if (!rationale || rationale === "undefined") {
-        throw new Error("A plan needs a rationale in words. Nothing was written.");
-      }
-
       const instance = await db
         .collection(C.goalInstances)
         .findOne({ _id: new ObjectId(goalInstanceId), orgId: ctx.orgId });
@@ -1152,6 +1138,13 @@ export const TOOLS: ToolDef[] = [
       const orgId = String(instance.orgId);
       const productId = String(instance.productId);
       const touches = (args.touches ?? []) as Array<Record<string, unknown>>;
+      // The plan_goal guard against a stepless plan was once pasted here too, where it
+      // read a `steps` argument this tool never receives — so every compose_batch failed
+      // with "a plan needs at least one step" and nothing a session wrote was ever queued.
+      if (touches.length === 0) throw new Error("compose_batch needs at least one touch. Nothing was written.");
+      for (const t of touches) {
+        if (!String(t.rationale ?? "").trim()) throw new Error(`step ${String(t.step_id)} needs a rationale in words. Nothing was written.`);
+      }
       const queued: string[] = [];
 
       // Refused here rather than cleaned up later. Copy that signs off with its own link
@@ -1176,6 +1169,17 @@ export const TOOLS: ToolDef[] = [
       const plan = instance.currentPlanId
         ? await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) })
         : null;
+      // The step ids are the plan's, not the model's. A touch for a step the plan does not
+      // have would render through whatever rung the ladder reached and skip the gate the
+      // plan put on it, so it is refused with the list that would have been accepted.
+      const planIds = new Set(((plan?.steps ?? []) as Array<Record<string, unknown>>).map((st) => Number(st.id ?? st.step_id)));
+      if (planIds.size > 0) {
+        for (const t of touches) {
+          if (!planIds.has(Number(t.step_id))) {
+            throw new Error(`step ${String(t.step_id)} is not in this person's plan; its steps are ${[...planIds].sort((a, b) => a - b).join(", ")}. Write for the step the work item names.`);
+          }
+        }
+      }
       const plannedAsset = new Map<number, string>();
       for (const step of ((plan?.steps ?? []) as Array<Record<string, unknown>>)) {
         const assetId = String(step.asset_id ?? step.assetId ?? "");
