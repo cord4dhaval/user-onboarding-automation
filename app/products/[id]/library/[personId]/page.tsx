@@ -539,7 +539,7 @@ export default async function PersonPage({
                   <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13.5 }}>
                     {steps.map((step, i) => (
                       <li key={i}>
-                        <strong>{String(step.angle)}</strong> on {String(step.channel)}, day {String(step.after_days ?? step.afterDays ?? "?")}
+                        <strong>{String(step.angle)}</strong> on {String(step.channel)} · {waitLabel(step)}
                         <div className="muted">{String(step.why ?? "")}</div>
                       </li>
                     ))}
@@ -553,6 +553,17 @@ export default async function PersonPage({
     </>
   );
 }
+
+/**
+ * How long a plan step waits, in words. Playbook stamps store offsetDays; session-written
+ * plans store after_days. Either way it is the gap after the previous message, not a day of
+ * the campaign.
+ */
+const waitLabel = (step: Record<string, unknown>): string => {
+  const days = Number(step.offsetDays ?? step.after_days ?? step.afterDays);
+  if (!Number.isFinite(days)) return "wait not set";
+  return `waits ${days} ${days === 1 ? "day" : "days"} after the last message`;
+};
 
 const stamp = (value: unknown): number => {
   const date = value ? new Date(String(value)) : null;
