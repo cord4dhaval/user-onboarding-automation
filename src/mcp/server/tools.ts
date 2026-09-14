@@ -1176,7 +1176,7 @@ export const TOOLS: ToolDef[] = [
       // One problem and one thing they would see fits in 90 words; a link in the body is a
       // second ask beside the template's one button; the preheader and PS are short or absent.
       const LINK = /https?:\/\/|www\.[a-z0-9]/i;
-      const psLine = (text: string) => (/^p\.?\s?s\b/i.test(text) ? text : `PS: ${text}`);
+      const psLine = (text: string) => (/^p\.?\s?s\b/i.test(text) ? text : `P.S. ${text}`);
       for (const t of touches) {
         const step = String(t.step_id);
         const body = String(t.body ?? "");

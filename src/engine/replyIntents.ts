@@ -46,13 +46,13 @@ export function replyIntent(text: string): ReplyIntent | null {
 export function callReplyBody(firstName: string, slots: Array<{ label: string; url: string }>, pickUrl: string): string {
   const lines = [`Hi ${firstName},`, ""];
   if (slots.length > 0) {
-    lines.push("Here are the next open times for the 15-minute setup call. One click books it:", "");
+    lines.push("Thank you for your reply. Here are the next available times for a 15-minute setup call. Select one to confirm your booking:", "");
     for (const slot of slots) lines.push(`${slot.label}: ${slot.url}`);
-    lines.push("", `Or pick another time: ${pickUrl}`);
+    lines.push("", `If none of these times suit you, you can choose another time here: ${pickUrl}`);
   } else {
-    lines.push(`Pick a time for the 15-minute setup call here: ${pickUrl}`);
+    lines.push(`Thank you for your reply. You can choose a time for a 15-minute setup call here: ${pickUrl}`);
   }
-  lines.push("", "Bring your team size and whatever you use for timesheets today.", "", "The TeamGrid team");
+  lines.push("", "Please have your team size and your current timesheet process to hand.", "", "Best regards,", "The TeamGrid Team");
   return lines.join("\n");
 }
 
@@ -60,13 +60,14 @@ export function laterReplyBody(firstName: string, trialLink: string): string {
   return [
     `Hi ${firstName},`,
     "",
-    "Writing again a month on, as promised.",
+    "As requested, we are following up a month after your last message.",
     "",
-    `If you want to see how your team's day went, every morning, TeamGrid is free for 7 days: ${trialLink}`,
+    `If you would like to see a daily summary of how your team's day went, you can try TeamGrid free for 7 days: ${trialLink}`,
     "",
-    "Still not the time? Reply \"no\" and we stop.",
+    "If now is still not the right time, reply \"no\" and we will not contact you again.",
     "",
-    "The TeamGrid team",
+    "Best regards,",
+    "The TeamGrid Team",
   ].join("\n");
 }
 
