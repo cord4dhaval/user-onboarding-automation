@@ -193,6 +193,53 @@ Source: https://www.youtube.com/watch?v=oZ18-kMrmKw (22 min, English; transcript
 
 ---
 
+## 2026-09-14 — Roshan, playlist "SaaS Email Marketing Growth" (7 videos)
+
+Source: https://www.youtube.com/playlist?list=PLGC1vB3Ueju6C1UneCGulSr61EG5skwTq (about 67 min in total, English; all seven transcripts read in full). An agency owner's lifecycle-email system for SaaS: the three-step playbook, the twelve to fifteen flows, the onboarding flow, the five churn flows, a process for custom flows, the five core flows to build first, and the campaign layer.
+
+### What the playlist says
+
+- **Three steps.** Map the whole customer journey first (awareness, lead magnet, trial signup, trial to paid, onboarding, retention, upsell, churn signals, cancellation, win-back; hundreds of actions, a dozen milestones). Then a flow for every point of it, each triggered by a behaviour, with logic splits and copy written for that behaviour, so that behaviour, flow, next behaviour, next flow runs as a cycle with no gaps. Then broadcast campaigns to segments. Copy-pasted templates fail because the journey differs per product.
+- **The flows.** Welcome (trial to aha moment to paid), post-trial, abandoned payment (a price objection), payment decline (a logistics problem), onboarding per plan, achievement or gamification (milestones, congratulations, the road map to the next one, something exclusive), upsell to annual, feature-limit upsell, review request (G2, Capterra), referral with an incentive for both sides, no-login churn prevention (5–14 days), low-activity churn prevention (logging in but not doing the actions that produce results), viewed the cancellation page four times this week, cancellation (prevent, then a survey), win-back (60–90 days, or the product's natural usage cycle), sunset the unengaged.
+- **Welcome flow shape.** Find the aha moment from the last few hundred trials that converted (the actions they had in common). Break the path into two to four actions. One short sequence per action; the moment the action happens the person jumps to the next sequence and never sees the rest. Only after the last action comes the upgrade sequence: proof, urgency, direct-response copy.
+- **Onboarding flow shape (after purchase).** Activate with about three core actions to a first quick win; only then introduce the full feature set; future-pace results at one, two, three and six months (direct benefit, then money, then their day); add social proof and the community. Measure activation, breadth of feature use, positive replies, time to results.
+- **Reactivation copy.** Remind them of the results they were getting, then amplify the problem across the flow until "you are back to the problems you had before".
+- **Custom flows process.** Find a gap in the journey from the metrics (tier-3 activation lower than tier 2), name the revenue variable it moves (customers, retention, revenue per user), define the exact output, decide the structure (prerequisite features A and B before pushing X), set the trigger and delays (unused after month one; wait two to three days and offer help; wait a week; then push), build, measure, iterate.
+- **Campaign layer.** Mutually exclusive segments: leads and prospects (never paid), paying customers per plan with their own ICP, churned; plus a 30-day engaged segment. One to two campaigns per segment per week, about sixteen a month in total, each with one goal. Content buckets: new value content, customer success stories, product deep dives, conversion asks, product updates; measure conversion per bucket and double down. Non-buyers get value teased in parts, each part linked to the product, then a direct ask for the trial (with an extension or incentive for low intent). Buyers get problems solved at their scale, never generic business advice.
+- **Measurement.** UTM parameters on every CTA so revenue per email shows in analytics; only three end metrics (conversions, churn, revenue per user); map every flow to the variable it moves and judge it by that; split-test preview text, subject, CTA, offer and flow length continuously (90 percent significance within 48–62 hours).
+- **Design.** In SaaS the copy carries the mail; an image exists only to make a point in the copy land better. Clean, on brand, never decorative.
+
+### What the engine already does
+
+- Behaviour-triggered flows with logic splits are what goals, playbooks and gates are. The welcome-family ladder for ad leads is the "welcome flow" of this model, up to the aha moment of signup.
+- Segments per belief and temperature, Thompson-sampled variants, the review queue, click and reply attribution, template credit on conversion.
+- `person.stage` exists, currently only "lead".
+
+### What we take from it
+
+The engine covers one step of the journey, ad lead to signup. This playlist says the money is in the rest. Almost every flow below needs one thing first: a product event stream from teamgrid.ai (login, session recorded, teammate invited, report viewed, checkout started, payment failed, plan limit reached, cancelled) into the existing `/api/e/` endpoint or an MCP source.
+
+| # | Idea | Engine today | Build | Status |
+|---|---|---|---|---|
+| P0 | Product event pipe | Only `signed_up` arrives from the site | Site events for login, session, invite, report, checkout, payment, limits, cancel; stored on the person and the lead card; gates and triggers read them | todo, prerequisite |
+| P1 | Lifecycle stages as first-class state | `stage` is always "lead" | `stage`: lead, trial, activated, paying (per plan), churned, won_back; moved by events; every goal declares the stage it serves; a person is in one stage-campaign at a time | todo |
+| P2 | Trial-to-paid flow after the aha moment | Nothing after signup | Upgrade sequence only after activation: proof, the plan for their size, urgency near trial end; abandoned-checkout branch on `checkout_started` without payment | todo |
+| P3 | Post-trial flow | Nothing | Trial ended without paying: reactivate with what they saw, offer an extension once | todo |
+| P4 | No-login and low-activity churn flows | Nothing | No login 7 and 14 days; logged in but no report viewed for 10 days; copy: results they had, then the problem amplified | todo |
+| P5 | Achievement flow | Nothing | Milestones from product data (first report, first week captured, 5 and 25 teammates tracked, 1,000 hours): congratulate, road map to the next, something exclusive | todo |
+| P6 | Feature-limit and annual upsell | Nothing | `plan_limit_reached` triggers the upsell with a quantified benefit; annual offer at day 60 of paying | todo |
+| P7 | Cancellation, survey, win-back | Nothing | On cancel: address the reason, one incentive, then a two-question survey; win-back at 60 and 90 days; survey reasons fed back into the objection rungs | todo |
+| P8 | Payment decline flow | Nothing | Three mails over ten days on `payment_failed`, ending with the data-loss notice | todo, needs billing events |
+| P9 | Broadcast campaigns to segments with content buckets | Goals are per person; no broadcast object | `broadcast` kind: segment, bucket, one goal, sent under the same caps and review; conversion per bucket in reports; mutually exclusive stage segments plus a 30-day engaged filter | todo |
+| P10 | UTM on every CTA | Tracked redirect only | `utm_source=email&utm_campaign=<goal>&utm_content=<templateKey>` appended to every CTA URL so teamgrid.ai analytics attribute signups to mails | todo, small |
+| P11 | Every goal names the revenue variable it moves | Not recorded | `moves: customers | retention | arpu` on goals and playbooks; reports group by it | todo |
+| P12 | Continuous split tests beyond the subject | Variants only for the welcome family | Variant support on preheader, CTA label and offer blocks, same sampling and grading | todo, extends Hormozi 12 |
+| P13 | Onboarding order: quick win first, features after, future-pace results | Not encoded | Activation playbook order and a voice rule for activation templates ("what week one, month one and month three look like") | todo, folds into Lets Uncover I |
+| P14 | Custom-flow design checklist | Not written | Add to `docs/orchestration.md`: gap, variable, output, structure, trigger and delays, build, measure | todo, doc |
+| P15 | Journey map with hundreds of actions | Not written | Extend the activation map (Mailtrap Y) to the full journey: milestone, event, flow, owner, metric | todo, doc |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -233,3 +280,17 @@ Source: https://www.youtube.com/watch?v=oZ18-kMrmKw (22 min, English; transcript
 | 34 | Review and referral rungs after activation | Instantly Z3 | todo |
 | 35 | Objection pages on the site linked from objection rungs | Instantly Z4 | site task |
 | 36 | Activation map document with owners | Mailtrap Y | todo |
+| 37 | Product event pipe from teamgrid.ai (login, session, invite, report, checkout, payment, limit, cancel) — prerequisite for 19, 20, 28, 30, 31 and everything below | Roshan P0 | todo |
+| 38 | Lifecycle stages on the person, one stage-campaign at a time | Roshan P1 | todo |
+| 39 | Trial-to-paid flow after activation, with abandoned-checkout branch | Roshan P2 | todo |
+| 40 | No-login and low-activity churn flows | Roshan P4 | todo |
+| 41 | Post-trial flow | Roshan P3 | todo |
+| 42 | Achievement milestones flow | Roshan P5 | todo |
+| 43 | Feature-limit and annual upsell | Roshan P6 | todo |
+| 44 | Cancellation, survey, win-back | Roshan P7 | todo |
+| 45 | Payment decline flow | Roshan P8 | todo |
+| 46 | Broadcast campaigns to segments with content buckets | Roshan P9 | todo |
+| 47 | UTM parameters on every CTA | Roshan P10 | todo |
+| 48 | Goals name the revenue variable they move | Roshan P11 | todo |
+| 49 | Variants on preheader, CTA and offer | Roshan P12 | todo |
+| 50 | Custom-flow checklist and full journey map in docs | Roshan P14, P15 | todo |
