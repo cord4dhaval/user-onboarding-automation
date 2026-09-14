@@ -152,6 +152,12 @@ export async function stampPlaybook(input: {
 
   // Steps written before the stamp belong to the plan being replaced. Leaving them queued
   // would send the old segment's third message inside the new segment's sequence.
+  //
+  // Their step numbers are released as they are skipped. The engine counts a step as
+  // written by its number, and the idempotency key is built from it, so a skipped step 1
+  // left holding "1" blocked the new plan's step 1 for good: a lead restamped after one
+  // touch skipped the new first follow-up, and a one-step plan sent nothing at all. The
+  // old number is kept under another name so the history still says what was replaced.
   await db.collection(C.actions).updateMany(
     {
       orgId: input.orgId,
@@ -159,7 +165,17 @@ export async function stampPlaybook(input: {
       status: "queued",
       planStepId: { $exists: true },
     },
-    { $set: { status: "skipped", skipReason: "plan replaced by playbook stamp" } },
+    [
+      {
+        $set: {
+          status: "skipped",
+          skipReason: "plan replaced by playbook stamp",
+          replacedPlanStepId: "$planStepId",
+          idempotencyKey: { $concat: [{ $ifNull: ["$idempotencyKey", ""] }, ":replaced:", { $toString: "$_id" }] },
+        },
+      },
+      { $unset: "planStepId" },
+    ],
   );
 
   return { stamped: true, reason: `stamped ${playbook.segmentKey} playbook v${playbook.version}`, planId: String(planId) };
