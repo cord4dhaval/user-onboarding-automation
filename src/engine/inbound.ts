@@ -71,7 +71,28 @@ const OPT_OUT = [
  * anything else that reads a person's words, and it is worth being able to test directly.
  */
 export function looksLikeOptOut(text: string): boolean {
-  return OPT_OUT.some((pattern) => pattern.test(text));
+  return OPT_OUT.some((pattern) => pattern.test(text)) || isShortNo(text);
+}
+
+/**
+ * A reply that is nothing but a no.
+ *
+ * Mails tell people "reply no and we stop", so a bare "no" has to stop them as surely as
+ * "unsubscribe" does. Waiting for a routine to read it leaves an hour in which the next
+ * step can be queued at somebody who has just said no. Only a whole reply counts: the
+ * first line is the no, and at most a name follows it. "No, but what does it cost?" is a
+ * conversation and stays one.
+ */
+const SHORT_NO = /^(no|nope|no thanks|no thank you|not interested|not for us|not for me)[\s.!,]*$/i;
+
+export function isShortNo(text: string): boolean {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^sent from my\b/i.test(line) && !/^(thanks|thank you|regards|best|cheers)[\s.,!]*$/i.test(line));
+  if (lines.length === 0 || lines.length > 2) return false;
+  if (!SHORT_NO.test(lines[0] ?? "")) return false;
+  return lines.length === 1 || /^[A-Za-z][A-Za-z .'-]{0,30}$/.test(lines[1] ?? "");
 }
 
 interface Mailbox {
