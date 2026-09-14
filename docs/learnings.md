@@ -127,6 +127,72 @@ Source: https://www.youtube.com/watch?v=byqZe8oaUwA (89 min, Hindi; auto transcr
 
 ---
 
+## 2026-09-14 — Mailtrap, "SaaS Onboarding Emails: 5 Rules Every Team Needs to Know"
+
+Source: https://www.youtube.com/watch?v=Xk3UiFfT1xE (13 min, English; transcript read in full). The most directly applicable of the sources so far: it is about the mails after signup, which is where TeamGrid's value actually starts.
+
+### What the video says
+
+1. **Speed and clarity in the first mail.** Send within 60 seconds of signup (teams that do see 35–40 percent higher activation), from a transactional path or a webhook, not a campaign scheduler; strip heavy templates and tracking scripts that slow delivery. Confirm the stage ("your trial is live"), give one instruction for the next step ("create your first project, it takes two minutes"), and restate the outcome ("track every deadline in one place"). Weak: "explore our blog, check pricing, join our community". Strong: one message, one action, one immediate payoff.
+2. **Time by behaviour, not by calendar.** Day-one, day-three, day-five sequences land out of step with the user. Trigger on in-app events instead: first login sends the quick start, first project suggests the next feature, no activity for three days sends a nudge, a milestone gets a celebration plus the next step. Appcues lifted activation 2.5 times this way. Track activation per trigger.
+3. **One action per mail.** A single call to action gets 371 percent more clicks (Campaign Monitor). Each mail is one activation milestone: "start by inviting your team; collaboration unlocks your first project".
+4. **Success loops after setup.** Products that go silent after setup lose up to 30 percent of users before the first renewal. Keep showing progress in their numbers: "you automated three tasks this week and saved two hours; next, connect an integration".
+5. **One activation map across teams.** Marketing sets tone, product triggers on behaviour, customer success steps in at friction; each touchpoint has an owner; weekly review.
+
+Framework: find the activation moment and the drop-off points from data (the cohort that upgraded within 14 days and the actions they took first); build a guided flow where each milestone has its own trigger, mail and goal; let the app drive the click and the mail explain why (no duplicate tooltips); make the flow adaptive (fast movers skip steps, stalled users get nudges, admins and execs get different mails); measure activation rate, trial-to-paid and 30/60-day retention, not opens.
+
+### What the engine already does
+
+- Activation is defined in product config (`account_created`, `teammate_invited`, `session_recorded`, `report_viewed`) and `welcome_signup` exists for signups.
+- The register page already reports `signed_up` through `/api/e/`, so a webhook-shaped path into the engine exists.
+- Templates carry one CTA block by design; the voice says one idea and one link.
+
+### What we take from it
+
+| # | Idea | Engine today | Build | Status |
+|---|---|---|---|---|
+| Q | First mail within 60 seconds of signup | `signed_up` is recorded and verified on the spot, but the signup welcome waits for the next tick and, under `gate_on`, for a human | Send `welcome_signup` inside the `signed_up` request path (tested template, engine-rendered, no approval gate); measure time-to-first-mail | todo |
+| R | First mail confirms the stage, gives one instruction, restates the outcome | `welcome_signup` content not yet checked against this shape | Rewrite `welcome_signup`: "your workspace is live", one step ("install the agent on one machine, five minutes"), one outcome ("tomorrow morning you get yesterday in four lines") | todo |
+| S | Behaviour-timed activation steps | Playbook steps are day offsets with open/click gates | Gates on product events: `event_seen:<name>` and `no_event:<name>` plus `idle_days:N`; fast movers skip completed steps, stalled users get the nudge; feeds the activation playbook (Lets Uncover I) | todo |
+| T | One ask per mail | `book_call` carries two asks (reply "call" and the trial button); other rungs one | Template audit: one CTA per mail; the second route moves to the PS line or goes | todo |
+| U | Success loops in their numbers after setup | No product data in mails | Weekly progress rung after activation with real numbers from the workspace (teammates tracked, hours captured, blockers surfaced) through a product MCP connection; the same vars serve Lets Uncover K | todo |
+| V | Measure activation, trial-to-paid, retention per trigger | Only send-level metrics | Per-campaign and per-rung activation rate, trial-to-paid and 30/60-day retention from product events, next to conversion attribution (Lets Uncover M) | todo |
+| W | Mail explains why, app shows how | No rule | Voice rule for activation templates: no click-by-click steps; say what the step unlocks; link into the app screen that does it | todo |
+| X | Find the aha moment from data | No activation analytics | Once product events flow: report the common first actions of users who converted within 14 days; order the playbook by it | todo, needs data |
+| Y | Activation map with owners | None | `docs/activation-map.md`: milestone, trigger, mail, owner, metric; reviewed weekly | todo |
+
+---
+
+## 2026-09-14 — Instantly, "Alex Hormozi's Lead Generation Strategy for 2026"
+
+Source: https://www.youtube.com/watch?v=oZ18-kMrmKw (22 min, English; transcript read in full). A summary of Hormozi's lead-generation philosophy with an Instantly product walkthrough. Mostly top of funnel, which is upstream of the engine (our leads arrive from ads), so most of it is context rather than a build.
+
+### What the video says
+
+- Five philosophies: build a self-reinforcing system (customers give reviews and referrals that bring customers); reciprocity (give away what others charge for, so people feel they owe you); extreme ownership; avoid linear growth (systems, automation and content that work while you sleep); three pillars: quality leads, treat customers well, get reviews and referrals.
+- Warm outreach first: call the people you already know with a script (ask about their life, ask if they have time for the thing you solve, ask who else, offer it free or discounted for a review and a referral); track it in a CRM; a tool can automate it.
+- The offer formula from "$100M Offers": dream outcome times perceived likelihood, divided by time delay times effort and sacrifice. Every offer statement should cover all four.
+- Cold outreach solves three problems: who to contact (scrape, buy or build a list), what to say (a personalised line, then big fast value: offer, proof, guarantee, and something valuable given free, such as a personalised video), and not enough chances (volume plus automation plus analysis; most people grossly underestimate the volume needed).
+- Content is the lubricant for ads and outreach: short-form top of funnel, long-form educational, pre-selling content that answers objections before the call; show proof everywhere; consistency over years.
+
+### What the engine already does
+
+- Personalised opening line per lead from the site text, written by Claude rather than a template prompt.
+- An objection rung (`privacy_objection`) and a proof rung exist in the ladder.
+- Mailbox pool with daily caps; replies ingested and attributed.
+
+### What we take from it
+
+| # | Idea | Engine today | Build | Status |
+|---|---|---|---|---|
+| Z1 | Big fast value first: give something they would pay for before any ask | Welcome B's subject is "what tomorrow's summary would say" but the body describes it rather than delivering it | Generated give-first asset: Claude writes a plausible four-line morning summary for a team like theirs from the site text, rendered as a card in the welcome; the same asset answers Hormozi rows 7 and 10 | todo |
+| Z2 | Offer formula: outcome, likelihood, time, effort in every ask | `book_call` fixed text already states it (15 minutes, installed on the call, you keep the workspace); other CTAs do not | Add to the product voice: an ask names the outcome, why it is likely for them, how long it takes, and what they do not have to do; skeleton note repeats it | todo |
+| Z3 | Reviews and referrals loop | Nothing asks a happy user for a quote or a referral | Post-activation rungs at day 14 and 30: ask for one line of feedback (becomes a quote asset, Hormozi row 15) and a referral to one team they know | todo |
+| Z4 | Pre-selling content that answers objections | The objection rung answers in the mail only | Objection rungs link to a page on teamgrid.ai that answers it in full (privacy, "is this monitoring", pricing); the page is also the click-rewarding link from Hormozi row 9 | site task plus a template edit |
+| Z5 | Volume, list building, warm outreach scripts, Instantly features | Leads come from ads; caps are a decision | Skip in the engine; the ad budget is the volume lever | skip |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -156,3 +222,14 @@ Source: https://www.youtube.com/watch?v=byqZe8oaUwA (89 min, Hindi; auto transcr
 | 23 | Conversion attribution per campaign, rung and variant | Lets Uncover M | todo |
 | 24 | Offer asset kind with expiry for later rungs | Lets Uncover L | todo |
 | 25 | Site: exit-intent and source-targeted forms with frequency caps | Lets Uncover N | site task |
+| 26 | Signup welcome sent inside the `signed_up` request, under 60 seconds | Mailtrap Q | todo |
+| 27 | Rewrite `welcome_signup`: stage, one step, one outcome | Mailtrap R | todo |
+| 28 | Product-event gates (`event_seen`, `no_event`, `idle_days`) for activation steps | Mailtrap S | todo |
+| 29 | One ask per mail; fix `book_call` | Mailtrap T | todo |
+| 30 | Weekly progress rung with the workspace's real numbers | Mailtrap U | todo |
+| 31 | Activation, trial-to-paid and retention per campaign and rung | Mailtrap V | todo |
+| 32 | Give-first asset: generated four-line sample summary in the welcome | Instantly Z1 | todo |
+| 33 | Offer formula in the voice and skeleton note | Instantly Z2 | todo |
+| 34 | Review and referral rungs after activation | Instantly Z3 | todo |
+| 35 | Objection pages on the site linked from objection rungs | Instantly Z4 | site task |
+| 36 | Activation map document with owners | Mailtrap Y | todo |
