@@ -128,7 +128,7 @@ function assetBlocks(asset: RenderableAsset, vars: MergeVars): ResolvedBlock[] {
     const access = asset.access ?? {};
     const rows = [
       access.repName && { label: "You would speak to", value: [access.repName, access.repRole].filter(Boolean).join(", ") },
-      access.availability && { label: "Reachable", value: access.availability },
+      access.availability && { label: "Available", value: access.availability },
       access.repPhone && { label: "Phone", value: access.repPhone },
       access.repEmail && { label: "Email", value: access.repEmail },
     ].filter(Boolean) as Array<{ label: string; value: string }>;
