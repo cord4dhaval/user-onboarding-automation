@@ -1,9 +1,9 @@
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { createSource, deleteSource, runSourceNow, toggleSource } from "../../../actions";
+import { createSource, deleteSource, runSourceNow, setSourceFormLeads, toggleSource } from "../../../actions";
 import ConfirmButton from "../../../ui/confirm";
 import {scope, requireSession} from "../../../tenant";
-import { Pause, Play, Plus } from "lucide-react";
+import { MailCheck, Pause, Play, Plus } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { istShort } from "../../../ui/time";
 import Select from "../../../ui/select";
@@ -62,6 +62,7 @@ export default async function Sources({ params }: { params: Promise<{ id: string
                     <br />
                     <span className="muted">
                       <code>{String(src.kind)}</code> · {String(src.triggerMode)}
+                      {src.formLeads ? " · form leads: opted in, start warm" : ""}
                     </span>
                   </td>
                   <td>
@@ -93,6 +94,14 @@ export default async function Sources({ params }: { params: Promise<{ id: string
                       style={{ display: "inline" }}
                     >
                       <SubmitButton variant="ghost" size="sm" icon={src.enabled ? <Pause /> : <Play />}>{src.enabled ? "Pause" : "Resume"}</SubmitButton>
+                    </form>
+                    <form
+                      action={setSourceFormLeads.bind(null, id, String(src._id), !src.formLeads)}
+                      style={{ display: "inline" }}
+                    >
+                      <SubmitButton variant="ghost" size="sm" icon={<MailCheck />} pendingLabel="Saving…">
+                        {src.formLeads ? "Not form leads" : "Mark as form leads"}
+                      </SubmitButton>
                     </form>
                     <ConfirmButton
                       title={`Delete "${String(src.name)}"?`}
@@ -150,6 +159,18 @@ export default async function Sources({ params }: { params: Promise<{ id: string
               options={[
                 { value: "realtime", label: "realtime", hint: "first touch ignores quiet hours" },
                 { value: "batch", label: "batch", hint: "first touch waits for a civil hour" },
+              ]}
+            />
+          </label>
+          <label>
+            Who these leads are
+            <Select
+              name="formLeads"
+              value="no"
+              ariaLabel="Whether every lead from this source filled in our form"
+              options={[
+                { value: "yes", label: "Filled in our form", hint: "opted in: opens tracked, start warm" },
+                { value: "no", label: "A list or an import", hint: "judged on fit, clicks tracked only" },
               ]}
             />
           </label>

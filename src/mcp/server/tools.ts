@@ -3,6 +3,7 @@ import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
 import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
 import { greetingName } from "../../engine/names.js";
+import { computeTemp, lastFormArrival } from "../../engine/temp.js";
 import { planViewFor } from "../../engine/planView.js";
 import { allowedSegments, stampPlaybook } from "../../engine/playbooks.js";
 import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type ThinkingKind } from "../../engine/queue.js";
@@ -860,7 +861,7 @@ export const TOOLS: ToolDef[] = [
         const personId = String(r.person_id);
         const before = await db
           .collection(C.people)
-          .findOne({ _id: new ObjectId(personId), orgId: ctx.orgId }, { projection: { belief: 1 } });
+          .findOne({ _id: new ObjectId(personId), orgId: ctx.orgId }, { projection: { belief: 1, arrivals: 1 } });
         await db.collection(C.people).updateOne(
           { _id: new ObjectId(String(r.person_id)), orgId: ctx.orgId },
           {
@@ -883,12 +884,17 @@ export const TOOLS: ToolDef[] = [
               // cadence there is the tightest, which is what someone we cannot read needs.
               // termsUsed records that the number came from a guess, so nothing downstream
               // mistakes it for a measurement.
-              temp: {
-                score: Math.round(icpFit * 40),
-                band: icpFit >= 0.7 ? "warm" : "cold",
-                computedAt: new Date(),
-                termsUsed: [fitKnown ? "fit" : "fit_unknown"],
-              },
+              // The same reading the tick makes, so a form lead is warm from the first
+              // classification rather than from whichever tick re-reads them.
+              temp: computeTemp({
+                icpFit,
+                fitKnown,
+                trackableSends: 0,
+                clicks: 0,
+                opens: 0,
+                silenceDays: 30,
+                formArrivedAt: lastFormArrival(before),
+              }),
               needsClassification: false,
             },
           },

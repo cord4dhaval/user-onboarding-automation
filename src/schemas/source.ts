@@ -20,6 +20,14 @@ export const source = z.object({
    */
   triggerMode: z.enum(["realtime", "batch"]),
 
+  /**
+   * Every row is somebody who filled in a form asking about the product (an ad lead form, a
+   * contact form). They gave their address to hear from us, so they are recorded as opted in
+   * (which allows the open pixel) and start warm for two weeks rather than being judged on
+   * company fit alone. A bought or scraped list must never set this.
+   */
+  formLeads: z.boolean().default(false),
+
   /** Desired interval from the goal; effective interval after platform floors are applied. */
   desiredIntervalSec: z.number().int().positive().optional(),
   effectiveIntervalSec: z.number().int().positive().optional(),

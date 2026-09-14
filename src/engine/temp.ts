@@ -27,6 +27,9 @@ const DAY = 86_400_000;
 /** Matches classify's original threshold, so a person with no engagement lands where they did before. */
 const WARM_SCORE = 28;
 
+/** How long a form arrival on its own keeps somebody warm. */
+const FORM_WARM_DAYS = 14;
+
 export interface TempInputs {
   icpFit: number;
   fitKnown: boolean;
@@ -38,6 +41,8 @@ export interface TempInputs {
   lastContactedAt?: Date;
   /** From the goal's failure conditions. How long silence has to run before it is an answer. */
   silenceDays: number;
+  /** When they last arrived by filling in a form asking about the product, if ever. */
+  formArrivedAt?: Date;
   now?: Date;
 }
 
@@ -93,8 +98,26 @@ export function computeTemp(input: TempInputs): TempResult {
 
   if (goneQuiet) return { score: 0, band: "dead", computedAt: new Date(now), termsUsed };
 
+  // Somebody who filled in a form asking about the product told us more than any fit guess
+  // can. They start warm and stay there for two weeks; silence past the goal's limit still
+  // ends it above, and a click still makes them hot below.
+  const formAt = input.formArrivedAt ? new Date(input.formArrivedAt).getTime() : 0;
+  if (formAt && now - formAt <= FORM_WARM_DAYS * DAY) {
+    termsUsed.push("form");
+    score = Math.max(score, WARM_SCORE);
+  }
+
   const band = weight > 0 ? "hot" : score >= WARM_SCORE ? "warm" : "cold";
   return { score: Math.min(score, 100), band, computedAt: new Date(now), termsUsed };
+}
+
+/** When this person last arrived through a source marked as bringing form leads, if ever. */
+export function lastFormArrival(person: Document | null | undefined): Date | undefined {
+  const times = ((person?.arrivals ?? []) as Array<{ intent?: unknown; at?: unknown }>)
+    .filter((a) => a.intent === "form" && a.at)
+    .map((a) => new Date(a.at as string | Date).getTime())
+    .filter((t) => Number.isFinite(t));
+  return times.length > 0 ? new Date(Math.max(...times)) : undefined;
 }
 
 export interface RecomputeSummary {
@@ -150,7 +173,7 @@ export async function recomputeTemps(
     .collection(C.people)
     .find(
       { _id: { $in: instances.map((i) => new ObjectId(String(i.personId))) } },
-      { projection: { belief: 1, temp: 1, lastContactedAt: 1 } },
+      { projection: { belief: 1, temp: 1, lastContactedAt: 1, arrivals: 1 } },
     )
     // Oldest reading first, so a bounded run still works its way round everybody.
     .sort({ "temp.computedAt": 1 })
@@ -213,6 +236,7 @@ export async function recomputeTemps(
       opens: seen.opens,
       lastClickAt: seen.lastClickAt,
       lastContactedAt: person.lastContactedAt as Date | undefined,
+      formArrivedAt: lastFormArrival(person),
       silenceDays: silenceByGoal.get(goalByPerson.get(personId) ?? "") ?? 30,
     });
 
@@ -329,6 +353,7 @@ export function explainTemp(temp: Document | null | undefined): string {
   const parts: string[] = [];
   if (terms.includes("fit_unknown")) parts.push("fit unknown");
   else if (terms.includes("fit")) parts.push("fit");
+  if (terms.includes("form")) parts.push("asked through a form");
   if (terms.includes("click")) parts.push("clicks");
   if (terms.includes("open_weak")) parts.push("opens (discounted)");
   if (terms.includes("silence")) parts.push("silence");

@@ -36,6 +36,8 @@ interface SourceDoc {
   productId: string;
   kind: string;
   triggerMode: "realtime" | "batch";
+  /** Every row filled in a form asking about the product: opted in, and starts warm. */
+  formLeads?: boolean;
   fieldMap: FieldMap;
   dedupeKey: string;
   cursor?: string;
@@ -202,7 +204,14 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     }
   }
 
-  const arrival = { sourceId: String(source._id), kind: String(source.kind), at: now };
+  // Tagged on the arrival rather than only on the source, so a person's temperature can be
+  // read from their own record and a source changed later does not rewrite their history.
+  const arrival = {
+    sourceId: String(source._id),
+    kind: String(source.kind),
+    at: now,
+    ...(source.formLeads ? { intent: "form" } : {}),
+  };
   // A poll is the only thing that re-reads its own results. An upload that happens twice
   // is a person genuinely arriving twice, so repeats there are kept.
   const isPoll = String(source.kind) !== "excel_upload";
@@ -238,6 +247,22 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
             update: { $push: { arrivals: { $each: fresh } } } as never,
           },
         });
+        // Filling in the form again is consent given again. Only an assumed basis is
+        // upgraded: somebody who withdrew stays withdrawn whatever they fill in.
+        if (source.formLeads) {
+          attachments.push({
+            updateOne: {
+              filter: { _id: found._id, "consent.state": "legitimate_interest" },
+              update: {
+                $set: {
+                  "consent.state": "opt_in",
+                  "consent.evidence": `form:${String(source._id)}`,
+                  "consent.upgradedAt": now,
+                },
+              },
+            },
+          });
+        }
       }
       summary.attachedToExisting += rows.length;
       summary.arrivalsSkipped += rows.length - fresh.length;
@@ -262,9 +287,11 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       language: "en",
       stage: "lead",
       consent: {
-        state: source.triggerMode === "realtime" ? "opt_in" : "legitimate_interest",
+        // A form filled in asking about the product is consent to hear back; a realtime
+        // source is somebody raising their hand the same way. Anything else is an import.
+        state: source.triggerMode === "realtime" || source.formLeads ? "opt_in" : "legitimate_interest",
         capturedAt: now,
-        evidence: `source:${String(source._id)}`,
+        evidence: `${source.formLeads ? "form" : "source"}:${String(source._id)}`,
       },
       needsClassification: true,
       sourceId: String(source._id),

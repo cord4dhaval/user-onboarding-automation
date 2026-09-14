@@ -491,6 +491,7 @@ export async function createSource(formData: FormData) {
     name: String(formData.get("name")),
     kind: String(formData.get("kind")),
     triggerMode: String(formData.get("triggerMode")),
+    formLeads: String(formData.get("formLeads") ?? "") === "yes",
     desiredIntervalSec: intervalSec,
     // A platform floor can raise this; both are stored so the UI shows what will actually
     // happen rather than what was asked for.
@@ -661,6 +662,7 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
     name: String(formData.get("inputName") || goalKey),
     defaultGoalKey: goalKey,
     triggerMode,
+    formLeads: String(formData.get("formLeads") ?? "") === "yes",
     dedupeKey,
     fieldMap,
     enabled: true,
@@ -1612,6 +1614,13 @@ export async function toggleSource(productId: string, sourceId: string, enabled:
     { _id: new ObjectId(sourceId), orgId: (await currentOrg()) },
     { $set: { enabled, ...(enabled ? { nextFetchAt: new Date() } : {}) } },
   );
+  revalidatePath(`/products/${productId}/sources`);
+}
+
+/** Marks a source as bringing people who filled in our form, and applies it to those it already brought. */
+export async function setSourceFormLeads(productId: string, sourceId: string, on: boolean) {
+  const { setFormLeads } = await import("@/engine/formLeads.js");
+  await setFormLeads(await currentOrg(), productId, sourceId, on);
   revalidatePath(`/products/${productId}/sources`);
 }
 
