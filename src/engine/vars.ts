@@ -53,6 +53,26 @@ export function companyNameFrom(person: Document): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+/**
+ * Tags a link to the product's site with where it came from, so that site's analytics can
+ * say which campaign and which mail brought a signup. A link already tagged is left alone,
+ * and anything that does not parse as a URL is returned as it was.
+ */
+export function withUtm(url: string, campaign: string, content: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (parsed.searchParams.has("utm_source")) return url;
+  parsed.searchParams.set("utm_source", "email");
+  parsed.searchParams.set("utm_medium", "email");
+  parsed.searchParams.set("utm_campaign", campaign);
+  parsed.searchParams.set("utm_content", content);
+  return parsed.toString();
+}
+
 export function mergeVarsFor(person: Document, product: Document | null): MergeVars {
   const config = (product?.config ?? {}) as { trialLinkTemplate?: string; website?: string };
   const site = (config.website ?? "https://example.com").replace(/\/$/, "");

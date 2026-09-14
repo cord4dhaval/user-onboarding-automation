@@ -34,6 +34,11 @@ export interface ComposedContent {
    * still say what its author wrote, once.
    */
   slotText?: string;
+  /**
+   * Named sections a session wrote, such as the PS line. Kept on the content for the same
+   * reason as `slotText`: a message rendered a second time must still carry them.
+   */
+  slots?: Record<string, string>;
 }
 
 type Block = Record<string, unknown>;
@@ -569,6 +574,7 @@ export function renderTemplate(
     // Carried forward rather than consumed. The rendered body is stored back on the action,
     // and without this the next render would find nothing but its own previous output.
     slotText: precomposed?.slotText,
+    slots: precomposed?.slots,
   };
 }
 

@@ -27,7 +27,12 @@ export async function engineRenderedKeysFor(orgId: string, productId: string): P
       out.set(family, "sends the next variant of this family itself");
       continue;
     }
-    const hasSlot = ((t.blocks ?? []) as Array<{ type?: unknown }>).some((b) => String(b?.type) === "slot");
+    // Only the open body slot makes a template a session's to write. A named slot such as
+    // the PS line is optional polish with a fallback, and must not pull a mail that goes out
+    // as written away from the engine.
+    const hasSlot = ((t.blocks ?? []) as Array<{ type?: unknown; name?: unknown }>).some(
+      (b) => String(b?.type) === "slot" && !b?.name,
+    );
     if (key && !hasSlot && !out.has(key)) out.set(key, "the template has no slot for written copy; it goes out as written");
   }
   return out;
@@ -35,7 +40,7 @@ export async function engineRenderedKeysFor(orgId: string, productId: string): P
 
 /** A compact picture of the skeleton a session's words land in, in block order. */
 export interface SkeletonPart {
-  part: "subject" | "preheader" | "heading" | "fixed" | "your_words" | "asset" | "cta" | "opt_out";
+  part: "subject" | "preheader" | "heading" | "fixed" | "your_words" | "ps" | "asset" | "cta" | "opt_out";
   text?: string;
   instruction?: string;
   fallback?: string;
@@ -66,6 +71,7 @@ export async function skeletonFor(orgId: string, productId: string, key: string,
 
   const parts: SkeletonPart[] = [];
   let hasSlot = false;
+  let hasPs = false;
   let hasAsset = false;
   for (const raw of (chosen.blocks ?? []) as Array<Record<string, unknown>>) {
     const type = String(raw.type);
@@ -74,7 +80,10 @@ export async function skeletonFor(orgId: string, productId: string, key: string,
     else if (type === "preheader") parts.push({ part: "preheader", fallback: str(raw.fallback), instruction: str(raw.slot) });
     else if (type === "heading") parts.push({ part: "heading", fallback: str(raw.fallback), instruction: str(raw.slot) });
     else if (type === "text") parts.push({ part: "fixed", text: str(raw.fixed) ?? str(raw.text) });
-    else if (type === "slot") {
+    else if (type === "slot" && str(raw.name) === "ps") {
+      hasPs = true;
+      parts.push({ part: "ps", instruction: str(raw.instruct) ?? str(raw.instruction), fallback: str(raw.fallback) });
+    } else if (type === "slot") {
       hasSlot = true;
       parts.push({ part: "your_words", instruction: str(raw.instruct) ?? str(raw.instruction), fallback: str(raw.fallback) });
     } else if (type === "asset") {
@@ -86,9 +95,12 @@ export async function skeletonFor(orgId: string, productId: string, key: string,
 
   const notes = [
     hasSlot
-      ? "Write only the your_words part; the template supplies everything else, including the greeting, the button and the sign-off. Do not repeat the fixed lines, do not sign off, do not add a link."
+      ? "Write only the your_words part: at most 90 words, no link. The template supplies the greeting, the button and the sign-off, and the finished mail stays under 200 words. You may also pass a preheader: under 90 characters, one detail from their situation, never a repeat of the subject."
       : "This template has no slot: nothing you write can land in it.",
   ];
+  if (hasPs) {
+    notes.push('This template has a PS line. Pass ps as one line of at most 25 words with no link, offering an easy second route that fits them (reply "call", or a question answered in one word). Leave ps out to keep the template\'s own PS.');
+  }
   if (hasAsset) {
     notes.push("Live booking times appear only when the access asset is carried and the person's temperature allows it; otherwise the fixed text asks them to reply with a time. Never propose times yourself.");
   }

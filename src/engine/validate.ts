@@ -31,6 +31,15 @@ export interface ValidationContext {
  * a missing opt-out or a repeated claim, so these checks live where they cannot be
  * negotiated with.
  */
+/** Words a reader actually reads: links and the opt-out line left out. */
+export function readableWords(bodyMd: string): number {
+  return bodyMd
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/Not useful\?\s*Unsubscribe:?/i, "")
+    .split(/\s+/)
+    .filter((word) => /[a-z0-9]/i.test(word)).length;
+}
+
 export function validate(content: ComposedContent, ctx: ValidationContext): ValidationResult {
   const hardFails: string[] = [];
   const softFails: string[] = [];
@@ -68,6 +77,14 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
 
   if (ctx.maxWords && content.wordCount > ctx.maxWords) {
     softFails.push(`${content.wordCount} words, over the ${ctx.maxWords} limit`);
+  }
+
+  // A campaign mail is read in under a minute or not at all. Counted without links and the
+  // opt-out line, which nobody reads as part of the message. A reply is exempt: answering
+  // a real question can take longer.
+  if (ctx.channelKey === "email" && !ctx.isReply) {
+    const readable = readableWords(content.bodyMd);
+    if (readable > 200) softFails.push(`${readable} words to read, over the 200 a campaign mail stays under`);
   }
 
   return { ok: hardFails.length === 0, hardFails, softFails };

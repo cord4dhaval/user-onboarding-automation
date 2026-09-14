@@ -76,10 +76,10 @@ Six touches in seven days instead of eight in fourteen. Every mail: under 200 wo
 ### Engine
 - Form and ad arrivals start warm (temperature term `arrival_intent`), so the cadence is half a day to a day and the call step is reachable.
 - Open pixel on for legitimate-interest leads that arrived through a form (config flag on the source).
-- Send-time window: land mails between 10:00 and 12:00 or 13:00 and 15:00 in the lead's timezone, inferred from the site's city or phone code; default Asia/Kolkata for this product.
+- No send-time window; quiet hours stay as configured (decided 2026-09-14).
 - `preheader` and `ps` per touch in compose_batch, both in the skeleton; word cap on the slot (90) and the rendered mail (200); one CTA per template enforced in validation.
 - Owner notification on `reply_received` and on the first click, from the engine, same tick; React routine every 15 minutes.
-- Tested welcome variants send without the review gate; composed steps keep it for the first week, then the gate comes off.
+- Review follows the campaign's approval setting for every mail, the welcome included; no special path (decided 2026-09-14).
 - `clicked_no_signup` gate: a plan step that fires only when the trial link was clicked and no `signed_up` arrived within four hours.
 - UTM parameters on every CTA (`utm_source=email&utm_campaign=teamgrid_leads_v2&utm_content=<template>`).
 - Sunset rule: a lead the flow finished never re-enters from the source.
@@ -100,6 +100,6 @@ Six touches in seven days instead of eight in fourteen. Every mail: under 200 wo
 
 1. DNS records and the `hello@teamgrid.ai` connection (you), form-lead temperature and open pixel (engine). Half a day.
 2. Welcome A rewrite, gates to `no_click`, call step at day 3, template and playbook clean-up, re-stamp plans. One day, reviewed in Templates before the source is switched on.
-3. Preheader and PS slots, word cap, one-ask validation, UTM, owner notification, send window. Two days.
+3. Preheader and PS slots, word cap, one-ask validation, UTM, owner notification. Two days.
 4. `register_started` on the site and the clicked-no-signup nudge. When the site team can.
 5. Source on. Watch clicks, replies and signups per rung for a week; move composed steps off the review gate when the copy holds.

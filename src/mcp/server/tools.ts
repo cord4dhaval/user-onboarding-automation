@@ -5,6 +5,9 @@ import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bump
 import { greetingName } from "../../engine/names.js";
 import { computeTemp, lastFormArrival } from "../../engine/temp.js";
 import { planViewFor } from "../../engine/planView.js";
+import { renderTemplate as renderForCount } from "../../engine/compose.js";
+import { mergeVarsFor as varsForCount } from "../../engine/vars.js";
+import { readableWords } from "../../engine/validate.js";
 import { allowedSegments, stampPlaybook } from "../../engine/playbooks.js";
 import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type ThinkingKind } from "../../engine/queue.js";
 import { backlog } from "../../engine/dispatch.js";
@@ -1096,7 +1099,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "compose_batch",
     description:
-      "Write the actual copy for upcoming touches and queue them. Each becomes a scheduled message; the engine sends it when due, under every guardrail. Never repeat a claim already made to this person. A touch may carry assets from lead_card's assets_available; carrying none is the normal case. Anything not on that list is refused with the reason, and what an asset proves counts as said.",
+      "Write the actual copy for upcoming touches and queue them. Your part of each body is at most 90 words with no links, and the finished mail stays under 200 words; lead_card's skeleton shows what the template adds. Each becomes a scheduled message; the engine sends it when due, under every guardrail. Never repeat a claim already made to this person. A touch may carry assets from lead_card's assets_available; carrying none is the normal case. Anything not on that list is refused with the reason, and what an asset proves counts as said.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1114,9 +1117,21 @@ export const TOOLS: ToolDef[] = [
               body: {
                 type: "string",
                 description:
-                  "Markdown. Write the message only: the greeting, the call-to-action button and the " +
-                  "unsubscribe line belong to the template and are added around it. A sign-off link of " +
-                  "your own is dropped at render when it points where the button already does.",
+                  "Markdown, at most 90 words, no links. Write the message only: the greeting, the " +
+                  "call-to-action button, the sign-off and the unsubscribe line belong to the template " +
+                  "and are added around it.",
+              },
+              preheader: {
+                type: "string",
+                description:
+                  "Optional. The grey line an inbox shows after the subject: under 90 characters, one detail " +
+                  "from their situation, never a repeat of the subject. Omit to keep the template's own.",
+              },
+              ps: {
+                type: "string",
+                description:
+                  "Optional, only where the template has a PS line: one line of at most 25 words, no link, " +
+                  "offering an easy second route that fits this person. Omit to keep the template's own PS.",
               },
               claims_made: { type: "array", items: { type: "string" } },
               asset_ids: {
@@ -1155,6 +1170,38 @@ export const TOOLS: ToolDef[] = [
       if (touches.length === 0) throw new Error("compose_batch needs at least one touch. Nothing was written.");
       for (const t of touches) {
         if (!String(t.rationale ?? "").trim()) throw new Error(`step ${String(t.step_id)} needs a rationale in words. Nothing was written.`);
+      }
+
+      // Limits a reader feels, enforced here so a human in Review never has to trim a mail.
+      // One problem and one thing they would see fits in 90 words; a link in the body is a
+      // second ask beside the template's one button; the preheader and PS are short or absent.
+      const LINK = /https?:\/\/|www\.[a-z0-9]/i;
+      const psLine = (text: string) => (/^p\.?\s?s\b/i.test(text) ? text : `PS: ${text}`);
+      for (const t of touches) {
+        const step = String(t.step_id);
+        const body = String(t.body ?? "");
+        const words = body.split(/\s+/).filter(Boolean).length;
+        if (words > 90) {
+          throw new Error(`step ${step} is ${words} words. Your part is at most 90: one problem in their words and one thing they would see. Nothing was written.`);
+        }
+        if (LINK.test(body)) {
+          throw new Error(`step ${step} carries a link. The template already has the one button this mail asks for; a second link is a second ask. Nothing was written.`);
+        }
+        const pre = String(t.preheader ?? "").trim();
+        if (pre) {
+          const subject = String(t.subject ?? "").trim().toLowerCase();
+          if (pre.length > 90) throw new Error(`step ${step} preheader is ${pre.length} characters; keep it under 90. Nothing was written.`);
+          if (LINK.test(pre)) throw new Error(`step ${step} preheader carries a link. Nothing was written.`);
+          if (subject && (pre.toLowerCase().includes(subject) || subject.includes(pre.toLowerCase()))) {
+            throw new Error(`step ${step} preheader repeats the subject; it should add a detail instead. Nothing was written.`);
+          }
+        }
+        const ps = String(t.ps ?? "").trim();
+        if (ps) {
+          const psWords = ps.split(/\s+/).filter(Boolean).length;
+          if (psWords > 25) throw new Error(`step ${step} ps is ${psWords} words; keep it to one line under 25. Nothing was written.`);
+          if (LINK.test(ps)) throw new Error(`step ${step} ps carries a link. Nothing was written.`);
+        }
       }
       const queued: string[] = [];
 
@@ -1231,6 +1278,41 @@ export const TOOLS: ToolDef[] = [
         }
         if (view && view.waiting > 0) {
           throw new Error(`a message is already waiting for this person (${view.waiting} queued or in review). Nothing was written.`);
+        }
+      }
+
+      // The whole mail, not only the part a session wrote, is what the reader gets. Rendered
+      // with the template the step names, so a paragraph that fits on its own but tips the
+      // finished message past a minute's read is refused before anyone reviews it.
+      {
+        const productForCount = await db.collection(C.products).findOne({ _id: new ObjectId(productId) });
+        const reader = await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) });
+        const stepsById = new Map(
+          ((plan?.steps ?? []) as Array<Record<string, unknown>>).map((st) => [Number(st.id ?? st.step_id), st]),
+        );
+        for (const t of touches) {
+          const key = String(stepsById.get(Number(t.step_id))?.templateKey ?? "");
+          if (!key || !reader) continue;
+          const tpl = await db
+            .collection(C.templates)
+            .findOne({ orgId, productId, key, status: "active" }, { sort: { scope: 1 } });
+          if (!tpl) continue;
+          const blocks = (tpl.blocks ?? []) as Array<Record<string, unknown>>;
+          const ps = String(t.ps ?? "").trim();
+          const hasPs = blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === "ps");
+          if (ps && !hasPs) {
+            throw new Error(`step ${String(t.step_id)} writes a ps, but the "${key}" template has no PS line. Leave ps out. Nothing was written.`);
+          }
+          const rendered = renderForCount(blocks, varsForCount(reader, productForCount), {
+            subject: t.subject ? String(t.subject) : undefined,
+            slotText: String(t.body ?? ""),
+            ...(ps ? { slots: { ps: psLine(ps) } } : {}),
+            ...(t.preheader ? { preheader: String(t.preheader).trim() } : {}),
+          });
+          const total = readableWords(rendered.bodyMd);
+          if (total > 200) {
+            throw new Error(`step ${String(t.step_id)} renders to ${total} words with the "${key}" template. The whole mail stays under 200; cut your part. Nothing was written.`);
+          }
         }
       }
       const plannedAsset = new Map<number, string>();
@@ -1361,8 +1443,10 @@ export const TOOLS: ToolDef[] = [
             // and opt-out block are the template's, and are added when this renders.
             content: {
               subject: t.subject ? String(t.subject) : undefined,
+              preheader: String(t.preheader ?? "").trim() || undefined,
               bodyMd: "",
               slotText: body,
+              slots: String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : undefined,
               personalizationUsed: [],
               claimsMade: [...new Set([...((t.claims_made ?? []) as string[]), ...assetClaims])],
               wordCount: body.split(/\s+/).filter(Boolean).length,
@@ -2137,6 +2221,12 @@ TOOLS.push({
     const parsed = z.array(block).min(1).safeParse(args.blocks);
     if (!parsed.success) {
       throw new Error(`blocks are not valid: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
+    }
+    // A mail asks for one thing. Two buttons split the reader between them, and the one that
+    // matters loses; the second route belongs in a PS line.
+    const buttons = parsed.data.filter((b) => (b as { type?: string }).type === "cta").length;
+    if (buttons > 1) {
+      throw new Error(`a template asks for one thing, and this one has ${buttons} buttons. Keep the one that matters and move the other into a PS line.`);
     }
 
     const key = String(args.key);

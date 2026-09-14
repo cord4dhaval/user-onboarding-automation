@@ -23,7 +23,7 @@ import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTracking, trackingAllowed } from "./tracking.js";
 import { bumpPrior } from "./outcomes.js";
 import { localHour } from "./time.js";
-import { appOrigin, mergeVarsFor } from "./vars.js";
+import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
 
 export interface FireSummary {
   claimed: number;
@@ -308,6 +308,10 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // Shared with the review screen, so what a reviewer reads is rendered from the same
       // variables the recipient's copy is.
       const vars: MergeVars = mergeVarsFor(person, product);
+      // Tagged with the campaign and the mail, so the product's own analytics can say what
+      // brought a signup. Only the trial link: the booking page and the opt-out are this
+      // app's own pages, and tagging them would count our traffic as theirs.
+      vars.trial_link = withUtm(vars.trial_link, String(goalInstance.goalKey ?? "campaign"), String(template.key ?? rungKey ?? "mail"));
 
       // What this message carries, resolved at send rather than at compose: an asset that
       // was archived or corrected in the days a message sat in the queue should go out as
