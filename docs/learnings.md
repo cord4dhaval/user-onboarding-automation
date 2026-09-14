@@ -89,6 +89,44 @@ Source: https://www.youtube.com/watch?v=bGFxAZvfhIU (19 min, Hindi; auto transcr
 
 ---
 
+## 2026-09-14 — Lets Uncover, "Email Marketing Full Course | Beginner to Advance"
+
+Source: https://www.youtube.com/watch?v=byqZe8oaUwA (89 min, Hindi; auto transcript read in the parts that carry strategy). An Omnisend course for WooCommerce and Shopify stores: domain and mailbox setup, store connection, sign-up forms and popups, the welcome and abandoned-cart automations, reports, segments and campaign design.
+
+### What the video shows
+
+- Email returns about 72 dollars per dollar spent against 1–2 percent for ads; 70 percent of businesses never mail the leads they paid for.
+- Popups and forms with triggers (after N seconds, exit intent, time on page), targeting (all visitors, not existing contacts, only existing contacts, by segment, by URL, out-of-stock pages, by country, by traffic source such as Facebook), a frequency cap (do not show again for X days), A/B testing of forms, and a success message that carries the discount.
+- Welcome automation: trigger "subscribed to marketing" (other triggers: viewed a product, viewed a page, started checkout), a one-minute delay, the discount mail, a one-day delay, a "we miss you" mail, a one-week delay, another mail. **Exit conditions** are goals: placed order, paid order, viewed a page, refund. Once a person meets one they leave the automation and never re-enter it.
+- Abandoned cart: trigger "added product to cart", a 1–5 minute delay, mail one with the abandoned products inserted automatically, wait 11 hours, mail two, wait 12 hours, mail three with a discount, then a story or a meme. The reasoning: the person was busy, disliked the price, or is comparing with a competitor, so the later step carries the incentive.
+- Other ready automations: order confirmation, shipping confirmation, order follow-up, back in stock, product review request, birthday, wheel of fortune.
+- Reports: revenue attributed to automations versus organic, engagement, open rate, click rate, order rate, product performance, per-automation insights, export.
+- Campaigns: segments and tags, AI-written subject with an inbox preview, preheader, template library, brand assets (logo, colours) set once and reused, product blocks (best selling, recently viewed).
+- Closing advice: do not only sell; alternate informational mails (tips, a blog excerpt with a link to the rest); watch open rate; move the people who opened into a different campaign with a specific offer.
+
+### What the engine already does
+
+- The welcome-plus-delays automation is the plan: first touch immediate, later steps by `offsetDays` inside cadence bands.
+- Exit conditions are the goal checks (`signed_up`) plus the booking hand-over: success ends the campaign and skips every queued action.
+- Segments, one-click unsubscribe, brand assets and voice set once in product config, AI copy per person.
+- Hot-band cadence of 0.1–0.35 days already matches the hours-not-days pacing of an abandoned-cart flow.
+
+### What we take from it
+
+| # | Idea | Engine today | Build | Status |
+|---|---|---|---|---|
+| H | Abandoned-cart logic applied to our funnel: **abandoned signup** (started the register page, no account after 15 minutes) | The register page reports only `signed_up`; nothing fires on a started-but-unfinished signup | `register_started` site event; a signal-triggered rung that sends within 5 minutes, then 11 hours, then 12 hours; exit on `signed_up` | todo |
+| I | Post-purchase lifecycle automations (order follow-up, review request, back in stock) applied to SaaS: **post-signup activation playbook** | `welcome_signup` template exists and activation events are defined in product config (`account_created`, `teammate_invited`, `session_recorded`, `report_viewed`); no playbook walks a signed-up person through them | Activation playbook: install nudge (day 0–1), invite teammates (day 2), first report (day 3), trial ending (day 5–6), win-back after expiry (day 9); each step gated on the activation event not yet seen; exit when activated | todo |
+| J | Reactive mails go out in minutes; the sequence mails can take longer | Composed steps wait for the hourly Advance routine; engine-rendered steps go out on the next tick | Design rule: signal-triggered rungs (abandoned signup, install stall, first click) are pre-written templates rendered by the engine; sequence rungs are composed by Claude | todo |
+| K | Dynamic blocks from behaviour (the abandoned products appear by themselves) | Merge vars are name, company and trial link | Merge vars fed by site and product events: page last viewed, plan viewed, teammates invited, days since install; usable in templates and shown on the lead card | todo |
+| L | Incentive escalates across the flow (10, then 12, then 15 percent) | No offer concept beyond the trial | `offer` asset kind with an expiry (extended trial, done-for-you setup, first month free for teams over ten) pinned to later rungs by the playbook | todo |
+| M | Revenue attributed per automation and campaign | Templates are credited on `converted`; no campaign-level view | Signups per campaign, rung and variant on the product page, next to the CTR report from Hormozi row 11 | todo |
+| N | Popups with exit intent, source targeting and frequency caps | Site side, not the engine | Hand to the teamgrid.ai site: exit-intent form on pricing offering the four-line sample; a form variant per ad source; never shown to existing contacts | skip in engine, site task |
+| O | AI tone switch (funny, serious) per mail | Voice is fixed in product config | Skip: one voice, direct and specific, is the brand | skip |
+| P | Inbox preview while writing the subject | No length check on subject plus preheader as the inbox shows them | Fold into Hormozi row 5: validation renders the inbox row and refuses a subject over 60 or a preheader over 90 characters | todo |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -111,3 +149,10 @@ Source: https://www.youtube.com/watch?v=bGFxAZvfhIU (19 min, Hindi; auto transcr
 | 16 | Composable CTA label and bridge | Hormozi 16 | todo |
 | 17 | Nurture stream after the sequence | Hormozi 14 | todo |
 | 18 | Customer pain-moment quotes as assets | Hormozi 15 | todo |
+| 19 | Post-signup activation playbook (install, invite, report, trial ending, win-back) | Lets Uncover I | todo |
+| 20 | Abandoned-signup trigger with a five-minute template mail | Lets Uncover H | todo |
+| 21 | Signal-triggered rungs are engine-rendered templates; sequence rungs are composed | Lets Uncover J | todo |
+| 22 | Behaviour and product merge vars (page viewed, plan viewed, teammates invited) | Lets Uncover K | todo |
+| 23 | Conversion attribution per campaign, rung and variant | Lets Uncover M | todo |
+| 24 | Offer asset kind with expiry for later rungs | Lets Uncover L | todo |
+| 25 | Site: exit-intent and source-targeted forms with frequency caps | Lets Uncover N | site task |
