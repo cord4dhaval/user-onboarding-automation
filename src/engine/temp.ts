@@ -247,9 +247,16 @@ export async function recomputeTemps(
     // The timestamp is written either way, so an unchanged reading still moves to the back
     // of the queue and a bounded run does not re-examine the same people forever.
     if (current?.band === next.band && current?.score === next.score) {
+      // The reasons are written too. A person already warm from fit who then arrives through
+      // a form keeps the same band and score, and without this the page would go on saying
+      // "from fit" while the form is what now holds them there. Nothing is rescheduled: only
+      // a band change moves anyone's mail.
       await db
         .collection(C.people)
-        .updateOne({ _id: person._id }, { $set: { "temp.computedAt": next.computedAt } });
+        .updateOne(
+          { _id: person._id },
+          { $set: { "temp.computedAt": next.computedAt, "temp.termsUsed": next.termsUsed } },
+        );
       continue;
     }
 
