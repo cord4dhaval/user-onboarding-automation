@@ -28,7 +28,11 @@ export default async function Connections({
   const { connect, serverUrl } = await searchParams;
   const { orgId } = await requireSession();
   const db = await getDb();
-  const rows = await db.collection(C.connections).find(scope(orgId, id)).toArray();
+  // Gmail mailboxes signed in from Channels share this collection but have no tools to bind
+  // and are managed there; listing them here only invited a delete that breaks a sender.
+  const rows = (await db.collection(C.connections).find(scope(orgId, id)).toArray()).filter(
+    (c) => !(c.authType === "oauth2" && c.provider === "google"),
+  );
   const bindings = await db.collection(C.mcpBindings).find({ orgId: scope(orgId, id).orgId }).toArray();
   const boundBy = new Map(bindings.map((b) => [String(b.connectionId), Object.keys((b.bind ?? {}) as object)]));
 
@@ -69,12 +73,13 @@ export default async function Connections({
             <tbody>
               {rows.map((c) => {
                 const bound = boundBy.get(String(c._id)) ?? [];
+                const account = c.account ?? c.accountEmail;
                 return (
                   <tr key={String(c._id)}>
                     <td><strong>{String(c.provider)}</strong></td>
                     <td className="muted"><code>{String(c.serverUrl ?? "—")}</code></td>
                     <td>
-                      {c.account ? String(c.account) : <span className="muted">unlabelled</span>}
+                      {account ? String(account) : <span className="muted">unlabelled</span>}
                     </td>
                     <td>
                       {bound.length
@@ -97,7 +102,7 @@ export default async function Connections({
                           connectionId={String(c._id)}
                           provider={String(c.provider)}
                           serverUrl={c.serverUrl ? String(c.serverUrl) : undefined}
-                          account={c.account ? String(c.account) : undefined}
+                          account={account ? String(account) : undefined}
                           authType={c.authType ? String(c.authType) : undefined}
                           oauthAction={startReauthOAuth}
                           tokenAction={reconnectWithToken}
