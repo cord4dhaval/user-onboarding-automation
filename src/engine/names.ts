@@ -23,6 +23,7 @@ const NOT_A_PERSON = new Set([
   "hr", "admin", "administrator", "info", "sales", "support", "team", "owner",
   "manager", "office", "contact", "enquiry", "inquiry", "accounts", "billing",
   "marketing", "care", "help", "service", "director", "ceo", "founder", "the",
+  "www", "test", "user", "customer", "client", "lead", "unknown", "null", "na", "n/a",
 ]);
 
 /**
