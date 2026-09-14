@@ -280,10 +280,13 @@ async function assertProduct(productId: string, ctx: ToolCtx): Promise<string> {
     .collection(C.products)
     .findOne({ _id: new ObjectId(productId), orgId: ctx.orgId });
   if (!product) throw new Error(`product ${productId} not found`);
-  // The product id, not the org id. Returning the org here filed every template, brand
-  // read and preview under the organisation, where the engine's product-scoped queries
-  // could never find them — a session would write a template and the sender would not see it.
-  return productId;
+  // Returns the ORG id, and every caller reads it as such: `const orgId = await
+  // assertProduct(productId, ctx)`. A handler that wrote `const productId = await
+  // assertProduct(...)` was filing templates, brand reads and previews under the org id;
+  // those five handlers are fixed at their own lines. Changing this return to the product
+  // id instead, as was tried once, made every other tool look people up under the wrong
+  // org — "person not found" on each lead_card, and a whole Advance run composing nothing.
+  return ctx.orgId;
 }
 
 /**
@@ -1982,7 +1985,8 @@ TOOLS.push({
     required: ["product_id"],
   },
   async handler(args, ctx) {
-    const productId = await assertProduct(String(args.product_id), ctx);
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
     const { loadBrandKit } = await import("../../engine/brand.js");
     const db = await getDb();
     const kit = await loadBrandKit(ctx.orgId, productId);
@@ -2047,7 +2051,8 @@ TOOLS.push({
     required: ["product_id", "key", "blocks"],
   },
   async handler(args, ctx) {
-    const productId = await assertProduct(String(args.product_id), ctx);
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
     const db = await getDb();
     const { block } = await import("../../schemas/template.js");
     const { z } = await import("zod");
@@ -2128,7 +2133,8 @@ TOOLS.push({
     required: ["product_id"],
   },
   async handler(args, ctx) {
-    const productId = await assertProduct(String(args.product_id), ctx);
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
     const db = await getDb();
     const { renderTemplate, resolveBlocks } = await import("../../engine/compose.js");
     const { renderHtml } = await import("../../engine/html.js");
@@ -2320,7 +2326,8 @@ TOOLS.push({
     required: ["product_id", "key", "title", "body"],
   },
   async handler(args, ctx) {
-    const productId = await assertProduct(String(args.product_id), ctx);
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
     const { notify } = await import("../../engine/notify.js");
     const db = await getDb();
     const key = `groom:${String(args.key)}`;
@@ -2519,7 +2526,8 @@ TOOLS.push({
     required: ["product_id", "name", "success_described", "first_touch_template"],
   },
   async handler(args, ctx) {
-    const productId = await assertProduct(String(args.product_id), ctx);
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
     const db = await getDb();
 
     const name = String(args.name);
