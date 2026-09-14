@@ -2,6 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { gateOpen, nextStep, type StepEngagement } from "./advance.js";
+import { engineRenderedKeysFor, skeletonFor, type Skeleton } from "./engineSteps.js";
 
 /**
  * One person's plan as a session should read it: every step with where it stands, and
@@ -23,9 +24,12 @@ export interface PlanStepView {
   gate: string | null;
   after_days: number;
   state: StepState;
-  /** True for a step whose template is a family of variants: the engine sends the next variant itself. */
+  /** True when the engine renders this step itself: a family of variants, or a template with no slot. */
   engine_renders: boolean;
+  engine_reason: string | null;
   why: string | null;
+  /** Only on next_step_to_write: the template the words land in. */
+  skeleton?: Skeleton | null;
 }
 
 export interface PlanView {
@@ -48,17 +52,6 @@ export function engagementFrom(actions: Document[], band: string | undefined): S
   } as StepEngagement;
 }
 
-/** Template families with variants on this product. A step naming one is the engine's to render. */
-export async function familyKeysFor(orgId: string, productId: string): Promise<Set<string>> {
-  const db = await getDb();
-  const rows = await db
-    .collection(C.templates)
-    .find({ orgId, productId, status: "active", family: { $exists: true, $ne: null } })
-    .project({ family: 1 })
-    .toArray();
-  return new Set(rows.map((t) => String(t.family)).filter(Boolean));
-}
-
 const WRITTEN_AND_LIVE = ["queued", "awaiting_approval", "sending", "sent", "dispatched"];
 const WAITING = ["queued", "awaiting_approval", "sending"];
 
@@ -75,7 +68,7 @@ export async function planViewFor(instance: Document, actions: Document[], band:
 
   const orgId = String(instance.orgId);
   const productId = String(instance.productId);
-  const families = await familyKeysFor(orgId, productId);
+  const engineOwned = await engineRenderedKeysFor(orgId, productId);
 
   const byStep = new Map<number, Document>();
   const written = new Set<number>();
@@ -112,7 +105,8 @@ export async function planViewFor(instance: Document, actions: Document[], band:
         gate: st.gate ? String(st.gate) : null,
         after_days: Number(st.offsetDays ?? st.after_days ?? st.afterDays ?? 0),
         state,
-        engine_renders: typeof key === "string" && families.has(key),
+        engine_renders: typeof key === "string" && engineOwned.has(key),
+        engine_reason: typeof key === "string" ? engineOwned.get(key) ?? null : null,
         why: st.why ? String(st.why) : null,
       };
     })
@@ -126,10 +120,11 @@ export async function planViewFor(instance: Document, actions: Document[], band:
   } else if (!nextView) {
     note = `The plan is exhausted for this person: every remaining step is written or its gate is closed.`;
   } else if (nextView.engine_renders) {
-    note = `Step ${nextView.step_id} is the engine's: it sends the next "${nextView.template_key}" variant itself on its own schedule. Nothing to write until that has gone out.`;
+    note = `Step ${nextView.step_id} is the engine's: ${nextView.engine_reason ?? "it renders it itself"} ("${nextView.template_key}"). Nothing to write until that has gone out.`;
   } else {
-    toWrite = nextView;
-    note = `Write step ${nextView.step_id} (${nextView.template_key ?? nextView.angle ?? "no template"}). Later steps are for later runs.`;
+    const skeleton = nextView.template_key ? await skeletonFor(orgId, productId, nextView.template_key, plan.segmentKey ? String(plan.segmentKey) : null) : null;
+    toWrite = { ...nextView, skeleton };
+    note = `Write step ${nextView.step_id} (${nextView.template_key ?? nextView.angle ?? "no template"}), and only the your_words part of its skeleton. Later steps are for later runs.`;
   }
 
   return {

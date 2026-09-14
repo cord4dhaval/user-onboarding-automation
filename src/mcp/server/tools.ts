@@ -1168,6 +1168,23 @@ export const TOOLS: ToolDef[] = [
         }
       }
 
+      // A product that writes as "we" does not get a message from "I". The voice is the
+      // product's own words on the card; a session that read them and still wrote in the
+      // first person singular is told so here rather than after somebody approved it.
+      const productDoc = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { config: 1 } });
+      const voiceText = JSON.stringify((productDoc?.config as { voice?: unknown } | undefined)?.voice ?? {});
+      if (/first person plural/i.test(voiceText)) {
+        const singular = /(^|[^\w'])(I|I'm|I've|I'd|I'll|me|my|mine|myself)(?=[^\w']|$)/;
+        for (const t of touches) {
+          const hit = singular.exec(`${String(t.subject ?? "")}\n${String(t.body ?? "")}`);
+          if (hit) {
+            throw new Error(
+              `step ${String(t.step_id)} speaks as one person ("${hit[2]}"). This product writes in the first person plural: we, our, the team. Rewrite it that way. Nothing was written.`,
+            );
+          }
+        }
+      }
+
       // What the plan already committed for each step. A touch that names no asset keeps
       // it rather than dropping it: the choice was made with the whole sequence in view,
       // and composing one message is not a reason to throw that away.
@@ -1248,6 +1265,24 @@ export const TOOLS: ToolDef[] = [
       const assetDocs = new Map(
         (await loadAssets(orgId, productId, wanted)).map((row) => [String(row._id), row]),
       );
+
+      // A meeting time nobody has checked is a promise the calendar may not keep. Live
+      // times render from the calendar only when the access asset rides along; without it
+      // the skeleton asks the reader to reply with a time, and the copy must not name one.
+      const proposesTime =
+        /\b(mon|tues|wednes|thurs|fri|satur|sun)day\b[^.\n]{0,40}?\b\d{1,2}(:\d{2})?\s*(am|pm)\b|\b\d{1,2}(:\d{2})?\s*(am|pm)\b[^.\n]{0,40}?\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/i;
+      for (const t of touches) {
+        if (!proposesTime.test(String(t.body ?? ""))) continue;
+        const withCalendar = (carried.get(Number(t.step_id)) ?? []).some((id) => {
+          const doc = assetDocs.get(id) as { kind?: unknown; access?: { calendar?: unknown } } | undefined;
+          return String(doc?.kind) === "access" && Boolean(doc?.access?.calendar);
+        });
+        if (!withCalendar) {
+          throw new Error(
+            `step ${String(t.step_id)} proposes meeting times nobody has checked. Live times come from the calendar only when the access asset is carried; otherwise ask the reader to reply with a time that suits them. Nothing was written.`,
+          );
+        }
+      }
 
       // When each message may go. The offset a session writes is measured from the
       // previous message, not from this call: composed with after_days of 0, two steps for

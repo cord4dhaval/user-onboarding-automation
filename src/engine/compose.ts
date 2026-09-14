@@ -184,6 +184,30 @@ function withoutGreeting(body: string): string {
   return lines.slice(1).join("\n").replace(/^\s+/, "");
 }
 
+/**
+ * Drops a sign-off the composed copy ends with, where the template prints its own.
+ *
+ * Same cause as the duplicated greeting: a session closes a message the way a person
+ * does, and cannot see that "The TeamGrid team" is the very next line of the skeleton.
+ * Only a closing line that matches one of the template's own fixed lines is removed, with
+ * a "Best," or "Thanks," directly above it; anything else the copy ends on is kept.
+ */
+function withoutSignOff(body: string, fixedLines: string[]): string {
+  const norm = (line: string) => line.replace(/^[\s\-–—]+/, "").replace(/[\s.,!]+$/, "").toLowerCase();
+  const fixed = new Set(fixedLines.map(norm).filter(Boolean));
+  if (fixed.size === 0) return body;
+  const lines = body.replace(/\s+$/, "").split("\n");
+  const last = lines[lines.length - 1] ?? "";
+  if (!fixed.has(norm(last))) return body;
+  lines.pop();
+  while (lines.length && !(lines[lines.length - 1] ?? "").trim()) lines.pop();
+  if (lines.length && /^\s*(best|thanks|thank you|regards|cheers|warmly|kind regards)[,!.]?\s*$/i.test(lines[lines.length - 1] ?? "")) {
+    lines.pop();
+  }
+  const out = lines.join("\n").replace(/\s+$/, "");
+  return /[a-z]/i.test(out) ? out : body;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -308,6 +332,10 @@ export function resolveBlocks(
   const ctaUrls = blocks
     .filter((block) => String(block.type) === "cta" && typeof block.url === "string")
     .map((block) => merge(String(block.url), vars));
+  // The template's own closing lines, so copy that ends on one of them is not printed twice.
+  const fixedLines = blocks
+    .filter((block) => String(block.type) === "text" && typeof block.fixed === "string")
+    .map((block) => merge(String(block.fixed), vars));
 
   for (const block of blocks) {
     const type = String(block.type);
@@ -350,7 +378,7 @@ export function resolveBlocks(
           // opens with a greeting too, and the two together produce "Hi Kiran," twice in a
           // row at the top of a real email — which no amount of prompting reliably
           // prevents, because writing to a named human is exactly what the copy is for.
-          filled = greeted ? withoutGreeting(composed) : composed;
+          filled = withoutSignOff(greeted ? withoutGreeting(composed) : composed, fixedLines);
           bodyUsed = true;
           usedComposed = true;
         }
