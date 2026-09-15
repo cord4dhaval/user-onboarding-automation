@@ -240,6 +240,58 @@ The engine covers one step of the journey, ad lead to signup. This playlist says
 
 ---
 
+## 2026-09-15 — AMZ One Step newsletter, 13 marketing emails
+
+Source: `testting.zip`, thirteen emails forwarded by a teammate, sent 17 July to 17 August 2026 by an Amazon-listing agency to a subscriber list through AWeber. All thirteen read in full.
+
+Context: this is a warm nurture list (the subscriber also receives the agency's weekly support-call invitations), not cold outreach. The structure of the mails transfers to our follow-ups and to a nurture stream; the casual register and the hype do not, because TeamGrid mail follows the professional tone and the no-names rule.
+
+### What the emails do
+
+- **Cadence and mix.** Thirteen mails in 31 days, one every two to three days. Six promote or remind about a live session, three teach something and then invite to a session, four teach something and ask for a reply or a booked call. The July mails lean on hype and events; the August mails lead with teaching and are clearly the stronger set.
+- **Subjects.** Each subject is a specific claim, a number or a question about the reader's own metric (a conversion rate on a named price point, a three-answer audit, a "math most sellers never run"). None says "welcome", "update" or the product name.
+- **First line pays off.** The opening states the number, the deadline or the contrarian claim immediately; there is no introduction of the sender.
+- **One teachable idea per mail.** A two-minute funnel calculation (impressions, clicks, orders, before and after a one-point change), a three-part image framework, three diagnostic buckets, a "nobody owns this job" argument. The reader can use it without ever replying.
+- **Worked numbers.** Before-and-after arithmetic the reader can check on a napkin, rather than adjectives.
+- **Self-diagnosis.** The reader is asked which of three buckets they are in, which makes the reply ask feel like the natural next step.
+- **Low-commitment reply asks.** "Reply with your listing URL" or "reply with how many products you have"; replies are cheap for the reader and lift inbox placement.
+- **Enemy framing.** A named mistake (bulk AI rewrites, chasing new channels, scaling ad spend on an untested page) that the reader can avoid.
+- **Timely hooks.** A platform change with a deadline, a live session starting in an hour or fifteen minutes.
+- **Format.** Plain-text look, one- or two-line paragraphs, one image at most, one destination (the same link repeated up to three times), a postal address and an unsubscribe link in the footer.
+
+### What not to copy
+
+- Unverifiable claims and inflated multiples, repeated capitals ("BRAND NEW" six times in one mail), emoji bullets, and capacity scarcity that is not real. They conflict with the professional tone and trip spam filters.
+- The first name in the subject (our subject rule forbids it, and the UK list has no names).
+- A named individual as sender, with the name changing between mails. Our sender stays "The TeamGrid Team".
+- Contractions, fragments and slang ("wanna", lowercase "i").
+- Six event mails in a month: we have no live session, and a cold list tolerates far less frequency than a subscriber list.
+
+### How our mails compare today
+
+- The welcome subject is "Welcome to TeamGrid", sent to people who never signed up, and the body describes features rather than a problem the reader has.
+- The seven `feature_followup` mails are each about a feature. The stronger emails in this set are each about the reader's metric, and the product is named once, near the end.
+- Every mail is a branded HTML card with a large trial button. The ask is always the highest-commitment one (start a trial); the only reply ask is the P.S. about a setup call.
+- There are no worked numbers, no diagnostic question and no timely hook.
+- The footer has no postal address.
+
+### Gaps and what to build
+
+| # | Tactic from the emails | Engine today | Build | Status |
+|---|---|---|---|---|
+| AOS1 | Insight emails instead of feature emails | `feature_followup` family: seven mails, one feature each | New family `insight_followup` with five to seven mails, each one problem, one worked number, one framework, one diagnostic question, one soft ask; the lead planner may mix both families | todo |
+| AOS2 | Subject is a claim, number or question about the reader's metric | Welcome subject "Welcome to TeamGrid"; feature subjects name the feature | Subject rule in the skeleton and voice: a specific number, a named mistake, or a question; never "welcome" to a lead who has not signed up; subject variants to test (extends Hormozi 12) | todo |
+| AOS3 | Worked arithmetic the reader can check | No numbers in follow-ups; the UK intro quotes benchmarks only | Per-segment "hour math" block: team size, hours, unrecorded share, charge-out rate, annual cost; labelled illustrative; composer fills team size when known | todo |
+| AOS4 | Three-bucket self-diagnosis with "reply with the number" | No diagnostic question | Diagnostic slot in insight mails; classify the reply (bucket 1, 2 or 3) and let React pick the next mail for that bucket | todo |
+| AOS5 | Reply ask before trial ask | Every mail asks for the trial | Ask ladder: first two follow-ups ask for a reply (team size, bucket), trial button from the third, or at once after a click; strengthens backlog 10 | todo |
+| AOS6 | Timely hooks per segment | None | Dated hook assets per segment, for example UK practices and the 31 January self-assessment peak, with an expiry so they stop after the date | todo |
+| AOS7 | Named mistake framing | Forbidden-claims list only | Voice note: each insight mail may name one common mistake the reader can avoid; never disparage a named competitor | todo, voice |
+| AOS8 | Postal address in the footer | Footer has the brand name and unsubscribe only | Brand setting `postalAddress` printed in every footer (UK PECR and CAN-SPAM expect sender identity and a contact address) | todo, small |
+| AOS9 | Hype guard | No spam or hype check | Validation rejects repeated capitals, emoji bullets, multiples without a source, and scarcity phrases; extends backlog 6 | todo |
+| AOS10 | Nurture newsletter after the sequence | Sequence ends at the final email | Weekly insight mail with no trial ask, drawn from the insight family; a click or reply moves the lead back to the plan; same as backlog 17 | todo |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -294,3 +346,10 @@ The engine covers one step of the journey, ad lead to signup. This playlist says
 | 48 | Goals name the revenue variable they move | Roshan P11 | todo |
 | 49 | Variants on preheader, CTA and offer | Roshan P12 | todo |
 | 50 | Custom-flow checklist and full journey map in docs | Roshan P14, P15 | todo |
+| 51 | Insight follow-up family: one problem, one worked number, one framework, one question, soft ask | AOS1, AOS3 | todo |
+| 52 | Subject rule: claim, number or question; no "welcome" to non-signups | AOS2 | todo |
+| 53 | Three-bucket diagnostic question, reply classified, next mail per bucket | AOS4 | todo |
+| 54 | Ask ladder: reply asks before the trial button | AOS5 | todo |
+| 55 | Postal address in every footer | AOS8 | todo |
+| 56 | Hype guard in validation (capitals, emoji bullets, unsourced multiples, scarcity) | AOS9 | todo |
+| 57 | Dated segment hooks with expiry (UK: 31 January self-assessment peak) | AOS6 | todo |

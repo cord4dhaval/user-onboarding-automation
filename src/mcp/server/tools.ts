@@ -2482,12 +2482,15 @@ TOOLS.push({
 
 // ── setup grooming ────────────────────────────────────────────────────────────
 
-/** The stage ladder a product's templates are measured against. */
+/**
+ * The stage ladder a product's templates are measured against.
+ *
+ * activation_nudge, value_proof and objection were removed on 2026-09-15. Campaigns now send
+ * written follow-up families instead, and the generic rungs were deleted as duplicates; left
+ * here, Maintain would read them as missing and draft them back every day.
+ */
 const TEMPLATE_LADDER = [
   { key: "welcome", when: "the moment they arrive" },
-  { key: "activation_nudge", when: "day two, if they have not activated" },
-  { key: "value_proof", when: "day four, still cold" },
-  { key: "objection", when: "day seven, stalled" },
   { key: "last_call", when: "day twelve, trial ending" },
 ];
 
