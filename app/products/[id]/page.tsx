@@ -16,6 +16,7 @@ import {
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { replyReach } from "@/engine/reach.js";
+import { isReplacedPlan } from "@/engine/replaced.js";
 import { refreshDashboard } from "../../actions";
 import { getProduct, requireSession, scope } from "../../tenant";
 import ClaudeBadge from "../../ui/claude-badge";
@@ -128,7 +129,8 @@ export default async function ProductHome({ params }: { params: Promise<{ id: st
   // is the system working. Counting them together put "18 messages failed to send" on this
   // page on a day when nothing had failed at all, which trains people to ignore the banner.
   const errored = byStatus("failed");
-  const stopped = byStatus("skipped").filter((a) => a.skipReason);
+  // A message whose plan was replaced was not stopped; the new plan's step took its place.
+  const stopped = byStatus("skipped").filter((a) => a.skipReason && !isReplacedPlan(a.skipReason));
   const queued = byStatus("queued");
   const sent = byStatus("sent");
 

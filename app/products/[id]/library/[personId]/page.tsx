@@ -1214,6 +1214,7 @@ function notSentLabel(action: Record<string, unknown>): { text: string; bad: boo
     "campaign ended": { text: "The campaign ended first.", bad: false },
     unsubscribed: { text: "They unsubscribed.", bad: true },
     "plan replaced by playbook stamp": { text: "The plan changed before it was due.", bad: false },
+    "plan replaced by Claude's plan for this lead": { text: "Claude wrote a new plan for them before it was due.", bad: false },
   };
   if (known[reason]) return known[reason];
   return { text: reason ? `Reason: ${humanize(reason)}.` : "It was turned down in review.", bad: true };

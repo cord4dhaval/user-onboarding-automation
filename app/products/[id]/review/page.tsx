@@ -4,6 +4,7 @@ import type { Filter, Document } from "mongodb";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { peopleEngagement } from "@/engine/engagement.js";
+import { isReplacedPlan, REPLACED_PLAN } from "@/engine/replaced.js";
 import { requireSession, scope } from "../../../tenant";
 import { decide, heldMessage, returnToReview } from "../../../actions";
 import { Check, CheckCheck, Flame, MessageSquare, MousePointerClick, RotateCcw, X } from "lucide-react";
@@ -63,7 +64,7 @@ const VIEWS = {
     // answer — and only one of the two offered a way back. They are one list now, with the
     // side that stopped each message written on its row.
     match: {
-      $or: [{ status: "skipped", skipReason: { $exists: true } }, { status: "failed" }],
+      $or: [{ status: "skipped", skipReason: { $exists: true, $not: REPLACED_PLAN } }, { status: "failed" }],
     },
     blurb:
       "Never reached anyone — stopped by one of our limits, or the send itself errored. Nothing retries these on its own; returning one to review puts it back in front of you.",
@@ -72,6 +73,14 @@ const VIEWS = {
     label: "Rejected",
     match: { status: "skipped", skipReason: { $exists: false } },
     blurb: "Turned down in review. Nothing was sent.",
+  },
+  // Not a failure and not a decision: the lead's plan changed and its new step took the
+  // place of this one. Kept as a record of what the old plan would have sent.
+  replaced: {
+    label: "Replaced",
+    match: { status: "skipped", skipReason: REPLACED_PLAN },
+    blurb:
+      "Written for a plan that was later replaced for the lead. The new plan's own message took its place, so nothing is missing and none of these need sending.",
   },
   all: {
     label: "All messages",
@@ -110,7 +119,12 @@ function recoverable(action: Document): boolean {
   const status = String(action.status);
   // A rejection is deliberately not in here. Reviving something a human turned down is an
   // override, not a recovery.
-  return status === "failed" || (status === "skipped" && Boolean(action.skipReason));
+  // Nor is a replaced plan's message: the new plan's step already took its place, so
+  // bringing this one back would mail the lead twice.
+  return (
+    status === "failed" ||
+    (status === "skipped" && Boolean(action.skipReason) && !isReplacedPlan(action.skipReason))
+  );
 }
 
 /** How each row's state reads, and whether it is worth alarm. */
@@ -162,6 +176,12 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
       // One word for both halves of the failed list. A message a cap stopped and one the
       // provider refused are the same fact to the person reading — nobody got it — and the
       // origin pill beside this says which of the two it was.
+      //
+      // Except a replaced plan's message, which nobody was meant to get: its lead's new
+      // plan sends its own step instead. Red "Failed" on it read as an error that was not.
+      if (isReplacedPlan(action.skipReason)) {
+        return { label: "Replaced", tone: "", detail: "the lead's new plan sends its own message instead" };
+      }
       return action.skipReason
         ? { label: "Failed", tone: "bad", detail: String(action.skipReason), origin: "ours" }
         : { label: "Rejected", tone: "", detail: "turned down in review" };

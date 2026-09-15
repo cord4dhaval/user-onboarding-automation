@@ -6,6 +6,7 @@ import Drawer from "../../../ui/drawer";
 import { Button, Spinner, SubmitButton } from "../../../ui/kit";
 import { decide, editMessage, regenerateMessage, rescheduleMessage, returnToReview, type HeldMessage } from "../../../actions";
 import { ist, istInputValue } from "../../../ui/time";
+import { isReplacedPlan } from "@/engine/replaced.js";
 
 /**
  * One held message, previewed as it will actually arrive.
@@ -57,8 +58,10 @@ export default function PreviewDrawer({
   const waiting = message?.status === "awaiting_approval";
   // A message nobody received is not finished with — whatever stopped it may be gone by
   // now. The way back belongs here, next to the reason it stopped, and not only on the row.
+  // A replaced plan's message is the exception: its new step already took its place.
   const recoverable =
-    message?.status === "failed" || (message?.status === "skipped" && Boolean(message.skipReason));
+    message?.status === "failed" ||
+    (message?.status === "skipped" && Boolean(message.skipReason) && !isReplacedPlan(message.skipReason));
 
   return (
     <>
@@ -311,6 +314,9 @@ function outcomeLine(message: HeldMessage): string {
         ? `Never reached anyone — the send errored: ${message.skipReason}`
         : "Never reached anyone — the send errored.";
     case "skipped":
+      if (isReplacedPlan(message.skipReason)) {
+        return "Replaced before it was due. The lead's new plan sends its own message in its place.";
+      }
       return message.skipReason
         ? `Never reached anyone — one of our limits stopped it: ${message.skipReason}.`
         : `Rejected ${when(message.reviewedAt)}. Nothing was sent.`;

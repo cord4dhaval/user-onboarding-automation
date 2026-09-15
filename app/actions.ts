@@ -38,6 +38,7 @@ import { previewContent } from "@/engine/preview.js";
 import { enqueue, PRIORITY } from "@/engine/queue.js";
 import { fromIstInput } from "./ui/time";
 import { setRoutineEnabled } from "@/engine/routines.js";
+import { REPLACED_PLAN } from "@/engine/replaced.js";
 import { requireSession } from "./tenant";
 
 /** Campaign keys are derived from the name, so nobody has to invent an identifier. */
@@ -1700,7 +1701,9 @@ export async function returnToReview(formData: FormData) {
       _id: { $in: ids },
       orgId,
       productId,
-      $or: [{ status: "skipped", skipReason: { $exists: true } }, { status: "failed" }],
+      // A message whose plan was replaced stays where it is: the new plan already sent or
+      // queued its own step, and reviving the old one would mail the lead twice.
+      $or: [{ status: "skipped", skipReason: { $exists: true, $not: REPLACED_PLAN } }, { status: "failed" }],
     },
     {
       // `reviewedAt` is deliberately kept. The sender reuses stored content for a message
