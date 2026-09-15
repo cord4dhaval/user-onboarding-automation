@@ -443,6 +443,9 @@ export function chooseVariant(candidates: Document[], pick: VariantPick): Docume
 
   const pool = [...byKey.values()].filter((t) => {
     if (pick.usedKeys?.has(String(t.key))) return false;
+    // Already shown under another template's name, such as a welcome that carried the same
+    // example: offering it again is a repeat, whatever the key says.
+    if (((t.covers ?? []) as unknown[]).some((key) => pick.usedKeys?.has(String(key)))) return false;
     const only = ((t.forSegments ?? []) as unknown[]).map(String);
     return only.length === 0 || (pick.segment !== undefined && only.includes(pick.segment));
   });

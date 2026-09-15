@@ -116,6 +116,12 @@ export const template = z.object({
   variant: z.string().optional(),
   /** Empty means any segment. Named segments are the only ones this variant is offered to. */
   forSegments: z.array(z.string()).default([]),
+  /**
+   * Keys of other templates that already showed what this variant shows. A person who was
+   * sent any of them is never offered this one: a follow-up that repeats the example their
+   * welcome already carried reads as the same mail twice under a new subject.
+   */
+  covers: z.array(z.string()).default([]),
   personId: objectIdString.optional(),
   version: z.number().int().positive().default(1),
   parentId: objectIdString.optional(),

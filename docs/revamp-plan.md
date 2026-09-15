@@ -103,3 +103,12 @@ Six touches in seven days instead of eight in fourteen. Every mail: under 200 wo
 3. Preheader and PS slots, word cap, one-ask validation, UTM, owner notification. Two days.
 4. `register_started` on the site and the clicked-no-signup nudge. When the site team can.
 5. Source on. Watch clicks, replies and signups per rung for a week; move composed steps off the review gate when the copy holds.
+
+## 8. Goal-driven follow-ups (2026-09-15)
+
+Decided after the first sends: only the welcome is a fixed step. After it, every lead receives follow-ups from one family of feature emails until they sign up, reply, unsubscribe, or the campaign's budget runs out. There is no closing email, no call email and no privacy email in the sequence.
+
+- Each follow-up shows one TeamGrid feature: the morning summary, one tool instead of three, hours by project, attendance, blocked work, plain-language questions, five-minute setup.
+- The engine picks the variant per lead by Thompson sampling on each variant's wins and losses (a click or reply within 48 hours is a win, silence a loss), never sends a variant twice, and never sends one whose feature a lead already saw (`covers`).
+- Budget: 8 touches in 14 days. After a click, the gap between mails stays at least half a day.
+- Off-target leads keep the single relevance question.
