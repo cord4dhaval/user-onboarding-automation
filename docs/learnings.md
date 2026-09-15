@@ -292,6 +292,126 @@ Context: this is a warm nurture list (the subscriber also receives the agency's 
 
 ---
 
+## 2026-09-15 — Reddit research: pain points, use cases and competition
+
+Source: Reddit threads from 2024 to 2026, read through the Arctic Shift archive because reddit.com blocks our search and fetch tools. Twenty subreddit and keyword pulls (about 430 posts) across r/managers, r/remotework, r/antiwork, r/sysadmin, r/humanresources, r/agency, r/msp, r/Accounting, r/smallbusiness, r/Entrepreneur and r/developersIndia, plus the top comments on seventeen high-signal threads. Cross-checked against teamgrid.ai (features, pricing, accounting and remote-team solution pages, the Hubstaff comparison), competitor pricing, and the ACM paper "It's Always a Losing Game", which studied worker posts in nine subreddits.
+
+Context: the buyer (owner, manager, HR, practice partner) and the person being measured both post about this category, and they want opposite things. Content has to solve the buyer's problem while answering the team's objection in the same mail.
+
+### What buyers complain about
+
+- **Paying for hours they cannot verify.** Agency owners who pay for more hours than were worked and have no way to show it; leadership that sees billable hours that feel inflated; a CPA with one remote employee who wants metrics.
+- **Timesheets are reconstructed, not recorded.** Tracking as you go is easy; rebuilding the week on Friday is the painful part. Accountants who reach the weekly billable minimum move further hours to next week's sheet; staff unsure what to log while waiting on a review; a small-firm COO phoning staff on Friday night about timesheets.
+- **An unprofitable client hides in the hours.** An MSP owner found one engineer spending half his day on a client paying a small monthly fee. An agency's first utilisation report showed some people under 10% utilised.
+- **Managers inherit a tool with no metrics.** Leadership installs monitoring, will not share what is measured, and asks managers to "improve" the numbers; meetings and calls count as idle. An HR generalist became the owner of a monitoring rollout (tool choice, policy, manager training) with no extra pay.
+- **Seat minimums and bloat.** Most monitoring tools sell a five-seat minimum to a practice with one remote hire; agency owners ask why remote time tracking is still bloated and expensive.
+
+### What the measured team complains about (the objection every mail must answer)
+
+- **Activity is not output.** A keystroke leaderboard ranks the fastest typist first and the best strategist last. A new engineer was questioned for being "away" 40 minutes while watching a training video. Goodhart's law is the most repeated comment.
+- **Monitoring suppresses useful work.** After keystroke monitoring arrived, nobody reported a three-hour outage for fear of looking off-task (3.5k upvotes).
+- **Gaming.** Mouse jigglers, typing gibberish, scripted clicks; surveys put jiggler use at about one in six remote workers.
+- **Silent or hidden installs.** Software pushed by IT with no announcement; a tracker installed on a personal laptop and hidden from view; managers reading private chats.
+- **Good people leave.** Commenters call it software that generates resumes; managers report Glassdoor damage and hiring trouble after an obsessive rollout.
+- **Breaks become evidence.** Water, bathroom and thinking time show up as idle.
+
+### What both sides agree on
+
+- Measure output, not presence. The most upvoted manager advice is a weekly review of what was produced.
+- Transparency: employees see their own data, know what is recorded, and have a say in the metrics.
+- Longer evaluation periods (weekly or monthly, not minute by minute).
+- In HR circles the stated shift is from catching people out to finding where work gets stuck.
+- An HR post asking for "privacy-respecting monitoring" was called an oxymoron. The phrase alone is not believed; it needs proof.
+
+### Where TeamGrid stands
+
+| Tier | Examples | Price per user per month | What Reddit says |
+|---|---|---|---|
+| Surveillance | Teramind, Time Doctor Premium, Hubstaff with screenshots, Monitask, TeamLogger, Insightful | Hubstaff $4.99 to $25, Time Doctor $6.67 to $20, ActivTrak $7 to $25 | The category Reddit hates: screenshots, keystrokes, idle timers, hidden installs |
+| Manual timers | Toggl, Clockify, Harvest | Free to low | "We suck at time tracking": a behaviour problem, not a tool problem |
+| India analytics | We360.ai, ProHance | We360 from ₹299; ProHance on quote | Support and analytics depth complaints; same entry price as TeamGrid Standard |
+| TeamGrid | Automatic capture, no screenshots or keystrokes, AI summaries, Ask TeamGrid, auto timesheets, billable capture | Standard ₹299, Advanced ₹649, 7-day trial, no card | Matches what both sides ask for, if it is proven |
+
+Strengths the research supports: no screenshots or keystrokes, employees see their own data, work summaries instead of activity logs, automatic timesheets (no reconstruction), billable capture and client margin for firms, entry price below Hubstaff's starter.
+
+Risks: "Productivity Scoring" and "App & Website Tracking" read like the keystroke leaderboard Reddit mocks unless we say what the score is built from; "Email Insights" sounds like reading email; "privacy-first monitoring" is disbelieved as a phrase; comparison pages exist for six tools but not for manual timers (Toggl, Clockify, Harvest) or the screenshot tools Reddit names most (Monitask, TeamLogger, Teramind). To verify with the product team: whether meetings and training videos are classified as meeting time rather than idle, and whether there is a seat minimum.
+
+### Gaps and what to build
+
+| # | Finding | Engine or content today | Build | Status |
+|---|---|---|---|---|
+| RD1 | Pain stories are the strongest hooks (the leaderboard, the unreported outage, the training video logged as idle, the client eating half a week, the Friday timesheet) | Feature mails, no stories | Hook library asset: eight to ten story hooks, paraphrased, each with the pain, the illustrative number and the TeamGrid answer; the insight family draws from it | todo |
+| RD2 | Every buyer fears the team's reaction | Trust line only | "What TeamGrid never records" block in insight mails and a forwardable one-page explainer written for employees | todo |
+| RD3 | Buyers sit in three situations | No diagnostic | Three buckets for the diagnostic question: timesheets from memory, a timer tool nobody fills in, a screenshot tool the team resents; merge with AOS4 | todo |
+| RD4 | Managers are handed a rollout with no metrics or policy | Nothing after signup | Rollout kit: announcement mail to staff, short policy text, FAQ; used in the post-signup activation playbook (backlog 19) | todo |
+| RD5 | Segment-specific pains | UK accounting intro only | Segment hooks: accounting (minimum-hours shifting, review time squeezed before filing), MSP and IT services (one client eating an engineer's week), agencies (first utilisation report), offshore teams (consent and no hidden install) | todo |
+| RD6 | Category words trigger the objection | Copy uses "monitoring" and "productivity score" | Voice note for cold copy: lead with "billable hours captured", "where the week went", "work summaries"; avoid "monitoring", "tracking employees" and "productivity score" in subjects | todo, voice |
+| RD7 | Competitor gaps in content | Six comparison pages | Comparison or alternatives pages for Toggl, Clockify, Harvest, Monitask and Teramind; one for "time tracking without screenshots" | site task |
+| RD8 | Meetings logged as idle and seat minimums are sharp, specific complaints | Unverified for TeamGrid | Confirm with the product team; if true, use "meetings are not idle time" and "no five-seat minimum" as proof lines | todo, verify |
+
+---
+
+## 2026-09-15 — Brainstorm: relatable copy, the asset store and a self-learning loop
+
+Source: discussion with Dhaval after the Reddit research, checked against the code and the live TeamGrid send record (`what_works`), plus outside evidence on plain text versus HTML and price framing.
+
+Context: the mails restate teamgrid.ai and read as generic. The ask is copy a reader recognises from their own day (for example a monthly seat priced against something they already buy), chosen and improved by the Claude routines within a written rulebook, with a person approving.
+
+### What the code and data show today
+
+- **Asset store is built and stocked, but never used.** The schema carries kind, tier, `useWhen`, `proves`, segment, expiry, approval and usage counters (`src/schemas/asset.ts`); `lead_card` offers `assets_available`, `plan_goal` takes `asset_id`, `compose_batch` takes `asset_ids`, and `what_works` cuts results by asset. TeamGrid had seven active assets (six screenshots and the setup-call booking), and `lead_card` offers four of them to a cold lead, yet none of 289 TeamGrid actions carries an asset. The compose prompt (`docs/routine-prompts.md` 2.1) never mentions assets, and the `lead_card` tool description tells the composer that most touches are words alone. (An earlier note here said the store was empty; that check read the wrong database.)
+- **Some screenshots undercut the pitch.** `shot_today_story` and `shot_needs_attention` name individuals and describe a security vulnerability and credential failures. Several app blocks in `assets/teamgrid/app/blocks` rank named people (AI adoption, team goals), and the team goals block shows real team members' names. They contradict "patterns, not people", which is the objection the Reddit research says matters most. Aggregate blocks such as projects by share are safe.
+- **Per-lead material exists.** Of 65 TeamGrid leads, 63 have team size and timeline from the form, 41 wrote a main problem in their own words, and 31 have their site text. Classification can misfire: a Pune property mandate firm's team lead is filed as `eng_leader`, so segment-filtered assets would offer engineering stories.
+- **Format is a template setting, not a Claude decision.** `format: html | text` defaults to `html` (`src/schemas/template.ts:103`); a per-action override is read at send (`src/engine/fireDue.ts:349`) but nothing sets it, and results are not cut by format.
+- **Learning exists for the welcome only.** Thompson sampling over welcome variants (`src/engine/templates.ts:404`); angles are recorded and reported, but nothing shifts volume between angles, assets or formats automatically.
+- **Rules exist in part.** `voice.do`, `voice.dont`, `forbiddenClaims` and repeated-claim checks (`src/engine/validate.ts:61`). There is no check that a number has a source.
+- **Volume is small.** 96 sends, 0 replies, welcome click rate about 6%. A learning loop needs research-based starting defaults because the data alone will take weeks to decide anything.
+
+### Outside evidence
+
+- Plain text drew 7.9% total response against 4.2% for HTML across 250,000 B2B cold emails (The Growth List, reported by Warmy and Warmforge); Puzzle Inbox reports 15 to 25% more replies for plain text.
+- Temporal reframing: an ongoing 85 cents a day was accepted by 52% against 30% for $300 a year (Gourville, "Pennies-a-Day").
+- Josh Braun's "poke the bear": state the cost of doing nothing and ask a neutral question instead of pitching.
+- Price anchors, checked 2026-09-15: a Domino's India medium pizza costs ₹199 to ₹449; the average UK coffee costs £3.97 (Finder).
+
+### Relatable framing, worked
+
+| Reader | Generic line | Relatable line |
+|---|---|---|
+| Indian founder | Standard plan at ₹299 per user per month | ₹299 is one medium pizza, or about ₹14 a working day for a month of one person's work summaries |
+| UK practice partner | About £2.30 per user per month | At a £60 charge-out rate, a month of TeamGrid costs less than three billable minutes |
+| UK practice partner | Capture billable time automatically | Twenty unlogged minutes a day across ten staff is about 730 hours a year |
+| Agency owner | AI work summaries | The first utilisation report usually surprises the owner, not the team |
+
+### The loop
+
+1. **Maintain (daily):** refresh research, draft new assets (stories, sourced stats, price anchors with an expiry) with `origin: claude` and `requiresApproval: true`; a person approves each once.
+2. **Acquire (hourly):** the planner reads `what_works` and the lead card, and picks angle, asset and format for each step with a reason.
+3. **Advance (hourly):** the composer writes subject, opening and slot around the chosen asset; the engine validates against the rulebook.
+4. **React and Close:** clicks, replies and signups are credited to the angle, asset and format used.
+5. **Bandit:** Thompson sampling over angle, asset and format with a fixed exploration share; an arm with enough trackable sends and no signal is retired, and Claude drafts a replacement.
+
+### Rulebook (hard rules enforced by the engine, soft rules in the prompt)
+
+- Hard: every number carries a source asset or the word "illustrative"; no named competitor disparaged; no person as sender, no lead company name, never "you clicked our ad"; no contractions; no "monitoring", "tracking employees" or "productivity score" in a subject; no repeated capitals, emoji bullets or scarcity; slot at most 90 words; the same asset never twice to one lead.
+- Soft: the price anchor must match the reader's country and currency and the register of their role (billable minutes for a practice partner, not food); one idea per mail; open on the reader's situation.
+
+### Gaps and what to build
+
+| # | Finding | Engine today | Build | Status |
+|---|---|---|---|---|
+| RL1 | Too few assets for relatable copy: seven, all screenshots or booking | Six screenshots and one booking asset | Seeded 20 drafts on 2026-09-15 (`origin: claude`, `status: draft`): sourced stats, an illustrative calculation, price anchors framed per country and role, product facts that answer objections, six paraphrased Reddit stories (approval required), five page links. A person reviews and activates them on the brand page | doing, review |
+| RL7 | The composer never attaches an asset | Prompt silent; `lead_card` description discourages | Compose prompt: for each step, pick the asset that answers this lead's stated problem or likely objection, or say in one line why words alone are better; `what_works` then shows the difference | todo |
+| RL8 | Copy is generic because it is written from the product outward | Opening line from site text only | Per-lead brief before writing: their world (site text, city, industry), their words (form main problem), team size, likely objection; the analogy comes from their world, the numbers only from an attached asset; one honest limit when the fit is partial (for example field staff away from computers) | todo |
+| RL9 | Screenshots that name people or show incidents | Two active assets affected | Pause `shot_today_story` and `shot_needs_attention`; replace with aggregate blocks (projects by share) re-captured from an anonymised workspace | todo, needs approval |
+| RL2 | Stories and price anchors have no asset kind | Kinds: image, video, document, link, quote, stat, access | Add `story` and `analogy` kinds, with source and checked date; price anchors require `expiresAt` | todo |
+| RL3 | Format is fixed per template | Template field, unused override | `format` per touch in `compose_batch` and `plan_goal`; stored on the action; `what_works` cut by format; cold default `text`, HTML after a click or signup | todo |
+| RL4 | Learning covers the welcome only | Thompson on welcome variants | Bandit over angle, asset and format for planned steps; exploration share; retirement rule; weekly summary to the owner | todo |
+| RL5 | Unsourced numbers pass validation | Forbidden-claims check only | Validator: a number in copy must come from an attached asset or be labelled illustrative | todo |
+| RL6 | New creative never enters the system on its own | Assets added by hand | Maintain drafts assets from research into an approval queue on the brand page | todo |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -353,3 +473,20 @@ Context: this is a warm nurture list (the subscriber also receives the agency's 
 | 55 | Postal address in every footer | AOS8 | todo |
 | 56 | Hype guard in validation (capitals, emoji bullets, unsourced multiples, scarcity) | AOS9 | todo |
 | 57 | Dated segment hooks with expiry (UK: 31 January self-assessment peak) | AOS6 | todo |
+| 58 | Story hook library from Reddit pains, feeding the insight family | RD1 | todo |
+| 59 | "What TeamGrid never records" block and employee-facing explainer | RD2 | todo |
+| 60 | Diagnostic buckets: memory timesheets, unused timer, resented screenshot tool | RD3, merges with 53 | todo |
+| 61 | Segment hooks for accounting, MSP, agencies, offshore teams | RD5 | todo |
+| 62 | Cold-copy voice note: no "monitoring" or "productivity score" in subjects | RD6 | todo |
+| 63 | Rollout kit for managers after signup | RD4, feeds 19 | todo |
+| 64 | Confirm meetings-not-idle and seat minimum, then use as proof lines | RD8 | todo, verify |
+| 65 | Comparison pages for Toggl, Clockify, Harvest, Monitask, Teramind | RD7 | site task |
+| 66 | Seed TeamGrid asset store: price anchors, stories, sourced stats, calculation, explainer | RL1 | doing: 20 drafts seeded 2026-09-15, awaiting review |
+| 67 | Format chosen per touch, recorded, reported; cold default plain text | RL3 | todo |
+| 68 | `story` and `analogy` asset kinds with source, checked date, expiry | RL2 | todo |
+| 69 | Validator: numbers need a source asset or an "illustrative" label | RL5 | todo |
+| 70 | Bandit over angle, asset and format with retirement rule | RL4 | todo |
+| 71 | Maintain drafts new assets from research into an approval queue | RL6 | todo |
+| 72 | Compose prompt picks an asset per step or states why words alone are better | RL7 | todo |
+| 73 | Per-lead brief: their world, their words, team size, objection; analogy from their world, numbers from assets | RL8 | todo |
+| 74 | Pause screenshots that name people; replace with aggregate, anonymised blocks | RL9 | todo, needs approval |
