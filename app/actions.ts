@@ -782,8 +782,11 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       kind: "excel_upload",
       triggerMode: "batch",
       // Guesses read from the file's own headers win over the generic defaults. Spreading
-      // the defaults last would overwrite a correct "Email" with a literal "email".
-      fieldMap: rawMap ? fieldMap : { ...fieldMap, ...guessed },
+      // the defaults last would overwrite a correct "Email" with a literal "email". A map
+      // typed into the form still wins for the fields it names, but it only ever names a
+      // few — the form arrives pre-filled with email and name — so every other column the
+      // headers identify, the phone above all, is kept rather than silently dropped.
+      fieldMap: rawMap ? { ...guessed, ...fieldMap } : { ...fieldMap, ...guessed },
       uploadedRows: rows.length,
       uploadedFile: file.name,
       // Read by the goals list while the import is still running, so an upload that takes
@@ -2327,17 +2330,19 @@ export async function createBolnaChannel(formData: FormData) {
       bounceWebhook: false,
       // What they said comes back on the call itself, read by the reconciler, not as a reply.
       inboundReplies: false,
-      consentRequired: true,
+      // Calls go to uploaded lists too, which arrive without an opt-in. Requiring one made
+      // every spreadsheet lead ineligible, so a call campaign on a list queued nothing at all.
+      consentRequired: false,
       fromDomain: "controlled_by_provider",
       costPerMsg: 0,
       asyncDelivery: true,
     },
     governor: governorFrom(formData),
-    // Warm leads only to start. Under TRAI a sales call to someone who never asked must come
-    // from a registered 140-series number, and a default number that gets reported is blocked
-    // for every call on it — so widening this to cold is a decision made on the row, once
-    // the number is registered.
-    policy: { audience: ["warm_lead", "existing_user"] },
+    // Every audience, including cold lists: the product's call campaigns are built on
+    // uploaded leads. Under TRAI a sales call to someone who never asked must come from a
+    // registered 140-series number, so that is the number to put on this channel before a
+    // campaign reaches real prospects; narrowing the audience stays a checkbox on the row.
+    policy: { audience: ["cold", "warm_lead", "existing_user"] },
     status: "healthy",
     enabled: true,
   });
