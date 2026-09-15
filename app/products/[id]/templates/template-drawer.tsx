@@ -54,6 +54,7 @@ export default function TemplateDrawer({
                 { value: "email", label: "Email" },
                 { value: "sms", label: "SMS" },
                 { value: "whatsapp", label: "WhatsApp" },
+                { value: "voice", label: "AI call" },
                 { value: "slack", label: "Slack" },
               ]}
             />

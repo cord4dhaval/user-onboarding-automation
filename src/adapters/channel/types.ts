@@ -78,11 +78,35 @@ export class RetryableSendError extends Error {
   }
 }
 
+/** What a voice call came to, read back from the provider. */
+export interface CallResult {
+  /** The provider's own word for where the call is: "ringing", "completed", "no-answer". */
+  status: string;
+  /** Ended, one way or the other. Until then nothing below is filled in. */
+  done: boolean;
+  /** Someone picked up and the agent spoke. A call that rang out is done but not connected. */
+  connected: boolean;
+  durationSec?: number;
+  transcript?: string;
+  summary?: string;
+  recordingUrl?: string;
+  hangupReason?: string;
+  costCents?: number;
+  extracted?: Record<string, unknown>;
+  error?: string;
+  endedAt?: Date;
+}
+
 export interface ChannelAdapter {
   readonly key: string;
   send(message: OutboundMessage): Promise<SendResult>;
   /** Present only where the provider delivers asynchronously. */
   checkStatus?(providerMessageId: string): Promise<"queued" | "sending" | "sent" | "failed">;
+  /**
+   * Present only on voice. A call has more to report than delivered or not — who answered,
+   * for how long, and what was said — and the next run reads all of it.
+   */
+  callResult?(providerMessageId: string): Promise<CallResult>;
   /**
    * The RFC 5322 Message-ID a provider actually stamped on a message it sent, which is not
    * the provider's own id for it.

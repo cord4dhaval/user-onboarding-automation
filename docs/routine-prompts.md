@@ -231,7 +231,17 @@ is the judgment, and that is yours.
   the campaign has a booking asset, that message is the call with two live times.
   Their step 1 opens on what they looked at, not on what they clicked in our mail.
 
-3.3 objection-rewriter
+3.3 call-handler
+  pull_calls returns AI calls that connected and have no outcome yet. One sub-agent
+  per call: read the transcript whole, then record_call with the outcome and a reason a
+  person can read on the lead page — what they said, not your analysis. If the agent
+  promised them the free trial link, pass follow_up_email with {{trial_link}} in the
+  body; it goes out on email under the campaign's approval setting. A callback is
+  recorded, not scheduled: plan it with plan_goal and compose its brief with
+  compose_batch. Someone who asked not to be called is do_not_call, whatever else they
+  said.
+
+3.4 objection-rewriter
   When you have seen the same objection end three or more people in one segment,
   that is not a person-level problem. Say so, and fix the segment's playbook with
   upsert_playbook so everybody still running it gets the better sequence. One

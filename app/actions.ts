@@ -681,7 +681,7 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       connectionId: "",
       audienceId,
       // The library already holds our own field names, so no mapping is needed.
-      fieldMap: { email: "email", name: "name", role: "role", company_domain: "company_domain", timezone: "timezone" },
+      fieldMap: { email: "email", name: "name", role: "role", company_domain: "company_domain", timezone: "timezone", phone: "phone" },
     });
     return;
   }
@@ -1981,6 +1981,7 @@ export async function importPeople(formData: FormData) {
       name: map.name ? r[map.name] : undefined,
       role: map.role ? r[map.role] : undefined,
       company_domain: map.company_domain ? r[map.company_domain] : undefined,
+      phone: map.phone ? r[map.phone] : undefined,
     }));
   } else {
     // One per line: an address on its own, or "Name <address>".
@@ -2017,10 +2018,21 @@ export async function importPeople(formData: FormData) {
       .collection(C.people)
       .findOne({ orgId, productId, "identities.value": email });
 
+    // Anything shorter than eight digits is a placeholder in the cell, not a number.
+    const phone = String(row.phone ?? "").trim();
+    const phoneIdentity = phone.replace(/\D/g, "").length >= 8 ? [{ kind: "phone", value: phone, verified: false }] : [];
+
     if (existing) {
       await db.collection(C.people).updateOne({ _id: existing._id }, {
         $push: { arrivals: { kind, at: now, detail: "library import" } },
       } as never);
+      // Filled in when missing, never overwritten.
+      if (phoneIdentity.length > 0) {
+        await db.collection(C.people).updateOne(
+          { _id: existing._id, "identities.kind": { $ne: "phone" } },
+          { $push: { identities: phoneIdentity[0] } } as never,
+        );
+      }
       merged++;
       continue;
     }
@@ -2029,7 +2041,7 @@ export async function importPeople(formData: FormData) {
       _id: new ObjectId(),
       orgId,
       productId,
-      identities: [{ kind: "email", value: email, verified: false }],
+      identities: [{ kind: "email", value: email, verified: false }, ...phoneIdentity],
       primaryEmail: email,
       name: row.name ? String(row.name) : undefined,
       role: row.role ? String(row.role) : undefined,
@@ -2252,6 +2264,87 @@ export async function createHttpChannel(formData: FormData) {
   revalidatePath(`/products/${productId}/channels`);
 }
 
+/**
+ * Connects Bolna as the voice channel: an AI agent that phones a lead and speaks from the
+ * brief a campaign step composed.
+ *
+ * The key is sealed like every other secret. The agent and the calling number are not
+ * secrets, so they sit on the connection, where the adapter reads them at call time.
+ */
+export async function createBolnaChannel(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+
+  const token = String(formData.get("token") ?? "").trim();
+  const agentId = String(formData.get("agentId") ?? "").trim();
+  if (!token || !agentId) throw new Error("The Bolna API key and the agent id are both required.");
+  const fromPhoneNumber = String(formData.get("fromPhoneNumber") ?? "").replace(/\s/g, "");
+  if (fromPhoneNumber && !/^\+\d{8,15}$/.test(fromPhoneNumber)) {
+    throw new Error("The calling number must be in international form, for example +919876543210.");
+  }
+
+  const connectionId = new ObjectId();
+  await db.collection(C.connections).insertOne({
+    _id: connectionId,
+    orgId,
+    productId,
+    key: "bolna",
+    provider: "bolna",
+    authType: "bearer",
+    bolna: { agentId, ...(fromPhoneNumber ? { fromPhoneNumber } : {}) },
+    scopes: [],
+    status: "healthy",
+    directions: ["out"],
+    createdBy: orgId,
+    createdAt: new Date(),
+  });
+
+  await db.collection(C.credentials).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    connectionId: String(connectionId),
+    authType: "bearer",
+    ...sealSecret(token),
+    status: "verified",
+  });
+
+  await db.collection(C.channels).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    productId,
+    connectionId: String(connectionId),
+    key: "voice",
+    kind: "native",
+    from: fromPhoneNumber || undefined,
+    capabilities: {
+      send: true,
+      html: false,
+      attachments: false,
+      richTypes: [],
+      trackingOpens: false,
+      trackingClicks: false,
+      bounceWebhook: false,
+      // What they said comes back on the call itself, read by the reconciler, not as a reply.
+      inboundReplies: false,
+      consentRequired: true,
+      fromDomain: "controlled_by_provider",
+      costPerMsg: 0,
+      asyncDelivery: true,
+    },
+    governor: governorFrom(formData),
+    // Warm leads only to start. Under TRAI a sales call to someone who never asked must come
+    // from a registered 140-series number, and a default number that gets reported is blocked
+    // for every call on it — so widening this to cold is a decision made on the row, once
+    // the number is registered.
+    policy: { audience: ["warm_lead", "existing_user"] },
+    status: "healthy",
+    enabled: true,
+  });
+
+  revalidatePath(`/products/${productId}/channels`);
+}
+
 // ── routine logs ──────────────────────────────────────────────────────────────
 
 /**
@@ -2463,6 +2556,7 @@ export async function createTemplate(formData: FormData) {
   const key = slugify(String(formData.get("key") ?? "").trim() || name);
 
   const isEmail = channel === "email";
+  const isCall = channel === "voice";
   const blocks: Record<string, unknown>[] = isEmail
     ? [
         blankBlock("subject"),
@@ -2473,7 +2567,11 @@ export async function createTemplate(formData: FormData) {
         blankBlock("cta"),
         blankBlock("system"),
       ]
-    : [blankBlock("slot"), blankBlock("cta")];
+    : // A call's template is the brief the agent speaks from. There is no button to press
+      // on a phone call, so there is no call-to-action block to fill.
+      isCall
+      ? [blankBlock("slot")]
+      : [blankBlock("slot"), blankBlock("cta")];
 
   const templateId = new ObjectId();
   await db.collection(C.templates).insertOne({
@@ -2491,7 +2589,8 @@ export async function createTemplate(formData: FormData) {
     version: 1,
     blocks,
     ...providerTemplateFrom(formData),
-    constraints: { maxWords: isEmail ? 140 : 45, noClaims: [] },
+    // A brief is read by the agent, not the lead, so it may carry more than a text can.
+    constraints: { maxWords: isEmail ? 140 : isCall ? 250 : 45, noClaims: [] },
     assetIds: [],
     stats: { sent: 0, replied: 0, converted: 0, alpha: 1, beta: 1 },
     // New work starts as a draft. A template that begins active would join the cascade

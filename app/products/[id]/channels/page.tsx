@@ -8,6 +8,7 @@ import {
   connectSesDomain,
   createChannel,
   createHttpChannel,
+  createBolnaChannel,
   createSmtpChannel,
   deleteChannel,
   setChannelEnabled,
@@ -433,6 +434,7 @@ export default async function Channels({
         smtpAction={createSmtpChannel}
         mcpAction={createChannel}
         httpAction={createHttpChannel}
+        bolnaAction={createBolnaChannel}
         googleAction={startGoogleOAuth}
         sesAction={connectSesDomain}
       />

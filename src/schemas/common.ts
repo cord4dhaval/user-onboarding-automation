@@ -8,7 +8,7 @@ export const tenantScoped = z.object({
   productId: objectIdString,
 });
 
-export const channelKey = z.enum(["email", "whatsapp", "sms", "in_app", "linkedin", "push"]);
+export const channelKey = z.enum(["email", "whatsapp", "sms", "voice", "in_app", "linkedin", "push"]);
 export type ChannelKey = z.infer<typeof channelKey>;
 
 export const temperatureBand = z.enum(["hot", "warm", "cold", "dead"]);

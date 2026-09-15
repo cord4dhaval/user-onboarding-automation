@@ -13,6 +13,7 @@ import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type Thi
 import { backlog } from "../../engine/dispatch.js";
 import { dueAtFor, type CadenceBand } from "../../engine/cadence.js";
 import { suppress } from "../../engine/suppression.js";
+import { addressFor } from "../../engine/address.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue } from "../../engine/fireDue.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
@@ -3156,6 +3157,246 @@ async function queueAnswer(
   }
   return String(actionId);
 }
+
+/**
+ * AI calls that connected and have not been read yet.
+ *
+ * A call is the one touch that comes back as a conversation rather than a signal: the
+ * transcript is the lead's own words, as much as a reply is. The reconciler stores it on the
+ * action; this hands the unread ones to a session so each gets an outcome before the next
+ * step for that lead is planned.
+ */
+TOOLS.push({
+  name: "pull_calls",
+  description:
+    "AI calls that connected and have no outcome recorded yet, oldest first: who was called, the brief the agent spoke from, how long it lasted, the transcript and the recording. Read each transcript, then call record_call with what it came to. Calls that did not connect are not returned — they are already marked failed on the lead with the reason (no answer, busy). Use lead_card for who the person is.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      limit: { type: "number", description: "Default 10, at most 25." },
+    },
+    required: ["product_id"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const limit = Math.min(25, Math.max(1, Number(args.limit ?? 10)));
+
+    const calls = await db
+      .collection(C.actions)
+      .find({
+        orgId,
+        productId,
+        channel: "voice",
+        status: "sent",
+        "call.connected": true,
+        "call.outcome": { $exists: false },
+      })
+      .sort({ sentAt: 1 })
+      .limit(limit)
+      .toArray();
+    const people = await db
+      .collection(C.people)
+      .find({ _id: { $in: calls.map((a) => new ObjectId(String(a.personId))) } }, { projection: { name: 1 } })
+      .toArray();
+    const names = new Map(people.map((p) => [String(p._id), p.name]));
+
+    return {
+      calls: calls.map((a) => {
+        const call = (a.call ?? {}) as Record<string, unknown>;
+        return {
+          action_id: String(a._id),
+          person_id: String(a.personId),
+          name: names.get(String(a.personId)) ?? null,
+          called_at: a.sentAt,
+          duration_sec: call.durationSec ?? null,
+          brief: (a.content as { bodyMd?: string } | undefined)?.bodyMd ?? "",
+          summary: call.summary ?? null,
+          transcript: String(call.transcript ?? "").slice(0, 8000),
+          recording_url: call.recordingUrl ?? null,
+          extracted: call.extracted ?? null,
+        };
+      }),
+    };
+  },
+});
+
+/**
+ * What a call came to, written onto the call itself.
+ *
+ * The same boundary as record_reply: this records what happened and what it means for the
+ * lead, and the campaign's verdict stays with mark_state. The exception is being asked not
+ * to be called again, which is not a judgement call — the number is suppressed on the spot.
+ */
+TOOLS.push({
+  name: "record_call",
+  description:
+    "Record what an AI call came to, from its transcript. The outcome and the one-line reason are shown under the call on the lead page, so write the reason for a human: what they said, not your analysis. do_not_call suppresses their number immediately and cancels their queued calls. A callback is recorded, not scheduled — plan the next call with plan_goal and compose_batch. Use mark_state for the campaign's verdict.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      action_id: { type: "string", description: "The call, from pull_calls." },
+      outcome: {
+        type: "string",
+        enum: ["interested", "callback", "not_now", "not_interested", "wrong_person", "voicemail", "do_not_call"],
+      },
+      reason: {
+        type: "string",
+        description:
+          'One sentence a human reads on the lead page, e.g. "Asked for a demo next week; tracks attendance in Excel today."',
+      },
+      callback_at: {
+        type: "string",
+        description: "When they asked to be called back, ISO 8601 with its offset. Only for callback.",
+      },
+      objection: {
+        type: "string",
+        description: "The objection in one line, if there is one. Kept on the person and carried into every later campaign.",
+      },
+      follow_up_email: {
+        type: "object",
+        description:
+          "The email they were promised on the call — usually the free trial link. Written as the email itself, professional register, no greeting-card fluff; put {{trial_link}} where the link goes and it is filled in per person. Queued on the product's email channel and released by the campaign's approval setting. Leave it out when nothing was promised.",
+        properties: {
+          subject: { type: "string" },
+          body: { type: "string" },
+        },
+        required: ["subject", "body"],
+      },
+    },
+    required: ["product_id", "action_id", "outcome", "reason"],
+  },
+  async handler(args, ctx) {
+    const db = await getDb();
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    if (!ObjectId.isValid(String(args.action_id))) throw new Error("action_id is not a call id");
+    const action = await db
+      .collection(C.actions)
+      .findOne({ _id: new ObjectId(String(args.action_id)), orgId, productId, channel: "voice" });
+    const call = action?.call as { endedAt?: Date } | undefined;
+    if (!action || !call) throw new Error("no finished call with that id");
+
+    const outcome = String(args.outcome);
+    const personId = String(action.personId);
+    const at = new Date();
+    const callbackAt = args.callback_at ? new Date(String(args.callback_at)) : undefined;
+    if (callbackAt && Number.isNaN(callbackAt.getTime())) throw new Error("callback_at is not a date");
+
+    await db.collection(C.actions).updateOne(
+      { _id: action._id },
+      {
+        $set: {
+          "call.outcome": outcome,
+          "call.reason": String(args.reason),
+          "call.recordedAt": at,
+          ...(callbackAt ? { "call.callbackAt": callbackAt } : {}),
+        },
+      },
+    );
+
+    // A voicemail or the wrong person is not this lead saying anything.
+    if (outcome !== "voicemail" && outcome !== "wrong_person") {
+      await db.collection(C.people).updateOne({ _id: new ObjectId(personId) }, { $set: { lastSignalAt: call.endedAt ?? at } });
+    }
+    // Guarded on temp existing, for the reason record_reply gives.
+    if (outcome === "interested" || outcome === "callback") {
+      await db
+        .collection(C.people)
+        .updateOne({ _id: new ObjectId(personId), temp: { $exists: true } }, { $set: { "temp.computedAt": new Date(0) } });
+    }
+    if (args.objection) {
+      await db.collection(C.people).updateOne(
+        { _id: new ObjectId(personId) },
+        { $push: { objections: { text: String(args.objection), at, source: "call" } } as never },
+      );
+    }
+
+    let suppressed = false;
+    if (outcome === "do_not_call") {
+      const person = await db.collection(C.people).findOne({ _id: new ObjectId(personId) });
+      const phone = person ? addressFor(person, "voice") : "";
+      if (phone) {
+        await suppress(orgId, phone, "asked not to be called");
+        suppressed = true;
+      }
+      await db.collection(C.actions).updateMany(
+        { orgId, productId, personId, channel: "voice", status: { $in: ["queued", "awaiting_approval", "held"] } },
+        { $set: { status: "skipped", skipReason: "asked not to be called" } },
+      );
+    }
+
+    // What the agent promised on the call, sent where a link can be clicked. Queued rather
+    // than sent: the campaign's approval setting decides, as it does for every message.
+    let followUpActionId: string | null = null;
+    const followUp = args.follow_up_email as { subject?: unknown; body?: unknown } | undefined;
+    if (followUp?.body && outcome !== "do_not_call") {
+      const [person, product, emailChannel] = await Promise.all([
+        db.collection(C.people).findOne({ _id: new ObjectId(personId) }),
+        db.collection(C.products).findOne({ _id: new ObjectId(productId) }),
+        db.collection(C.channels).findOne({ orgId, productId, key: "email", enabled: true, status: "healthy" }),
+      ]);
+      if (person?.primaryEmail && emailChannel) {
+        const vars = varsForCount(person, product) as unknown as Record<string, string>;
+        const body = String(followUp.body).replace(/\{\{\s*(\w+)\s*\}\}/g, (whole, key: string) => vars[key] ?? whole);
+        const id = new ObjectId();
+        try {
+          await db.collection(C.actions).insertOne({
+            _id: id,
+            orgId,
+            productId,
+            goalInstanceId: String(action.goalInstanceId),
+            personId,
+            channel: "email",
+            channelId: String(emailChannel._id),
+            // A plain answer rather than a campaign skeleton: it continues a conversation
+            // they have just had, and fireDue renders "reply" as exactly the words given.
+            angle: "reply",
+            rationale: "Sends what the AI call promised them. Queued by record_call.",
+            content: {
+              subject: String(followUp.subject ?? "").trim() || "Your TeamGrid free trial",
+              bodyMd: "",
+              slotText: body,
+              personalizationUsed: [],
+              claimsMade: [],
+              wordCount: body.split(/\s+/).filter(Boolean).length,
+            },
+            format: "text",
+            assetIds: [],
+            next: {},
+            signals: [],
+            // One follow-up per call, however many runs read it.
+            idempotencyKey: `${String(action.goalInstanceId)}:call_followup:${String(action._id)}`,
+            status: "queued",
+            dueAt: at,
+            cost: 0,
+          });
+          followUpActionId = String(id);
+        } catch (err) {
+          if (!(err instanceof Error && err.message.includes("E11000"))) throw err;
+        }
+      }
+    }
+
+    return {
+      action_id: String(action._id),
+      person_id: personId,
+      outcome,
+      suppressed,
+      follow_up_action_id: followUpActionId,
+      ...(followUp?.body && !followUpActionId
+        ? { follow_up_note: "Not queued: no email address on this person, no healthy email channel, or already queued for this call." }
+        : {}),
+      note:
+        outcome === "callback"
+          ? "Recorded. Nothing is scheduled yet: plan the callback with plan_goal and compose its brief with compose_batch."
+          : "Recorded on the call. Use mark_state if this settles the campaign.",
+    };
+  },
+});
 
 /**
  * The worker contract: what a sub-routine is allowed to work on, and how it hands it back.

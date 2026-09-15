@@ -41,6 +41,7 @@ export const TRANSPORTS = [
   { id: "mcp", label: "MCP tool", blurb: "A send tool on a server you already connected." },
   { id: "smtp", label: "SMTP", blurb: "Any mail account or relay, with a password." },
   { id: "http", label: "API endpoint", blurb: "Any provider that takes a token over HTTP." },
+  { id: "key", label: "API key", blurb: "Paste the provider's API key and choose what it runs." },
 ] as const;
 
 export type TransportId = (typeof TRANSPORTS)[number]["id"];
@@ -104,6 +105,17 @@ export const CHANNEL_CATALOG: ChannelOption[] = [
     // brings instead is their provider's token and endpoint — Wati, Gupshup, AiSensy and
     // Meta's own Cloud API are all one HTTP call with a bearer token.
     transports: ["http", "mcp"],
+  },
+  {
+    id: "bolna",
+    channelKey: "voice",
+    label: "Bolna",
+    typeLabel: "AI call",
+    status: "live",
+    blurb: "An AI agent phones the lead and talks through the brief Claude wrote.",
+    // Bolna rather than a US voice platform: it dials from Indian numbers, which Vapi and
+    // Retell cannot, because TRAI requires Indian calls to terminate on an Indian server.
+    transports: ["key"],
   },
   {
     id: "sms",

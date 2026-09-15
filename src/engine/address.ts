@@ -13,6 +13,7 @@ const IDENTITY_KIND: Record<string, "email" | "phone" | "linkedin" | "product_ui
   email: "email",
   whatsapp: "phone",
   sms: "phone",
+  voice: "phone",
   linkedin: "linkedin",
   in_app: "product_uid",
   push: "product_uid",
@@ -56,4 +57,18 @@ export function addressFor(person: Document, channelKey: string): string {
 /** Digits only, which is the form most WhatsApp and SMS providers accept. */
 export function digitsOnly(value: string): string {
   return value.replace(/[^0-9]/g, "");
+}
+
+/**
+ * International form, which voice providers require. A bare ten-digit number, or one with a
+ * leading trunk zero, is read as Indian: every lead this product calls today is, and a
+ * number stored as "98765 43210" would otherwise be dialled as a nine-digit foreign one.
+ */
+export function e164(value: string, countryCode = "91"): string {
+  const digits = digitsOnly(value);
+  if (!digits) return "";
+  if (value.trim().startsWith("+")) return `+${digits}`;
+  if (digits.length === 10) return `+${countryCode}${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `+${countryCode}${digits.slice(1)}`;
+  return `+${digits}`;
 }

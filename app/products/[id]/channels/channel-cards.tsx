@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { MessageCircle, Plug, Plus, ShieldCheck, Smartphone } from "lucide-react";
+import { MessageCircle, PhoneCall, Plug, Plus, ShieldCheck, Smartphone } from "lucide-react";
 import { Button } from "../../../ui/kit";
 import ChannelDrawer, { type ConnectionTools } from "./channel-drawer";
 import { CHANNEL_CATALOG } from "@/channels/catalog.js";
@@ -10,6 +10,7 @@ import { CHANNEL_CATALOG } from "@/channels/catalog.js";
 const ICONS: Record<string, ReactNode> = {
   google: <ShieldCheck />,
   whatsapp: <MessageCircle />,
+  bolna: <PhoneCall />,
   sms: <Smartphone />,
   other: <Plug />,
 };
@@ -37,6 +38,7 @@ export default function ChannelCards({
   smtpAction,
   mcpAction,
   httpAction,
+  bolnaAction,
   googleAction,
   sesAction,
 }: {
@@ -58,6 +60,7 @@ export default function ChannelCards({
   smtpAction: (formData: FormData) => void | Promise<void>;
   mcpAction: (formData: FormData) => void | Promise<void>;
   httpAction: (formData: FormData) => void | Promise<void>;
+  bolnaAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
   sesAction: (formData: FormData) => void | Promise<void>;
 }) {
@@ -151,6 +154,7 @@ export default function ChannelCards({
           smtpAction={smtpAction}
           mcpAction={mcpAction}
           httpAction={httpAction}
+          bolnaAction={bolnaAction}
           googleAction={googleAction}
           sesAction={sesAction}
         />

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Drawer from "../../../ui/drawer";
-import { Globe, Mail, Plug, ShieldCheck, Server } from "lucide-react";
+import { Globe, KeyRound, Mail, Plug, ShieldCheck, Server } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { FormatChoice, SendToolFields } from "./channel-fields";
 import { catalogById, transportsFor, type TransportId } from "@/channels/catalog.js";
@@ -76,6 +76,7 @@ const TRANSPORT_ICONS: Record<TransportId, React.ReactNode> = {
   mcp: <Plug />,
   smtp: <Mail />,
   http: <Globe />,
+  key: <KeyRound />,
 };
 
 /**
@@ -96,6 +97,7 @@ export default function ChannelDrawer({
   smtpAction,
   mcpAction,
   httpAction,
+  bolnaAction,
   googleAction,
   sesAction,
   googleReady,
@@ -111,6 +113,7 @@ export default function ChannelDrawer({
   smtpAction: (formData: FormData) => void | Promise<void>;
   mcpAction: (formData: FormData) => void | Promise<void>;
   httpAction: (formData: FormData) => void | Promise<void>;
+  bolnaAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
   sesAction: (formData: FormData) => void | Promise<void>;
   /** Whether this deployment has an OAuth client at all. Checked on the server: the id is
@@ -433,6 +436,31 @@ export default function ChannelDrawer({
           <FormatChoice />
           {limits}
           <SubmitButton pendingLabel="Creating…">Create channel</SubmitButton>
+        </form>
+      )}
+
+      {active === "key" && (
+        <form action={bolnaAction} className="stack drawer-block">
+          <input type="hidden" name="productId" value={productId} />
+          <p className="sub tight">
+            Bolna&rsquo;s AI agent phones the lead and speaks from the brief each campaign step composed. Create the
+            agent in Bolna first, and put <code>{"{{brief}}"}</code> in its prompt where the talking points go.
+          </p>
+          <p className="sub tight">
+            Calls start on warm leads only. A sales call to someone who never asked needs a TRAI-registered
+            140-series number; widen the channel&rsquo;s audience once you have one.
+          </p>
+          <label>API key<input name="token" type="password" placeholder="bn-…" required /></label>
+          <label>Agent ID<input name="agentId" placeholder="123e4567-e89b-12d3-a456-426655440000" required /></label>
+          <label>
+            Calling number <span className="muted">(optional, blank uses Bolna&rsquo;s default)</span>
+            <input name="fromPhoneNumber" type="tel" placeholder="+919876543210" />
+          </label>
+          <div className="grid">
+            <label>Per hour<input name="perHour" type="number" placeholder="20" /></label>
+            <label>Daily cap<input name="dailyCap" type="number" defaultValue={20} /></label>
+          </div>
+          <SubmitButton pendingLabel="Connecting…">Connect Bolna</SubmitButton>
         </form>
       )}
     </Drawer>

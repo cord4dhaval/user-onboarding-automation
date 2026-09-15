@@ -43,5 +43,8 @@ export function guessFieldMap(columns: string[]): Record<string, string> {
   const tz = find(/time.?zone|^tz$/i);
   if (tz) map.timezone = tz;
 
+  const phone = find(/phone|mobile|cell|whats.?app|contact.?(no|num)|^tel/i);
+  if (phone) map.phone = phone;
+
   return map;
 }

@@ -67,6 +67,12 @@ export type FieldMap = Record<string, string | string[]>;
  * capitalisation constantly — "Email" one week, "email" the next — and a mapping that is
  * right except for a capital letter should not silently drop every row.
  */
+/** The mapped phone as written, or "" — a cell holding "N/A" or a lone dash is not a number. */
+function phoneOf(mapped: Record<string, unknown>): string {
+  const value = String(mapped.phone ?? "").trim();
+  return value.replace(/\D/g, "").length >= 8 ? value : "";
+}
+
 export function mapRecord(raw: RawRecord, fieldMap: FieldMap): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
 
@@ -264,6 +270,17 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
           });
         }
       }
+      // A later list can carry the number an earlier one did not. Only filled in, never
+      // overwritten: a number someone corrected by hand outranks a spreadsheet.
+      const phone = rows.map(phoneOf).find(Boolean);
+      if (phone) {
+        attachments.push({
+          updateOne: {
+            filter: { _id: found._id, "identities.kind": { $ne: "phone" } },
+            update: { $push: { identities: { kind: "phone", value: phone, verified: false } } } as never,
+          },
+        });
+      }
       summary.attachedToExisting += rows.length;
       summary.arrivalsSkipped += rows.length - fresh.length;
       entries.push({ personId: found._id as ObjectId, person: found });
@@ -276,7 +293,12 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       _id: personId,
       orgId: source.orgId,
       productId: source.productId,
-      identities: [{ kind: "email", value, verified: false }],
+      // The phone travels with the person so a call campaign can reach them. It is not a
+      // dedupe key: one office number is often shared by everyone who works there.
+      identities: [
+        { kind: "email", value, verified: false },
+        ...(phoneOf(mapped) ? [{ kind: "phone", value: phoneOf(mapped), verified: false }] : []),
+      ],
       primaryEmail: mapped.email ?? value,
       name: mapped.name,
       role: mapped.role,

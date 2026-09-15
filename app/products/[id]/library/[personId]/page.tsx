@@ -10,6 +10,8 @@ import {
   MailX,
   MessageSquare,
   MousePointerClick,
+  PhoneCall,
+  PhoneMissed,
   Send,
   UserPlus,
 } from "lucide-react";
@@ -137,12 +139,19 @@ export default async function PersonPage({
     const outcome = action.outcome as { grade?: string } | undefined;
     const goal = campaignName.get(String(action.goalInstanceId));
     const why = whyLabel(action.rationale);
+    const isCall = String(action.channel) === "voice";
     past.push({
       at: new Date(String(action.sentAt ?? action.dueAt)),
       node: (
         <>
           <div className="t-line">
-            <strong><Send size={13} /> We sent “{emailName(action)}”</strong>
+            {isCall ? (
+              <strong>
+                <PhoneCall size={13} /> {action.status === "dispatched" ? "We are calling them" : "We called them"}
+              </strong>
+            ) : (
+              <strong><Send size={13} /> We sent “{emailName(action)}”</strong>
+            )}
             {/* The message itself, exactly as it arrived. "What did we actually send
                 this person" was previously answerable only from the review queue, which
                 a sent message has already left. */}
@@ -162,7 +171,11 @@ export default async function PersonPage({
                 .join(" · ")}
             </div>
           ) : null}
-          <Result action={action} delivery={`${deliveryLabel(action)}${outcome?.grade ? ` Rated ${outcome.grade}.` : ""}`} />
+          {isCall ? (
+            <CallDetail action={action} />
+          ) : (
+            <Result action={action} delivery={`${deliveryLabel(action)}${outcome?.grade ? ` Rated ${outcome.grade}.` : ""}`} />
+          )}
           {why ? <div className="muted t-detail">Why: {why}</div> : null}
         </>
       ),
@@ -180,7 +193,13 @@ export default async function PersonPage({
       node: (
         <>
           <div className="t-line">
-            <strong><CircleSlash size={13} /> “{content.subject ?? emailName(action)}” was not sent</strong>
+            {String(action.channel) === "voice" ? (
+              <strong>
+                <PhoneMissed size={13} /> {action.status === "failed" ? "Our call did not connect" : "We did not call them"}
+              </strong>
+            ) : (
+              <strong><CircleSlash size={13} /> “{content.subject ?? emailName(action)}” was not sent</strong>
+            )}
             <PreviewDrawer
               productId={id}
               actionId={String(action._id)}
@@ -572,7 +591,9 @@ export default async function PersonPage({
                   <span className="t-mark m-next" />
                   <span>
                     <div className="t-line">
-                      <strong>We will send “{emailName(action)}”</strong>
+                      <strong>
+                        {String(action.channel) === "voice" ? "We will call them" : `We will send “${emailName(action)}”`}
+                      </strong>
                       <PreviewDrawer
                         productId={id}
                         actionId={String(action._id)}
@@ -1070,6 +1091,82 @@ function WhenCell({ at }: { at: Date | string }) {
   );
 }
 
+/** What Claude read a call as, in the words the lead page uses. */
+const CALL_OUTCOME: Record<string, { label: string; tone: string }> = {
+  interested: { label: "interested", tone: "hot" },
+  callback: { label: "call back", tone: "warm" },
+  not_now: { label: "not now", tone: "" },
+  not_interested: { label: "not interested", tone: "bad" },
+  wrong_person: { label: "wrong person", tone: "bad" },
+  voicemail: { label: "voicemail", tone: "" },
+  do_not_call: { label: "do not call", tone: "bad" },
+};
+
+/** Why a call never became a conversation, from the provider's own status word. */
+const CALL_NOT_CONNECTED: Record<string, string> = {
+  "no-answer": "Nobody picked up.",
+  busy: "The line was busy.",
+  canceled: "The call was cancelled before it rang.",
+  stopped: "The call was stopped.",
+  "balance-low": "The Bolna balance ran out before it dialled.",
+};
+
+/**
+ * How a call went, in the order a reader asks: did they pick up, for how long, what did it
+ * come to — and then, for whoever wants it, what was actually said.
+ */
+function CallDetail({ action }: { action: Document }) {
+  const call = action.call as
+    | {
+        durationSec?: number;
+        summary?: string;
+        transcript?: string;
+        recordingUrl?: string;
+        outcome?: string;
+        reason?: string;
+        callbackAt?: Date;
+      }
+    | undefined;
+  if (!call) return <div className="muted t-detail">{deliveryLabel(action)}</div>;
+
+  const outcome = call.outcome ? CALL_OUTCOME[call.outcome] : undefined;
+  return (
+    <>
+      <div className="muted t-detail">
+        They picked up and talked for {callLength(call.durationSec)}.
+        {call.outcome ? "" : " Claude has not read the call yet."}
+      </div>
+      {call.outcome ? (
+        <div className="t-detail">
+          <span className={`pill ${outcome?.tone ?? ""}`}>{outcome?.label ?? humanize(call.outcome)}</span>{" "}
+          <span className="muted">
+            {call.reason}
+            {call.callbackAt ? ` Call back ${istWeekday(call.callbackAt)} at ${istTime(call.callbackAt)}.` : ""}
+          </span>
+        </div>
+      ) : null}
+      {call.summary ? <div className="muted t-detail">{call.summary}</div> : null}
+      {call.transcript || call.recordingUrl ? (
+        <details className="t-detail">
+          <summary>What was said</summary>
+          {call.recordingUrl ? (
+            <p>
+              <a href={call.recordingUrl} target="_blank" rel="noreferrer">Listen to the recording</a>
+            </p>
+          ) : null}
+          {call.transcript ? <blockquote className="t-quote">{call.transcript}</blockquote> : null}
+        </details>
+      ) : null}
+    </>
+  );
+}
+
+function callLength(seconds: number | undefined): string {
+  if (!seconds) return "under a second";
+  const s = Math.round(seconds);
+  return s < 60 ? `${s} seconds` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
 /**
  * What happened to a message, in the words a person would use.
  *
@@ -1079,6 +1176,7 @@ function WhenCell({ at }: { at: Date | string }) {
  */
 function deliveryLabel(action: Record<string, unknown>): string {
   const status = String(action.status);
+  if (status === "dispatched" && action.channel === "voice") return "Calling now. The result comes in once they hang up.";
   if (status === "dispatched") return "Handed to the mail service, not confirmed yet.";
   if (status === "failed") return `Sending failed${action.error ? `: ${String(action.error)}` : ""}.`;
   if (status !== "sent") return `${humanize(status)}.`;
@@ -1088,6 +1186,15 @@ function deliveryLabel(action: Record<string, unknown>): string {
 
 /** Why a message never went out. The stored reasons are written for the engine's log. */
 function notSentLabel(action: Record<string, unknown>): { text: string; bad: boolean } {
+  if (action.status === "failed" && action.channel === "voice") {
+    const status = String((action.call as { status?: string } | undefined)?.status ?? "");
+    return {
+      text: CALL_NOT_CONNECTED[status] ?? `The call could not be placed${action.error ? ` (${String(action.error)})` : ""}.`,
+      // Nobody picking up is a Tuesday, not a fault.
+      bad: status !== "no-answer" && status !== "busy",
+    };
+  }
+  if (action.skipReason === "asked not to be called") return { text: "They asked not to be called.", bad: true };
   if (action.status === "failed") return { text: `Sending failed${action.error ? ` (${String(action.error)})` : ""}.`, bad: true };
   const reason = String(action.skipReason ?? "");
   const missing = /^no (\w+) on this person/.exec(reason);

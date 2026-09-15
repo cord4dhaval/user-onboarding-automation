@@ -11,6 +11,7 @@ import { GmailAdapter } from "../adapters/channel/gmail.js";
 import { SesAdapter } from "../adapters/channel/ses.js";
 import { sesEnv } from "./sesIdentity.js";
 import { HttpChannelAdapter, type HttpChannelConfig } from "../adapters/channel/http.js";
+import { BolnaAdapter, type BolnaConfig } from "../adapters/channel/bolna.js";
 import type { ChannelAdapter } from "../adapters/channel/types.js";
 
 /**
@@ -50,6 +51,14 @@ export async function resolveChannelAdapter(orgId: string, channelId: string): P
   }
 
   const secret = await resolveSecret(orgId, connectionId, "engine.send");
+
+  // A voice agent rather than a mailbox. The connection says which agent speaks and from
+  // which number; the secret is the account's API key.
+  if (connection.provider === "bolna") {
+    const cfg = connection.bolna as BolnaConfig | undefined;
+    if (!cfg?.agentId) throw new Error("Bolna connection is missing its agent id");
+    return new BolnaAdapter(String(channel.key), secret, cfg);
+  }
 
   if (connection.authType === "smtp") {
     const cfg = connection.smtp as { host: string; port: number; user: string } | undefined;
