@@ -185,7 +185,24 @@ have been read.
   Where two segments are plainly the same bucket under different names, say so in
   your run notes and name the merge you would make. Do not merge anything yourself:
   people are already running those playbooks, and a rename that lands mid-sequence
-  changes what a person receives without anyone having asked for it.`,
+  changes what a person receives without anyone having asked for it.
+
+1.5 asset-describer
+  next_work("groom"). Items whose reason is describe_asset name an asset a person
+  added with only a name and a file; nothing can offer it until it is described.
+  One sub-agent per asset, up to five. Each one: view_asset, which shows the file
+  itself beside the product's segments, then describe_asset, then finish_work.
+    use_when   the reader and the moment it suits, in plain words, naming segments
+               from the product's list;
+    proves     the one thing a reader believes afterwards that they did not before;
+    one_line   the sentence that introduces it in an email. It is printed to the
+               reader as the picture's alt text or the link's words, so it follows
+               the product voice: professional, full sentences, no names.
+  Describe what the file actually shows, never what the product page says it could.
+  If it shows a real person's name, private data, or an incident such as a security
+  failure, set looks_unsafe and say what in note: the asset goes back to draft for a
+  person to replace, which is cheaper than a prospect reading it. Leave any other
+  groom item alone.`,
     },
     {
       key: "advance",

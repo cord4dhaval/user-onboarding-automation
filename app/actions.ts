@@ -32,6 +32,7 @@ import {
 import { headers } from "next/headers";
 import { productConfig } from "@/schemas/product.js";
 import { asset } from "@/schemas/asset.js";
+import { assetFileUrl, deleteAssetFile, kindForMime, storeAssetFile } from "@/engine/assetFiles.js";
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
@@ -2983,28 +2984,81 @@ export async function saveAsset(formData: FormData) {
   const list = (field: string, sep: RegExp) =>
     text(field).split(sep).map((v) => v.trim()).filter(Boolean);
 
+  const existing = assetId
+    ? await db.collection(C.assets).findOne({ _id: new ObjectId(assetId), orgId, productId })
+    : null;
+  const priorFile = existing?.file as { url?: string; fileId?: string; mime?: string; bytes?: number } | undefined;
+
   const name = text("name") || "Untitled";
-  const kind = text("kind") || "image";
+
+  // An uploaded file says what kind of asset it is, so nobody has to pick "image" for a PNG.
+  const upload = formData.get("file");
+  const hasUpload = typeof upload === "object" && upload !== null && "arrayBuffer" in upload && upload.size > 0;
+  const kind = (hasUpload ? kindForMime(upload.type) : null) ?? (text("kind") || "image");
+  const carriesFile = !["quote", "stat", "access"].includes(kind);
 
   // An expiry is a day, not an instant: "good until the 30th" means through the 30th in the
   // reader's day, so it lands at the end of that day in IST rather than at its midnight.
   const expiresOn = text("expiresAt");
   const expiresAt = expiresOn ? fromIstInput(`${expiresOn}T23:59`) : undefined;
 
+  const thumbUrl = text("thumbUrl") || undefined;
+  const durationSec = Number(formData.get("durationSec") ?? 0) || undefined;
+  let file: { url: string; fileId?: string; mime?: string; bytes?: number; thumbUrl?: string; durationSec?: number } | undefined;
+  if (carriesFile && hasUpload) {
+    const stored = await storeAssetFile({
+      orgId,
+      productId,
+      name: upload.name || name,
+      mime: upload.type,
+      data: Buffer.from(await upload.arrayBuffer()),
+    });
+    file = { url: assetFileUrl(await appOrigin(), stored.fileId), fileId: stored.fileId, mime: stored.mime, bytes: stored.bytes, thumbUrl, durationSec };
+  } else if (carriesFile) {
+    const url = text("url") || priorFile?.url || "";
+    if (!url) throw new Error("Add a file or paste a link to one.");
+    // The same URL as before is the same uploaded file, so its id stays with it.
+    const same = priorFile?.fileId && priorFile.url === url;
+    file = { url, fileId: same ? priorFile.fileId : undefined, mime: same ? priorFile.mime : undefined, bytes: same ? priorFile.bytes : undefined, thumbUrl, durationSec };
+  }
+
+  // The three sentences a composer chooses on. A person may write them, and usually will
+  // not: left empty, the asset is queued for a Claude routine that looks at the file and
+  // writes them, and it stays out of every menu until it has.
+  let useWhen = text("useWhen");
+  let proves = text("proves");
+  let oneLine = text("oneLine");
+  let claims = list("claims", /\n+/);
+  const replacedFile = Boolean(existing && hasUpload);
+  const priorDescription = existing?.description as { state?: string; by?: string; requestedAt?: Date; doneAt?: Date; note?: string; autoTier?: boolean } | undefined;
+  const untouched = Boolean(
+    existing && useWhen === String(existing.useWhen ?? "") && proves === String(existing.proves ?? "") && oneLine === String(existing.oneLine ?? ""),
+  );
+  // Sentences Claude wrote about a file that has just been replaced describe a picture that
+  // is no longer there. A person's own sentences are theirs to keep.
+  if (replacedFile && untouched && priorDescription?.by === "claude") {
+    useWhen = "";
+    proves = "";
+    oneLine = "";
+    claims = [];
+  }
+  const owed = !useWhen || !proves || !oneLine;
+  const autoTier = !text("tier");
+  const description = owed
+    ? { state: "waiting" as const, requestedAt: new Date(), autoTier }
+    : untouched && priorDescription?.state === "done"
+      ? { ...priorDescription, state: "done" as const, by: priorDescription.by === "claude" ? ("claude" as const) : ("human" as const) }
+      : { state: "done" as const, by: "human" as const, doneAt: new Date() };
+
   const doc = {
     orgId,
     productId,
     name,
     kind,
-    tier: text("tier") || "C",
-    file:
-      kind === "quote" || kind === "stat" || kind === "access"
-        ? undefined
-        : {
-            url: text("url"),
-            thumbUrl: text("thumbUrl") || undefined,
-            durationSec: Number(formData.get("durationSec") ?? 0) || undefined,
-          },
+    // Left on automatic, the tier follows what the kind usually asks of a reader, and the
+    // routine describing the file may raise or lower it once it has seen what it is.
+    tier: text("tier") || (existing && !replacedFile ? String(existing.tier) : DEFAULT_TIER[kind] ?? "C"),
+    file,
     access:
       kind === "access"
         ? {
@@ -3019,13 +3073,12 @@ export async function saveAsset(formData: FormData) {
     text: text("text") || undefined,
     attribution: text("attribution") || undefined,
 
-    // The three sentences the whole feature turns on. Required by the schema, so an asset
-    // that a model could not choose between cannot be saved in the first place.
-    useWhen: text("useWhen"),
-    proves: text("proves"),
-    oneLine: text("oneLine"),
+    useWhen,
+    proves,
+    oneLine,
+    description,
 
-    claims: list("claims", /\n+/),
+    claims,
     forSegment: formData.getAll("forSegment").map(String).filter(Boolean),
     answers: list("answers", /,/),
     tags: list("tags", /,/),
@@ -3033,16 +3086,13 @@ export async function saveAsset(formData: FormData) {
     channels: formData.getAll("channels").map(String).filter(Boolean),
     requiresApproval: formData.get("requiresApproval") === "on",
     expiresAt,
-    origin: "human" as const,
+    // An asset a routine seeded stays marked as such after a person edits it.
+    origin: (existing?.origin === "claude" ? "claude" : "human") as "human" | "claude",
     status: text("status") || "draft",
   };
 
   // Validated against the schema rather than trusted, because this is the one document in
-  // the system a model reads to make a choice. An asset missing `proves` would sit in every
-  // menu forever as a row nothing can pick.
-  const existing = assetId
-    ? await db.collection(C.assets).findOne({ _id: new ObjectId(assetId), orgId, productId })
-    : null;
+  // the system a model reads to make a choice.
   // Keys are unique per product and a name like "Demo" is one people reach for twice. A
   // second one takes `demo_2` rather than failing on the index with a Mongo error nobody
   // reading this form could act on.
@@ -3054,16 +3104,39 @@ export async function saveAsset(formData: FormData) {
     createdAt: existing?.createdAt ?? new Date(),
   });
 
+  let savedId: string;
   if (existing) {
     // `usage` and `createdAt` are the asset's history and are never rewritten by a save.
     const { usage: _usage, createdAt: _createdAt, ...editable } = parsed;
     await db.collection(C.assets).updateOne({ _id: existing._id }, { $set: editable });
+    savedId = String(existing._id);
   } else {
-    await db.collection(C.assets).insertOne({ ...parsed, createdBy: (await requireSession()).userId });
+    const inserted = await db.collection(C.assets).insertOne({ ...parsed, createdBy: (await requireSession()).userId });
+    savedId = String(inserted.insertedId);
+  }
+
+  // The file this save replaced goes only once nothing points at it any more.
+  if (priorFile?.fileId && priorFile.fileId !== file?.fileId) await deleteAssetFile(priorFile.fileId);
+
+  // Queued as setup work for the hourly Acquire routine, one item per asset however many
+  // times it is saved while it waits.
+  if (owed) {
+    await enqueue(orgId, "groom", { reason: "describe_asset", assetId: savedId }, { productId, subjectId: `asset:${savedId}` });
   }
 
   revalidatePath(`/products/${productId}/brand`);
 }
+
+/** What each kind usually asks of a reader, for an asset whose tier was left on automatic. */
+const DEFAULT_TIER: Record<string, string> = {
+  image: "D",
+  stat: "D",
+  quote: "D",
+  link: "C",
+  document: "C",
+  video: "B",
+  access: "A",
+};
 
 /** The first unused key in the `demo`, `demo_2`, `demo_3` series. */
 async function freeAssetKey(orgId: string, productId: string, base: string): Promise<string> {
@@ -3110,6 +3183,8 @@ export async function deleteAsset(productId: string, assetId: string, _formData?
     return;
   }
 
-  await db.collection(C.assets).deleteOne({ _id: new ObjectId(assetId), orgId, productId });
+  const gone = await db.collection(C.assets).findOneAndDelete({ _id: new ObjectId(assetId), orgId, productId });
+  // An uploaded file belongs to exactly one asset, so it goes with it.
+  await deleteAssetFile((gone?.file as { fileId?: string } | undefined)?.fileId);
   revalidatePath(`/products/${productId}/brand`);
 }

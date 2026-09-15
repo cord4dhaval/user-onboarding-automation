@@ -21,6 +21,7 @@ import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
 import { listRuns, sumCounters, ROUTINE_KEYS, type RoutineKey } from "../../engine/runlog.js";
+import { MAX_ASSET_FILE_BYTES, readAssetFile } from "../../engine/assetFiles.js";
 import {
   accessUnlocked,
   assetContextFrom,
@@ -53,6 +54,21 @@ export interface ToolDef {
   description: string;
   inputSchema: Record<string, unknown>;
   handler: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
+}
+
+/**
+ * A result made of MCP content blocks rather than JSON — how a tool shows the model a
+ * picture. `logged` is what the run log keeps instead, because the image itself is megabytes
+ * of base64 that no person reading a run could look at.
+ */
+export interface MediaResult {
+  media: true;
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
+  logged: Record<string, unknown>;
+}
+
+export function isMediaResult(value: unknown): value is MediaResult {
+  return typeof value === "object" && value !== null && (value as { media?: unknown }).media === true && Array.isArray((value as { content?: unknown }).content);
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -3615,6 +3631,11 @@ TOOLS.push({
       const person = personId
         ? await db.collection(C.people).findOne({ _id: new ObjectId(personId) })
         : null;
+      // Setup items about an asset carry the asset rather than a person.
+      const assetId = str(payload.assetId);
+      const assetRow = assetId && ObjectId.isValid(assetId)
+        ? await db.collection(C.assets).findOne({ _id: new ObjectId(assetId), orgId: ctx.orgId }, { projection: { name: 1, kind: 1, status: 1, file: 1 } })
+        : null;
 
       // Compact by design. A full lead card runs to roughly four hundred tokens and a
       // session's context is what bounds how many people it can get through in an hour —
@@ -3628,6 +3649,15 @@ TOOLS.push({
         waiting_minutes: Math.round((Date.now() - new Date(String(job.dueAt)).getTime()) / 60_000),
         reason: payload.reason ?? null,
         goal_instance_id: payload.goalInstanceId ?? null,
+        asset: assetRow
+          ? {
+              id: String(assetRow._id),
+              name: assetRow.name ?? null,
+              kind: assetRow.kind ?? null,
+              status: assetRow.status ?? null,
+              url: (assetRow.file as { url?: string } | undefined)?.url ?? null,
+            }
+          : null,
         person: person
           ? {
               id: String(person._id),
@@ -3662,6 +3692,220 @@ TOOLS.push({
             ? `Nothing is ready yet; ${waiting} waiting for the dispatcher's next round. Stop and report that.`
             : "Nothing waiting. Stop."
           : "Finish these with finish_work. Anything you do not finish returns to the pool when the lease expires.",
+    };
+  },
+});
+
+// ── describing assets ─────────────────────────────────────────────────────────
+
+/** The picture types a model can actually look at. An SVG or a PDF is described from its words. */
+const VIEWABLE_IMAGE = /^image\/(png|jpeg|gif|webp)$/;
+
+TOOLS.push({
+  name: "view_asset",
+  description:
+    "Look at one asset before describing it: the file itself where it is a picture, its current fields, and the product's segments and voice. Use it for the describe_asset items next_work(\"groom\") hands out.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      asset_id: { type: "string" },
+    },
+    required: ["product_id", "asset_id"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
+    const db = await getDb();
+    const assetId = String(args.asset_id);
+    const row = ObjectId.isValid(assetId)
+      ? await db.collection(C.assets).findOne({ _id: new ObjectId(assetId), orgId: ctx.orgId, productId })
+      : null;
+    if (!row) throw new Error(`asset ${assetId} not found in this product`);
+
+    const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId: ctx.orgId }, { projection: { name: 1, config: 1 } });
+    const config = (product?.config ?? {}) as {
+      oneLiner?: string;
+      voice?: { tone?: string };
+      segments?: Array<{ key: string; name?: string; detect?: string; pain?: string; objections?: string[] }>;
+    };
+    const file = (row.file ?? {}) as { url?: string; fileId?: string; mime?: string; thumbUrl?: string };
+    const description = (row.description ?? {}) as { autoTier?: boolean };
+
+    // The picture itself, when there is one to show. An uploaded file is read from our own
+    // store; a linked one is fetched, because a model told only "screenshot.png" describes
+    // what the filename suggests rather than what the image contains.
+    let image: { data: string; mimeType: string } | null = null;
+    let unseen: string | null = null;
+    const pictureUrl = row.kind === "image" ? file.url : row.kind === "video" ? file.thumbUrl : undefined;
+    if (row.kind === "image" && file.fileId) {
+      const stored = await readAssetFile(file.fileId);
+      if (stored && VIEWABLE_IMAGE.test(stored.mime)) image = { data: stored.data.toString("base64"), mimeType: stored.mime };
+      else unseen = stored ? `the uploaded file is ${stored.mime}, which cannot be shown` : "the uploaded file is missing";
+    } else if (pictureUrl) {
+      try {
+        const res = await fetch(pictureUrl, { signal: AbortSignal.timeout(10_000) });
+        const type = ((res.headers.get("content-type") ?? "").split(";")[0] ?? "").trim().toLowerCase();
+        const data = Buffer.from(await res.arrayBuffer());
+        if (res.ok && VIEWABLE_IMAGE.test(type) && data.byteLength <= MAX_ASSET_FILE_BYTES) {
+          image = { data: data.toString("base64"), mimeType: type };
+        } else {
+          unseen = `fetching ${pictureUrl} returned ${res.status} ${type || "no type"}, ${data.byteLength} bytes`;
+        }
+      } catch (err) {
+        unseen = `could not fetch ${pictureUrl}: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    } else if (!["quote", "stat", "access"].includes(String(row.kind))) {
+      unseen = "this kind is not a picture; describe it from its name, its link and what that page is about";
+    }
+
+    const facts = {
+      asset_id: assetId,
+      name: row.name,
+      kind: row.kind,
+      status: row.status,
+      tier: row.tier,
+      tier_is_automatic: description.autoTier === true,
+      url: file.url ?? null,
+      mime: file.mime ?? null,
+      text: row.text ?? null,
+      attribution: row.attribution ?? null,
+      already_written: {
+        use_when: row.useWhen || null,
+        proves: row.proves || null,
+        one_line: row.oneLine || null,
+        claims: row.claims ?? [],
+        for_segment: row.forSegment ?? [],
+        answers: row.answers ?? [],
+        tags: row.tags ?? [],
+      },
+      product: {
+        name: product?.name ?? null,
+        one_liner: config.oneLiner ?? null,
+        voice: config.voice?.tone ?? null,
+        segments: (config.segments ?? []).map((s) => ({ key: s.key, name: s.name, detect: s.detect, pain: s.pain, objections: s.objections })),
+      },
+      file_shown: Boolean(image),
+      ...(unseen ? { file_not_shown: unseen } : {}),
+      note: "Anything under already_written is kept as the person wrote it; describe_asset fills only the empty fields.",
+    };
+
+    const content: MediaResult["content"] = [{ type: "text", text: JSON.stringify(facts, null, 2) }];
+    if (image) content.push({ type: "image", ...image });
+    const result: MediaResult = {
+      media: true,
+      content,
+      logged: { asset_id: assetId, name: row.name, kind: row.kind, file_shown: Boolean(image), ...(unseen ? { file_not_shown: unseen } : {}) },
+    };
+    return result;
+  },
+});
+
+TOOLS.push({
+  name: "describe_asset",
+  description:
+    "Write the sentences a composer chooses an asset by, after looking at it with view_asset. Fills only what is still empty, so a person's own wording is never overwritten, and finishes the asset's groom item. one_line is printed to readers — as a picture's alt text or a link's words — so it follows the product voice. Set looks_unsafe, with a note, when the file shows a real person's name, private data or an incident: the asset goes back to draft for a person to replace.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      asset_id: { type: "string" },
+      use_when: { type: "string", description: "The reader and the moment it suits, in plain words." },
+      proves: { type: "string", description: "The one thing a reader believes afterwards that they did not before." },
+      one_line: { type: "string", description: "The sentence that introduces it in an email." },
+      claims: { type: "array", items: { type: "string" }, description: "Claims the asset makes on its own." },
+      for_segment: { type: "array", items: { type: "string" }, description: "Segment keys from the product; empty means every segment." },
+      answers: { type: "array", items: { type: "string" }, description: "Objections it answers, in the words the product's segments use." },
+      tags: { type: "array", items: { type: "string" } },
+      tier: { type: "string", enum: ["A", "B", "C", "D"], description: "Applied only when the person left the tier on automatic." },
+      looks_unsafe: { type: "boolean" },
+      note: { type: "string", description: "Required with looks_unsafe: what a person should look at." },
+    },
+    required: ["product_id", "asset_id", "use_when", "proves", "one_line"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
+    const db = await getDb();
+    const assetId = String(args.asset_id);
+    const row = ObjectId.isValid(assetId)
+      ? await db.collection(C.assets).findOne({ _id: new ObjectId(assetId), orgId: ctx.orgId, productId })
+      : null;
+    if (!row) throw new Error(`asset ${assetId} not found in this product`);
+
+    const sentence = (value: unknown, field: string, max: number) => {
+      const text = String(value ?? "").trim();
+      if (!text) throw new Error(`${field} is empty`);
+      if (text.length > max) throw new Error(`${field} is ${text.length} characters; keep it under ${max}`);
+      return text;
+    };
+    const useWhen = sentence(args.use_when, "use_when", 400);
+    const proves = sentence(args.proves, "proves", 300);
+    const oneLine = sentence(args.one_line, "one_line", 160);
+    const listOf = (value: unknown) => ((value ?? []) as unknown[]).map((v) => String(v).trim()).filter(Boolean);
+
+    const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId: ctx.orgId }, { projection: { config: 1 } });
+    const known = new Set(((product?.config as { segments?: Array<{ key: string }> } | undefined)?.segments ?? []).map((s) => s.key));
+    const segments = listOf(args.for_segment);
+    const stray = segments.filter((s) => !known.has(s));
+    if (stray.length) {
+      throw new Error(`for_segment names ${stray.join(", ")}, which this product does not have. Use ${[...known].join(", ")}, or none for every segment.`);
+    }
+
+    const unsafe = args.looks_unsafe === true;
+    const note = str(args.note)?.trim().slice(0, 500) || undefined;
+    if (unsafe && !note) throw new Error("looks_unsafe needs a note saying what a person should look at");
+
+    const empty = (value: unknown) => value === undefined || value === null || (Array.isArray(value) ? value.length === 0 : String(value).trim() === "");
+    const set: Record<string, unknown> = {};
+    const kept: string[] = [];
+    const fill = (field: string, value: unknown) => {
+      if (empty(row[field])) set[field] = value;
+      else kept.push(field);
+    };
+    fill("useWhen", useWhen);
+    fill("proves", proves);
+    fill("oneLine", oneLine);
+    fill("claims", listOf(args.claims));
+    fill("forSegment", segments);
+    fill("answers", listOf(args.answers));
+    fill("tags", listOf(args.tags));
+
+    const prior = (row.description ?? {}) as Record<string, unknown>;
+    const tier = str(args.tier);
+    if (tier && prior.autoTier === true && ["A", "B", "C", "D"].includes(tier)) set.tier = tier;
+
+    set.description = {
+      ...prior,
+      state: unsafe ? "failed" : "done",
+      by: "claude",
+      doneAt: new Date(),
+      ...(note ? { note } : {}),
+    };
+    // Back to draft rather than archived: a person has to see it to replace the file, and a
+    // draft is where the Brand page shows what still needs them.
+    if (unsafe) set.status = "draft";
+    await db.collection(C.assets).updateOne({ _id: row._id }, { $set: set });
+
+    const open = await db
+      .collection(C.workQueue)
+      .find({ orgId: ctx.orgId, kind: "groom", subjectId: `asset:${assetId}`, status: { $in: ["queued", "ready", "running"] } })
+      .project({ _id: 1 })
+      .toArray();
+    await completeAll(open.map((j) => j._id));
+
+    return {
+      asset_id: assetId,
+      state: unsafe ? "failed" : "done",
+      written: Object.keys(set).filter((k) => k !== "description"),
+      kept_as_written: kept,
+      status: unsafe ? "draft" : row.status,
+      finished_jobs: open.length,
+      note: unsafe
+        ? "Returned to draft with your note; the Brand page shows it as needing a person."
+        : row.status === "active"
+          ? "Active and described, so campaigns may offer it from now on."
+          : "Described, but still a draft: a person activates it on the Brand page.",
     };
   },
 });

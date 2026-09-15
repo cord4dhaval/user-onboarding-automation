@@ -327,7 +327,9 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   // Acquire reads new arrivals and writes the sequence their segment runs. It may write a
   // playbook — the sequence for a whole segment — but never a per-person plan: a person
   // nobody has engaged with has given no evidence that would justify one.
-  acquire: [...ALWAYS_ALLOWED, "classify", "save_enrichment", "upsert_playbook", "what_works", "verifiers", "set_checks"],
+  // It also writes the sentences for newly uploaded assets, because it runs hourly and a
+  // person who just added a file should not wait for tomorrow's Maintain run to use it.
+  acquire: [...ALWAYS_ALLOWED, "classify", "save_enrichment", "upsert_playbook", "what_works", "verifiers", "set_checks", "view_asset", "describe_asset", "get_brand"],
   // Advance writes the messages for people the engine judged worth writing for.
   advance: [...ALWAYS_ALLOWED, "compose_batch", "preview_template", "get_brand"],
   // React is the only routine that rewrites one person's plan, because it is the only one

@@ -830,6 +830,60 @@ a.pill:hover { text-decoration: none; filter: brightness(1.06); }
   color: var(--ink-3);
 }
 
+/* ── assets ────────────────────────────────────────────────────────────────────
+   A thumbnail on every row and a real preview in the drawer, because an asset is a thing
+   to look at and the list used to show it as a word ("image") and a URL. */
+
+.asset-cell { display: flex; align-items: center; gap: 12px; }
+button.asset-thumb {
+  width: 64px; height: 48px; padding: 0; flex: none; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--rule); border-radius: var(--r-sm); background: var(--surface-2);
+}
+button.asset-thumb:hover { border-color: var(--accent); background: var(--surface-2); }
+.asset-media-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+.asset-media-icon { display: inline-flex; color: var(--ink-3); }
+.asset-media-icon svg { width: 20px; height: 20px; }
+.asset-media-full {
+  display: block; max-width: 100%; max-height: 60vh; margin: 0 auto;
+  border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface);
+}
+.asset-media-frame { width: 100%; height: 60vh; border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); }
+.asset-callout {
+  margin: 0; padding: 12px 14px; border-left: 3px solid var(--accent); border-radius: var(--r-sm);
+  background: var(--surface); font-size: 14px; line-height: 1.55; color: var(--ink);
+}
+.asset-preview { display: flex; flex-direction: column; gap: 12px; }
+
+.asset-file { display: flex; flex-direction: column; gap: 10px; }
+.asset-file-preview {
+  display: flex; justify-content: center; padding: 10px;
+  border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface-2);
+}
+.asset-file-preview .asset-media-full { max-height: 280px; }
+.asset-file-preview .asset-media-frame { height: 280px; }
+.asset-file-preview .asset-callout { width: 100%; }
+.asset-file-empty { margin: 0; padding: 18px; text-align: center; font-size: 13px; border: 1px dashed var(--rule); border-radius: var(--r); }
+label.asset-drop {
+  position: relative; flex-direction: row; align-items: center; gap: 10px; cursor: pointer;
+  padding: 12px 14px; border: 1px dashed var(--accent); border-radius: var(--r);
+  background: var(--accent-soft); color: var(--accent);
+}
+label.asset-drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+label.asset-drop svg { width: 18px; height: 18px; flex: none; }
+/* Kept in the tab order and clickable through its label; only the browser's own button is hidden. */
+label.asset-drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.asset-problem { margin: 0; font-size: 13px; color: var(--bad); }
+
+details.asset-more { border: 1px solid var(--rule); border-radius: var(--r); background: var(--surface); }
+details.asset-more > summary {
+  display: flex; flex-direction: column; gap: 2px; list-style: none; cursor: pointer;
+  padding: 10px 14px; font-size: 13.5px; font-weight: 500; color: var(--ink);
+}
+details.asset-more > summary::-webkit-details-marker { display: none; }
+details.asset-more > summary .reason { max-width: none; margin-top: 0; font-weight: 400; }
+.asset-more-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 14px 14px; }
+
 /* ── block stack ───────────────────────────────────────────────────────────── */
 
 .blocks { list-style: none; margin: 0 0 14px; padding: 0; border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }

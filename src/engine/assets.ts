@@ -110,6 +110,9 @@ export async function eligibleAssets(
       status: "active",
       // A case study with last year's numbers is worse than no case study.
       $and: [
+        // An asset still waiting for its sentences cannot be chosen well, so it is not
+        // offered at all. The Brand page says it is waiting, which is where a person looks.
+        { useWhen: { $nin: ["", null] }, proves: { $nin: ["", null] }, oneLine: { $nin: ["", null] } },
         { $or: [{ expiresAt: { $exists: false } }, { expiresAt: null }, { expiresAt: { $gt: now } }] },
         // An empty list means "every segment", which is not the same as matching none.
         input.segment

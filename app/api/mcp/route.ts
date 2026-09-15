@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { TOOLS, type ToolCtx } from "@/mcp/server/tools.js";
+import { TOOLS, isMediaResult, type ToolCtx } from "@/mcp/server/tools.js";
 import { checkArgs } from "@/mcp/argcheck.js";
 import { resolveAccessToken } from "@/auth/oauth-server.js";
 import { appOrigin } from "@/auth/origin.js";
@@ -141,6 +141,13 @@ export async function POST(request: NextRequest) {
 
     try {
       const result = await tool.handler(args, ctx);
+      // A tool that shows the model a picture returns MCP content blocks directly. The run
+      // log keeps only the summary: a base64 image in routine_calls is megabytes per call
+      // that nobody reading the log can look at anyway.
+      if (isMediaResult(result)) {
+        await recordToolCall({ ...ctx, tool: name, args, result: result.logged, ms: Date.now() - startedAt });
+        return reply({ content: result.content });
+      }
       await recordToolCall({ ...ctx, tool: name, args, result, ms: Date.now() - startedAt });
       return reply({
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],

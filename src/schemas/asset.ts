@@ -84,6 +84,8 @@ export const accessDetails = z.object({
 
 export const assetFile = z.object({
   url: z.string().url(),
+  /** Set when the file was uploaded here rather than linked; it lives in the `asset_files` bucket. */
+  fileId: z.string().optional(),
   /** A still for a video, a first page for a document. Inboxes will not play video. */
   thumbUrl: z.string().url().optional(),
   mime: z.string().optional(),
@@ -138,6 +140,27 @@ export const asset = z.object({
   useWhen: z.string(),
   proves: z.string(),
   oneLine: z.string(),
+
+  /**
+   * Who wrote the three sentences, and whether they are still owed.
+   *
+   * A person adding an asset gives a name and a file; the sentences are written by a Claude
+   * routine that looks at the file. Until they exist the asset is kept out of every menu —
+   * a row with an empty `useWhen` is a file nothing can choose between — and this is what
+   * the Brand page reads to say so, rather than showing a blank cell that looks finished.
+   */
+  description: z
+    .object({
+      state: z.enum(["waiting", "done", "failed"]),
+      by: z.enum(["human", "claude"]).optional(),
+      requestedAt: z.date().optional(),
+      doneAt: z.date().optional(),
+      /** Why a description failed, or what the writer wanted a person to check. */
+      note: z.string().optional(),
+      /** The tier was left on automatic, so the describing routine may set it from the file. */
+      autoTier: z.boolean().optional(),
+    })
+    .optional(),
 
   /**
    * Claims this asset makes on its own.

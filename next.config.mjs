@@ -7,6 +7,11 @@ export default {
   // working — which cost an afternoon here, twice, and looked from the outside like a
   // button that did nothing. `npm run build:check` sets this and leaves dev alone.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // Asset files are uploaded through a server action, whose body Next caps at 1 MB unless
+  // told otherwise. Five leaves room for the 4 MB file limit plus the rest of the form.
+  experimental: {
+    serverActions: { bodySizeLimit: "5mb" },
+  },
   // The engine is authored as ESM with explicit .js specifiers so it runs under tsx and
   // node directly. This lets the bundler resolve those same specifiers to the .ts sources.
   // Well-known documents must live at the domain root, but a directory beginning with a
