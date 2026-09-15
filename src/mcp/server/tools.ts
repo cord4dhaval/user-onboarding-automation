@@ -3567,6 +3567,28 @@ TOOLS.push({
       mine = keep;
     }
 
+    // A plan job whose lead already has a plan written for them is finished here too. The
+    // engine asks on the minute clock, and a session may have planned the lead in between.
+    if (kind === "plan") {
+      const keep = [];
+      for (const job of mine) {
+        const goalInstanceId = str((job.payload as Record<string, unknown> | undefined)?.goalInstanceId);
+        const instance = goalInstanceId && ObjectId.isValid(goalInstanceId)
+          ? await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) }, { projection: { currentPlanId: 1, status: 1 } })
+          : null;
+        const plan = instance?.currentPlanId && ObjectId.isValid(String(instance.currentPlanId))
+          ? await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) }, { projection: { createdBy: 1 } })
+          : null;
+        if (!instance || instance.status !== "active" || (plan && plan.createdBy !== "playbook")) {
+          await completeAll([job._id]);
+          stale++;
+        } else {
+          keep.push(job);
+        }
+      }
+      mine = keep;
+    }
+
     const items = [];
     for (const job of mine) {
       const payload = (job.payload ?? {}) as Record<string, unknown>;
