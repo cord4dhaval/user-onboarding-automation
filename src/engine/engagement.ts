@@ -179,7 +179,14 @@ export async function campaignEngagement(
                 {
                   $and: [
                     { $not: [{ $in: ["$status", DELIVERED] }] },
-                    { $ifNull: ["$firstClickedAt", false] },
+                    // A click on an unsent message is now filed in the machine field. Either
+                    // field still counts here, so older drafts keep showing up too.
+                    {
+                      $or: [
+                        { $ifNull: ["$firstClickedAt", false] },
+                        { $ifNull: ["$firstMachineClickedAt", false] },
+                      ],
+                    },
                   ],
                 },
                 1,
@@ -342,6 +349,8 @@ export interface Signal {
   url?: string;
   /** A security gateway scanning the message, not a person reading it. */
   bot?: boolean;
+  /** What fetched it. Only recorded from the point the tracker kept it. */
+  userAgent?: string;
   actionId: string;
   subject?: string;
 }
@@ -355,6 +364,7 @@ export function signalsOf(actions: Document[]): Signal[] {
       at?: unknown;
       url?: unknown;
       bot?: unknown;
+      userAgent?: unknown;
     }>;
     const seen = new Set<string>();
 
@@ -369,6 +379,7 @@ export function signalsOf(actions: Document[]): Signal[] {
         at: new Date(String(signal.at)),
         url: signal.url ? String(signal.url) : undefined,
         bot: Boolean(signal.bot),
+        userAgent: signal.userAgent ? String(signal.userAgent) : undefined,
         actionId: String(action._id),
         subject,
       });

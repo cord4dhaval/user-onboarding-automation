@@ -84,16 +84,31 @@ async function record(
       .findOne({ _id: new ObjectId(actionId) }, { projection: { sentAt: 1 } });
     if (!action) return;
 
-    const machine = looksAutomated({ sentAt: action.sentAt as Date | undefined, at: now, userAgent: agent, kind: type });
+    // A message that has not been sent cannot have been opened by the person it is for. What
+    // reaches it first is our own console showing the draft, and filing that in the human
+    // field made the reviewer's look count as the lead's open the moment the message went out.
+    const machine =
+      !action.sentAt ||
+      looksAutomated({ sentAt: action.sentAt as Date | undefined, at: now, userAgent: agent, kind: type });
     const field = signalField(type, machine);
 
     const result = await db.collection(C.actions).findOneAndUpdate(
       { _id: new ObjectId(actionId), [field]: { $exists: false } },
       // The destination is kept on the signal, not only the fact of a click. "Clicked" is
-      // one answer; "clicked the pricing link" is the one a person acts on.
+      // one answer; "clicked the pricing link" is the one a person acts on. The agent is kept
+      // so a signal can be questioned later: without it an image proxy acting for a reader
+      // and somebody's own browser are the same row.
       {
         $set: { [field]: now },
-        $push: { signals: { type, at: now, ...(url ? { url } : {}), ...(machine ? { bot: true } : {}) } } as never,
+        $push: {
+          signals: {
+            type,
+            at: now,
+            ...(url ? { url } : {}),
+            ...(machine ? { bot: true } : {}),
+            ...(agent ? { userAgent: agent.slice(0, 300) } : {}),
+          },
+        } as never,
       },
       {
         returnDocument: "after",
@@ -106,10 +121,10 @@ async function record(
     // put a notification in front of a person — each of those would be acting on a machine
     // reading its own mail.
     //
-    // A message that was never sent is treated the same way. Its links can still be reached
-    // — from a preview, or a test — and that is worth recording as the oddity it is, but
-    // nobody clicked anything we sent them, so it must not warm a lead or claim one did.
-    if (machine || !action.sentAt) return;
+    // A message that was never sent is filed as a machine's above. Its links can still be
+    // reached — from a preview, or a test — and that is worth recording as the oddity it is,
+    // but nobody clicked anything we sent them, so it must not warm a lead or claim one did.
+    if (machine) return;
 
     // The shared prior moves only on a first click. A prefetching client that fires the
     // pixel ten times must not make one ignored message look like ten engaged ones — the

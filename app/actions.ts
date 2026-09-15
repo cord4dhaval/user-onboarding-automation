@@ -35,6 +35,7 @@ import { asset } from "@/schemas/asset.js";
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
+import { stripOpenPixel } from "@/engine/tracking.js";
 import { enqueue, PRIORITY } from "@/engine/queue.js";
 import { fromIstInput } from "./ui/time";
 import { setRoutineEnabled } from "@/engine/routines.js";
@@ -1940,7 +1941,8 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   const slot = (action.content as { slotText?: string } | undefined)?.slotText;
   return {
     subject: content.subject ?? rendered?.subject,
-    bodyHtml: content.bodyHtml ?? rendered?.bodyHtml,
+    // Without the pixel, or the reviewer reading it is recorded as the lead opening it.
+    bodyHtml: stripOpenPixel(content.bodyHtml ?? rendered?.bodyHtml ?? "") || undefined,
     bodyText: content.bodyMd || rendered?.bodyMd,
     preview: Boolean(rendered),
     previewError,

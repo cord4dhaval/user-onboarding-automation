@@ -148,6 +148,17 @@ export function applyTracking(html: string, opts: TrackingOptions): { html: stri
 }
 
 /**
+ * The mail as the console shows it, without its open pixel.
+ *
+ * A stored body carries the live pixel, so a reviewer opening it in the drawer was counted as
+ * the lead opening their mail — once before the message had even been sent. Links are left
+ * alone: a wrapped link only fires when somebody follows it, and a reviewer rarely does.
+ */
+export function stripOpenPixel(html: string): string {
+  return html.replace(/<img[^>]*\/api\/t\/o\/[^>]*>/g, "");
+}
+
+/**
  * Whether a signal came from a machine rather than a person.
  *
  * Mail security gateways fetch every link in a message the moment it is delivered. On this
