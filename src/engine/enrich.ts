@@ -16,12 +16,15 @@ import { COLLECTIONS as C } from "../db/collections.js";
  */
 const UA = "Mozilla/5.0 (compatible; conversion-engine/1.0; +https://teamgrid.ai)";
 const KEEP = 2000;
+const SOCIAL_HOSTS = new Set(["linkedin.com", "instagram.com", "facebook.com", "fb.com", "x.com", "twitter.com", "youtube.com", "wa.me"]);
 
 export function siteUrlFrom(domain: unknown): string | null {
   const raw = String(domain ?? "").trim().toLowerCase();
   if (!raw || raw === "www.abc.com" || raw.endsWith("example.com")) return null;
   const host = raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\.?(?=[a-z0-9])/, (m) => (m === "www." ? "" : "www"));
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) return null;
+  // A profile page typed into the website box says nothing about the company.
+  if (SOCIAL_HOSTS.has(host.replace(/^www\./, ""))) return null;
   return `https://${host}`;
 }
 

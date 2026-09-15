@@ -73,6 +73,20 @@ function phoneOf(mapped: Record<string, unknown>): string {
   return value.replace(/\D/g, "").length >= 8 ? value : "";
 }
 
+/** Mapped fields the person record has its own place for. Anything else is a form answer. */
+const PERSON_FIELDS = new Set(["email", "name", "phone", "role", "company_domain", "timezone"]);
+
+/**
+ * The rest of what the lead wrote — team size, timeline, the problem in their own words —
+ * kept under enrichment.form so the session planning their sequence can read it on the
+ * card. A map that names such a field and a person that never shows it is the same silent
+ * drop the role and website suffered.
+ */
+function formAnswersOf(mapped: Record<string, unknown>): { enrichment?: { form: Record<string, unknown> } } {
+  const form = Object.fromEntries(Object.entries(mapped).filter(([key]) => !PERSON_FIELDS.has(key)));
+  return Object.keys(form).length > 0 ? { enrichment: { form } } : {};
+}
+
 export function mapRecord(raw: RawRecord, fieldMap: FieldMap): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
 
@@ -305,6 +319,7 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       // A free mailbox has no company in it. mailboxFields leaves companyDomain off rather
       // than naming the mail host as the employer.
       ...mailboxFields(value, typeof mapped.company_domain === "string" ? mapped.company_domain : undefined),
+      ...formAnswersOf(mapped),
       timezone: typeof mapped.timezone === "string" ? mapped.timezone : "UTC",
       language: "en",
       stage: "lead",
