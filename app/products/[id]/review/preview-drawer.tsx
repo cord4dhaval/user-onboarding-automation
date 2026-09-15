@@ -300,8 +300,12 @@ function outcomeLine(message: HeldMessage): string {
     case "dispatched":
       return "Handed to the provider — waiting on delivery confirmation.";
     case "sending":
-    case "queued":
       return "Approved and in the send queue.";
+    case "queued":
+      // Every message starts queued; only reviewedAt says a person released it.
+      return message.reviewedAt
+        ? "Approved and in the send queue."
+        : "Not approved yet. It waits for your review before it sends.";
     case "failed":
       return message.skipReason
         ? `Never reached anyone — the send errored: ${message.skipReason}`

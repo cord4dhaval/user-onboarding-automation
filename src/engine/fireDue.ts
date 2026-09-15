@@ -762,7 +762,7 @@ async function priorClaimsFor(goalInstanceId: string): Promise<string[]> {
  * next render pointing at a rung the reader has already had.
  */
 /** The template key the person's plan put on this action's step, if the plan named one. */
-async function stepTemplateKey(goalInstance: Document, action: Document): Promise<string | undefined> {
+export async function stepTemplateKey(goalInstance: Document, action: Document): Promise<string | undefined> {
   const stepId = Number(action.planStepId);
   if (!Number.isFinite(stepId) || !goalInstance.currentPlanId) return undefined;
   const db = await getDb();

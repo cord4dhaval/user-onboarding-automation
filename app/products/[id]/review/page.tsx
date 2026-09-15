@@ -587,7 +587,7 @@ export default async function Review({
                 </thead>
                 <tbody>
                   {rows.map(({ action, person, run }) => {
-                    const content = (action.content ?? {}) as { subject?: string };
+                    const content = (action.content ?? {}) as { subject?: string; slotText?: string };
                     const name = String(person?.name ?? person?.primaryEmail ?? "Unknown");
                     const email = String(person?.primaryEmail ?? "");
                     const goalKey = String(run?.goalKey ?? "—");
@@ -626,6 +626,15 @@ export default async function Review({
                         <td className="cell-wide">
                           {content.subject ? (
                             content.subject
+                          ) : content.slotText ? (
+                            // Claude wrote the opening and kept the template's subject. That
+                            // row is written; calling it "not written yet" hid the words a
+                            // reviewer is here to approve.
+                            <>
+                              <span className="pill">opening by Claude</span>
+                              <div className="muted cell-note">“{content.slotText}”</div>
+                              <div className="muted cell-note">subject from the template — Preview shows the whole email</div>
+                            </>
                           ) : (
                             <>
                               <span className="pill">not written yet</span>

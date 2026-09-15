@@ -5,6 +5,7 @@ import { renderTemplate, resolveBlocks, type ComposedContent } from "./compose.j
 import { renderHtml } from "./html.js";
 import { loadBrandKit } from "./brand.js";
 import { resolveTemplateFor } from "./templates.js";
+import { rungsSentTo, stepTemplateKey } from "./fireDue.js";
 import { mergeVarsFor } from "./vars.js";
 import { assetsForRender } from "./assets.js";
 
@@ -35,8 +36,10 @@ export async function previewContent(
   ]);
   if (!person) throw new Error("the person this message is addressed to is gone");
 
-  // The same choice the sender makes: the id if the touch carried one, otherwise the rung
-  // this person has climbed to.
+  // The same choice the sender makes: the id if the touch carried one, otherwise the email
+  // the plan step names, otherwise the rung this person has climbed to. Leaving out the
+  // step's email showed a "one step left" frame around copy planned for another email.
+  const rungKey = goalInstance ? await stepTemplateKey(goalInstance, action) : undefined;
   const template = action.templateId
     ? await db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) })
     : await resolveTemplateFor({
@@ -45,6 +48,8 @@ export async function previewContent(
         channel: String(action.channel),
         segment: (person.belief as { segment?: string } | undefined)?.segment,
         touchesSpent: Number((goalInstance?.spent as { touches?: number } | undefined)?.touches ?? 0),
+        usedKeys: await rungsSentTo(String(person._id)),
+        ...(rungKey ? { rungKey } : {}),
       });
   if (!template) throw new Error(`no active ${String(action.channel)} template for this product`);
 
