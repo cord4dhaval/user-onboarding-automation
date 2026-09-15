@@ -336,7 +336,7 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   // Close decides whether someone is done, and repairs the checks that decide it.
   close: [...ALWAYS_ALLOWED, "mark_state", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
   // Maintain finishes setup, and raises the one notification for what only a human can give.
-  maintain: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works"],
+  maintain: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works", "verifiers", "set_checks"],
 };
 
 /** Which routine, if any, this session is currently running as. Ad-hoc sessions return null. */
