@@ -3444,11 +3444,27 @@ TOOLS.push({
     let followUpActionId: string | null = null;
     const followUp = args.follow_up_email as { subject?: unknown; body?: unknown } | undefined;
     if (followUp?.body && outcome !== "do_not_call") {
-      const [person, product, emailChannel] = await Promise.all([
+      const [person, product] = await Promise.all([
         db.collection(C.people).findOne({ _id: new ObjectId(personId) }),
         db.collection(C.products).findOne({ _id: new ObjectId(productId) }),
-        db.collection(C.channels).findOne({ orgId, productId, key: "email", enabled: true, status: "healthy" }),
       ]);
+      // The mailbox they already hear from, else the one this product sends from now. The
+      // first healthy email channel Mongo returned was a retired mailbox the first time this
+      // ran, because retired mailboxes stay on as rows.
+      const lastUsedEmail = async (filter: Record<string, unknown>) => {
+        const last = await db
+          .collection(C.actions)
+          .find({ orgId, productId, channel: "email", status: "sent", ...filter })
+          .sort({ sentAt: -1 })
+          .limit(1)
+          .next();
+        return last?.channelId
+          ? db
+              .collection(C.channels)
+              .findOne({ _id: new ObjectId(String(last.channelId)), key: "email", enabled: true, status: "healthy" })
+          : null;
+      };
+      const emailChannel = (await lastUsedEmail({ personId })) ?? (await lastUsedEmail({}));
       if (person?.primaryEmail && emailChannel) {
         const vars = varsForCount(person, product) as unknown as Record<string, string>;
         const body = String(followUp.body).replace(/\{\{\s*(\w+)\s*\}\}/g, (whole, key: string) => vars[key] ?? whole);
