@@ -118,10 +118,11 @@ ${registration("acquire")}
 
 ${contract}
 
-Your job is who these people are, and what sequence their segment runs. It is not
-what any individual message says, and it is not one person's plan — a lead who has
-done nothing has given no evidence that would justify a plan of their own. They run
-their segment's playbook until they do something.
+Your job is who these people are, and what sequence they run. It is not what any
+individual message says. In most campaigns it is not one person's plan either — they
+run their segment's playbook until they do something. The exception is a campaign
+that plans each lead (1.3): there every lead gets a plan of their own as soon as they
+have been read.
 
 1.1 classify-batch
   next_work("classify") with limit 100. Split what comes back across parallel
@@ -153,14 +154,33 @@ their segment's playbook until they do something.
   The welcome is not yours to write into the sequence: the engine sends it within
   minutes of arrival, from the campaign's first-touch family. Your step 1 is the day
   after. Every step names a template_key, so nothing falls back to a rung the reader
-  has already had; naming the welcome family again means "the next first mail they
-  have not seen", which is the right step 1 and step 2 for people who opened nothing
-  — give those steps gate "no_open". Put the call (template book_call, gate "warm")
-  as early as the third step: for a campaign whose leads clicked an ad, the fastest
-  route to the goal is a person on a call, not a button. Gaps for those campaigns are
-  1, 2, 2, 3, 3 days — never even, never a week.
+  has already had. In a campaign that plans each lead the playbook is only the
+  fallback for a lead nobody has planned yet: name the campaign's follow-up family on
+  each step, so the engine picks an email they have not had. A lead campaign has no
+  call, closing or privacy step: a reply of "call" gets the booking link on its own.
+  Gaps for lead campaigns are 1, 2, 2, 3, 3 days — never even, never a week.
 
-1.3 segment-auditor
+1.3 lead-planner
+  next_work("plan"). Each item is one lead in a campaign that plans every person.
+  Their welcome has gone out and they are still on the standard steps, which the
+  engine holds back for up to twelve hours waiting for this plan.
+  One sub-agent per lead, in parallel, up to twenty. Each one: lead_card, then
+  plan_goal, then finish_work for that job.
+  lead_card's goal.plan_from lists the emails this campaign may send: what each says,
+  whether this lead already had it, and how it has done so far. Choose the ones that
+  fit this lead and order them for this lead: the feature closest to their situation
+  first — read enrichment.siteText, their role, team size, segment and how they
+  arrived — and setup last. Leave out what does not fit; four right emails beat seven.
+  Every step names one template_key from that list, never the family, with a why a
+  person reading the lead page understands in one sentence: what about this lead put
+  that email in that place. Gaps 1, 2, 2, 3, 3 days; the engine paces the real send
+  from their temperature. The rationale is two sentences: who they are, and what the
+  plan leads with.
+  Where two emails fit equally, prefer the one the results favour; an email with few
+  sends is untested, not losing. plan_goal skips the standard step that was waiting,
+  so do not look for it.
+
+1.4 segment-auditor
   On your first run of the day only. Call report and look at the segment spread.
   Where two segments are plainly the same bucket under different names, say so in
   your run notes and name the merge you would make. Do not merge anything yourself:
@@ -197,8 +217,11 @@ carries enrichment.siteText — what their company says it does — and that is 
 the opening line comes from: their situation, in their words, one true detail. Never
 how they arrived ("you clicked", "you asked"), never an earlier mail from us, never
 their company's name, never a person's name as sender. First person plural, sign
-"The TeamGrid team". Ask for one thing. Once they are warm, the thing to ask for is
-the call: the book_call template carries two live times from the calendar.
+"The TeamGrid team". Ask for one thing, and the template already carries it: the
+trial button. In a campaign that plans each lead, each step names the email for one
+feature; your words open on their situation and lead into that feature, and the
+template's fixed text shows it. Never repeat what the fixed text says. A step not
+written within six hours goes out with the template's own opening line instead.
 
 2.1 compose-tier1
   next_work("compose") with limit 20. One sub-agent per person, in parallel.
@@ -269,8 +292,12 @@ is the judgment, and that is yours.
   Then plan_goal for the steps that remain, and compose_batch for the next one. Do
   not spread the remaining budget evenly: they are paying attention now and will not
   be next week, so weight it towards the front. Someone who clicked is hours from
-  deciding, not days: the next message goes out inside the hot band (hours), and if
-  the campaign has a booking asset, that message is the call with two live times.
+  deciding, not days: the next message goes out inside the hot band (hours).
+  In a campaign that plans each lead, the new plan is built from lead_card's
+  goal.plan_from like the first one, and starts from what they clicked: the email
+  that takes the next step from that feature (usually setup), then the one or two
+  closest to it. Say in the rationale what they did that changed the plan — the lead
+  page shows it. No call step: a reply of "call" gets the booking link on its own.
   Their step 1 opens on what they looked at, not on what they clicked in our mail.
 
 3.3 objection-rewriter

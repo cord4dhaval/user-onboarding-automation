@@ -691,13 +691,16 @@ export default async function PersonPage({
                             {i === lastIndex && row.state !== "sent" && <span className="muted cell-note">last email</span>}
                           </div>
                           {row.blurb ? <div className="t-detail">{sentence(row.blurb)}</div> : null}
+                          {row.why && current.createdBy !== "playbook" ? (
+                            <div className="muted t-detail">Why: {sentence(row.why)}</div>
+                          ) : null}
                           {row.note ? <div className="muted t-detail">{row.note}</div> : null}
                         </span>
                       </div>
                     ))}
                   </div>
                   <p className="muted cell-note">
-                    {planSummary(current, names.segments)} · updated {ist(current.createdAt)}
+                    {planSummary(current, names.segments, goal)} · updated {ist(current.createdAt)}
                     {current.createdBy === "claude" ? <> <ClaudeBadge note="wrote this plan" /></> : null}
                   </p>
                 </div>
@@ -1009,9 +1012,13 @@ const toDate = (value: unknown): Date | null => {
   return at ? new Date(at) : null;
 };
 
-function planSummary(plan: Document, segments: Map<string, string>): string {
+function planSummary(plan: Document, segments: Map<string, string>, goal?: Document): string {
   const rationale = String(plan.rationale ?? "").trim();
   if (plan.createdBy === "claude" || plan.createdBy === "human") return rationale;
+  // A campaign that plans each lead stamps these only so nobody waits with nothing.
+  if ((goal?.perLeadPlan as { family?: string } | undefined)?.family) {
+    return "Standard steps until Claude plans this lead, usually within the hour";
+  }
   const segment = /the (\S+) playbook/i.exec(rationale)?.[1];
   if (segment && segment !== "default") {
     return `Standard plan for the “${segments.get(segment) ?? humanize(segment)}” group`;

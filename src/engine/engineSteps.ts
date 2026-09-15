@@ -23,16 +23,19 @@ export async function engineRenderedKeysFor(orgId: string, productId: string): P
   for (const t of rows) {
     const key = String(t.key ?? "");
     const family = typeof t.family === "string" && t.family ? t.family : null;
-    if (family) {
-      out.set(family, "sends the next variant of this family itself");
-      continue;
-    }
     // Only the open body slot makes a template a session's to write. A named slot such as
     // the PS line is optional polish with a fallback, and must not pull a mail that goes out
     // as written away from the engine.
     const hasSlot = ((t.blocks ?? []) as Array<{ type?: unknown; name?: unknown }>).some(
       (b) => String(b?.type) === "slot" && !b?.name,
     );
+    if (family) {
+      out.set(family, "sends the next variant of this family itself");
+      // A plan written for one person names a member of the family directly. That member is
+      // a session's to write only if it has somewhere for the words to land.
+      if (key && !hasSlot && key !== family && !out.has(key)) out.set(key, "the template has no slot for written copy; it goes out as written");
+      continue;
+    }
     if (key && !hasSlot && !out.has(key)) out.set(key, "the template has no slot for written copy; it goes out as written");
   }
   return out;

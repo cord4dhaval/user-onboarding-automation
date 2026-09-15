@@ -25,7 +25,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
  * durable record so a killed worker loses nothing, and a tenant key so no product can
  * starve another.
  */
-export const THINKING_KINDS = ["classify", "playbook", "compose", "escalate", "monitor", "groom"] as const;
+export const THINKING_KINDS = ["classify", "playbook", "plan", "compose", "escalate", "monitor", "groom"] as const;
 export type ThinkingKind = (typeof THINKING_KINDS)[number];
 export type JobKind = "ingest_rows" | ThinkingKind;
 

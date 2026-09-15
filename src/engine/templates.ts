@@ -466,6 +466,40 @@ export function chooseVariant(candidates: Document[], pick: VariantPick): Docume
   return best;
 }
 
+/**
+ * The emails a session may build one lead's plan from, as it should read them before
+ * choosing: what each says, whether this lead already had it (or something it repeats),
+ * and how it has done so far. The results are evidence for a tie, not the decision.
+ */
+export async function planMenuFor(orgId: string, productId: string, family: string, sentKeys: Set<string>) {
+  const db = await getDb();
+  const rows = await db
+    .collection(C.templates)
+    .find({ orgId, productId, family, status: "active", scope: { $ne: "person_override" } })
+    .toArray();
+  const byKey = new Map<string, Document>();
+  for (const t of rows) {
+    if (!byKey.has(String(t.key)) || t.scope === "product_default") byKey.set(String(t.key), t);
+  }
+  return [...byKey.values()].map((t) => {
+    const blocks = (t.blocks ?? []) as Array<Record<string, unknown>>;
+    const stats = (t.stats ?? {}) as { sent?: number; alpha?: number; beta?: number };
+    return {
+      template_key: String(t.key),
+      name: String(t.name ?? t.key),
+      says: String(blocks.find((b) => b.type === "preheader")?.fallback ?? ""),
+      already_sent: sentKeys.has(String(t.key)),
+      repeats_what_they_had: ((t.covers ?? []) as unknown[]).map(String).filter((key) => sentKeys.has(key)),
+      only_for_segments: ((t.forSegments ?? []) as unknown[]).map(String),
+      results: {
+        sent: Number(stats.sent ?? 0),
+        won: Math.max(0, Number(stats.alpha ?? 1) - 1),
+        lost: Math.max(0, Number(stats.beta ?? 1) - 1),
+      },
+    };
+  });
+}
+
 export type TemplateMetric = "sent" | "replied" | "converted" | "alpha" | "beta";
 
 /** One counter on one template. Never throws: a statistic must not fail a send. */

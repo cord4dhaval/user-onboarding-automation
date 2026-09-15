@@ -23,6 +23,7 @@ export interface DetectSummary {
   monitor: number;
   escalate: number;
   playbook: number;
+  plan: number;
 }
 
 export async function detectWork(
@@ -32,7 +33,7 @@ export async function detectWork(
   deadline = Date.now() + 8_000,
 ): Promise<DetectSummary> {
   const db = await getDb();
-  const summary: DetectSummary = { classify: 0, compose: 0, monitor: 0, escalate: 0, playbook: 0 };
+  const summary: DetectSummary = { classify: 0, compose: 0, monitor: 0, escalate: 0, playbook: 0, plan: 0 };
   const s = { orgId, productId };
 
   // Bounded by rows and by wall clock, because the two run out at different times. The
@@ -108,6 +109,78 @@ export async function detectWork(
       })),
       now,
     );
+  }
+  if (outOfTime()) return summary;
+
+  // ── leads in a campaign that plans each person, still on the standard steps ───
+  //
+  // A campaign with `perLeadPlan` has a session write every lead's own plan once the lead
+  // has been read. The playbook is stamped on arrival only so nobody is left with nothing;
+  // this notices a lead still running it and asks for their plan. One ask per lead per half
+  // day, so a plan a session could not write is asked for again rather than every minute.
+  const perLead = await db
+    .collection(C.goals)
+    .find({ ...s, enabled: true, "perLeadPlan.family": { $exists: true } }, { projection: { key: 1 } })
+    .toArray();
+  if (perLead.length) {
+    const running = await db
+      .collection(C.goalInstances)
+      .find({
+        ...s,
+        status: "active",
+        goalKey: { $in: perLead.map((g) => String(g.key)) },
+        currentPlanId: { $exists: true },
+        handedOverAt: { $exists: false },
+      })
+      .project({ _id: 1, goalKey: 1, personId: 1, currentPlanId: 1 })
+      .limit(BATCH)
+      .toArray();
+    const planIds = running.map((i) => String(i.currentPlanId)).filter((id) => ObjectId.isValid(id));
+    const personIds = running.map((i) => String(i.personId)).filter((id) => ObjectId.isValid(id));
+    const [plans, people, asked] = await Promise.all([
+      db
+        .collection(C.plans)
+        .find({ _id: { $in: planIds.map((id) => new ObjectId(id)) } }, { projection: { createdBy: 1 } })
+        .toArray(),
+      db
+        .collection(C.people)
+        .find(
+          { _id: { $in: personIds.map((id) => new ObjectId(id)) } },
+          { projection: { needsClassification: 1, suppressedAt: 1, "belief.segment": 1 } },
+        )
+        .toArray(),
+      db
+        .collection(C.workQueue)
+        .find(
+          { orgId, kind: "plan", subjectId: { $in: running.map((i) => String(i._id)) }, createdAt: { $gte: new Date(now.getTime() - 12 * 3_600_000) } },
+          { projection: { subjectId: 1 } },
+        )
+        .toArray(),
+    ]);
+    const standard = new Set(plans.filter((p) => p.createdBy === "playbook").map((p) => String(p._id)));
+    const readable = new Set(
+      people
+        .filter((p) => p.needsClassification !== true && !p.suppressedAt && (p.belief as { segment?: string } | undefined)?.segment && (p.belief as { segment?: string }).segment !== "off_icp")
+        .map((p) => String(p._id)),
+    );
+    const alreadyAsked = new Set(asked.map((j) => String(j.subjectId)));
+    const toPlan = running.filter(
+      (i) => standard.has(String(i.currentPlanId)) && readable.has(String(i.personId)) && !alreadyAsked.has(String(i._id)),
+    );
+    if (toPlan.length) {
+      summary.plan = await enqueueMany(
+        orgId,
+        "plan",
+        toPlan.map((instance) => ({
+          subjectId: String(instance._id),
+          payload: { goalInstanceId: String(instance._id), personId: String(instance.personId) },
+          productId,
+          campaignKey: String(instance.goalKey),
+          priority: PRIORITY.normal,
+        })),
+        now,
+      );
+    }
   }
   if (outOfTime()) return summary;
 

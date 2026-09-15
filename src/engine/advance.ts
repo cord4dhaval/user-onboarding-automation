@@ -24,6 +24,12 @@ import type { ChannelKey } from "../schemas/common.js";
 
 export type Tier = 1 | 2 | 3;
 
+/** How long a lead in a campaign that plans each person waits for that plan. */
+const PLAN_WAIT_MS = 12 * 3_600_000;
+
+/** How long a step waits for a session's words before the template's own go out. */
+const COMPOSE_WAIT_MS = 6 * 3_600_000;
+
 export interface AdvanceSummary {
   examined: number;
   queued: number;
@@ -138,7 +144,7 @@ export async function advance(
     .collection(C.goalInstances)
     .find(
       { ...s, status: "active", currentPlanId: { $exists: true } },
-      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1 } },
+      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1, startedAt: 1, createdAt: 1, handedOverAt: 1 } },
     )
     .sort({ lastAdvancedAt: 1, startedAt: 1 })
     .limit(limit)
@@ -174,7 +180,7 @@ export async function advance(
       .collection(C.plans)
       .find(
         { _id: { $in: instances.map((i) => new ObjectId(String(i.currentPlanId))) } },
-        { projection: { steps: 1 } },
+        { projection: { steps: 1, createdBy: 1 } },
       )
       .toArray(),
     db
@@ -185,6 +191,16 @@ export async function advance(
       )
       .toArray(),
   ]);
+
+  // How long each person's written message has been waiting on a session.
+  const composeJobs = await db
+    .collection(C.workQueue)
+    .find(
+      { orgId, kind: "compose", subjectId: { $in: instanceIds }, status: { $in: ["queued", "ready", "running"] } },
+      { projection: { subjectId: 1, createdAt: 1 } },
+    )
+    .toArray();
+  const composeAskedAt = new Map(composeJobs.map((j) => [String(j.subjectId), new Date(String(j.createdAt)).getTime()]));
 
   const goalByKey = new Map(goals.map((g) => [String(g.key), g]));
   const personById = new Map(people.map((p) => [String(p._id), p]));
@@ -289,9 +305,20 @@ export async function advance(
     // after the welcome; a session writes each step against what the person did.
     if (goal.composeAll === true) tier = 1;
 
+    // A campaign that plans each lead waits for that plan instead of sending the standard
+    // steps stamped on arrival. Only for half a day: a session that never comes round must
+    // not leave the lead with nothing, so past that the standard steps run.
+    const plan = planById.get(String(instance.currentPlanId)) ?? null;
+    const perLeadFamily = (goal.perLeadPlan as { family?: string } | undefined)?.family;
+    const startedAt = new Date(String(instance.startedAt ?? instance.createdAt ?? now)).getTime();
+    if (perLeadFamily && plan?.createdBy === "playbook" && now.getTime() - startedAt < PLAN_WAIT_MS) {
+      summary.skipped.push({ goalInstanceId, reason: "waiting for Claude to plan this lead" });
+      continue;
+    }
+
     const bandNow = (person.temp as { band?: string } | undefined)?.band;
     const step = nextStep(
-      planById.get(String(instance.currentPlanId)) ?? null,
+      plan,
       writtenBy.get(goalInstanceId) ?? new Set(),
       deliveredBy.get(goalInstanceId) ?? new Set(),
       { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: bandNow },
@@ -301,6 +328,11 @@ export async function advance(
     // has won. Handing it to a session would replace a tested first mail with freehand.
     // So is a step whose template has no slot: written copy would be dropped at render.
     if (step && tier === 1 && familyKeys.has(String(step.templateKey ?? ""))) tier = 2;
+    // Written copy that has waited on a session for longer than a routine takes to come
+    // round twice is not coming. The template's own words go out instead, and the waiting
+    // job is finished by next_work once it sees the queued message.
+    const askedAt = composeAskedAt.get(goalInstanceId);
+    if (tier === 1 && askedAt !== undefined && now.getTime() - askedAt > COMPOSE_WAIT_MS) tier = 2;
     if (!step) {
       summary.skipped.push({ goalInstanceId, reason: "plan exhausted" });
       continue;

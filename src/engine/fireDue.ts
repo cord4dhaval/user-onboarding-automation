@@ -772,7 +772,7 @@ async function stepTemplateKey(goalInstance: Document, action: Document): Promis
   return typeof key === "string" && key ? key : undefined;
 }
 
-async function rungsSentTo(personId: string): Promise<string[]> {
+export async function rungsSentTo(personId: string): Promise<string[]> {
   const db = await getDb();
   const sent = await db
     .collection(C.actions)

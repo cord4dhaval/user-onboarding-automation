@@ -15,7 +15,8 @@ import { dueAtFor, type CadenceBand } from "../../engine/cadence.js";
 import { suppress } from "../../engine/suppression.js";
 import { addressFor } from "../../engine/address.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
-import { fireDue } from "../../engine/fireDue.js";
+import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
+import { planMenuFor } from "../../engine/templates.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -722,6 +723,16 @@ export const TOOLS: ToolDef[] = [
               // the same gates and rules advance() applies, and whether it is a session's
               // to write or the engine's to render. compose_batch refuses anything else.
               plan: await planViewFor(goal, actions.filter((a) => String(a.goalInstanceId) === String(goal._id)), band),
+              // In a campaign that plans each lead: the emails this lead's plan is built
+              // from, with what each says, whether they already had it, and how it has done.
+              plan_from: (goalDef?.perLeadPlan as { family?: string } | undefined)?.family
+                ? await planMenuFor(
+                    orgId,
+                    productId,
+                    String((goalDef?.perLeadPlan as { family: string }).family),
+                    new Set(await rungsSentTo(String(person._id))),
+                  )
+                : null,
             }
           : null,
         /**
@@ -937,7 +948,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "plan_goal",
     description:
-      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Every channel must be one the campaign allows — lead_card lists what is connected and what each can carry. Around a third of the steps must use an angle that is not already proven for this segment, and a plan of three or more steps may not use one angle throughout; both are refused rather than warned about, because spending every step on the current favourite is how the untested angles never get the sends that would prove them. A step may name one asset_id from lead_card's assets_available, and most steps should name none — anything not on that list is refused, with the reason. Stored as a new version; the previous plan is kept with your rationale for replacing it.",
+      "Write the pipeline for one person: the ordered steps, each with channel, angle, timing and why. Every channel must be one the campaign allows — lead_card lists what is connected and what each can carry. Around a third of the steps must use an angle that is not already proven for this segment, and a plan of three or more steps may not use one angle throughout; both are refused rather than warned about, because spending every step on the current favourite is how the untested angles never get the sends that would prove them. A step may name one asset_id from lead_card's assets_available, and most steps should name none — anything not on that list is refused, with the reason. Stored as a new version; the previous plan is kept with your rationale for replacing it. In a campaign that plans each lead (lead_card shows goal.plan_from), every step names one email from that list as template_key — never the family, never the welcome, never one they already had — and its why says what about this lead put it there. Messages still waiting from the plan it replaces are skipped, and step numbers already used on this lead are moved past; the stored step_ids come back.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1008,6 +1019,58 @@ export const TOOLS: ToolDef[] = [
         }
       }
 
+      // Each step names the email it sends. In a campaign that plans each lead that is the
+      // plan itself: "Feature followup" seven times told nobody reading the lead page what
+      // the lead would get. So there a step names one real email, never the family, never
+      // the welcome, and never one this lead already had.
+      const perLeadFamily = (goalDef?.perLeadPlan as { family?: string } | undefined)?.family;
+      const templateRows = await db
+        .collection(C.templates)
+        .find({ orgId: ctx.orgId, productId: String(instance.productId), status: "active" }, { projection: { key: 1, family: 1, covers: 1 } })
+        .toArray();
+      const templateByKey = new Map(templateRows.map((t) => [String(t.key), t]));
+      const families = new Set(templateRows.map((t) => String(t.family ?? "")).filter(Boolean));
+      const opener = String((goalDef?.firstTouch as { templateKey?: string } | undefined)?.templateKey ?? "");
+      const sentKeys = new Set(await rungsSentTo(String(instance.personId)));
+      const menu = perLeadFamily ? [...new Set(templateRows.filter((t) => t.family === perLeadFamily).map((t) => String(t.key)))] : [];
+      const keyOf = (st: Record<string, unknown>) => String(st.template_key ?? st.templateKey ?? "").trim();
+      const templateProblems: string[] = [];
+      const inPlan = new Set<string>();
+      for (const st of planSteps as Array<Record<string, unknown>>) {
+        const key = keyOf(st);
+        const step = `step ${String(st.id)}`;
+        if (!key) {
+          if (perLeadFamily) templateProblems.push(`${step} names no template_key. Pick one of: ${menu.join(", ")}.`);
+          continue;
+        }
+        const row = templateByKey.get(key);
+        if (!row && !families.has(key)) {
+          templateProblems.push(`${step}: there is no active template "${key}".`);
+          continue;
+        }
+        if (perLeadFamily) {
+          if (!row) templateProblems.push(`${step} names the family "${key}". Name the email itself: ${menu.join(", ")}.`);
+          if (opener && (key === opener || String(row?.family ?? "") === opener)) {
+            templateProblems.push(`${step} names the welcome, which went out when they arrived.`);
+          }
+        }
+        if (sentKeys.has(key)) templateProblems.push(`${step}: this lead already had "${key}".`);
+        const repeats = ((row?.covers ?? []) as unknown[]).map(String).filter((k) => sentKeys.has(k));
+        if (repeats.length) templateProblems.push(`${step}: "${key}" repeats what they already had in ${repeats.join(", ")}.`);
+        if (row && !families.has(key) && inPlan.has(key)) templateProblems.push(`${step}: "${key}" is already an earlier step of this plan.`);
+        inPlan.add(key);
+      }
+      const budgetTouches = (goalDef?.budget as { touches?: number } | undefined)?.touches;
+      const spentTouches = Number((instance.spent as { touches?: number } | undefined)?.touches ?? 0);
+      if (budgetTouches !== undefined && planSteps.length > budgetTouches - spentTouches) {
+        templateProblems.push(
+          `the plan has ${planSteps.length} steps but only ${Math.max(0, budgetTouches - spentTouches)} touches are left in this campaign's budget.`,
+        );
+      }
+      if (templateProblems.length > 0) {
+        throw new Error(`This plan names emails it cannot send:\n- ${templateProblems.join("\n- ")}\nNothing was written.`);
+      }
+
       // Assets are checked at plan time as well as at compose time, because a step can
       // fire before anybody writes copy for it — the rung's fallback goes out carrying
       // whatever the plan named. A plan holding an expired case study is a message nobody
@@ -1075,6 +1138,24 @@ export const TOOLS: ToolDef[] = [
         .toArray();
       const version = (previous[0]?.version ?? 0) + 1;
 
+      // Step numbers already spent on this lead stay spent: the engine counts a step as
+      // written by its number, so a new step 1 on a lead whose old step 1 went out would be
+      // skipped for good. On a clash the whole plan moves past the highest number used.
+      const priorSteps = await db
+        .collection(C.actions)
+        .find(
+          { goalInstanceId, planStepId: { $exists: true }, status: { $nin: ["queued", "awaiting_approval"] } },
+          { projection: { planStepId: 1 } },
+        )
+        .toArray();
+      const taken = priorSteps.map((a) => Number(a.planStepId)).filter((n) => Number.isFinite(n));
+      const shift = planSteps.some((st) => taken.includes(Number(st.id))) ? Math.max(...taken) : 0;
+      // Stored under the name the engine reads, so the step renders through the email it names.
+      const storedSteps = (planSteps as Array<Record<string, unknown>>).map((st) => {
+        const key = keyOf(st);
+        return { ...st, id: Number(st.id) + shift, ...(key ? { templateKey: key } : {}) };
+      });
+
       const planId = new ObjectId();
       await db.collection(C.plans).insertOne({
         _id: planId,
@@ -1084,7 +1165,7 @@ export const TOOLS: ToolDef[] = [
         productId: String(instance.productId),
         goalInstanceId,
         version,
-        steps: planSteps,
+        steps: storedSteps,
         rationale,
         createdBy: "claude",
         createdAt: new Date(),
@@ -1093,7 +1174,36 @@ export const TOOLS: ToolDef[] = [
         .collection(C.goalInstances)
         .updateOne({ _id: instance._id }, { $set: { currentPlanId: String(planId) } });
 
-      return { plan_id: String(planId), version, steps: planSteps.length };
+      // Messages waiting from the plan being replaced were written for another sequence.
+      // They are skipped and their step numbers released, as a playbook stamp does, so the
+      // new plan's steps can queue under those numbers.
+      const replaced = await db.collection(C.actions).updateMany(
+        {
+          orgId: String(instance.orgId),
+          goalInstanceId,
+          status: { $in: ["queued", "awaiting_approval"] },
+          planStepId: { $exists: true },
+        },
+        [
+          {
+            $set: {
+              status: "skipped",
+              skipReason: "plan replaced by Claude's plan for this lead",
+              replacedPlanStepId: "$planStepId",
+              idempotencyKey: { $concat: [{ $ifNull: ["$idempotencyKey", ""] }, ":replaced:", { $toString: "$_id" }] },
+            },
+          },
+          { $unset: "planStepId" },
+        ],
+      );
+
+      return {
+        plan_id: String(planId),
+        version,
+        steps: storedSteps.length,
+        step_ids: storedSteps.map((st) => st.id),
+        replaced_waiting: replaced.modifiedCount,
+      };
     },
   },
 
@@ -3410,7 +3520,7 @@ TOOLS.push({
 TOOLS.push({
   name: "next_work",
   description:
-    "Claim the next batch of work of one kind. The engine has already decided what is ready and divided it fairly across products and campaigns, so what comes back is yours to do now — urgent first, then whoever has waited longest. Every item is leased: finish it with finish_work, or it returns to the pool on its own when the lease expires. Kinds: classify (people nobody has read), compose (the next message for someone who has earned a written one), escalate (someone who just clicked or replied), monitor (is this person done), playbook (a segment with no sequence), groom (setup).",
+    "Claim the next batch of work of one kind. The engine has already decided what is ready and divided it fairly across products and campaigns, so what comes back is yours to do now — urgent first, then whoever has waited longest. Every item is leased: finish it with finish_work, or it returns to the pool on its own when the lease expires. Kinds: classify (people nobody has read), compose (the next message for someone who has earned a written one), escalate (someone who just clicked or replied), monitor (is this person done), playbook (a segment with no sequence), plan (one lead's own plan, in a campaign that plans each lead), groom (setup).",
   inputSchema: {
     type: "object",
     properties: {

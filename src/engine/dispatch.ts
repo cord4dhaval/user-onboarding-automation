@@ -31,6 +31,8 @@ const QUANTUM: Record<ThinkingKind, number> = {
   // A playbook is written once per segment and then read by everyone in it. Rare, and
   // nothing downstream can be good until it exists.
   playbook: 5,
+  // One plan per lead in a campaign that plans each person, written once after they are read.
+  plan: 20,
   compose: 12,
   // Escalations are priority 0 and bypass the round entirely; the quantum only bounds the
   // rare case of a flood, where spending the whole hour on one campaign's clicks would
@@ -50,6 +52,7 @@ const QUANTUM: Record<ThinkingKind, number> = {
 const READY_CEILING: Record<ThinkingKind, number> = {
   classify: 800,
   playbook: 20,
+  plan: 100,
   compose: 120,
   escalate: 100,
   monitor: 200,
