@@ -156,6 +156,15 @@ export const goalInstance = z.object({
   deadline: z.date(),
   nextTickAt: z.date(),
   currentPlanId: objectIdString.optional(),
+  /**
+   * The mailbox this campaign talks to this person from.
+   *
+   * Per campaign rather than per person: the same person can be worked by two campaigns
+   * towards different goals, and each may be held to its own sender. A single field on the
+   * person made the two overwrite each other, so a reader saw the address flip between
+   * campaigns. Absent on instances older than this, which fall back to the person's.
+   */
+  channelId: objectIdString.optional(),
   startedAt: z.date(),
   endedAt: z.date().optional(),
   outcome: z.string().optional(),

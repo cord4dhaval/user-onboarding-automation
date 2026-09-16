@@ -4,7 +4,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
-import { pickChannelFrom, loadChannels, persistAssignments, skipReason, type PooledChannel } from "./channels.js";
+import { pickChannelFrom, loadChannels, persistAssignments, persistInstanceMailboxes, skipReason, type PooledChannel } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
 
 /**
@@ -259,6 +259,9 @@ export async function advance(
   // counted in memory, so a batch spreads itself even before any of this reaches the
   // database.
   const assignments: Array<{ personId: string; channelId: string }> = [];
+  // The same, written on the campaign: what this campaign sends this person from, kept
+  // apart from what another campaign may be sending them from at the same time.
+  const instanceMailboxes: Array<{ goalInstanceId: string; channelId: string }> = [];
   const handOver: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
 
   for (const instance of instances) {
@@ -372,14 +375,24 @@ export async function advance(
     // that is the campaign's decision to make, not a plan's.
     const allowed = (goal.allowedChannels ?? ["email"]) as ChannelKey[];
     const channels = channelsByGoal.get(String(goal.key)) ?? [];
+    // This campaign's own mailbox for them first, and only then the one they hold from
+    // wherever else they have been written to. An instance from before campaigns had their
+    // own sender has none, which is why the person's is still read.
+    const talker = {
+      ...(person as Record<string, unknown>),
+      assignedChannelId: instance.channelId ?? person.assignedChannelId,
+    };
     const pick =
-      pickChannelFrom(channels, allowed.filter((key) => key === String(step.channel)), person as never) ??
-      pickChannelFrom(channels, allowed, person as never);
+      pickChannelFrom(channels, allowed.filter((key) => key === String(step.channel)), talker as never) ??
+      pickChannelFrom(channels, allowed, talker as never);
     if (!pick) {
-      summary.skipped.push({ goalInstanceId, reason: skipReason(person as never, channels) });
+      summary.skipped.push({ goalInstanceId, reason: skipReason(talker as never, channels) });
       continue;
     }
     if (pick.assigned) assignments.push({ personId: String(person._id), channelId: pick.channelId });
+    if (String(instance.channelId ?? "") !== pick.channelId) {
+      instanceMailboxes.push({ goalInstanceId, channelId: pick.channelId });
+    }
 
     toInsert.push({
       _id: new ObjectId(),
@@ -409,6 +422,7 @@ export async function advance(
   // Before the actions, so an insert that fails partway still leaves every person pointing
   // at the mailbox their queued row names.
   await persistAssignments(assignments);
+  await persistInstanceMailboxes(instanceMailboxes);
 
   if (advancedIds.length) {
     await db

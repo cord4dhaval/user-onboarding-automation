@@ -209,6 +209,28 @@ export function skipReason(person: Candidate, channels: PooledChannel[]): string
  * One call for the whole batch: assignment is decided per person but it is the same fact
  * written the same way, and 200 arrivals should not be 200 round trips.
  */
+/**
+ * The mailbox a campaign is holding for this person, written on the campaign rather than
+ * on them. Read back before every pick, so a second campaign with its own sender cannot
+ * move a conversation this one is already having.
+ */
+export async function persistInstanceMailboxes(
+  pairs: Array<{ goalInstanceId: string; channelId: string }>,
+): Promise<void> {
+  if (pairs.length === 0) return;
+  const db = await getDb();
+  const at = new Date();
+  await db.collection(C.goalInstances).bulkWrite(
+    pairs.map(({ goalInstanceId, channelId }) => ({
+      updateOne: {
+        filter: { _id: new ObjectId(goalInstanceId) },
+        update: { $set: { channelId, channelAssignedAt: at } },
+      },
+    })),
+    { ordered: false },
+  );
+}
+
 export async function persistAssignments(
   pairs: Array<{ personId: string; channelId: string }>,
 ): Promise<void> {

@@ -3,7 +3,7 @@ import { ObjectId, type AnyBulkWriteOperation, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
-import { loadChannels, pickChannelFrom, persistAssignments } from "./channels.js";
+import { loadChannels, pickChannelFrom, persistAssignments, persistInstanceMailboxes } from "./channels.js";
 import { nextSendableAt } from "./time.js";
 import { mailboxFields } from "./mailbox.js";
 import { stampPlaybook } from "./playbooks.js";
@@ -525,10 +525,14 @@ export async function queueFirstTouches(args: {
   // is counted against the channel it chose as it is made, so a spreadsheet of two hundred
   // leads spreads across the mailboxes instead of landing on whichever one sorted first.
   const assignments: Array<{ personId: string; channelId: string }> = [];
+  // What this campaign will send them from, kept on the campaign as well as on them, so a
+  // second campaign with a different sender cannot move this conversation later.
+  const instanceMailboxes: Array<{ goalInstanceId: string; channelId: string }> = [];
   for (const { person, goalInstanceId } of args.starting) {
     const pick = pickChannelFrom(channels, goal.firstTouch.channels, person as never);
     if (!pick) continue;
     if (pick.assigned) assignments.push({ personId: String(person._id), channelId: pick.channelId });
+    instanceMailboxes.push({ goalInstanceId, channelId: pick.channelId });
 
     // A lead who has just arrived has no segment yet — they are classified later — so the
     // product default is the only honest pick for them.
@@ -575,6 +579,7 @@ export async function queueFirstTouches(args: {
   // Before the actions: a person whose first touch failed to insert should still be holding
   // the mailbox it was written against, so the retry produces the same sender.
   await persistAssignments(assignments);
+  await persistInstanceMailboxes(instanceMailboxes);
 
   try {
     const result = await db.collection(C.actions).insertMany(actions, { ordered: false });

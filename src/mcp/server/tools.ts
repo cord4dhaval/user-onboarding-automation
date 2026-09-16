@@ -1557,7 +1557,8 @@ export const TOOLS: ToolDef[] = [
         // came back first ignored both, so a campaign pinned to one sender could still queue
         // mail from another, and a sequence could change address halfway through.
         const allowedIds = allowedMailboxIds(goalDef?.channelIds);
-        const held = person?.assignedChannelId ? String(person.assignedChannelId) : "";
+        // This campaign's own mailbox for them, else whatever they hold from elsewhere.
+        const held = String(instance.channelId ?? person?.assignedChannelId ?? "");
         const channel =
           (held && (allowedIds.length === 0 || allowedIds.includes(held))
             ? await db.collection(C.channels).findOne({
@@ -1578,6 +1579,14 @@ export const TOOLS: ToolDef[] = [
             ...mailboxFilter(goalDef?.channelIds),
           }));
         if (!channel) continue;
+        // Remembered on the campaign, so every later step of this campaign sends from the
+        // same address even if another campaign moves the person's own mailbox.
+        if (String(instance.channelId ?? "") !== String(channel._id)) {
+          await db
+            .collection(C.goalInstances)
+            .updateOne({ _id: new ObjectId(goalInstanceId) }, { $set: { channelId: String(channel._id), channelAssignedAt: new Date() } });
+          instance.channelId = String(channel._id);
+        }
 
         const actionId = new ObjectId();
         const body = String(t.body);
@@ -3277,16 +3286,20 @@ async function queueAnswer(
   // Their own thread first. With no send to answer, the campaign's mailboxes decide: an
   // answer from an address this campaign never sends from is a stranger joining in.
   const answerGoal = await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) });
-  const channel = lastSend?.channelId
-    ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
-    : await db.collection(C.channels).findOne({
-        orgId,
-        productId,
-        key: "email",
-        enabled: true,
-        status: "healthy",
-        ...mailboxFilter(answerGoal?.channelIds),
-      });
+  const channel =
+    (lastSend?.channelId
+      ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
+      : instance.channelId
+        ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(instance.channelId)), enabled: true, status: "healthy" })
+        : null) ??
+    (await db.collection(C.channels).findOne({
+      orgId,
+      productId,
+      key: "email",
+      enabled: true,
+      status: "healthy",
+      ...mailboxFilter(answerGoal?.channelIds),
+    }));
   if (!channel) return null;
 
   const actionId = new ObjectId();
@@ -3531,6 +3544,9 @@ TOOLS.push({
         : null;
       const emailChannel =
         (await lastUsedEmail({ personId })) ??
+        (callGoal?.channelId
+          ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(callGoal.channelId)), key: "email", enabled: true, status: "healthy" })
+          : null) ??
         (await lastUsedEmail({})) ??
         (await db.collection(C.channels).findOne({
           orgId,

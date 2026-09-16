@@ -407,16 +407,31 @@ async function offerAccess(
   const asset = await accessAssetFor(orgId, productId, context);
   if (!asset) return false;
 
-  const channel = await db.collection(C.channels).findOne({
-    orgId,
-    productId,
-    key: { $in: (goal?.allowedChannels ?? ["email"]) as string[] },
-    enabled: true,
-    status: "healthy",
-    // A campaign held to particular mailboxes is held to them here too.
-    ...mailboxFilter(goal?.channelIds),
-  });
+  // The mailbox this campaign already writes to them from, else one it is allowed to use.
+  const channel =
+    (instance.channelId
+      ? await db.collection(C.channels).findOne({
+          _id: new ObjectId(String(instance.channelId)),
+          key: { $in: (goal?.allowedChannels ?? ["email"]) as string[] },
+          enabled: true,
+          status: "healthy",
+        })
+      : null) ??
+    (await db.collection(C.channels).findOne({
+      orgId,
+      productId,
+      key: { $in: (goal?.allowedChannels ?? ["email"]) as string[] },
+      enabled: true,
+      status: "healthy",
+      // A campaign held to particular mailboxes is held to them here too.
+      ...mailboxFilter(goal?.channelIds),
+    }));
   if (!channel) return false;
+  if (String(instance.channelId ?? "") !== String(channel._id)) {
+    await db
+      .collection(C.goalInstances)
+      .updateOne({ _id: instance._id }, { $set: { channelId: String(channel._id), channelAssignedAt: new Date() } });
+  }
 
   const template = await resolveTemplateFor({
     orgId,
