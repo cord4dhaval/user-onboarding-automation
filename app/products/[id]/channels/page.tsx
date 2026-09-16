@@ -18,6 +18,7 @@ import {
   updateChannel,
 } from "../../../actions";
 import { grantedCapabilities } from "@/auth/google.js";
+import ReconnectGoogle from "./reconnect-google";
 import SesRecords from "./ses-records";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
@@ -28,6 +29,19 @@ import ChannelSettingsDrawer from "./channel-settings";
 import { WINDOW_LABEL, windowTime, type UsageWindow } from "./windows";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * The address out of a `from`, which is stored either bare or as `Name <address>`. Used to
+ * pre-select a mailbox on Google's screen, so a wrong guess costs a chooser click, not a
+ * wrong account.
+ */
+function addressIn(from: unknown): string | undefined {
+  const value = String(from ?? "").trim();
+  if (!value) return undefined;
+  const angled = value.match(/<([^>]+)>\s*$/);
+  const address = (angled?.[1] ?? value).trim();
+  return address.includes("@") ? address : undefined;
+}
 
 /**
  * What a failed sign-in actually was.
@@ -358,6 +372,24 @@ export default async function Channels({
             toolChoices={toolChoices}
             action={updateChannel.bind(null, id, String(c._id))}
           />
+          {/* A Gmail grant that has expired or been revoked is fixed only by signing in
+              again, and this card is the one place a Gmail channel is managed from. Shown
+              whether or not it is broken: widening scope — adding reply reading, adding the
+              calendar — is the same round trip. */}
+          {connection?.provider === "google" && connection?.authType === "oauth2" && (
+            <ReconnectGoogle
+              productId={id}
+              email={
+                connection.accountEmail
+                  ? String(connection.accountEmail)
+                  : c.fromAddress
+                    ? String(c.fromAddress)
+                    : addressIn(c.from)
+              }
+              action={startGoogleOAuth}
+              urgent={connection.status !== "healthy" || c.status !== "healthy"}
+            />
+          )}
           <ConfirmButton
             title={`Remove the ${String(c.key)} channel?`}
             body="Campaigns that send on it will have nowhere to deliver until another is connected. Messages already sent are kept."
