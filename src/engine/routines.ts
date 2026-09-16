@@ -240,12 +240,17 @@ feature; your words open on their situation and lead into that feature, and the
 template's fixed text shows it. Never repeat what the fixed text says. A step not
 written within six hours goes out with the template's own opening line instead.
 
-The ask ladder. One mail asks for one thing, and the first two written touches to
-anyone who has not clicked ask for a reply: pass ask "reply", end the body on a
-question they can answer in one line, and the button is left off the rendered mail.
-From the third touch, or as soon as they click, pass ask "link" and the template's
-button is the whole ask. Never both in one message; compose_batch refuses a reply ask
-that does not end on a question, and the engine refuses one that carries a link.
+The ask ladder. Every mail asks for one thing, and by default that thing is the trial
+link, because the campaign is won by a signup and nothing else. Pass ask "link" and the
+template's button is the whole ask.
+One mail in a sequence asks for a reply instead: the touch that follows a mail they
+neither opened nor clicked. The link has already been ignored once there, and a
+question they can answer in ten seconds is the cheaper thing to ask for; their answer
+also tells the next mail what to lead with. Pass ask "reply", end the body on a
+question answerable in one line, and the button is left off the rendered mail.
+After any click or reply, every later mail is a link ask again. Never both asks in one
+message; compose_batch refuses a reply ask that does not end on a question, and the
+engine refuses one that carries a link.
 
 The subject. Twenty to sixty characters, carrying a number, their own metric or a
 question — "TeamGrid on 11 people, week one", not "Welcome to TeamGrid" and not the
