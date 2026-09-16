@@ -412,6 +412,144 @@ Context: the mails restate teamgrid.ai and read as generic. The ask is copy a re
 
 ---
 
+## 2026-09-16 — Brainstorm: LinkedIn, the official API, and the channels we are missing
+
+Prompted by a plain question: can we add LinkedIn and other channels, and which important one are we missing? The
+answer turned into a survey of what LinkedIn actually permits, what it charges, and what the cheapest honest way to
+test the channel is before any of it reaches the engine. Nothing here is built yet; this section exists so the
+research does not have to be repeated.
+
+### What the engine has today
+
+| Channel | Reaches | State in the repo |
+|---|---|---|
+| Email (Gmail OAuth, SES, SMTP, HTTP, MCP) | Anyone, near-free | Live. DNS still blocking the new sending identity |
+| WhatsApp (HTTP, MCP) | Phone, opt-in or 24-hour window | Adapter live, no business number connected |
+| Voice (Bolna) | Phone, cold-callable in India | Live, first test call worked |
+| SMS | Phone | Catalogue entry marked `soon`, waiting on sender registration |
+| LinkedIn | B2B decision maker | `channelKey` enum only. No catalogue row, no adapter |
+| In-app | Existing user | Enum only |
+| Push | App installs | Enum only |
+| Retargeting audience | The whole lead list at once | Not modelled anywhere |
+
+`channelKey` in `src/schemas/common.ts` already lists `linkedin`, `in_app` and `push`. The enum promises three
+channels the code cannot send on.
+
+### The channel we are missing, and why it matters now
+
+LinkedIn. For the UK accounting list and for B2B buyers generally it is where the partner actually reads, and it is
+the natural answer while email is blocked on DNS: voice is high friction for a cold UK practice, and WhatsApp is the
+wrong register for one entirely.
+
+The second, less obvious miss is a retargeting audience sync — pushing hashed lead emails to LinkedIn or Meta matched
+audiences so the practice sees the brand while the email lands. It never got modelled because it is a channel with no
+`send()`: there is no per-message action, only an audience that is kept in step. It costs ad budget, which is why it
+stays a separate decision.
+
+### Why the official LinkedIn API cannot run our ladder
+
+There is an official API. It cannot do what we want, and no amount of partner status changes that.
+
+- **No invitation endpoint exists.** LinkedIn removed open public API access in 2015 and never published a
+  connection-request endpoint. There is no official way to become someone's first-degree connection.
+- **The Messages API is real but doubly blocked.** `POST /v2/messages` is documented, but usage is restricted to
+  approved partners, and the requirements forbid automation outright: a message must be tied to a specific member
+  action, and the docs state that member actions do not include an automated or scheduled event. The member must be
+  shown an editable draft of the subject and body and must click send themselves. It also only reaches first-degree
+  connections. That API exists for CRM and compliance archiving, not for a sequencer.
+- **Pages Messaging is inbound-only.** A Page can reply to a member who messaged first; it cannot initiate. Access is
+  limited to six launch partners.
+- **Sales Navigator (SNAP) stopped accepting new partner applications** in 2026.
+- **Marketing Developer Platform access is real but slow.** Development tier first, Standard after a video review;
+  reported approval timelines run four to eight weeks at best, three to four months typically.
+
+### The official route that does reach a cold inbox
+
+Message Ads and Conversation Ads (Sponsored Messaging). These land in the real LinkedIn inbox, are fully within the
+terms, need no connection, and carry no account risk.
+
+- Billed cost-per-send, not per open — paid whether or not it is read.
+- Roughly $0.26–$0.50 for a simple Message Ad, $0.50–$1.20 and up for an interactive Conversation Ad. Reported open
+  rates 35–50%. Verify live rates in Campaign Manager before budgeting.
+- **The UK is eligible; the EU is not.** LinkedIn restricted EU member targeting for Sponsored Messaging from
+  December 2021 and stopped delivery to EU members in January 2022, following the ePrivacy consent ruling. Our
+  81-practice list is UK, so it qualifies. Any future EU list does not.
+- **No API needed.** Campaign Manager runs these by hand. The Marketing API only automates campaign creation, which
+  is pointless at 81 leads. Same approval unlocks Lead Gen Forms and Matched Audiences, which is the retargeting item
+  above.
+
+### The unofficial route, and what it costs
+
+Every tool that sends organic invites and DMs drives a real logged-in session against LinkedIn's private interface.
+All of them breach LinkedIn's User Agreement. What is at stake is the founder's personal profile, not a throwaway
+mailbox. Prices are per one LinkedIn account and mix USD and EUR as each vendor publishes them; all need
+re-checking at signup.
+
+| Tool | Price, one account | Trial | API | Note |
+|---|---|---|---|---|
+| Unipile | €49/month flat | 7 days | Yes | Flat up to 10 accounts; also covers WhatsApp, Gmail, Outlook, Instagram, Telegram, calendars |
+| Linked API | $69/month, $49 annual | 7 days | Yes | Per seat, so ten accounts is $490; runs a cloud browser and enforces pacing itself |
+| HeyReach | $79/sender/month | 14 days | Yes | Per sender |
+| TexAu | $79/month | 14 days | Yes, plus MCP | |
+| PhantomBuster | $69/month | Trial | Yes | 20-hour execution cap |
+
+Unipile is the floor for anything API-shaped at our size, because it is the only one priced flat rather than per
+seat. There is no cheaper API; "cheaper" only exists in the non-API category below.
+
+Unipile's own pacing guidance, which is the safety envelope whichever vendor we pick: 80–100 invites/day and about
+200/week on a paid, active account; roughly 15 invites/week on a free account with history; new accounts start tiny
+and ramp. Restriction is usually preceded by two or three days of the account behaving oddly rather than arriving
+without warning.
+
+### Cheapest way to test the channel, with no code
+
+The test question is narrow — do UK accounting partners accept a connection and reply — and answering it needs no
+adapter, no catalogue row and no repo change at all.
+
+| Tool | Cost for the test | Time to send 81 invites | Terms |
+|---|---|---|---|
+| Waalaxy | €0, free forever | ~27 days (3 actions/day/type) | Free plan, 80 invites/month, no card |
+| Linked Helper | €0 within the trial | Fits inside the 14 days | 14-day trial, then $15/month or $8.25/month annual |
+| Dux-Soup | $14.99/month | Fast | Trial |
+| Closely | $29–49/month | Fast | Trial |
+| Dripify | $39–59/month | Fast | Trial |
+
+Waalaxy's free monthly invite budget (80) is almost exactly our list size (81), which makes it a clean zero-cost
+option at the price of a six-week answer. Linked Helper's trial gets the same answer in two weeks for the same €0,
+at the cost of installing a desktop app. Sources disagree on whether a desktop app on the user's own IP or a cloud
+tool behind a fixed proxy is the lower risk; at three to thirty invites a day neither is near the threshold that
+actually triggers restriction, so speed is the real difference between them.
+
+During any such test, replies land in the LinkedIn inbox and not in our system. There is no `record_reply` and no
+ladder. The numbers get logged by hand. That is the point: the test buys information, not automation.
+
+### Decision
+
+1. Test first, with no engineering: run the 81 UK practices through a free trial, measure accept rate and reply rate.
+   If accept rate is low or replies are zero, LinkedIn dies for €0 and no adapter is ever written.
+2. If it converts, Unipile at €49/month is still the right buy for wiring into the engine — the test does not change
+   that, it only stops us paying before we know.
+3. Message Ads by hand in Campaign Manager is the zero-risk parallel experiment, and the Marketing API application is
+   worth starting early regardless because it also unlocks Lead Gen Forms and Matched Audiences.
+
+Open question before any of this starts: how many of the 81 practices have a LinkedIn profile on file at all. That
+may be the real blocker, and it is cheap to check.
+
+### Gaps and what to build
+
+| # | Finding | Engine today | Build | Status |
+|---|---|---|---|---|
+| LI1 | Accept rate and reply rate for LinkedIn on this segment are unknown, and every downstream decision depends on them | No LinkedIn sending of any kind | Run the 81 UK practices through a free trial (Linked Helper 14-day, or Waalaxy free), log accept and reply rates by hand | todo, no code |
+| LI2 | Unknown how many of the 81 practices have a LinkedIn profile on file | Lead sheet in `docs/leads` not checked for it | Count profiles present; decide whether enrichment is needed before the test is meaningful | todo |
+| LI3 | The ladder assumes send-then-wait-for-reply; LinkedIn has a two-step gate | Actions resolve on reply or timeout | A `pending_accept` state that resolves by polling, not by inbound mail: invite with a 300-character note, poll for acceptance, DM on accept, withdraw and fall back to email after ~30 days | todo, blocked on LI1 |
+| LI4 | `channelKey` promises `linkedin`, `in_app` and `push` with no catalogue row or adapter behind them | Enum in `src/schemas/common.ts` | At minimum add a `soon` catalogue entry with `waitingOn`, so the roadmap is visible rather than the enum lying | todo |
+| LI5 | Retargeting is not modelled: we hold 356 old form leads and 81 practices and only ever send to them | No audience concept | Matched Audiences sync (hashed emails) via the Marketing API, so the brand is seen while mail lands. Zero deliverability and ban risk, costs ad budget | todo, needs budget decision |
+| LI6 | Message Ads are available to us today and untried | Nothing | Run one Campaign Manager Message Ad campaign to the UK list by hand, budget around $40, as the zero-risk comparison against the organic test | todo, needs budget decision |
+| LI7 | Marketing Developer Platform approval takes four to eight weeks at best and nothing has been submitted | No application | Submit the application now so the clock runs; it unlocks Lead Gen Forms and Matched Audiences as well as ads automation | todo |
+| LI8 | Whatever tool is chosen, LinkedIn caps are far tighter than email and the governor is not tuned for them | `sendGovernor` has `dailyCap`, `perHour`, `warmupDay` — the right knobs, wrong numbers | On the LinkedIn channel: daily cap well under 80, weekly ceiling, warmup ramp from a handful per day | todo, blocked on LI3 |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -490,3 +628,11 @@ Context: the mails restate teamgrid.ai and read as generic. The ask is copy a re
 | 72 | Compose prompt picks an asset per step or states why words alone are better | RL7 | todo |
 | 73 | Per-lead brief: their world, their words, team size, objection; analogy from their world, numbers from assets | RL8 | todo |
 | 74 | Pause screenshots that name people; replace with aggregate, anonymised blocks | RL9 | todo, needs approval |
+| 75 | Free-trial test of LinkedIn on the 81 UK practices: accept and reply rate, no code | LI1 | todo |
+| 76 | Count how many of the 81 practices have a LinkedIn profile on file | LI2 | todo |
+| 77 | `pending_accept` ladder state: invite, poll for acceptance, DM on accept, withdraw and fall back to email | LI3 | todo, blocked on 75 |
+| 78 | LinkedIn catalogue entry so the enum stops promising a channel with no adapter | LI4 | todo |
+| 79 | Matched Audiences retargeting sync from the lead list | LI5 | todo, needs budget |
+| 80 | One Campaign Manager Message Ad campaign to the UK list, by hand | LI6 | todo, needs budget |
+| 81 | Submit the LinkedIn Marketing Developer Platform application to start the four-to-eight-week clock | LI7 | todo |
+| 82 | Tune `sendGovernor` for LinkedIn caps: daily well under 80, weekly ceiling, warmup ramp | LI8 | todo, blocked on 77 |
