@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { detectMovement } from "./detect.js";
 import { accessAssetFor, assetContextFor } from "./assets.js";
+import { mailboxFilter } from "./channels.js";
 import { ACCESS_RUNG, resolveTemplateFor } from "./templates.js";
 import { notify } from "./notify.js";
 
@@ -412,6 +413,8 @@ async function offerAccess(
     key: { $in: (goal?.allowedChannels ?? ["email"]) as string[] },
     enabled: true,
     status: "healthy",
+    // A campaign held to particular mailboxes is held to them here too.
+    ...mailboxFilter(goal?.channelIds),
   });
   if (!channel) return false;
 

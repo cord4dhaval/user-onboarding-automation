@@ -76,6 +76,21 @@ export async function loadChannels(
   ) as PooledChannel[];
 }
 
+/** The mailbox ids a campaign is held to, or an empty list when it may use any of them. */
+export function allowedMailboxIds(channelIds: unknown): string[] {
+  return Array.isArray(channelIds) ? channelIds.map(String).filter(Boolean) : [];
+}
+
+/**
+ * The same restriction as a query fragment, for the paths that look a channel up directly
+ * rather than through the pool: a composed message, an access rung, an answer to a reply.
+ * Without it a campaign held to one sender could still queue mail from another.
+ */
+export function mailboxFilter(channelIds: unknown): Record<string, unknown> {
+  const ids = allowedMailboxIds(channelIds);
+  return ids.length > 0 ? { _id: { $in: ids.map((id) => new ObjectId(id)) } } : {};
+}
+
 /** Whether this channel may carry this touch for this person, ignoring how loaded it is. */
 function eligible(channel: Record<string, unknown>, key: ChannelKey, person: Candidate): boolean {
   if (channel.key !== key) return false;

@@ -59,6 +59,11 @@ export default function GoalDrawer({
   const [open, setOpen] = useState(false);
   const isEdit = Boolean(existing);
   const chosenMailboxes = existing?.channelIds ?? [];
+  // Which kind of channel this campaign sends on, held here so the sender list below can
+  // show only the mailboxes that kind actually has. An email campaign offering the voice
+  // line is an invitation to pick a sender that could never carry its messages.
+  const [channelKey, setChannelKey] = useState(existing?.primaryChannel ?? channelKeys[0] ?? "email");
+  const senders = mailboxes.filter((box) => box.key === channelKey);
 
   return (
     <>
@@ -155,7 +160,8 @@ export default function GoalDrawer({
               Sent by
               <Select
                 name="primaryChannel"
-                value={existing?.primaryChannel ?? channelKeys[0] ?? "email"}
+                value={channelKey}
+                onValueChange={setChannelKey}
                 ariaLabel="Channel this campaign sends on"
                 options={(channelKeys.length ? channelKeys : ["email"]).map((k) => ({ value: k, label: k }))}
               />
@@ -169,19 +175,18 @@ export default function GoalDrawer({
             </p>
           )}
 
-          {mailboxes.length > 1 && (
+          {senders.length > 1 && (
             <fieldset className="fieldset">
               <legend>Sent from</legend>
-              {mailboxes.map((box) => (
+              {senders.map((box) => (
                 <label key={box.id} className="check">
                   <input type="checkbox" name="channelIds" value={box.id} defaultChecked={chosenMailboxes.includes(box.id)} />
                   {box.from}
-                  {box.from !== box.key && <span className="muted"> — {box.key}</span>}
                 </label>
               ))}
               <span className="reason">
-                Tick none to use every healthy mailbox, with leads spread across them. Ticking one keeps this
-                campaign on that sender.
+                Tick none to use every healthy {channelKey} sender, with leads spread across them. Ticking one
+                keeps this campaign on that sender.
               </span>
             </fieldset>
           )}

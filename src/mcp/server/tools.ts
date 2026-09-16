@@ -14,6 +14,7 @@ import { backlog } from "../../engine/dispatch.js";
 import { dueAtFor, type CadenceBand } from "../../engine/cadence.js";
 import { suppress } from "../../engine/suppression.js";
 import { addressFor } from "../../engine/address.js";
+import { allowedMailboxIds, mailboxFilter } from "../../engine/channels.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
@@ -1512,7 +1513,10 @@ export const TOOLS: ToolDef[] = [
       // through the same cadence the engine uses everywhere else.
       const person = await db
         .collection(C.people)
-        .findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { temp: 1, lastContactedAt: 1 } });
+        .findOne(
+          { _id: new ObjectId(String(instance.personId)) },
+          { projection: { temp: 1, lastContactedAt: 1, assignedChannelId: 1 } },
+        );
       const waiting = await db
         .collection(C.actions)
         .find(
@@ -1548,9 +1552,31 @@ export const TOOLS: ToolDef[] = [
         anchor = dueAt;
 
         const channelKey = String(t.channel);
-        const channel = await db
-          .collection(C.channels)
-          .findOne({ orgId, productId, key: channelKey, enabled: true, status: "healthy" });
+        // The mailbox this person already hears from, as long as the campaign still allows
+        // it, and otherwise one the campaign does allow. Taking whichever healthy channel
+        // came back first ignored both, so a campaign pinned to one sender could still queue
+        // mail from another, and a sequence could change address halfway through.
+        const allowedIds = allowedMailboxIds(goalDef?.channelIds);
+        const held = person?.assignedChannelId ? String(person.assignedChannelId) : "";
+        const channel =
+          (held && (allowedIds.length === 0 || allowedIds.includes(held))
+            ? await db.collection(C.channels).findOne({
+                orgId,
+                productId,
+                _id: new ObjectId(held),
+                key: channelKey,
+                enabled: true,
+                status: "healthy",
+              })
+            : null) ??
+          (await db.collection(C.channels).findOne({
+            orgId,
+            productId,
+            key: channelKey,
+            enabled: true,
+            status: "healthy",
+            ...mailboxFilter(goalDef?.channelIds),
+          }));
         if (!channel) continue;
 
         const actionId = new ObjectId();
@@ -3242,16 +3268,26 @@ async function queueAnswer(
         .limit(1)
         .next();
 
-  const channel = lastSend?.channelId
-    ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
-    : await db.collection(C.channels).findOne({ orgId, productId, key: "email", enabled: true, status: "healthy" });
-  if (!channel) return null;
-
   const instance =
     (lastSend?.goalInstanceId &&
       (await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(lastSend.goalInstanceId)) }))) ||
     (await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active" }));
   if (!instance) return null;
+
+  // Their own thread first. With no send to answer, the campaign's mailboxes decide: an
+  // answer from an address this campaign never sends from is a stranger joining in.
+  const answerGoal = await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) });
+  const channel = lastSend?.channelId
+    ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
+    : await db.collection(C.channels).findOne({
+        orgId,
+        productId,
+        key: "email",
+        enabled: true,
+        status: "healthy",
+        ...mailboxFilter(answerGoal?.channelIds),
+      });
+  if (!channel) return null;
 
   const actionId = new ObjectId();
   try {
@@ -3488,7 +3524,22 @@ TOOLS.push({
               .findOne({ _id: new ObjectId(String(last.channelId)), key: "email", enabled: true, status: "healthy" })
           : null;
       };
-      const emailChannel = (await lastUsedEmail({ personId })) ?? (await lastUsedEmail({}));
+      // Their own mailbox first; failing that, one this campaign is allowed to send from.
+      const callGoal = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(action.goalInstanceId)) });
+      const callGoalDef = callGoal
+        ? await db.collection(C.goals).findOne({ orgId, productId, key: String(callGoal.goalKey) })
+        : null;
+      const emailChannel =
+        (await lastUsedEmail({ personId })) ??
+        (await lastUsedEmail({})) ??
+        (await db.collection(C.channels).findOne({
+          orgId,
+          productId,
+          key: "email",
+          enabled: true,
+          status: "healthy",
+          ...mailboxFilter(callGoalDef?.channelIds),
+        }));
       if (person?.primaryEmail && emailChannel) {
         const vars = varsForCount(person, product) as unknown as Record<string, string>;
         const body = String(followUp.body).replace(/\{\{\s*(\w+)\s*\}\}/g, (whole, key: string) => vars[key] ?? whole);
