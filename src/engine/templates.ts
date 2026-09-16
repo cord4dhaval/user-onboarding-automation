@@ -218,8 +218,11 @@ export async function resolveTemplateFor(pick: TemplatePick): Promise<Document |
 
   // The wide fallback skips spent rungs too, or the exclusion above is undone by the very
   // next line whenever a rung has no template of its own.
-  const unspent = candidates.filter((t) => !used.has(String(t.key)));
-  return cascade(atRung) ?? cascade(unspent) ?? cascade(candidates) ?? null;
+  // A frame is only a wrapper for words a session wrote. Reached by this fallback it would
+  // send its placeholder line as a real message, so it is never a rung of last resort.
+  const wrappers = candidates.filter((t) => String(t.stage) !== "frame");
+  const unspent = wrappers.filter((t) => !used.has(String(t.key)));
+  return cascade(atRung) ?? cascade(unspent) ?? cascade(wrappers) ?? null;
 }
 
 export async function generateDefaultTemplates(
