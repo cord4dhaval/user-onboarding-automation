@@ -584,6 +584,160 @@ Sequencing, per-lead planning, small batches, one-click unsubscribe and a bandit
 
 ---
 
+## 2026-09-16 — Brainstorm: scenario mails for Indian founders (CEO feedback)
+
+Source: the CEO's review of the lead mails, relayed by Dhaval ("the mail content is still basic"), and teamgrid.ai read on 2026-09-16: home, Productivity Scoring, Hourly Breakdown, App & Website Tracking, Email Insights, HRMS and the Resource Optimizer (Managed Services) page.
+
+Context: the reader is the founder, CEO, HR head or operations head of a 10 to 500 person Indian company. The mails describe features. The CEO wants each mail to open on something that happens in the reader's own week, for example a paid AI tool most of the team does not use, a nine-hour day with a few focused hours in it, or time going to work nobody needed. Dhaval's three starting examples map to ideas 2, 5 and 8 below.
+
+### How each mail is built
+
+1. **Their situation**: one scene from a founder's week, in their words ("calls five managers at 8 PM to ask what happened today").
+2. **What it costs**: rupees or hours. Rupees land best with Indian founders because they think in salary cost.
+3. **What TeamGrid shows**: the one feature that makes the scene visible, ideally with a sample screen.
+4. **One ask**: the trial button.
+
+### Rules for these mails
+
+- **Roles, not names.** We do not know the reader's staff, so "your employee Ayush" reads as a guess or a fabrication and breaks the no-names rule. Write "your senior developer" or show a screen clearly marked as sample data. Screens that name real people stay paused (RL9).
+- **Never state the reader's numbers before they install.** Use "in a typical 50-person team" with either a teamgrid.ai benchmark or plain arithmetic labelled illustrative (RL5). No invented statistics about Indian employees.
+- **Check proof before quoting it.** The site testimonials (Ananya Sharma, Rahul Mehta, Priya Nair), "500+ companies" and the benchmarks (+32% focus hours, 6.2 hours per manager per week, 92% of risks early, 80% fewer stale threads) need confirming with the product team first.
+- **Subjects avoid "monitoring", "tracking employees" and "productivity score"** (RD6). Idea 19 is therefore titled by what TeamGrid never records.
+- Professional register, no contractions, "Best regards, The TeamGrid Team".
+
+### Idea bank
+
+Source column: `site` is a number shown on teamgrid.ai (sample or benchmark), `illustrative` is worked arithmetic to be labelled as such, `verify` needs the product team to confirm the feature or number, `none` carries no number.
+
+#### Money leaks
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 1 | Salary for nine hours, focused work for five | 50 people at ₹40,000 a month is ₹20 lakh; if three of nine hours go to idle time and meetings, about ₹6.7 lakh a month buys no work | Productivity Scoring, Hourly Breakdown | illustrative |
+| 2 | You pay for AI tools. Who is using them? | The company pays for ChatGPT, Copilot or Cursor seats, and most of the team still does the work by hand | AI Tool Radar, App Tracking | verify |
+| 3 | The client who costs more than they pay | A ₹50,000 retainer quietly takes 60 team hours a month; common in CA firms, agencies and IT services | Project and client hours | illustrative |
+| 4 | Four tools, one ₹299 seat | A dollar-billed time tracker, an HRMS, a CRM and Excel for timesheets | One platform at ₹299 per seat | site |
+
+#### Time leaks
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 5 | The best hour is 11 AM, the worst is after lunch | A daily average hides an 85% morning and a 40% afternoon; the standup sits on the peak hour | Hourly Breakdown | site sample |
+| 6 | Operations spent two days of last week in meetings | 41% of the week in meetings, twice the company baseline, rising three weeks running | Meeting Load | site sample |
+| 7 | The 8 PM status calls | The founder phones every manager each evening for an update | AI Summaries, Founder's Report on Monday at 9 AM | site: 6.2 h per manager per week, verify |
+| 8 | Where the afternoon goes | YouTube, Instagram and cricket scores, read as a pattern to understand, not a person to punish | App categories, smart alerts | none |
+| 9 | Work that waits two days between two desks | Design hands work to engineering and it sits for 2.4 days | Org Intelligence hand-offs | site sample |
+
+#### People risk
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 10 | The resignation you did not see coming | Activity fell 35% two weeks before; a 90-day notice plus a replacement hire costs lakhs | Engagement Radar, Early Warning | site: 3 weeks earlier, verify |
+| 11 | Three people carry 70% of the work | The best people burn out and leave first | Workload, Org Intelligence | site sample |
+| 12 | Silent overtime | After-hours work at three times the normal level comes before burnout | Anomaly Feed | site sample |
+| 13 | Leave that lands before every deadline | Monday leaves, leave every seventh working day, a stretched Diwali break | Leave Patterns | site sample |
+| 14 | Attendance shows who came in, not who worked | Biometric offices and work-from-home teams alike | Automatic attendance from activity | none |
+| 15 | Appraisals from twelve weeks of data, not memory | April and October cycles decided on recall and loud voices | Score trends, per-team baseline | none |
+
+#### Clients and revenue
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 16 | A client email has been waiting since Monday | Slow replies are the first sign a client is leaving | Email Insights reply-lag radar (metadata only) | site: 80% fewer 48 h threads, verify |
+| 17 | The CRM nobody updates | The sales team lives on calls and WhatsApp | Self-writing CRM | verify |
+| 18 | Three days of month-end payroll chasing | Attendance kept in Excel leads to salary disputes | Auto timesheets, payroll export | none |
+
+#### Trust and proof
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 19 | What TeamGrid never records | Staff quit over screenshot tools; India's DPDP Act favours collecting less personal data | No screenshots, no keystrokes, email metadata only | none |
+| 20 | A 300-person manufacturer in Gujarat | Operations spent 127 hours a week on manual work; now 11, saving ₹10 lakh a month | Managed Services audit (use for "book an audit" mails only, not the ₹299 app) | site case, verify |
+
+#### Growth and founder visibility
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 21 | At 15 people you saw everything. At 60 you do not. | The founder used to sit beside everyone; now work reaches them through two layers of managers | Org Intelligence, Founder's Report | none |
+| 22 | Before you approve two new hires | A manager asks for headcount while three people run at 1.6 times the baseline and others sit below it; two hires at ₹6 lakh CTC is ₹12 lakh a year | Workload | illustrative |
+| 23 | Sales blames operations. Operations blames sales. | Each team says the other is slow; the hand-off data shows where orders actually wait | Org Intelligence hand-offs | none |
+| 24 | One question from the airport lounge | A travelling founder gets ten "Sir, update?" messages; one question answers "how is the Pune project going" | Ask TeamGrid, mobile | verify mobile |
+| 25 | Two offices, one view | Ahmedabad and Bangalore offices plus remote staff in tier-2 cities, each reported differently | Team Activity, attendance present and remote | none |
+| 26 | The Monday MIS report that takes a full day | Someone builds the founder's Excel MIS by hand every week; the Gujarat case went from 6 hours to 12 seconds | Founder's Report, Reports | site case |
+
+#### Cost and billing
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 27 | Engineers on the bench are still on the payroll | IT services firms carry non-billable hours between projects | Project tracking, utilisation | illustrative |
+| 28 | Forty software seats, eleven people used them | Canva, Zoho, Adobe and AI seats renew every year for people who never open them | App Tracking | illustrative, verify |
+| 29 | Overtime claims that nobody can check | BPO and operations teams claim overtime from self-reported hours | Auto timesheets from worked time | none |
+| 30 | The client asks how many hours your team put in | Agencies and IT services argue over invoices with no record to show | Hours per project, exports | none |
+| 31 | Fixed-price project, open-ended hours | A fixed bid overruns and nobody knows until delivery | Project tracking, Early Warning | none |
+| 32 | A contractor invoice for 160 hours | Contract and freelance teams bill hours nobody can see; a record is fair to both sides | Automatic time tracking | none |
+
+#### People and HR
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 33 | The one person who knows how the system works | If they resign on a 60-day notice, the knowledge walks out with them | Org Graph: who work routes through | verify |
+| 34 | New joiners who leave in the first 90 days | The first month is spent waiting on access with no buddy and falling engagement | HRMS onboarding checklist, Engagement Radar | none |
+| 35 | The quiet performer who never gets noticed | Credit goes to the loudest person, and the steady contributor leaves | Score trends against the team baseline | none |
+| 36 | Office or home: where does your team focus better? | The return-to-office debate is argued on opinion | Attendance present and remote, Focus Time | verify the cut exists |
+| 37 | US clients, Indian nights | Teams on US and UK shifts carry after-hours load that nobody sees | Shift Planner, after-hours anomaly | none |
+| 38 | Your AmbitionBox reviews after a screenshot tool | Employer ratings fall after a surveillance rollout (Reddit research, 2026-09-15); staff see their own data here | Employee self-view, no screenshots | none |
+
+#### Clients, sales and deadlines
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 39 | Leads from IndiaMART and Meta ads that nobody called back | Paid leads sit for 48 hours before anyone replies | Lead Routing skill, Reply SLA Keeper, CRM | verify, Lead Routing shows "learning" on the site |
+| 40 | You heard the deadline slipped on the day it was due | The slip was visible on Wednesday and reported on Friday | Goals and Tasks progress from activity, Anomaly Feed | none |
+| 41 | WhatsApp Web open all day | Constant chat leaves no focus block; the cause is interruptions, not laziness | Focus Time, Focus Protector skill | none |
+
+#### Automation
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 42 | Twelve things someone does by hand every Monday | Recurring chores repeat because nobody sees the pattern; a skill trimmed two standing calls and gave 2.5 hours a week back | Skill Library | site sample |
+| 43 | Distraction is often a symptom | Distracting time rose 2.4 times right after the support queue spiked; fix the queue, not the people | Smart alerts | site sample |
+
+#### Segment hooks
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 44 | Tax audit is due on 30 September. Which clients are taking the hours? | CA firms in filing season; also GST returns on the 20th and ITR on 31 July | Billable hours per client | none; expires 2026-09-30, check for an extension |
+| 45 | Per-seat billing to your client, with proof for every seat | BPO and KPO firms bill clients per FTE | Utilisation per seat | none |
+| 46 | Staff at a client site, attendance without a biometric | Staffing firms deploy people they cannot see | Automatic attendance | verify |
+| 47 | Set up without an IT department | Most SMEs have nobody to roll out software | One installer for Mac, Windows and Linux, five minutes | site |
+| 48 | Data residency for regulated teams | NBFC, fintech and health teams need to know where data sits | SOC 2 Type II, ISO 27001, on-site data residency | verify India region |
+
+### Dated hooks for India
+
+| When | Hook | Ideas |
+|---|---|---|
+| Now to 30 September | Tax audit filing | 44 |
+| October and November | Diwali leave, half-year appraisals | 13, 15 |
+| January and February | Attrition after bonus payout, next year's hiring plan | 10, 22 |
+| March | Year-end close, headcount approvals | 22, 26 |
+| April to June | Appraisals and increment letters, attrition after them | 15, 10, 35 |
+| March to May | IPL | 8 |
+| July | ITR filing | 44 |
+| 20th of each month | GST return | 44 |
+
+### Gaps and what to build
+
+| # | Finding | Engine or content today | Build | Status |
+|---|---|---|---|---|
+| IN1 | The CEO finds the mails basic; a scene from the reader's own week is what lands | The seven `feature_followup` emails describe features | Write the top seven ideas as emails in the `feature_followup` family (situation, cost, what TeamGrid shows, trial button) so the planner can pick them per lead | todo, waiting for Dhaval's pick |
+| IN2 | Rupee cost is the strongest framing for Indian founders | No mail carries a worked number | Illustrative calculation asset built from the team size on the form (63 of 65 leads have it): team × assumed salary × share of the day, labelled illustrative | todo, extends RL5 |
+| IN3 | Several ideas rest on claims nobody has checked | Site benchmarks, testimonials and some features unverified | Confirm with the product team: AI Tool Radar output, Lead Routing and Reply SLA Keeper status, mobile app, the office-versus-remote focus cut, Org Graph single points of failure, India data residency, testimonials, "500+ companies", and the +32%, 6.2 h, 92% and 80% benchmarks | todo, verify |
+| IN4 | Dated hooks lift relevance | Dated hooks exist for the UK only (AOS6) | Indian calendar hooks with an expiry date, from the table above | todo, extends 57 |
+| IN5 | Segment ideas only fit their segment | Classification can misfile a lead (the Pune property firm filed as `eng_leader`) | Tag each idea with its segments; the planner offers only matching ideas and falls back to the general ones | todo |
+| IN6 | Named people in a scenario read as fake | Copy rule exists; some screens still name people (RL9) | Roles in copy; anonymised sample screens only | todo, extends RL9 |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -676,3 +830,9 @@ Sequencing, per-lead planning, small batches, one-click unsubscribe and a bandit
 | 80 | One Campaign Manager Message Ad campaign to the UK list, by hand | LI6 | todo, needs budget |
 | 81 | Submit the LinkedIn Marketing Developer Platform application to start the four-to-eight-week clock | LI7 | todo |
 | 82 | Tune `sendGovernor` for LinkedIn caps: daily well under 80, weekly ceiling, warmup ramp | LI8 | todo, blocked on 77 |
+| 83 | Top seven Indian founder scenarios written as `feature_followup` emails | IN1 | todo, waiting for pick |
+| 84 | Verify product claims behind the scenario ideas before any mail quotes them | IN3 | todo, verify |
+| 85 | Illustrative rupee calculation from the form's team size | IN2 | todo |
+| 86 | Indian dated hooks with expiry (tax audit 30 September first) | IN4 | todo |
+| 87 | Segment tags on ideas so the planner offers only matching ones | IN5 | todo |
+| 88 | Roles instead of names in scenarios; anonymised sample screens | IN6 | todo |
