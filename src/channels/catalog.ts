@@ -153,3 +153,63 @@ export function transportsFor(optionId: string): typeof TRANSPORTS[number][] {
   const option = catalogById(optionId);
   return TRANSPORTS.filter((t) => option?.transports.includes(t.id));
 }
+
+/**
+ * What kind of message a channel carries: "Email", "AI call".
+ *
+ * Read off the key rather than the provider, because the key is the only part that is
+ * true of every channel on it. The vendor label is a different fact and is answered by
+ * `channelLabel` — conflating the two is what put an MCP send tool called "teamgrid"
+ * under a card headed Gmail, where it read as a Google mailbox that had been switched off.
+ */
+export function channelTypeLabel(channelKey: string): string {
+  const byKey = CHANNEL_CATALOG.find((c) => c.channelKey === channelKey);
+  return byKey ? byKey.typeLabel : channelKey;
+}
+
+/** Each transport, in the past tense a connected row needs. The picker's own labels are
+ *  imperative ("Sign in"), which reads as an instruction on a channel already sending. */
+const CONNECTED_AS: Record<TransportId, string> = {
+  oauth: "signed in",
+  ses: "your own domain",
+  mcp: "MCP tool",
+  smtp: "SMTP",
+  http: "API endpoint",
+  key: "API key",
+};
+
+/**
+ * How a connection was made, in words that describe a thing already connected.
+ *
+ * The stored `authType` is infrastructure vocabulary — `mcp_bearer`, `oauth2`, `bearer` —
+ * and the channel's own `kind` only ever says `native` or `mcp`, which told nobody whether
+ * a native channel was a signed-in mailbox, a verified domain or an SMTP password.
+ *
+ * A vendor the catalogue offers exactly one way in wins over the stored type, because the
+ * storage is shared and the question is not: a Bolna key is kept as a bearer token like
+ * every HTTP endpoint's, and calling it an API endpoint described the column it sits in
+ * rather than what anyone pasted.
+ */
+export function transportLabel(authType?: string, kind?: string, provider?: string): string {
+  const offered = provider ? catalogById(provider)?.transports : undefined;
+  if (offered?.length === 1 && offered[0]) return CONNECTED_AS[offered[0]];
+  if (authType === "oauth2") return CONNECTED_AS.oauth;
+  if (authType === "ses") return CONNECTED_AS.ses;
+  if (authType === "smtp") return CONNECTED_AS.smtp;
+  if (authType === "api_key") return CONNECTED_AS.key;
+  if (authType === "bearer") return CONNECTED_AS.http;
+  if (authType?.startsWith("mcp") || kind === "mcp") return CONNECTED_AS.mcp;
+  return kind ?? "direct";
+}
+
+/**
+ * The vendor behind a channel, as a name rather than a stored id.
+ *
+ * A provider the catalogue knows gets its label; one it does not — an MCP server someone
+ * named after their own company, an SMTP host — is its own name, which is the honest
+ * answer and never another vendor's.
+ */
+export function providerLabel(provider?: string): string {
+  if (!provider) return "direct";
+  return catalogById(provider)?.label ?? (provider === "amazonses" ? "Amazon SES" : provider);
+}

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { channelUsage, limitsFor } from "@/engine/governor.js";
-import { catalogById, channelLabel, CHANNEL_CATALOG } from "@/channels/catalog.js";
+import { channelTypeLabel, providerLabel, transportLabel } from "@/channels/catalog.js";
 import type { McpTool } from "@/mcp/client.js";
 import {
   connectSesDomain,
@@ -195,9 +195,9 @@ export default async function Channels({
     ),
   );
 
-  /** One connected channel, as it reads inside its card: what it sends as, what it has
-   * spent, what it reports back, and both ways of changing it. */
-  function connectedChannel(c: Record<string, unknown>): ReactNode {
+  /** One connected sender, as a full-width row: what it sends as, how it was connected,
+   * what it has spent, what it reports back, and every way of changing it. */
+  function senderRow(c: Record<string, unknown>): ReactNode {
     const caps = (c.capabilities ?? {}) as Record<string, unknown>;
     const gov = (c.governor ?? {}) as { dailyCap?: number; perMinute?: number; perHour?: number };
     const connection = connections.find((x) => String(x._id) === String(c.connectionId));
@@ -215,110 +215,175 @@ export default async function Channels({
     const daily = usage.find((w) => w.label === "daily");
     // The first limit with nothing left is the one currently stopping sends.
     const blocked = usage.find((w) => w.free === 0);
+    // Who it goes through and how it was connected, as two separate facts on one line.
+    // They used to be three stored words in a row — "Email · teamgrid · mcp" — where the
+    // first repeated the group, the second was a raw id and the third was a protocol.
+    const provider = connection ? String(connection.provider) : undefined;
+    const route = `${providerLabel(provider)} · ${transportLabel(
+      connection?.authType as string | undefined,
+      String(c.kind),
+      provider,
+    )}`;
 
     return (
-      <div className={`channel-conn${live ? "" : " is-off"}`} key={String(c._id)}>
-        {/* Sender first, switch last, on one line. The address is what someone came to the
-            page to read; the switch is what they came to change. Everything between them
-            used to sit above both. */}
-        <div className="channel-line channel-top">
+      <div className={`sender${live ? "" : " is-off"}`} key={String(c._id)}>
+        {/* Sender first, route beside it, every control hard right. The address is what
+            someone came to the page to read; the switch is what they came to change. */}
+        <div className="sender-head">
           <span className={`dot ${live ? "ok" : "bad"}`} />
           <strong>{String(c.from ?? "provider default sender")}</strong>
-          <ActionButton
-            action={setChannelEnabled.bind(null, id, String(c._id), !live)}
-            variant="quiet"
-            size="sm"
-            icon={live ? <Power /> : <PowerOff />}
-            pendingLabel={live ? "Switching off…" : "Switching on…"}
-            toast={{
-              tone: live ? "info" : "good",
-              title: live ? `${String(c.from ?? "Channel")} switched off` : `${String(c.from ?? "Channel")} switched on`,
-              body: live
-                ? "Nothing new will be planned onto it, and nothing queued on it will send."
-                : "It can be planned onto and can send again.",
-            }}
-          >
-            {live ? "On" : "Off"}
-          </ActionButton>
+          <span className="pill">{route}</span>
+          <div className="sender-actions">
+            <ActionButton
+              action={setChannelEnabled.bind(null, id, String(c._id), !live)}
+              variant="quiet"
+              size="sm"
+              icon={live ? <Power /> : <PowerOff />}
+              pendingLabel={live ? "Switching off…" : "Switching on…"}
+              toast={{
+                tone: live ? "info" : "good",
+                title: live
+                  ? `${String(c.from ?? "Channel")} switched off`
+                  : `${String(c.from ?? "Channel")} switched on`,
+                body: live
+                  ? "Nothing new will be planned onto it, and nothing queued on it will send."
+                  : "It can be planned onto and can send again.",
+              }}
+            >
+              {live ? "On" : "Off"}
+            </ActionButton>
+            <ChannelSettingsDrawer
+              channel={{
+                id: String(c._id),
+                key: String(c.key),
+                kind: String(c.kind),
+                through: connection ? String(connection.provider) : undefined,
+                from: c.from ? String(c.from) : undefined,
+                replyTo: c.replyTo ? String(c.replyTo) : undefined,
+                status: String(c.status),
+                html: Boolean(caps.html),
+                dailyCap: Number(gov.dailyCap ?? 0),
+                perMinute: gov.perMinute ?? undefined,
+                perHour: gov.perHour ?? undefined,
+                maxSubjectLength: (caps.maxSubjectLength as number | undefined) ?? undefined,
+                maxBodyLength: (caps.maxBodyLength as number | undefined) ?? undefined,
+                audience,
+                assignedLeads: assigned,
+                sendTool: send ? `${String(c.connectionId)}::${send.tool}` : undefined,
+                sendArgs: send?.args,
+                returnMessageId: send?.returns?.message_id,
+              }}
+              usage={usage}
+              toolChoices={toolChoices}
+              action={updateChannel.bind(null, id, String(c._id))}
+            />
+            {/* A Gmail grant that has expired or been revoked is fixed only by signing in
+                again, and this row is the one place a Gmail channel is managed from. Shown
+                whether or not it is broken: widening scope — adding reply reading, adding
+                the calendar — is the same round trip. */}
+            {connection?.provider === "google" && connection?.authType === "oauth2" && (
+              <ReconnectGoogle
+                productId={id}
+                email={
+                  connection.accountEmail
+                    ? String(connection.accountEmail)
+                    : c.fromAddress
+                      ? String(c.fromAddress)
+                      : addressIn(c.from)
+                }
+                action={startGoogleOAuth}
+                urgent={connection.status !== "healthy" || c.status !== "healthy"}
+              />
+            )}
+            <ConfirmButton
+              title={`Remove the ${String(c.from ?? c.key)} channel?`}
+              body="Campaigns that send on it will have nowhere to deliver until another is connected. Messages already sent are kept."
+              confirmLabel="Remove channel"
+              action={deleteChannel.bind(null, id, String(c._id))}
+            />
+          </div>
         </div>
 
-        {/* Five rows of loose pills became a labelled grid.
-            Every value here answers a different question — who it writes to, how many
-            people it speaks for, what it has spent, what it can carry, what it goes
-            through — and as bare pills they read as one undifferentiated cloud where the
-            only way to tell "cold" from "designed email" was already knowing. */}
-        <dl className="channel-facts">
-          <dt>Writes to</dt>
-          <dd>
-            {audience.length > 0 ? (
-              audience.map((a) => (
-                <span className="pill" key={a}>
-                  {a.replace("_", " ")}
-                </span>
-              ))
-            ) : (
-              <span className="pill bad">nobody</span>
-            )}
-          </dd>
+        {/* Label above value, spread across the row. Every value here answers a different
+            question — who it writes to, how many people it speaks for, what it has spent,
+            what it can carry — and stacked into a 280px column they read as one
+            undifferentiated list. */}
+        <dl className="sender-facts">
+          <div>
+            <dt>Writes to</dt>
+            <dd>
+              {audience.length > 0 ? (
+                audience.map((a) => (
+                  <span className="pill" key={a}>
+                    {a.replace("_", " ")}
+                  </span>
+                ))
+              ) : (
+                <span className="pill bad">nobody</span>
+              )}
+            </dd>
+          </div>
 
-          <dt>Assigned</dt>
-          <dd>
-            {assigned} {assigned === 1 ? "lead" : "leads"}
-          </dd>
+          <div>
+            <dt>Assigned</dt>
+            <dd>
+              {assigned} {assigned === 1 ? "lead" : "leads"}
+            </dd>
+          </div>
 
-          <dt>Sent today</dt>
-          <dd>
-            {daily ? (
-              <>
-                <span className={`pill ${blocked ? "bad" : "ok"}`}>
-                  {daily.used}/{daily.limit}
-                </span>
-                {/* What the number means, not what it counts. "47/50" alone reads as a
-                    calendar-day tally, and this one is a rolling window that refills a
-                    slot at a time. */}
-                <span className="muted">
-                  {blocked
-                    ? `${WINDOW_LABEL[blocked.label] ?? blocked.label} full${
-                        blocked.freesAt ? ` · frees ${windowTime(blocked.freesAt)}` : ""
-                      }`
-                    : `${daily.free} can send now`}
-                </span>
-              </>
-            ) : (
-              <span className="pill">no cap</span>
-            )}
-          </dd>
+          <div>
+            <dt>Sent today</dt>
+            <dd>
+              {daily ? (
+                <div className="sender-cap">
+                  <span className="cap-line">
+                    <span className={`pill ${blocked ? "bad" : "ok"}`}>
+                      {daily.used}/{daily.limit}
+                    </span>
+                    {/* What the number means, not what it counts. "47/50" alone reads as a
+                        calendar-day tally, and this one is a rolling window that refills a
+                        slot at a time. */}
+                    <span className="muted">
+                      {blocked
+                        ? `${WINDOW_LABEL[blocked.label] ?? blocked.label} full${
+                            blocked.freesAt ? ` · frees ${windowTime(blocked.freesAt)}` : ""
+                          }`
+                        : `${daily.free} can send now`}
+                    </span>
+                  </span>
+                  {/* A real progress element rather than a styled div: it carries the two
+                      numbers to a screen reader, and how full the window is was the one
+                      thing the count alone never showed at a glance. */}
+                  <progress className={`meter${blocked ? " bad" : ""}`} value={daily.used} max={daily.limit} />
+                </div>
+              ) : (
+                <span className="pill">no cap</span>
+              )}
+            </dd>
+          </div>
 
-          <dt>Carries</dt>
-          <dd>
-            {/* Read-only here. What a channel can carry decides what every campaign on it
-                composes, so the choice lives in its settings rather than as a list toggle. */}
-            <span className="muted">
-              {caps.html ? "designed email" : "plain text"} ·{" "}
-              {caps.trackingOpens ? "opens" : "no opens"} ·{" "}
-              {/* What the channel reports, as against what it was recorded as reporting.
-                  `inboundReplies` is set when the channel is created and never revisited,
-                  and it said "no replies" on a connection whose server does offer the
-                  mailbox tool and whose replies have been read every ten minutes since.
-                  The discovered tool list is the fact; the stored flag was a guess. */}
-              {reads.has(String(c.connectionId)) ? "reads replies" : "cannot read replies"}
-              {caps.asyncDelivery ? " · queued, reconciled" : ""}
-            </span>
-          </dd>
-
-          <dt>Through</dt>
-          <dd>
-            {/* Named honestly: a card headed Gmail can hold an SMTP or endpoint channel on
-                the same key, and it should say so rather than borrow the vendor's name. */}
-            <span className="muted">
-              {channelLabel(String(c.key), connection ? String(connection.provider) : undefined)} ·{" "}
-              {String(connection?.provider ?? c.kind)} · {String(c.kind)}
-            </span>
-          </dd>
+          <div>
+            <dt>Carries</dt>
+            <dd>
+              {/* Read-only here. What a channel can carry decides what every campaign on it
+                  composes, so the choice lives in its settings rather than as a list toggle. */}
+              <span className="muted">
+                {caps.html ? "designed email" : "plain text"} ·{" "}
+                {caps.trackingOpens ? "opens" : "no opens"} ·{" "}
+                {/* What the channel reports, as against what it was recorded as reporting.
+                    `inboundReplies` is set when the channel is created and never revisited,
+                    and it said "no replies" on a connection whose server does offer the
+                    mailbox tool and whose replies have been read every ten minutes since.
+                    The discovered tool list is the fact; the stored flag was a guess. */}
+                {reads.has(String(c.connectionId)) ? "reads replies" : "cannot read replies"}
+                {caps.asyncDelivery ? " · queued, reconciled" : ""}
+              </span>
+            </dd>
+          </div>
         </dl>
 
         {/* A domain that has not verified is the reason this channel is not sending, so the
-            records sit on the card itself rather than behind an edit drawer. */}
+            records sit on the row itself rather than behind an edit drawer. */}
         {connection?.authType === "ses" && (
           <SesRecords
             domain={String((connection.ses as { domain?: string })?.domain ?? "")}
@@ -345,78 +410,29 @@ export default async function Channels({
             ))}
           </ul>
         )}
-
-        <div className="row-actions">
-          <ChannelSettingsDrawer
-            channel={{
-              id: String(c._id),
-              key: String(c.key),
-              kind: String(c.kind),
-              through: connection ? String(connection.provider) : undefined,
-              from: c.from ? String(c.from) : undefined,
-              replyTo: c.replyTo ? String(c.replyTo) : undefined,
-              status: String(c.status),
-              html: Boolean(caps.html),
-              dailyCap: Number(gov.dailyCap ?? 0),
-              perMinute: gov.perMinute ?? undefined,
-              perHour: gov.perHour ?? undefined,
-              maxSubjectLength: (caps.maxSubjectLength as number | undefined) ?? undefined,
-              maxBodyLength: (caps.maxBodyLength as number | undefined) ?? undefined,
-              audience,
-              assignedLeads: assigned,
-              sendTool: send ? `${String(c.connectionId)}::${send.tool}` : undefined,
-              sendArgs: send?.args,
-              returnMessageId: send?.returns?.message_id,
-            }}
-            usage={usage}
-            toolChoices={toolChoices}
-            action={updateChannel.bind(null, id, String(c._id))}
-          />
-          {/* A Gmail grant that has expired or been revoked is fixed only by signing in
-              again, and this card is the one place a Gmail channel is managed from. Shown
-              whether or not it is broken: widening scope — adding reply reading, adding the
-              calendar — is the same round trip. */}
-          {connection?.provider === "google" && connection?.authType === "oauth2" && (
-            <ReconnectGoogle
-              productId={id}
-              email={
-                connection.accountEmail
-                  ? String(connection.accountEmail)
-                  : c.fromAddress
-                    ? String(c.fromAddress)
-                    : addressIn(c.from)
-              }
-              action={startGoogleOAuth}
-              urgent={connection.status !== "healthy" || c.status !== "healthy"}
-            />
-          )}
-          <ConfirmButton
-            title={`Remove the ${String(c.key)} channel?`}
-            body="Campaigns that send on it will have nowhere to deliver until another is connected. Messages already sent are kept."
-            confirmLabel="Remove channel"
-            action={deleteChannel.bind(null, id, String(c._id))}
-          />
-        </div>
       </div>
     );
   }
 
   /**
-   * Which card a channel belongs under: the catalogue entry its connection's provider names,
-   * falling back to the entry that owns its key. A channel on a key the catalogue does not
-   * carry — in_app, push, or anything created before the catalogue existed — is grouped
-   * apart rather than dropped, because a channel that stops being drawn keeps sending.
+   * Which group a channel is drawn in: what it carries, read off its own key.
+   *
+   * It used to be the catalogue entry its connection's provider matched, falling back to
+   * the entry that owns the key — and since the entry that owns `email` is headed Gmail,
+   * an MCP send tool on a connection named "teamgrid" was drawn inside the Gmail card,
+   * where it read as a Google mailbox someone had switched off. A connection and a channel
+   * are two facts, and the vendor belongs on the row, not on the heading above it.
+   *
+   * A key the catalogue does not carry — in_app, push, anything created before the
+   * catalogue existed — still gets a group of its own rather than being dropped, because a
+   * channel that stops being drawn keeps sending.
    */
-  const connected: Record<string, ReactNode[]> = {};
-  const other: ReactNode[] = [];
+  const groups = new Map<string, { key: string; label: string; rows: ReactNode[] }>();
   for (const c of channels) {
-    const provider = connections.find((x) => String(x._id) === String(c.connectionId))?.provider;
-    const option =
-      (provider ? catalogById(String(provider)) : undefined) ??
-      CHANNEL_CATALOG.find((o) => o.channelKey === String(c.key));
-    const node = connectedChannel(c);
-    if (option) (connected[option.id] ??= []).push(node);
-    else other.push(node);
+    const key = String(c.key);
+    const group = groups.get(key) ?? { key, label: channelTypeLabel(key), rows: [] };
+    group.rows.push(senderRow(c));
+    groups.set(key, group);
   }
 
   return (
@@ -425,9 +441,10 @@ export default async function Channels({
         <div>
           <h1>Channels</h1>
           <p className="sub tight">
-            How messages leave. Pick a channel below to connect it. Gmail connects in one click; WhatsApp takes
-            your provider&apos;s endpoint and token, and SMS is not live yet. Already running your own sending —
-            SMTP, an HTTP endpoint, an MCP send tool — connect that instead, on any of them.
+            How messages leave. Every sender already sending is listed first — switch one off, cap it or
+            remove it in place — and anything not connected yet is underneath. Gmail connects in one click;
+            WhatsApp takes your provider&apos;s endpoint and token, and SMS is not live yet. Already running
+            your own sending — SMTP, an HTTP endpoint, an MCP send tool — connect that instead, on any of them.
           </p>
         </div>
       </div>
@@ -456,8 +473,7 @@ export default async function Channels({
       <ChannelCards
         productId={id}
         connections={connectionTools}
-        connected={connected}
-        other={other}
+        groups={[...groups.values()]}
         googleReady={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
         sesReady={Boolean(
           process.env.AWS_REGION && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY,

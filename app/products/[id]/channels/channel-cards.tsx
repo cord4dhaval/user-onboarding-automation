@@ -1,37 +1,51 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { MessageCircle, PhoneCall, Plug, Plus, ShieldCheck, Smartphone } from "lucide-react";
+import { Mail, MessageCircle, PhoneCall, Plug, Plus, Smartphone } from "lucide-react";
 import { Button } from "../../../ui/kit";
 import ChannelDrawer, { type ConnectionTools } from "./channel-drawer";
 import { CHANNEL_CATALOG } from "@/channels/catalog.js";
 
-/** One icon per catalogue entry, kept here because the catalogue itself is server-shared. */
+/** One icon per kind of message, kept here because the catalogue itself is server-shared. */
 const ICONS: Record<string, ReactNode> = {
-  google: <ShieldCheck />,
+  email: <Mail />,
   whatsapp: <MessageCircle />,
-  bolna: <PhoneCall />,
+  voice: <PhoneCall />,
   sms: <Smartphone />,
   other: <Plug />,
 };
 
+/** What is already sending, on one key. */
+export interface ChannelGroup {
+  /** The channel key — `email`, `voice` — which is what the group is. */
+  key: string;
+  /** What that key carries, in the catalogue's words: "Email", "AI call". */
+  label: string;
+  /**
+   * Server-rendered sender rows: the live values, with every action already bound.
+   * Rendered on the server because usage and limits are read from the database, and
+   * passed through as nodes so this component stays a shell.
+   */
+  rows: ReactNode[];
+}
+
 /**
- * The channel list and the channel picker, as one thing.
+ * The channel list and the channel picker, as one page.
  *
- * They used to be two: a table of what was connected, and a drawer that opened on a grid
- * of what could be. So the page answered "what have I got" and hid "what could I have"
- * behind a button, and the same three channels were drawn twice in two different shapes.
+ * Both used to be cards in one grid: a card per catalogue entry, connected or not, each
+ * holding its own senders. With four mailboxes on email and nothing on WhatsApp that grid
+ * put a column of forty lines beside a card of three, and the eye had to climb the tall
+ * one to reach anything else. So the two questions get the two shapes they want.
  *
- * Here every channel in the catalogue is a card, connected or not. A connected one shows
- * what it is sending as and what it has spent, and both are editable in place. One that is
- * not shows what it would take to connect it, and clicking it opens that. Nothing about
- * adding or editing changed underneath — only where the choice is made.
+ * What is sending is a full-width group per kind of message, one row per sender, because a
+ * sender carries five facts and four controls and those read across rather than down. What
+ * could be added is a row of equal tiles underneath — still on the page and never behind a
+ * button, but no longer competing for height with a mailbox that has been live a month.
  */
 export default function ChannelCards({
   productId,
   connections,
-  connected,
-  other,
+  groups,
   googleReady,
   sesReady,
   mailboxes,
@@ -44,14 +58,7 @@ export default function ChannelCards({
 }: {
   productId: string;
   connections: ConnectionTools[];
-  /**
-   * Server-rendered rows per catalogue id: the live values, with Edit and Remove already
-   * bound to their actions. Rendered on the server because usage and limits are read from
-   * the database, and passed through as nodes so this component stays a shell.
-   */
-  connected: Record<string, ReactNode[]>;
-  /** Channels on a key the catalogue does not carry — nothing is hidden because of it. */
-  other?: ReactNode[];
+  groups: ChannelGroup[];
   googleReady: boolean;
   sesReady: boolean;
   /** Google mailboxes that could read an SES channel's replies, and whether each actually
@@ -64,41 +71,73 @@ export default function ChannelCards({
   googleAction: (formData: FormData) => void | Promise<void>;
   sesAction: (formData: FormData) => void | Promise<void>;
 }) {
-  // Which card is being connected, or nothing. Keyed remount below resets the transport
+  // Which channel is being connected, or nothing. Keyed remount below resets the transport
   // choice per channel, so opening SMS never shows the tab Gmail was left on.
   const [picking, setPicking] = useState<string | null>(null);
 
+  // Everything the catalogue offers that nothing is sending on yet. What is not live is
+  // listed too: someone who needs WhatsApp should find that out here rather than after
+  // connecting email and waiting.
+  const unconnected = CHANNEL_CATALOG.filter((o) => !groups.some((g) => g.key === o.channelKey));
+
   return (
     <>
-      <div className="channels">
-        {CHANNEL_CATALOG.map((option) => {
-          const rows = connected[option.id] ?? [];
-          const live = rows.length > 0;
+      {groups.length > 0 && (
+        <div className="channel-groups">
+          {groups.map((group) => {
+            // The catalogue entry for this key, where there is one — it is what the connect
+            // drawer opens on. A key the catalogue does not carry still draws its senders;
+            // it just has nothing to add another of.
+            const option = CHANNEL_CATALOG.find((o) => o.channelKey === group.key);
 
-          const head = (
-            <span className="channel-head">
-              {ICONS[option.id]}
-              <strong>{option.label}</strong>
-              {live ? (
-                <span className="pill ok">Connected</span>
-              ) : option.status === "soon" ? (
-                <span className="pill">Soon</span>
-              ) : null}
-            </span>
-          );
-
-          // Nothing connected: the whole card is the button. A card that opens a form only
-          // when a small control at its edge is hit reads as broken to everyone who clicked
-          // the card itself first.
-          if (!live) {
             return (
+              <section className="channel-group" key={group.key}>
+                <header>
+                  {ICONS[group.key] ?? ICONS.other}
+                  <h3>{group.label}</h3>
+                  <span className="pill ok">
+                    {group.rows.length} {group.rows.length === 1 ? "sender" : "senders"}
+                  </span>
+                  <span className="spacer" />
+                  {option && (
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      icon={<Plus />}
+                      onClick={() => setPicking(option.id)}
+                    >
+                      Connect another
+                    </Button>
+                  )}
+                </header>
+                {group.rows}
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {unconnected.length > 0 && (
+        <>
+          <div className="section-head">
+            <h2>{groups.length > 0 ? "Add another channel" : "Connect a channel"}</h2>
+          </div>
+          <div className="channel-tiles">
+            {unconnected.map((option) => (
+              // The whole tile is the button. A tile that opens a form only when a small
+              // control at its edge is hit reads as broken to everyone who clicked the tile
+              // itself first.
               <button
                 key={option.id}
                 type="button"
-                className="channel-card"
+                className="channel-tile"
                 onClick={() => setPicking(option.id)}
               >
-                {head}
+                <span className="channel-head">
+                  {ICONS[option.channelKey] ?? ICONS.other}
+                  <strong>{option.label}</strong>
+                  {option.status === "soon" && <span className="pill">Soon</span>}
+                </span>
                 <p className="blurb">
                   {option.status === "soon" && option.waitingOn ? option.waitingOn : option.blurb}
                 </p>
@@ -106,40 +145,13 @@ export default function ChannelCards({
                   {option.status === "soon" ? "Connect your own provider" : `Connect ${option.label}`}
                 </span>
               </button>
-            );
-          }
-
-          return (
-            <div key={option.id} className="channel-card">
-              {head}
-              {rows}
-              <div className="channel-foot">
-                <Button variant="quiet" size="sm" icon={<Plus />} onClick={() => setPicking(option.id)}>
-                  Connect another
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-
-        {other && other.length > 0 && (
-          <div className="channel-card">
-            <span className="channel-head">
-              {ICONS.other}
-              <strong>Other</strong>
-              <span className="pill ok">Connected</span>
-            </span>
-            <p className="blurb">
-              On a key the catalogue does not list — in-app or push, or a channel created before the
-              catalogue existed. Editable here like any other.
-            </p>
-            {other}
+            ))}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Remounted per channel so each opens on its own best transport rather than on
-          whichever tab the previous card was left on. */}
+          whichever tab the previous one was left on. */}
       {picking && (
         <ChannelDrawer
           key={picking}

@@ -41,7 +41,7 @@ export default async function Connections({
       <div className="head">
         <div>
           <h1>Connections</h1>
-          <p className="sub" style={{ marginBottom: 0 }}>
+          <p className="sub tight">
             Authentication plus discovered capability. One connection can feed leads in and send messages out —
             for a product with its own MCP, that is a single setup covering both directions.
           </p>

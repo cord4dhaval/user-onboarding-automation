@@ -1587,74 +1587,114 @@ details > summary:hover { color: var(--ink); }
   .runs-table { table-layout: auto; min-width: 720px; }
 }
 
-/* ── channel cards ─────────────────────────────────────────────────────────── */
-/* The list of channels and the picker are one grid: everything the product can send on,
-   connected or not. What is not live yet stays on screen rather than being hidden — a
-   customer who needs WhatsApp should find that out here, not after connecting email and
-   waiting. A connected card carries its live values; an unconnected one is a button. */
-.channels {
-  display: grid; gap: 12px; align-items: start;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+/* ── channels ──────────────────────────────────────────────────────────────── */
+/* Two questions, two shapes.
+   Everything used to be one grid of cards: a card per catalogue entry, connected or not,
+   each holding its own senders. With four mailboxes on email and nothing on WhatsApp that
+   grid put a 280px column of forty lines beside a card of three, and reaching anything
+   else meant climbing the tall one.
+
+   So what is sending is a full-width group per kind of message — Email, AI call — with one
+   row per sender, and what could be added is a row of equal tiles underneath. The groups
+   are the message type and never the vendor: grouping by the catalogue entry a provider
+   matched is what drew an MCP send tool under a heading that said Gmail. */
+.channel-groups { display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px; }
+.channel-group {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  padding: 12px 17px 2px;
 }
-.channel-card {
+.channel-group > header {
+  display: flex; align-items: center; gap: 9px;
+  padding-bottom: 11px; border-bottom: 1px solid var(--rule);
+}
+.channel-group > header h3 { margin: 0; font-size: 14.5px; }
+.channel-group > header svg { width: 16px; height: 16px; color: var(--ink-3); flex: none; }
+.channel-group > header .spacer { margin-left: auto; }
+
+/* One sender per row, a hairline between, nothing under the last. */
+.sender {
   display: flex; flex-direction: column; gap: 10px;
-  background: var(--surface); border: 1px solid var(--rule);
-  border-radius: var(--r-lg); padding: 14px 15px;
+  padding: 13px 0; border-bottom: 1px solid var(--rule-soft);
 }
-/* A card that is also a button has to undo what a button is: centred, nowrap and shrunk
-   to its content is right for a control and wrong for a panel of text.
-   `align-self: start` rather than stretch, or a two-line "Soon" card grows to match the
-   tallest card in its grid row — three connected mailboxes made WhatsApp a column of empty
-   space with a sentence at the top of it. */
-button.channel-card {
-  width: 100%; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
-  align-self: start; align-items: stretch; justify-content: flex-start; white-space: normal;
-  min-height: 0;
+.sender:last-child { border-bottom: 0; }
+/* Off is a state the row should read as, not one you work out from a word. Kept legible
+   rather than greyed to nothing: a switched-off mailbox is exactly what someone is looking
+   for when they come to switch it back on. */
+.sender.is-off { opacity: .62; }
+.sender.is-off .sender-head strong { text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* Sender left, how it connects beside it, every control hard right. */
+.sender-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sender-head strong { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+/* The forms are display:contents, so the buttons are the flex items — the same reason
+   .row-actions does it. */
+.sender-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: none; }
+.sender-actions form { display: contents; }
+
+/* The facts spread across the row rather than down it: label above value, as many columns
+   as fit. The labels are the part that makes a number mean something, and across a full
+   width they cost nothing. */
+.sender-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 11px 22px; margin: 0;
 }
-button.channel-card:hover { border-color: var(--accent); filter: none; }
+.sender-facts > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sender-facts dt {
+  font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.sender-facts dd {
+  margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px;
+}
+.sender-facts .muted { font-size: 12.5px; line-height: 1.45; }
+
+/* How full the window is, as a bar under the count. A rolling cap is the number people
+   plan around, and "22/200" reads the same at a glance as "182/200". */
+.sender-cap { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+.cap-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.meter {
+  appearance: none; -webkit-appearance: none; border: 0;
+  width: 100%; max-width: 200px; height: 4px; border-radius: 999px;
+  background: var(--surface-2); overflow: hidden;
+}
+.meter::-webkit-progress-bar { background: var(--surface-2); border-radius: 999px; }
+.meter::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
+.meter::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
+.meter.bad::-webkit-progress-value { background: var(--bad); }
+.meter.bad::-moz-progress-bar { background: var(--bad); }
+
+/* Small print on a row: a health reason, a DNS note in the SES block. */
+.channel-meta { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+.channel-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+
+/* What is not connected yet: equal tiles, each one a button.
+   A tile that is also a button has to undo what a button is — centred, nowrap and shrunk
+   to its content is right for a control and wrong for a panel of text. */
+.channel-tiles {
+  display: grid; gap: 12px; grid-auto-rows: 1fr; margin-bottom: 22px;
+  grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+}
+.channel-tile {
+  display: flex; flex-direction: column; gap: 8px; width: 100%; min-height: 0;
+  align-items: stretch; justify-content: flex-start; text-align: left; white-space: normal;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  padding: 14px 15px; font: inherit; color: var(--ink); cursor: pointer;
+  transition: border-color var(--dur) ease, box-shadow var(--dur) var(--ease);
+}
+.channel-tile:hover { border-color: var(--accent); box-shadow: var(--e1); filter: none; }
 .channel-head { display: flex; align-items: center; gap: 8px; }
 .channel-head svg { width: 16px; height: 16px; color: var(--ink-3); flex: none; }
 .channel-head strong { font-size: 14.5px; font-weight: 600; }
 .channel-head .pill { margin-left: auto; }
-.channel-card .blurb { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
-/* Pushed to the bottom so cards of different heights still line their calls to action up. */
+.channel-tile .blurb { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+/* Pushed to the bottom so tiles of different text lengths still line their calls to
+   action up. */
 .channel-cta { margin-top: auto; font-size: 13px; font-weight: 600; color: var(--accent); }
 
-/* One connected channel inside its card. */
-.channel-conn {
-  display: flex; flex-direction: column; gap: 8px;
-  border-top: 1px solid var(--rule-soft); padding-top: 10px;
+@media (max-width: 720px) {
+  /* The controls get their own line rather than squeezing the address to two characters. */
+  .sender-actions { margin-left: 0; width: 100%; flex-wrap: wrap; }
 }
-/* Off is a state the row should read as, not one you work out from a word. Kept legible
-   rather than greyed to nothing: a switched-off mailbox is exactly what someone is looking
-   for when they come to switch it back on. */
-.channel-conn.is-off { opacity: .62; }
-.channel-conn.is-off .channel-top strong { text-decoration: line-through; text-decoration-thickness: 1px; }
-
-/* Sender left, switch hard right, nothing between them. */
-.channel-top { gap: 7px; }
-.channel-top strong { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
-/* The form is display:contents, so the button is the flex item and the button is what
-   gets pushed. Matched on the element rather than a class: kit buttons carry their variant
-   as the class name and have no shared one. */
-.channel-top button { margin-left: auto; flex: none; }
-
-/* Label/value pairs instead of a cloud of pills. The labels are the part that makes a
-   number mean something, and they cost one narrow column. */
-.channel-facts {
-  display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0;
-  font-size: 12.5px; align-items: baseline;
-}
-.channel-facts dt {
-  font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .09em;
-  text-transform: uppercase; color: var(--ink-3); white-space: nowrap; padding-top: 2px;
-}
-.channel-facts dd { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.channel-facts .muted { font-size: 12.5px; line-height: 1.45; }
-.channel-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
-.channel-meta { margin: 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
-.channel-conn .row-actions { justify-content: flex-start; margin-top: 2px; }
-.channel-foot { display: flex; gap: 6px; }
 
 /* The DNS a domain is waiting on, inside its channel card.
    Values are inputs rather than text: a DKIM token is 60 characters of base32 that has to
