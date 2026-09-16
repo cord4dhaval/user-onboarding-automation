@@ -554,6 +554,7 @@ export async function createGoal(formData: FormData) {
         productId,
         key,
         name,
+        brief: String(formData.get("brief") ?? "").trim() || undefined,
         entry: { expression: "lead_created", minIcpFit: Number(formData.get("minIcpFit") ?? 0) },
         success: {
           expression: String(formData.get("successExpression") ?? "account_created"),
@@ -2472,6 +2473,7 @@ export async function updateGoal(formData: FormData) {
     {
       $set: {
         name,
+        brief: String(formData.get("brief") ?? existing?.brief ?? "").trim() || undefined,
         success: {
           expression: String(formData.get("successExpression") ?? existing?.success?.expression ?? "account_created"),
           describedAs: String(formData.get("successDescribed")),

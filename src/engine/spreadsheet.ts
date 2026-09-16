@@ -56,6 +56,9 @@ export function guessFieldMap(columns: string[]): Record<string, string> {
     ["main_problem", /problem|challenge|help.?you/i],
     ["business_type", /business.?type|industry|type.?of.?business/i],
     ["city", /^city$|location/i],
+    // When they actually filled the form. An upload happens today; the lead may be months
+    // old, and nothing else on the row says so.
+    ["submitted_at", /submitted|form.?date|enquir|^date$/i],
   ];
   for (const [key, re] of answers) {
     const column = find(re);

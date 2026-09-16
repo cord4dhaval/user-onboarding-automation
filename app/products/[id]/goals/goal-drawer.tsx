@@ -45,6 +45,7 @@ export default function GoalDrawer({
     key: string;
     name: string;
     successDescribed: string;
+    brief?: string;
     verifyConnectionId?: string;
     firstTouchTemplate: string;
     primaryChannel: string;
@@ -106,6 +107,20 @@ export default function GoalDrawer({
             />
             <span className="muted" style={{ fontSize: 12.5 }}>
               Claude turns this into the checks that decide who is finished.
+            </span>
+          </label>
+
+          <label>
+            Who these people are <span className="muted">— optional</span>
+            <textarea
+              name="brief"
+              rows={3}
+              defaultValue={existing?.brief ?? ""}
+              placeholder="Who these people are, where they came from and how to approach them."
+            />
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Shown on every lead card. A campaign key tells a writer nothing: leads from three months ago read
+              exactly like leads that arrived today unless this says so.
             </span>
           </label>
 

@@ -736,6 +736,8 @@ export const TOOLS: ToolDef[] = [
           ? {
               goal_instance_id: String(goal._id),
               goal_key: goal.goalKey,
+              /** What this campaign is and how to write for it, as a person described it. */
+              brief: goalDef?.brief ?? null,
               spent: goal.spent,
               deadline: goal.deadline,
               budget: goalDef?.budget,

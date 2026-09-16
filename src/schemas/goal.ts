@@ -12,6 +12,14 @@ export const goal = z.object({
   key: z.string(),
   name: z.string(),
 
+  /**
+   * What this campaign is, in the words a session writing for it needs: who these people
+   * are, where they came from, how long ago, and how to approach them. Carried on every
+   * lead card, because a campaign key tells a writer nothing about the people inside it —
+   * a list of leads from three months ago reads exactly like a list that arrived today.
+   */
+  brief: z.string().optional(),
+
   entry: z.object({
     expression: z.string(),
     minIcpFit: z.number().min(0).max(1).default(0),
