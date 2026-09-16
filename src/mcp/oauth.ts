@@ -221,16 +221,20 @@ export class TokenRefreshError extends Error {
  * includes the refresh token — back in error bodies, so nothing else from the body travels
  * any further than this function.
  */
-async function refusalFrom(res: Response): Promise<TokenRefreshError> {
+export function refusalFromBody(status: number, body: string): TokenRefreshError {
   let code: string | undefined;
   let description: string | undefined;
   try {
-    const parsed = (await res.json()) as { error?: unknown; error_description?: unknown };
+    const parsed = JSON.parse(body) as { error?: unknown; error_description?: unknown };
     if (typeof parsed.error === "string") code = parsed.error;
     if (typeof parsed.error_description === "string") description = parsed.error_description.slice(0, 200);
   } catch {
     // A token endpoint that answers an error with HTML has told us everything it is going
     // to; the status is the diagnosis.
   }
-  return new TokenRefreshError(res.status, code, description);
+  return new TokenRefreshError(status, code, description);
+}
+
+async function refusalFrom(res: Response): Promise<TokenRefreshError> {
+  return refusalFromBody(res.status, await res.text().catch(() => ""));
 }

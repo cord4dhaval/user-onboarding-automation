@@ -1,4 +1,4 @@
-import { createPkce, randomState, type PkcePair } from "../mcp/oauth.js";
+import { createPkce, randomState, refusalFromBody, type PkcePair } from "../mcp/oauth.js";
 
 /**
  * Google OAuth for the email channel.
@@ -156,7 +156,10 @@ export function buildGoogleAuthorizeUrl(input: {
   return url.toString();
 }
 
-async function tokenRequest(body: Record<string, string>): Promise<GoogleTokens> {
+async function tokenRequest(
+  body: Record<string, string>,
+  opts?: { asRefusal?: boolean },
+): Promise<GoogleTokens> {
   const res = await fetch(GOOGLE_TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -165,6 +168,11 @@ async function tokenRequest(body: Record<string, string>): Promise<GoogleTokens>
   });
   const text = await res.text();
   if (!res.ok) {
+    // A refresh needs a verdict rather than a sentence. The broker decides whether to retry
+    // or to stop and ask for a reconnect from `TokenRefreshError.transient`, and a plain
+    // Error carries no such thing — it reads there as a network blip, which is how a
+    // revoked grant kept retrying quietly instead of saying the mailbox needed reconnecting.
+    if (opts?.asRefusal) throw refusalFromBody(res.status, text);
     // Google's error body names the cause precisely (invalid_grant, redirect_uri_mismatch);
     // swallowing it turns a five-minute console fix into an afternoon.
     throw new Error(`google token endpoint ${res.status}: ${text.slice(0, 400)}`);
@@ -192,12 +200,15 @@ export async function refreshGoogleToken(input: {
   client: GoogleClient;
   refreshToken: string;
 }): Promise<GoogleTokens> {
-  return tokenRequest({
-    grant_type: "refresh_token",
-    refresh_token: input.refreshToken,
-    client_id: input.client.clientId,
-    client_secret: input.client.clientSecret,
-  });
+  return tokenRequest(
+    {
+      grant_type: "refresh_token",
+      refresh_token: input.refreshToken,
+      client_id: input.client.clientId,
+      client_secret: input.client.clientSecret,
+    },
+    { asRefusal: true },
+  );
 }
 
 /**

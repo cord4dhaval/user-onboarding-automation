@@ -30,6 +30,13 @@ const db = await getDb();
 const REPAIRABLE = [
   { pattern: /missing person, goal, channel or template/, cause: "no template id on the action" },
   { pattern: /hourly_cap/, cause: "provider hourly cap, now paced by the governor" },
+  // A mailbox whose OAuth grant died takes its queue down with it, and nothing re-queues a
+  // failure. Run this after the mailbox is reconnected: before that the cause is still
+  // present and these will simply fail again.
+  {
+    pattern: /token refresh could not be completed|refused the refresh token|reconnect this mailbox/,
+    cause: "mailbox OAuth grant died, since reconnected",
+  },
 ];
 
 const products = await db.collection(C.products).find({ status: "active" }).toArray();
