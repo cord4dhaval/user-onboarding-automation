@@ -105,27 +105,44 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
   let kitMemo: ResolvedKit | undefined;
   const brandKit = async () => (kitMemo ??= await loadBrandKit(opts.orgId, opts.productId));
 
-  const due = await db
+  const dueFilter = {
+    orgId: opts.orgId,
+    productId: opts.productId,
+    $or: [
+      { status: "queued", dueAt: { $lte: now } },
+      // A claim is a lease, and a process killed mid-send never released it. Without
+      // this the action is invisible to every later run — no status it can reach, and no
+      // query that finds it — so it simply never sends. Only claims with no provider id
+      // are reclaimed: one that got as far as the provider may already be delivered, and
+      // sending it twice is worse than leaving it for a human to look at.
+      {
+        status: "sending",
+        claimedAt: { $lte: new Date(now.getTime() - STALE_CLAIM_MS) },
+        providerMessageId: { $exists: false },
+      },
+    ],
+  };
+  // Approved messages take the run's slots first; unreviewed ones only fill what is left.
+  // A first touch nobody has looked at is still "queued", and claiming it only renders it
+  // and parks it for review. Picked in no order, 306 of those spent thirteen runs ahead of
+  // 22 approved mails on 16 September while nothing went out.
+  const limit = opts.limit ?? 100;
+  const approved = await db
     .collection(C.actions)
-    .find({
-      orgId: opts.orgId,
-      productId: opts.productId,
-      $or: [
-        { status: "queued", dueAt: { $lte: now } },
-        // A claim is a lease, and a process killed mid-send never released it. Without
-        // this the action is invisible to every later run — no status it can reach, and no
-        // query that finds it — so it simply never sends. Only claims with no provider id
-        // are reclaimed: one that got as far as the provider may already be delivered, and
-        // sending it twice is worse than leaving it for a human to look at.
-        {
-          status: "sending",
-          claimedAt: { $lte: new Date(now.getTime() - STALE_CLAIM_MS) },
-          providerMessageId: { $exists: false },
-        },
-      ],
-    })
-    .limit(opts.limit ?? 100)
+    .find({ ...dueFilter, reviewedAt: { $exists: true } })
+    .sort({ dueAt: 1 })
+    .limit(limit)
     .toArray();
+  const unreviewed =
+    approved.length < limit
+      ? await db
+          .collection(C.actions)
+          .find({ ...dueFilter, reviewedAt: { $exists: false } })
+          .sort({ dueAt: 1 })
+          .limit(limit - approved.length)
+          .toArray()
+      : [];
+  const due = [...approved, ...unreviewed];
 
   // Sends are network-bound, so they overlap; everything around them stays in order.
   // Claiming, guards and rendering are local database work measured in single-digit
