@@ -204,7 +204,15 @@ One real v3 lead (property advisory founder, 11–50 people, "not able to gauge 
 - The live tick picked the email up and deferred it to 17 September 08:20 UTC for the 2-day warm gap since the welcome; it will then wait in Review.
 - Rendered read-only with the production renderer: plain text, no button (reply ask), unsubscribe link direct, validation clean.
 
+## Routine test, 2026-09-16
+
+- The scheduled Acquire run at 16:34 UTC skipped its lead planner: old refusals in its run history said plan_goal belonged to React. That refusal was real before this build (plan_goal was missing from Acquire's tool list), which is also why about 340 plan jobs had piled up since the morning. The tool list was fixed in 3cb0b64 and the prompt now says so plainly (7e64fe1).
+- A manual Acquire run at 16:44 wrote 13 rolling plans, each a single step with an idea invented for that lead (a travel planner: "An itinerary stuck two days before anyone notices"; an events agency: "Calling around to every site lead before you can tell a client what actually happened").
+- A manual Advance run at 16:50 wrote 7 of them in full: plain text, reply asks, examples labelled, and the limit stated where the fit was partial (work away from a computer is not recorded). They are queued for 17–18 September and wait in Review.
+
 ## Follow-ups
+
+- Tighten the writer on phrases that point at the form ("the problem you named"), which sit close to "never say how they arrived".
 
 - Confirm the "verify" items with the product team, then move confirmed ones from `facts.unverified` to `facts.canDo`.
 - Watch the first Acquire and Advance runs under the new prompts; the lead planner handles twenty leads an hour, so the old-lead backlog takes about sixteen hours.
