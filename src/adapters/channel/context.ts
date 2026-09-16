@@ -34,7 +34,17 @@ export function sendContext(message: OutboundMessage): Record<string, unknown> {
     /**
      * The provider's own approved template and its parameters, for channels that send by
      * name rather than by body. Empty name where the message carries prose instead.
+     *
+     * The name is written after the spread, not before. Wati's most common template
+     * variable is literally called `name`, and spread last it replaced the template name
+     * with the recipient's first name — every send then asked Wati for a template called
+     * "Priya". Parameters stay reachable at the top level for mappings already written,
+     * and under `params` for the one whose key collides: `$template.params.name`.
      */
-    template: { name: message.providerTemplate?.name ?? "", ...(message.providerTemplate?.params ?? {}) },
+    template: {
+      ...(message.providerTemplate?.params ?? {}),
+      name: message.providerTemplate?.name ?? "",
+      params: message.providerTemplate?.params ?? {},
+    },
   };
 }
