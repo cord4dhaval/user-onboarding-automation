@@ -149,7 +149,15 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
       // waiting for matters as much as the reason: the reason is a snapshot of the limit
       // that stopped it, so without the date a raised cap looks like it did nothing.
       const until = action.dueAt ? new Date(String(action.dueAt)) : undefined;
-      if (!action.deferReason) return { label: "Approved", tone: "accent", detail: "in the send queue" };
+      if (!action.deferReason) {
+        // A future date is a wait whatever set it. "In the send queue" over a three-hour
+        // quiet-hours hold is what made fifty approved mails look stuck on 16 September.
+        if (until && until > new Date()) {
+          const why = action.dueReason ? ` — ${String(action.dueReason)}` : "";
+          return { label: "Approved", tone: "accent", detail: `sends ${ist(until)}${why}` };
+        }
+        return { label: "Approved", tone: "accent", detail: "in the send queue" };
+      }
       return {
         label: "Approved",
         tone: "accent",

@@ -35,7 +35,7 @@ export class AudienceSourceAdapter implements SourceAdapter {
       name: p.name ?? "",
       role: p.role ?? "",
       company_domain: p.companyDomain ?? "",
-      timezone: p.timezone ?? "UTC",
+      timezone: p.timezone ?? "",
       phone: ((p.identities ?? []) as { kind?: string; value?: string }[]).find((i) => i.kind === "phone")?.value ?? "",
     }));
 

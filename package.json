@@ -33,6 +33,7 @@
     "dedupe:review": "tsx --env-file=.env src/scripts/dedupe-review-queue.ts",
     "backfill:notices": "tsx --env-file=.env src/scripts/backfill-engagement-notices.ts",
     "backfill:assignments": "tsx --env-file=.env src/scripts/backfill-assignments.ts",
+    "backfill:timezones": "tsx --env-file=.env src/scripts/backfill-timezones.ts",
     "retire:channel": "tsx --env-file=.env src/scripts/retire-channel.ts",
     "prune:leads": "tsx --env-file=.env src/scripts/prune-leads.ts",
     "reclassify:signals": "tsx --env-file=.env src/scripts/reclassify-signals.ts",

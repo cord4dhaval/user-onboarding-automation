@@ -36,6 +36,7 @@ import { assetFileUrl, deleteAssetFile, kindForMime, storeAssetFile } from "@/en
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
+import { timezoneFor } from "@/engine/time.js";
 import { stripOpenPixel } from "@/engine/tracking.js";
 import { enqueue, PRIORITY } from "@/engine/queue.js";
 import { fromIstInput } from "./ui/time";
@@ -1743,7 +1744,7 @@ export async function returnToReview(formData: FormData) {
       // Every one of these describes a moment that has passed — an hour's cap, a provider
       // that was refusing at the time. Leaving them would label a message in the review
       // queue with a block that no longer applies.
-      $unset: { skipReason: "", deferReason: "", error: "" },
+      $unset: { skipReason: "", deferReason: "", dueReason: "", error: "" },
     },
   );
 
@@ -1842,7 +1843,7 @@ export async function rescheduleMessage(formData: FormData) {
     { _id: action._id },
     // A message that failed or was stopped is put back in the queue by the same move: it
     // has a future date now, and leaving it `failed` would date a message nothing will send.
-    { $set: { dueAt: when, ...(String(action.status) === "queued" || String(action.status) === "awaiting_approval" ? {} : { status: "queued" }) }, $unset: { error: "", skipReason: "", deferReason: "" } },
+    { $set: { dueAt: when, ...(String(action.status) === "queued" || String(action.status) === "awaiting_approval" ? {} : { status: "queued" }) }, $unset: { error: "", skipReason: "", deferReason: "", dueReason: "" } },
   );
   await recordEdit(productId, actionId, "reschedule", when.toISOString());
   revalidatePath(`/products/${productId}/review`, "layout");
@@ -1922,6 +1923,8 @@ export interface HeldMessage {
   editableBody?: string;
   /** When it is set to go, for the reschedule field. */
   dueAt?: string;
+  /** Why it waits for that date — a limit that held it, or the recipient's night. */
+  waitReason?: string;
   /** Whether the message may still be changed at all. */
   editable: boolean;
   /** Set while a rewrite has been asked for and the writing routine has not run yet. */
@@ -1979,6 +1982,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     // would otherwise have to retype to change one line of a template default.
     editableBody: slot || content.bodyMd || rendered?.bodyMd,
     dueAt: action.dueAt ? new Date(String(action.dueAt)).toISOString() : undefined,
+    waitReason: action.deferReason ? String(action.deferReason) : action.dueReason ? String(action.dueReason) : undefined,
     editable: EDITABLE.includes(String(action.status)),
     rewriteRequestedAt: action.rewriteRequestedAt
       ? new Date(String(action.rewriteRequestedAt)).toISOString()
@@ -2083,7 +2087,7 @@ export async function importPeople(formData: FormData) {
       name: row.name ? String(row.name) : undefined,
       role: row.role ? String(row.role) : undefined,
       companyDomain: row.company_domain ? String(row.company_domain) : email.split("@")[1],
-      timezone: "UTC",
+      timezone: timezoneFor({ timezone: row.timezone, phone, email }),
       language: "en",
       stage: "lead",
       consent: { state: "legitimate_interest", capturedAt: now, evidence: `library:${kind}` },

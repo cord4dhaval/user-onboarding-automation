@@ -548,7 +548,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
                 : {}),
             },
             // It waited for a window and then went out; the note about waiting is history now.
-            $unset: { deferReason: "" },
+            $unset: { deferReason: "", dueReason: "" },
           },
         );
 

@@ -4,7 +4,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
 import { loadChannels, pickChannelFrom, persistAssignments, persistInstanceMailboxes } from "./channels.js";
-import { nextSendableAt } from "./time.js";
+import { HOME_TIMEZONE, nextSendableAt, timezoneFor } from "./time.js";
 import { mailboxFields } from "./mailbox.js";
 import { stampPlaybook } from "./playbooks.js";
 import { chooseVariant } from "./templates.js";
@@ -322,7 +322,7 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       // than naming the mail host as the employer.
       ...mailboxFields(value, typeof mapped.company_domain === "string" ? mapped.company_domain : undefined),
       ...formAnswersOf(mapped),
-      timezone: typeof mapped.timezone === "string" ? mapped.timezone : "UTC",
+      timezone: timezoneFor({ timezone: mapped.timezone, phone: phoneOf(mapped), email: String(mapped.email ?? value) }),
       language: "en",
       stage: "lead",
       consent: {
@@ -551,6 +551,8 @@ export async function queueFirstTouches(args: {
       candidates[0];
     if (!template) continue;
 
+    const zone = String(person.timezone ?? HOME_TIMEZONE);
+    const dueAt = nextSendableAt(now, zone, source.triggerMode, goal.schedule.quietHours);
     actions.push({
       _id: new ObjectId(),
       orgId: source.orgId,
@@ -566,7 +568,10 @@ export async function queueFirstTouches(args: {
       // overlapping run cannot send the same welcome twice.
       idempotencyKey: `${goalInstanceId}:first_touch:${goal.firstTouch.templateKey}`,
       status: "queued",
-      dueAt: nextSendableAt(now, String(person.timezone ?? "UTC"), source.triggerMode, goal.schedule.quietHours),
+      dueAt,
+      // Why a dated message is dated, for the review row. Not a deferReason: those are limits
+      // a channel change releases early, and a night in the recipient's zone is not one.
+      ...(dueAt > now ? { dueReason: `quiet hours in ${zone}` } : {}),
       cost: 0,
       signals: [],
       next: {},
