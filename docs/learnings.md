@@ -838,6 +838,33 @@ Standard (₹299) covers productivity scoring, hourly breakdown, app and website
 
 ---
 
+## 2026-09-16 — Decision: rolling planner, Claude-written mail, learning across leads
+
+Source: discussion with Dhaval after the scenario idea bank. Full design and build plan in `docs/rolling-planner.md`.
+
+What was decided:
+
+- Claude writes the whole email for each lead and invents the scenario. The idea bank above is the quality bar, not a menu. Truth is the only hard limit, enforced in code.
+- Claude chooses plain text or HTML per email and says why; results are counted by format. Plain-text links get click tracking first, or the comparison is blind.
+- One frame template (`written_email`) replaces one template per idea. The seven feature emails stay only as the fallback when Claude is late.
+- No month-long plans. Claude plans the next one or two touches, the engine watches the result (email 48 hours, WhatsApp 24 hours, call 2 hours, or at once on a click or reply) and asks for the next plan.
+- Every touch carries theme, hook, format, ask and lead group, frozen at send. Maintain turns results into learning notes that the next lead's card shows, so what worked for lead B reaches lead C.
+- Channels: email now; WhatsApp and Bolna join as per-touch channel choices later.
+- Everything waiting in the three lead campaigns is skipped and replanned under the new approach; Dhaval is not approving any of it.
+
+### Gaps and what to build
+
+| # | Build | Status |
+|---|---|---|
+| RP1 | Text-link click tracking; theme, hook, format, ask and group on every action | doing |
+| RP2 | Rolling advance: checkpoint after the watch window or a signal, fallbacks at 12 h and 6 h | doing |
+| RP3 | plan_goal (≤2 steps, theme), compose_batch (whole email, format), lead_card writing brief, save_learning | doing |
+| RP4 | Theme results by lead group, learning notes, Maintain analyst | doing |
+| RP5 | Frame template, product writing brief, campaigns switched, pending mail skipped and replanned | doing |
+| RP6 | Routine prompts pushed to the claude.ai triggers | doing |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -938,3 +965,4 @@ Standard (₹299) covers productivity scoring, hourly breakdown, app and website
 | 88 | Roles instead of names in scenarios; anonymised sample screens | IN6 | todo |
 | 89 | Plan tag on ideas and templates so ₹299 mails never promise Advanced features | IN7 | todo |
 | 90 | Employee explainer page to forward | IN8 | site task |
+| 91 | Rolling planner end to end: plan 1–2 touches, Claude writes whole mail, learning across leads | RP1–RP6 | doing |
