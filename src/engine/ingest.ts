@@ -51,6 +51,8 @@ interface GoalDoc {
   entry: { minIcpFit: number };
   budget: { touches: number; days: number; usd: number };
   firstTouch: { templateKey: string; channels: ChannelKey[] };
+  /** The mailboxes this campaign may send from. Empty means every healthy one. */
+  channelIds?: string[];
   schedule: { tickEverySec: number; quietHours?: [number, number] };
 }
 
@@ -502,7 +504,7 @@ export async function queueFirstTouches(args: {
   const db = await getDb();
   const { source, goal, now, summary } = args;
 
-  const channels = await loadChannels(source.orgId, source.productId, goal.firstTouch.channels);
+  const channels = await loadChannels(source.orgId, source.productId, goal.firstTouch.channels, goal.channelIds ?? []);
   // A campaign names a template key, not one document: the same key exists once per
   // channel and again per segment, and the channel is only known per person. findOne over
   // that set returned whichever document Mongo reached first, so a lead could be sent a

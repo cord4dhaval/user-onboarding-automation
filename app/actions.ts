@@ -544,6 +544,7 @@ export async function createGoal(formData: FormData) {
     .filter(Boolean);
   // The first-touch channel is implicitly allowed — picking it is saying so.
   const allowed = allowedChannels.length > 0 ? [...new Set([...allowedChannels, ...channels])] : channels;
+  const channelIds = await pickedMailboxes(formData, productId, allowed);
 
   await db.collection(C.goals).updateOne(
     { orgId: (await currentOrg()), productId, key },
@@ -568,6 +569,7 @@ export async function createGoal(formData: FormData) {
           usd: Number(formData.get("usd") ?? 12),
         },
         allowedChannels: allowed,
+        channelIds,
         verifyConnectionId: String(formData.get("verifyConnectionId") ?? "") || undefined,
         verifyHint: String(formData.get("verifyHint") ?? "").trim() || undefined,
         // Left alone on edit so a plan already written is not wiped by saving the form.
@@ -607,6 +609,31 @@ export async function createGoal(formData: FormData) {
 
   revalidatePath(`/products/${productId}/goals`);
   revalidatePath(`/products/${productId}/sources`);
+}
+
+/**
+ * The mailboxes the form ticked, kept to the ones this campaign can actually send on.
+ *
+ * A campaign naming only a mailbox of another kind — the voice line on an email campaign —
+ * would have no channel at all and would sit there sending nothing, so those are dropped
+ * here instead of failing silently at send time. None ticked means every healthy mailbox,
+ * which is what the engine did before this question existed.
+ */
+async function pickedMailboxes(formData: FormData, productId: string, chain: string[]): Promise<string[]> {
+  const ids = formData.getAll("channelIds").map(String).filter(Boolean);
+  if (ids.length === 0) return [];
+  const db = await getDb();
+  const rows = await db
+    .collection(C.channels)
+    .find({
+      orgId: await currentOrg(),
+      productId,
+      _id: { $in: ids.map((id) => new ObjectId(id)) },
+      key: { $in: chain },
+    })
+    .project({ _id: 1 })
+    .toArray();
+  return rows.map((r) => String(r._id));
 }
 
 /**
@@ -2430,6 +2457,7 @@ export async function updateGoal(formData: FormData) {
     .map((c) => c.trim())
     .filter(Boolean);
   const allowed = allowedChannels.length > 0 ? [...new Set([...allowedChannels, ...channels])] : channels;
+  const channelIds = await pickedMailboxes(formData, productId, allowed);
 
   const verifyConnectionId = String(formData.get("verifyConnectionId") ?? "") || undefined;
   const existing = await db.collection(C.goals).findOne({ orgId, productId, key });
@@ -2456,6 +2484,7 @@ export async function updateGoal(formData: FormData) {
           usd: Number(formData.get("usd") ?? existing?.budget?.usd ?? 12),
         },
         allowedChannels: allowed,
+        channelIds,
         verifyConnectionId,
         verifyHint: String(formData.get("verifyHint") ?? existing?.verifyHint ?? "").trim() || undefined,
         firstTouch: { templateKey: String(formData.get("firstTouchTemplate")), channels },

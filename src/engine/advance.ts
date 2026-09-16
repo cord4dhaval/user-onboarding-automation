@@ -244,7 +244,12 @@ export async function advance(
   for (const goal of goals) {
     channelsByGoal.set(
       String(goal.key),
-      await loadChannels(orgId, productId, (goal.allowedChannels ?? ["email"]) as ChannelKey[]),
+      await loadChannels(
+        orgId,
+        productId,
+        (goal.allowedChannels ?? ["email"]) as ChannelKey[],
+        (goal.channelIds ?? []) as string[],
+      ),
     );
   }
 

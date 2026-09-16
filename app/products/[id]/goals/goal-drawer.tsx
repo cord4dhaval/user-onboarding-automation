@@ -22,6 +22,7 @@ export default function GoalDrawer({
   productId,
   templateKeys,
   channelKeys,
+  mailboxes,
   toolChoices,
   audiences,
   verifiers,
@@ -32,6 +33,8 @@ export default function GoalDrawer({
   productId: string;
   templateKeys: string[];
   channelKeys: string[];
+  /** Every connected sender, so a campaign can be held to one of them. */
+  mailboxes: Array<{ id: string; key: string; from: string }>;
   toolChoices: ToolChoice[];
   audiences: AudienceChoice[];
   verifiers: VerifierChoice[];
@@ -48,11 +51,14 @@ export default function GoalDrawer({
     touches: number;
     days: number;
     approvalMode: string;
+    /** Empty means this campaign uses every healthy mailbox. */
+    channelIds?: string[];
   };
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const isEdit = Boolean(existing);
+  const chosenMailboxes = existing?.channelIds ?? [];
 
   return (
     <>
@@ -161,6 +167,23 @@ export default function GoalDrawer({
               No channel is connected, so nothing will send until one is.{" "}
               <a href={`/products/${productId}/channels`}>Connect one</a>.
             </p>
+          )}
+
+          {mailboxes.length > 1 && (
+            <fieldset className="fieldset">
+              <legend>Sent from</legend>
+              {mailboxes.map((box) => (
+                <label key={box.id} className="check">
+                  <input type="checkbox" name="channelIds" value={box.id} defaultChecked={chosenMailboxes.includes(box.id)} />
+                  {box.from}
+                  {box.from !== box.key && <span className="muted"> — {box.key}</span>}
+                </label>
+              ))}
+              <span className="reason">
+                Tick none to use every healthy mailbox, with leads spread across them. Ticking one keeps this
+                campaign on that sender.
+              </span>
+            </fieldset>
           )}
 
           <div className="grid">

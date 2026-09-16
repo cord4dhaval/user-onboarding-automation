@@ -84,6 +84,14 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
 
   const templateKeys = [...new Set(templates.map((t) => String(t.key)))];
   const channelKeys = [...new Set(channels.map((c) => String(c.key)))];
+  // Named by their from address rather than their id: picking a sender is a decision about
+  // which address the reader sees, and an ObjectId says nothing about that.
+  const mailboxes = channels.map((c) => ({
+    id: String(c._id),
+    key: String(c.key),
+    // A voice line has no from address, so it falls back to what kind of channel it is.
+    from: String(c.from ?? c.provider ?? c.key),
+  }));
 
   // An upload is ingested by the clock, not by the request that uploaded it, so a source
   // can be part-way through. One grouped read answers it for every source on the page.
@@ -139,6 +147,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
           productId={id}
           templateKeys={templateKeys}
           channelKeys={channelKeys}
+          mailboxes={mailboxes}
           toolChoices={toolChoices}
           audiences={audiences}
           verifiers={verifiers}
@@ -192,6 +201,17 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                       <div className="muted" style={{ fontSize: 12.5 }}>
                         <code>{ft.templateKey}</code> via {ft.channels.join(" → ") || "no channel"}
                       </div>
+                      {/* Which sender this campaign is held to, so a reader never has to open
+                          the drawer to find out whose address its mail goes out from. */}
+                      {((goal.channelIds ?? []) as string[]).length > 0 && (
+                        <div className="muted" style={{ fontSize: 12.5 }}>
+                          from{" "}
+                          {mailboxes
+                            .filter((box) => ((goal.channelIds ?? []) as string[]).map(String).includes(box.id))
+                            .map((box) => box.from)
+                            .join(", ")}
+                        </div>
+                      )}
                     </td>
 
                     <td>
@@ -309,6 +329,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                           productId={id}
                           templateKeys={templateKeys}
                           channelKeys={channelKeys}
+                          mailboxes={mailboxes}
                           toolChoices={toolChoices}
                           audiences={audiences}
                           verifiers={verifiers}
@@ -324,6 +345,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                             touches: budget.touches,
                             days: budget.days,
                             approvalMode: sch.approvalMode,
+                            channelIds: ((goal.channelIds ?? []) as string[]).map(String),
                           }}
                         />
                         <ActionButton

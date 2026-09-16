@@ -43,11 +43,21 @@ export async function loadChannels(
   orgId: string,
   productId: string,
   chain: ChannelKey[],
+  only: string[] = [],
 ): Promise<PooledChannel[]> {
   const db = await getDb();
   const channels = await db
     .collection(C.channels)
-    .find({ orgId, productId, key: { $in: chain }, enabled: true })
+    .find({
+      orgId,
+      productId,
+      key: { $in: chain },
+      enabled: true,
+      // A campaign may name the mailboxes it is allowed to send from. Narrowing here rather
+      // than at the pick keeps the rotation honest: it balances the mailboxes this campaign
+      // actually uses, instead of counting leads held by mailboxes it may never touch.
+      ...(only.length > 0 ? { _id: { $in: only.map((id) => new ObjectId(id)) } } : {}),
+    })
     .toArray();
   if (channels.length === 0) return [];
 

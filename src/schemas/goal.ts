@@ -99,6 +99,13 @@ export const goal = z.object({
    */
   allowedChannels: z.array(channelKey).min(1),
 
+  /**
+   * The mailboxes this campaign sends from, when it should not use all of them. Empty means
+   * every healthy channel of the allowed kinds, with leads spread across them. Naming them
+   * is what lets one campaign run on a warmed domain while another stays on a test mailbox.
+   */
+  channelIds: z.array(objectIdString).default([]),
+
   /** Fires immediately on entry, deterministically, without waiting for a Claude session. */
   firstTouch: z.object({
     templateKey: z.string(),
