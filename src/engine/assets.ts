@@ -32,6 +32,15 @@ export interface AssetMenuRow {
   /** True when one of `answers` matches something this person has already objected to. */
   answers_an_objection: boolean;
   /**
+   * True when the asset names this person's segment rather than being offered to everyone.
+   *
+   * Ranked on, because until an asset has been sent every asset scores the same 0.5 and the
+   * shortlist then fell back to database order: five general pages took every slot on a
+   * menu of eight and the stories written for this person's segment never reached the
+   * composer at all.
+   */
+  aimed_at_segment: boolean;
+  /**
    * Smoothed conversion, not a raw rate. `(ledToGoal + 1) / (sent + 2)` puts an asset
    * nobody has tried at 0.5 — above anything that has demonstrably failed and below
    * anything that has demonstrably worked. A raw rate would rank every new asset at zero
@@ -139,6 +148,9 @@ export async function eligibleAssets(
       const led = Number(usage.ledToGoal ?? 0);
       const answers = ((row.answers ?? []) as unknown[]).map(String);
       const hit = answers.some((a) => objections.some((o) => o.includes(a.toLowerCase())));
+      const aimed = Boolean(
+        input.segment && ((row.forSegment ?? []) as unknown[]).map(String).includes(input.segment),
+      );
 
       return {
         asset_id: String(row._id),
@@ -152,6 +164,7 @@ export async function eligibleAssets(
         claims: ((row.claims ?? []) as unknown[]).map(String),
         answers,
         answers_an_objection: hit,
+        aimed_at_segment: aimed,
         score: (led + 1) / (sent + 2),
         sent,
         led_to_goal: led,
@@ -159,7 +172,14 @@ export async function eligibleAssets(
     })
     // An asset that answers something they actually said outranks one that merely performs
     // well across everybody, because the second is an average and the first is about them.
-    .sort((a, b) => Number(b.answers_an_objection) - Number(a.answers_an_objection) || b.score - a.score);
+    // Then one written for their segment, before one written for everybody: both are
+    // untested at first, and the general one is not more deserving for being general.
+    .sort(
+      (a, b) =>
+        Number(b.answers_an_objection) - Number(a.answers_an_objection) ||
+        Number(b.aimed_at_segment) - Number(a.aimed_at_segment) ||
+        b.score - a.score,
+    );
 
   return menu;
 }
