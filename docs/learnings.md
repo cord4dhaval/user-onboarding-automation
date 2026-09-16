@@ -856,12 +856,12 @@ What was decided:
 
 | # | Build | Status |
 |---|---|---|
-| RP1 | Text-link click tracking; theme, hook, format, ask and group on every action | doing |
-| RP2 | Rolling advance: checkpoint after the watch window or a signal, fallbacks at 12 h and 6 h | doing |
-| RP3 | plan_goal (≤2 steps, theme), compose_batch (whole email, format), lead_card writing brief, save_learning | doing |
-| RP4 | Theme results by lead group, learning notes, Maintain analyst | doing |
-| RP5 | Frame template, product writing brief, campaigns switched, pending mail skipped and replanned | doing |
-| RP6 | Routine prompts pushed to the claude.ai triggers | doing |
+| RP1 | Text-link click tracking; theme, hook, format, ask and group on every action | done |
+| RP2 | Rolling advance: checkpoint after the watch window or a signal, fallbacks at 12 h and 6 h | done |
+| RP3 | plan_goal (≤2 steps, theme), compose_batch (whole email, format), lead_card writing brief, save_learning | done |
+| RP4 | Theme results by lead group, learning notes, Maintain analyst | done |
+| RP5 | Frame template, product writing brief, campaigns switched, pending mail skipped and replanned | done |
+| RP6 | Routine prompts pushed to the claude.ai triggers | done |
 
 ---
 
@@ -965,4 +965,4 @@ What was decided:
 | 88 | Roles instead of names in scenarios; anonymised sample screens | IN6 | todo |
 | 89 | Plan tag on ideas and templates so ₹299 mails never promise Advanced features | IN7 | todo |
 | 90 | Employee explainer page to forward | IN8 | site task |
-| 91 | Rolling planner end to end: plan 1–2 touches, Claude writes whole mail, learning across leads | RP1–RP6 | doing |
+| 91 | Rolling planner end to end: plan 1–2 touches, Claude writes whole mail, learning across leads | RP1–RP6 | done 2026-09-16 |

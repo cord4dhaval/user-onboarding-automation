@@ -183,13 +183,29 @@ Email now. WhatsApp (Wati) and Bolna calls join as channel choices once the camp
 | # | Part | Status |
 |---|---|---|
 | 1 | Design doc | done |
-| 2 | Text-link tracking, action tags, variant snapshot | todo |
-| 3 | Rolling advance: checkpoint, watch windows, fallbacks | todo |
-| 4 | plan_goal, compose_batch, lead_card, next_work, what_works, save_learning | todo |
-| 5 | themePerformance and learning notes | todo |
-| 6 | Frame template, product writing brief, campaign switch | todo |
-| 7 | Routine prompts and tool lists | todo |
-| 8 | Lead page and Review: theme, format and why | todo |
-| 9 | Verify script, typecheck, deploy, live test | todo |
-| 10 | Skip pending mail, replan all active leads | todo |
-| 11 | Push prompts to the claude.ai triggers | todo |
+| 2 | Text-link tracking, action tags, variant snapshot | done (3cb0b64) |
+| 3 | Rolling advance: checkpoint, watch windows, fallbacks, replies answered first | done (3cb0b64) |
+| 4 | plan_goal, compose_batch, lead_card, next_work, what_works, save_learning | done (3cb0b64, 3370b17) |
+| 5 | themePerformance and learning notes | done (3cb0b64) |
+| 6 | Frame template `written_email` (stage `frame`, kept out of the ladder fallback), product writing brief (facts, 88 examples, subjectAvoid), campaigns switched | done 2026-09-16 |
+| 7 | Routine prompts and tool lists | done (3cb0b64) |
+| 8 | Lead page and Review: idea, format and why; bulk approve keeps the writer's format | done (3cb0b64) |
+| 9 | Verify script (`npm run verify:rolling`, 39 checks), typecheck, deploy, live test | done 2026-09-16 |
+| 10 | Skip pending mail (33 skipped), replan all active leads (28 new leads urgent, 323 old leads paced at twenty an hour) | done 2026-09-16 |
+| 11 | Prompts pushed to the Acquire, Advance, React and Maintain triggers | done 2026-09-16 |
+
+## Live test, 2026-09-16
+
+One real v3 lead (property advisory founder, 11–50 people, "not able to gauge what they are doing whole day"), through the production MCP server:
+
+- lead_card returned the writing brief (their words, facts, 10 examples, group `founder|11-50`) and marked the old plan spent.
+- plan_goal refused a 3-step plan and accepted a 1-step plan with the theme "The desk hours between site visits".
+- compose_batch refused a subject with "monitoring", a body naming the company, and a frame touch with no format; it accepted a plain-text reply-ask email with no warnings.
+- The live tick picked the email up and deferred it to 17 September 08:20 UTC for the 2-day warm gap since the welcome; it will then wait in Review.
+- Rendered read-only with the production renderer: plain text, no button (reply ask), unsubscribe link direct, validation clean.
+
+## Follow-ups
+
+- Confirm the "verify" items with the product team, then move confirmed ones from `facts.unverified` to `facts.canDo`.
+- Watch the first Acquire and Advance runs under the new prompts; the lead planner handles twenty leads an hour, so the old-lead backlog takes about sixteen hours.
+- WhatsApp and Bolna as per-touch channels once the campaigns allow them.
