@@ -1079,7 +1079,10 @@ function Result({ action, delivery }: { action: Document; delivery: string }) {
           </span>
         ) : null}
         {opened ? (
-          <span className="pill warm" title={istLong(opened)}>
+          <span
+            className="pill warm"
+            title={action.openInferred ? `${istLong(opened)} — inferred from their click; the pixel never fired` : istLong(opened)}
+          >
             <Mail /> they opened · {istWeekday(opened)}, {istTime(opened)}
           </span>
         ) : null}

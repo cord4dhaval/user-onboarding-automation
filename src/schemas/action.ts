@@ -127,6 +127,8 @@ export const action = z.object({
   signals: z.array(z.object({ type: z.string(), at: z.date() })).default([]),
   /** Denormalised from signals so "who clicked" is an index hit rather than an array scan. */
   firstOpenedAt: z.date().optional(),
+  /** The open was read off a click, not seen by the pixel. */
+  openInferred: z.boolean().optional(),
   firstClickedAt: z.date().optional(),
   /** The strongest signal of all, and the only one that arrives in words. */
   firstRepliedAt: z.date().optional(),

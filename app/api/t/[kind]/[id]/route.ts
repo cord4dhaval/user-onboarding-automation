@@ -126,6 +126,17 @@ async function record(
     // but nobody clicked anything we sent them, so it must not warm a lead or claim one did.
     if (machine) return;
 
+    // A person cannot click a link in a mail they never opened. The pixel often never fires —
+    // leads under legitimate interest get no pixel at all, and many clients block images — so
+    // a click is the proof of an open the pixel missed. Flagged, so the page can say the open
+    // was read off the click rather than seen.
+    if (type === "clicked") {
+      await db.collection(C.actions).updateOne(
+        { _id: new ObjectId(actionId), firstOpenedAt: { $exists: false } },
+        { $set: { firstOpenedAt: now, openInferred: true } },
+      );
+    }
+
     // The shared prior moves only on a first click. A prefetching client that fires the
     // pixel ten times must not make one ignored message look like ten engaged ones — the
     // filter above already guarantees this runs once.
