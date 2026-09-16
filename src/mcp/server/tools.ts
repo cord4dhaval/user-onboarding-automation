@@ -1268,6 +1268,15 @@ export const TOOLS: ToolDef[] = [
                   "Optional, only where the template has a PS line: one line of at most 25 words, no link, " +
                   "offering an easy second route that fits this person. Omit to keep the template's own PS.",
               },
+              ask: {
+                type: "string",
+                enum: ["reply", "link"],
+                description:
+                  "What this message asks for. \"reply\" renders it without the template's button, so the " +
+                  "only thing to do is answer; the body must then end on a question a person can answer in " +
+                  "one line. Use it for the first two written touches to anyone who has not clicked, and for " +
+                  "anyone who has gone quiet. \"link\" keeps the button and is the default.",
+              },
               claims_made: { type: "array", items: { type: "string" } },
               asset_ids: {
                 type: "array",
@@ -1321,6 +1330,13 @@ export const TOOLS: ToolDef[] = [
         }
         if (LINK.test(body)) {
           throw new Error(`step ${step} carries a link. The template already has the one button this mail asks for; a second link is a second ask. Nothing was written.`);
+        }
+        const ask = String(t.ask ?? "link");
+        if (ask !== "link" && ask !== "reply") {
+          throw new Error(`step ${step} ask is "${ask}"; it is "reply" or "link". Nothing was written.`);
+        }
+        if (ask === "reply" && !/\?\s*$/.test(body.trim())) {
+          throw new Error(`step ${step} asks for a reply but does not end on a question. A reply ask is a question they can answer in one line. Nothing was written.`);
         }
         const pre = String(t.preheader ?? "").trim();
         if (pre) {
@@ -1616,6 +1632,7 @@ export const TOOLS: ToolDef[] = [
               bodyMd: "",
               slotText: body,
               slots: String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : undefined,
+              ask: String(t.ask ?? "") === "reply" ? "reply" : undefined,
               personalizationUsed: [],
               claimsMade: [...new Set([...((t.claims_made ?? []) as string[]), ...assetClaims])],
               wordCount: body.split(/\s+/).filter(Boolean).length,

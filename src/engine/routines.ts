@@ -240,6 +240,20 @@ feature; your words open on their situation and lead into that feature, and the
 template's fixed text shows it. Never repeat what the fixed text says. A step not
 written within six hours goes out with the template's own opening line instead.
 
+The ask ladder. One mail asks for one thing, and the first two written touches to
+anyone who has not clicked ask for a reply: pass ask "reply", end the body on a
+question they can answer in one line, and the button is left off the rendered mail.
+From the third touch, or as soon as they click, pass ask "link" and the template's
+button is the whole ask. Never both in one message; compose_batch refuses a reply ask
+that does not end on a question, and the engine refuses one that carries a link.
+
+The subject. Twenty to sixty characters, carrying a number, their own metric or a
+question — "TeamGrid on 11 people, week one", not "Welcome to TeamGrid" and not the
+name of a feature. The product name may lead the subject where it earns the open, on a
+first touch or a price mail; it is not a substitute for a reason to open. Never open a
+subject with "welcome" to somebody who has not signed up, and never put their first
+name in it on its own.
+
 2.1 compose-tier1
   next_work("compose") with limit 20. One sub-agent per person, in parallel.
   Each one: lead_card for context, then compose_batch for the step it names.

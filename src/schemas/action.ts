@@ -43,6 +43,14 @@ export const composedContent = z.object({
   wordCount: z.number().int().nonnegative(),
   /** The slot's prose on its own. `bodyMd` is the rendered message that wraps it. */
   slotText: z.string().optional(),
+  /**
+   * What this message asks for: a reply, or a click.
+   *
+   * "reply" suppresses the template's button, so the only thing to do is answer. The first
+   * touches of a sequence ask that way — a stranger who has read four sentences is being
+   * asked for a trial, which is the largest ask we have and the one fewest people take.
+   */
+  ask: z.enum(["reply", "link"]).optional(),
 });
 
 /** Touch, content, prediction and outcome in one document — one read tells the whole story. */

@@ -12,6 +12,8 @@ export interface ComposedContent {
   preheader?: string;
   ctaText?: string;
   ctaUrl?: string;
+  /** "reply" renders the message without the template's call to action. See schemas/action.ts. */
+  ask?: "reply" | "link";
   personalizationUsed: string[];
   claimsMade: string[];
   wordCount: number;
@@ -458,7 +460,11 @@ export function resolveBlocks(
     }
 
     if (type === "cta" && typeof block.fixed === "string" && typeof block.url === "string") {
-      out.push({ kind: "cta", text: merge(block.fixed, vars), url: merge(block.url, vars) });
+      // A message asking for a reply carries no button. Two asks in one mail is the
+      // reader choosing between them, and the cheaper one is the one we want taken.
+      if (precomposed?.ask !== "reply") {
+        out.push({ kind: "cta", text: merge(block.fixed, vars), url: merge(block.url, vars) });
+      }
       continue;
     }
 
@@ -565,6 +571,7 @@ export function renderTemplate(
     preheader,
     ctaText,
     ctaUrl,
+    ask: precomposed?.ask,
     personalizationUsed,
     claimsMade: precomposed?.claimsMade ?? [],
     wordCount: bodyMd.split(/\s+/).filter(Boolean).length,

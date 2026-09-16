@@ -375,6 +375,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       }
 
       const check = validate(content, {
+        ask: (prior as { ask?: "reply" | "link" } | undefined)?.ask,
         channelKey: String(action.channel),
         maxWords: constraints?.maxWords,
         noClaims: constraints?.noClaims,
