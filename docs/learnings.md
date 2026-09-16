@@ -590,6 +590,8 @@ Source: the CEO's review of the lead mails, relayed by Dhaval ("the mail content
 
 Context: the reader is the founder, CEO, HR head or operations head of a 10 to 500 person Indian company. The mails describe features. The CEO wants each mail to open on something that happens in the reader's own week, for example a paid AI tool most of the team does not use, a nine-hour day with a few focused hours in it, or time going to work nobody needed. Dhaval's three starting examples map to ideas 2, 5 and 8 below.
 
+Status: Dhaval approved the whole idea bank for use in mails on 2026-09-16, expecting better reach than the feature mails. Every idea below is approved; an idea whose Source says verify still needs the product team to confirm the feature or number before a mail quotes it. Ideas 49 to 88 were added the same day after reading the pricing, CRM, Ask TeamGrid, edtech and virtual support pages.
+
 ### How each mail is built
 
 1. **Their situation**: one scene from a founder's week, in their words ("calls five managers at 8 PM to ask what happened today").
@@ -616,7 +618,7 @@ Source column: `site` is a number shown on teamgrid.ai (sample or benchmark), `i
 | 1 | Salary for nine hours, focused work for five | 50 people at ₹40,000 a month is ₹20 lakh; if three of nine hours go to idle time and meetings, about ₹6.7 lakh a month buys no work | Productivity Scoring, Hourly Breakdown | illustrative |
 | 2 | You pay for AI tools. Who is using them? | The company pays for ChatGPT, Copilot or Cursor seats, and most of the team still does the work by hand | AI Tool Radar, App Tracking | verify |
 | 3 | The client who costs more than they pay | A ₹50,000 retainer quietly takes 60 team hours a month; common in CA firms, agencies and IT services | Project and client hours | illustrative |
-| 4 | Four tools, one ₹299 seat | A dollar-billed time tracker, an HRMS, a CRM and Excel for timesheets | One platform at ₹299 per seat | site |
+| 4 | Four tools, one ₹649 seat | A dollar-billed time tracker, an HRMS, a CRM and Excel for timesheets | One platform: CRM and HRMS come with the Advanced plan at ₹649 per seat, not Standard at ₹299 | site pricing |
 
 #### Time leaks
 
@@ -712,6 +714,98 @@ Source column: `site` is a number shown on teamgrid.ai (sample or benchmark), `i
 | 47 | Set up without an IT department | Most SMEs have nobody to roll out software | One installer for Mac, Windows and Linux, five minutes | site |
 | 48 | Data residency for regulated teams | NBFC, fintech and health teams need to know where data sits | SOC 2 Type II, ISO 27001, on-site data residency | verify India region |
 
+#### More money leaks
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 49 | The Monday review meeting costs ₹6 lakh a year | Twelve managers for two hours at about ₹500 an hour of salary is ₹12,000 a week | Meeting Load | illustrative |
+| 50 | What one focused hour costs your company | A ₹40,000 salary is about ₹200 per paid hour, but about ₹360 per focused hour when five of nine hours are focused | Productivity Scoring, Hourly Breakdown | illustrative |
+| 51 | Rent for 100 desks. How many are used on Friday? | About ₹10 lakh a month of office rent while hybrid attendance leaves desks empty on some weekdays | Attendance present and remote by weekday | illustrative, verify rent and the cut |
+| 52 | Less than one cutting chai a day | Standard is about ₹14 per working day per person; Advanced is about ₹30 | Price anchor | site pricing, illustrative |
+| 53 | Before you cut costs, find the hours going nowhere | Cost pressure pushes towards headcount cuts before anyone knows where the time goes | Hourly Breakdown, Meeting Load, Workload | none |
+| 54 | After the funding round, headcount doubled. Did output? | A funded startup hires fast and burns runway without seeing what the new hires changed | Score trends, Workload | none |
+
+#### Sales pipeline
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 55 | A ₹3.1 lakh deal nobody has touched in five days | Deals go quiet in the gaps between meetings, and nobody notices until the buyer has chosen someone else | CRM quiet-account alerts | site sample, Advanced |
+| 56 | Your won deals share a rhythm | Won deals had a first touch within 2 hours, a demo inside 4 days and follow-ups every 48 hours; lost deals averaged a 3-day first touch | CRM pipeline patterns | site sample, Advanced |
+
+#### Managed Services (audit ask, not the trial)
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 57 | ₹40 lakh stuck in unpaid invoices | Payment reminders depend on one accountant remembering; the Gujarat case cut overdue invoices by 94% with reminders at 7, 14 and 30 days | Invoice Tracker built by Managed Services | site case; ₹40 lakh illustrative |
+| 58 | The same order typed into Tally, Excel and the CRM | Three systems kept in step by hand; the Gujarat case removed 15 hours a week of entry | CRM auto-sync built by Managed Services | site case; Tally is our example |
+| 59 | Follow-ups to 200 dealers, sent by hand | Distributor and dealer follow-ups depend on who has time; the case raised response rates by 34% | Email follow-up automation | site case |
+| 60 | Move three sliders and see what manual work costs | 87 people at ₹30,000 with 9 automatable hours a week comes to about ₹9.6 lakh a month | The resource optimizer calculator page | site calculator |
+| 61 | Which jobs in your company should AI do first? | Everyone talks about AI and nobody knows where it pays; the audit maps three to five areas | Free 30-minute audit, Ask TeamGrid "where are we losing time to manual work?" | site |
+
+#### AI at work
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 62 | You ran an AI workshop. Did anything change the week after? | Training money spent, with no way to see whether usage moved | AI Tool Radar before and after | verify |
+| 63 | Which AI tools is your team already using? | Staff use personal AI accounts for company work; TeamGrid sees which tools are open, never what was typed | App and website tracking by domain | verify, never claim content |
+| 64 | Four tools for every support ticket | Handling time rose 18% because agents switch between four tools per ticket and copy between the CRM and billing | Ask TeamGrid weekly answer | site sample, Advanced |
+
+#### Fair people decisions
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 65 | When your best person asks for a raise | The founder wants to say yes quickly and keep them, but has only impressions | Score trends, Workload | none |
+| 66 | Who is ready to lead a team? | Promotion goes to the most visible person instead of the one others already route work to | Org Graph, collaboration signals | verify |
+| 67 | A performance plan built on facts both sides can see | Improvement plans turn into arguments because the evidence is memory; the employee sees the same data | Twelve-week trends, employee self-view | none |
+| 68 | A new manager who knows the team on day one | A new manager spends a month learning who does what and when the team works best | Org Memory ("Design does deep work before noon") | site sample, verify |
+| 69 | Hire in Indore, manage from Bangalore | Salaries are lower in tier-2 cities, but founders hesitate to hire people they cannot see | Automatic time tracking, AI Summaries | illustrative, verify salary gap |
+| 70 | The night-shift agent nobody has spoken to in nine days | Isolation on night shifts shows before a resignation does | Team cohesion, isolation risk | site sample (virtual support) |
+| 71 | Forty "forgot to punch" requests a month | HR spends mornings approving attendance regularisation | Automatic attendance from activity | illustrative, Advanced |
+| 72 | Wedding season leave, planned before it happens | November to February leave clusters around family weddings and deadlines slip | Leave Patterns, Holidays | none, Advanced |
+| 73 | Your team will ask whether this is spying. Here is a page to forward. | The founder's biggest fear is the team's reaction | Employee explainer page: what is and is not recorded | needs the page (RD2) |
+
+#### Operations and quality
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 74 | Same issue, 12 minutes for one agent and 2.6 hours for another | Customers feel the spread; coaching goes to a generic scorecard instead of the step that costs time | Quality consistency on like-for-like issues | site sample (virtual support) |
+| 75 | The SLA breach you found out about at month end | Tuesday afternoons ran slow for weeks before the report said so | Response-time trends by queue and shift | site sample |
+| 76 | The approval that holds everything for a week | Work waits on one senior reviewer; in edtech, drafting takes 3 days and academic review 7 | Stage-level tracking | site sample (edtech) |
+| 77 | Shift handovers that nobody writes down | Handovers between shifts drop to 78% documented and issues fall between them | Handover tracking | site sample |
+| 78 | Two teams that have not worked together in three weeks | Operations and sales drift into silos | Org Intelligence silo alert | site sample, Advanced |
+| 79 | When a number drops, the reason is already in your data | "Why did support slow down in May?" or "which projects slipped this week, and why?", answered in seconds | Ask TeamGrid | site sample, Advanced |
+
+#### Offer and risk
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 80 | When the trial ends, nothing is charged | Founders fear a card on file and a surprise bill; the workspace pauses and data stays exportable for 30 days | Trial terms | site pricing |
+| 81 | Start with one team, not the whole company | A company-wide rollout feels like a big decision | A pilot on one team | none |
+| 82 | Guess your team's focused hours, then check | Reply with a guess; a week of trial shows the real number | Reply ask, then Hourly Breakdown | none |
+| 83 | What you will see on day one, day three and day seven | Trials stall because nobody knows what to expect; the first pattern appears the next day | Trial timeline | site ("see your first pattern tomorrow") |
+| 84 | Billed in rupees, with a GST invoice | Indian finance teams want input tax credit and no dollar card charges | Rupee billing | verify GST invoice |
+
+#### More segments
+
+| # | Working subject | Their situation | What TeamGrid shows | Source |
+|---|---|---|---|---|
+| 85 | Law firms: the hours that never reach the invoice | Associates rebuild billable time from memory at month end | Automatic time per matter | illustrative |
+| 86 | Design studios: revision rounds that eat the fee | Architecture and interior projects run past the fee on unbilled revisions | Project hours | none |
+| 87 | US healthcare billing teams in India | Revenue cycle teams need hours per client and HIPAA-ready handling | Hours per client, compliance | verify HIPAA |
+| 88 | Recruitment agencies: sourcing time versus admin | Recruiters spend the day on trackers and follow-ups instead of candidates | App and time breakdown | verify |
+
+### Which plan each idea needs
+
+Standard (₹299) covers productivity scoring, hourly breakdown, app and website tracking, attendance and auto timesheets, daily AI summaries, and goals and tasks. Advanced (₹649) adds Ask TeamGrid, Pattern Intelligence, the Anomaly Feed and early warnings, Email Insights, CRM, HRMS and the weekly Founder's Report. Enterprise adds data residency, SSO, roles and audit log. A mail must not promise an Advanced feature at the Standard price: ideas 4, 7, 9 to 13, 16, 17, 23, 26, 33, 39, 40, 55, 56, 64, 68, 71, 72, 78 and 79 lean on Advanced features, and 48 needs Enterprise.
+
+### Ideas we will not use
+
+- **Catching moonlighting.** TeamGrid cannot see a second job, and the mail would accuse the reader's staff.
+- **Long lunches, tea breaks, bathroom time.** Breaks turned into evidence is the top complaint from measured staff (Reddit research, 2026-09-15).
+- **Field sales and site staff.** The agent runs on computers only.
+- **Choosing whom to lay off.** Uses the data against people and contradicts "patterns, not people".
+- **Named leaderboards or attacks on named competitors.** Breaks the no-names rule and the competitor rule.
+
 ### Dated hooks for India
 
 | When | Hook | Ideas |
@@ -724,6 +818,10 @@ Source column: `site` is a number shown on teamgrid.ai (sample or benchmark), `i
 | March to May | IPL | 8 |
 | July | ITR filing | 44 |
 | 20th of each month | GST return | 44 |
+| October and November | Diwali bonus split | 15, 65 |
+| November to February | Wedding season leave | 72 |
+| June to September | Monsoon work-from-home days | 36, 51 |
+| End of each quarter | Sales push, quiet deals | 55, 56 |
 
 ### Gaps and what to build
 
@@ -731,10 +829,12 @@ Source column: `site` is a number shown on teamgrid.ai (sample or benchmark), `i
 |---|---|---|---|---|
 | IN1 | The CEO finds the mails basic; a scene from the reader's own week is what lands | The seven `feature_followup` emails describe features | Write the top seven ideas as emails in the `feature_followup` family (situation, cost, what TeamGrid shows, trial button) so the planner can pick them per lead | todo, waiting for Dhaval's pick |
 | IN2 | Rupee cost is the strongest framing for Indian founders | No mail carries a worked number | Illustrative calculation asset built from the team size on the form (63 of 65 leads have it): team × assumed salary × share of the day, labelled illustrative | todo, extends RL5 |
-| IN3 | Several ideas rest on claims nobody has checked | Site benchmarks, testimonials and some features unverified | Confirm with the product team: AI Tool Radar output, Lead Routing and Reply SLA Keeper status, mobile app, the office-versus-remote focus cut, Org Graph single points of failure, India data residency, testimonials, "500+ companies", and the +32%, 6.2 h, 92% and 80% benchmarks | todo, verify |
+| IN3 | Several ideas rest on claims nobody has checked | Site benchmarks, testimonials and some features unverified | Confirm with the product team: AI Tool Radar output, Lead Routing and Reply SLA Keeper status, mobile app, the office-versus-remote focus cut, Org Graph single points of failure, India data residency, testimonials, "500+ companies", the +32%, 6.2 h, 92% and 80% benchmarks, and for ideas 49 to 88: AI Tool Radar before and after, Org Graph promotion signals, Org Memory, GST invoices, HIPAA, and the hours figure (the home page says 12M+ analysed hours, the pricing page 3M+) | todo, verify |
 | IN4 | Dated hooks lift relevance | Dated hooks exist for the UK only (AOS6) | Indian calendar hooks with an expiry date, from the table above | todo, extends 57 |
 | IN5 | Segment ideas only fit their segment | Classification can misfile a lead (the Pune property firm filed as `eng_leader`) | Tag each idea with its segments; the planner offers only matching ideas and falls back to the general ones | todo |
 | IN6 | Named people in a scenario read as fake | Copy rule exists; some screens still name people (RL9) | Roles in copy; anonymised sample screens only | todo, extends RL9 |
+| IN7 | Many ideas rely on Advanced features, and the first draft of idea 4 priced CRM and HRMS at ₹299 | Templates do not record which plan a claim needs | Tag each idea and template with the plan it needs; a mail quoting ₹299 must not promise an Advanced feature | todo |
+| IN8 | Idea 73 needs something to forward | No employee-facing explainer exists | One page on teamgrid.ai for employees: what is recorded, what never is, what they see | site task, extends RD2 |
 
 ---
 
@@ -836,3 +936,5 @@ Source column: `site` is a number shown on teamgrid.ai (sample or benchmark), `i
 | 86 | Indian dated hooks with expiry (tax audit 30 September first) | IN4 | todo |
 | 87 | Segment tags on ideas so the planner offers only matching ones | IN5 | todo |
 | 88 | Roles instead of names in scenarios; anonymised sample screens | IN6 | todo |
+| 89 | Plan tag on ideas and templates so ₹299 mails never promise Advanced features | IN7 | todo |
+| 90 | Employee explainer page to forward | IN8 | site task |
