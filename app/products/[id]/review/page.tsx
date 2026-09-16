@@ -252,6 +252,9 @@ export default async function Review({
 
   const instanceIds = campaign ? await runsFor(campaign) : undefined;
   const channelKey = channels.some((c) => String(c.key) === channelParam) ? channelParam : undefined;
+  // The filter is by kind, and a product with four mailboxes has four channels of one kind.
+  // One pill per kind, or the row reads "email email email email" and all four light up.
+  const channelKinds = [...new Set(channels.map((c) => String(c.key)))];
 
   // Which mailbox each row will actually leave from.
   //
@@ -543,7 +546,7 @@ export default async function Review({
           />
         )}
         {/* Only worth the space once a product actually sends more than one way. */}
-        {channels.length > 1 && (
+        {channelKinds.length > 1 && (
           <div className="seg" role="tablist" aria-label="Channel">
             <BusyLink
               className={!channelKey ? "on" : ""}
@@ -551,13 +554,13 @@ export default async function Review({
             >
               All channels
             </BusyLink>
-            {channels.map((c) => (
+            {channelKinds.map((kind) => (
               <BusyLink
-                key={String(c._id)}
-                className={channelKey === String(c.key) ? "on" : ""}
-                href={url({ channel: String(c.key), page: 1 })}
+                key={kind}
+                className={channelKey === kind ? "on" : ""}
+                href={url({ channel: kind, page: 1 })}
               >
-                {String(c.key)}
+                {kind}
               </BusyLink>
             ))}
           </div>

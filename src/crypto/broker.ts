@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { openSecret, sealSecret, type SealedSecret } from "./envelope.js";
 import { refreshToken, TokenRefreshError, type AuthServerMetadata } from "../mcp/oauth.js";
 import { googleClient, refreshGoogleToken } from "../auth/google.js";
+import { RetryableSendError } from "../adapters/channel/types.js";
 
 /**
  * The only path to a plaintext secret. Callers are engine-side adapters running in a
@@ -123,8 +124,12 @@ async function refreshIfExpiring(
       await db
         .collection(C.credentials)
         .updateOne({ orgId, connectionId }, { $set: { lastRefreshError: String(refusal ?? err), lastRefreshErrorAt: new Date() } });
-      throw new Error(
+      // Retryable, so the send path puts the message back in the queue. A plain Error here
+      // reached fireDue's catch-all and marked an approved trial-link mail failed for good,
+      // while its own error text promised a retry that nothing was going to make.
+      throw new RetryableSendError(
         `token refresh could not be completed (${refusal ? `HTTP ${refusal.status}` : "network"}) — will retry on the next send`,
+        120,
       );
     }
 

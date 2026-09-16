@@ -445,9 +445,27 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         continue;
       }
 
-      const adapter = opts.adapterFor
-        ? await opts.adapterFor(String(action.channelId), String(action.channel))
-        : new ConsoleAdapter();
+      // Building the adapter resolves the mailbox's credential, which can refresh its OAuth
+      // token. A refresh that fails for a bad minute is the same kind of delay as a throttled
+      // provider, so it gets the same treatment as one: back to the queue, slot handed back.
+      let adapter: ChannelAdapter;
+      try {
+        adapter = opts.adapterFor
+          ? await opts.adapterFor(String(action.channelId), String(action.channel))
+          : new ConsoleAdapter();
+      } catch (err) {
+        if (!(err instanceof RetryableSendError)) throw err;
+        await db.collection(C.actions).updateOne(
+          { _id: action._id },
+          {
+            $set: { status: "queued", dueAt: new Date(now.getTime() + err.retryAfterSec * 1000), deferReason: err.message },
+            $unset: { claimedAt: "" },
+          },
+        );
+        summary.deferred++;
+        if (!dryRun) headroom.set(String(action.channelId), (headroom.get(String(action.channelId)) ?? 0) + 1);
+        continue;
+      }
 
       const outbound = toOutbound(content, address, channel.from as string | undefined);
       outbound.replyTo = channel.replyTo as string | undefined;
