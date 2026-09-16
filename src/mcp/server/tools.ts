@@ -832,7 +832,8 @@ export const TOOLS: ToolDef[] = [
         // learn whether this person has ever responded at all.
         engagement: engagementOf(actions, events),
         events: events.map((e) => ({ type: e.type, ts: e.ts, payload: e.payload })),
-        product_config: product?.config ?? null,
+        // The writing brief travels in `writing` above, once, and only where it applies.
+        product_config: product?.config ? { ...(product.config as Record<string, unknown>), writing: undefined } : null,
         // What each channel can actually carry. Without this, copy gets written to an
         // email's shape and sent as a WhatsApp message, where it lands badly.
         channels: (

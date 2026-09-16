@@ -39,7 +39,12 @@ export async function previewContent(
   // The same choice the sender makes: the id if the touch carried one, otherwise the email
   // the plan step names, otherwise the rung this person has climbed to. Leaving out the
   // step's email showed a "one step left" frame around copy planned for another email.
-  const rungKey = goalInstance ? await stepTemplateKey(goalInstance, action) : undefined;
+  const rungKey =
+    typeof action.templateKey === "string" && action.templateKey
+      ? action.templateKey
+      : goalInstance
+        ? await stepTemplateKey(goalInstance, action)
+        : undefined;
   const template = action.templateId
     ? await db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) })
     : await resolveTemplateFor({
