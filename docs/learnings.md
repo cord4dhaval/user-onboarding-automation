@@ -550,6 +550,40 @@ may be the real blocker, and it is cheap to check.
 
 ---
 
+## 2026-09-16 — What email programs that get replies actually do (web research)
+
+Source: 2026 benchmark reports and studies read on the web — Instantly and Apollo on cold-email reply rates, Martal and Belkins on subject lines, Stripo's automation benchmarks, Google and Yahoo bulk sender rules. Read against our own record: 97 emails sent, 12 opens (measured on only 28 of them), 4 clicks, 0 replies.
+
+### What the evidence says
+
+- **Deliverability decides everything else.** Compliant senders average 89% inbox placement; non-compliant senders have 22 to 34% of mail routed to spam. Gmail wants spam complaints under 0.1% and never above 0.3%. SPF, DKIM and DMARC are expected of any bulk sender.
+- **Signals beat personalisation tokens.** Generic role and firmographic mail replies at 1 to 3%; mail triggered by something that just happened replies at 5 to 18%.
+- **Triggered beats scheduled.** Behaviour-triggered sends run about 70% higher open rates and roughly 150% higher click rates than batch sends; automated flows carry the majority of email revenue.
+- **The follow-up is where the replies are.** Optimal sequences run 4 to 7 touches over 14 to 21 days, and the first follow-up alone adds 40 to 50% more replies.
+- **One ask.** A single call to action draws far more clicks than an email carrying several; a one-word reply ask is the lowest-friction version of it.
+- **Shape.** Bodies of 50 to 125 words; subjects of 28 to 50 characters, two to seven words; a number in the subject lifts opens; a company name lifts them, and a specific metric about the reader lifts them further; first-name-only personalisation no longer differentiates.
+- **Small batches beat blasts.** Campaigns to fifty or fewer recipients reply better than campaigns to a thousand.
+- **A good 2026 cold reply rate is 3 to 5%, strong is above 5%, and 10% is excellent.** Zero from 97 is a content and deliverability problem, not bad luck.
+
+### What the engine does today
+
+Sequencing, per-lead planning, small batches, one-click unsubscribe and a bandit over welcome variants are already right. The gaps are that mail goes out from a domain without DMARC, opens are measured on a minority of sends, every mail carries two asks (trial button plus a postscript about a call), no mail carries a number or an asset, subjects name the product or the feature, and product events do not trigger anything.
+
+### Gaps and what to build
+
+| # | Finding | Engine today | Build | Status |
+|---|---|---|---|---|
+| EM1 | Non-compliant senders lose a third of their mail to spam | teamgrid.ai has no DKIM or DMARC | Publish SPF, DKIM and DMARC before the next campaign; watch the complaint rate against 0.1% | todo, blocking |
+| EM2 | Opens measured on 28 of 97 sends, so no subject can be judged | Pixel only where consent allows | Instrument every send that may carry it, and grade subjects on clicks and replies rather than opens | todo |
+| EM3 | Signal-triggered mail replies 5 to 18% against 1 to 3% | Form answers and site text sit unused in copy | Trigger on what we already hold: the problem they typed, team size, timeline, a click, register_started without signed_up | todo |
+| EM4 | One ask per mail | Trial button plus a call postscript | Ask ladder: a reply for the first two touches, one button after that, never both | todo, extends 54 |
+| EM5 | Subject shape | "Welcome to TeamGrid", feature names | 28 to 50 characters, a number or their metric, the brand where it earns the open; two variants per template, sampled | todo, extends 52 |
+| EM6 | Body length | 130 to 200 words of description | 50 to 125 words, one idea, one number with a source | todo |
+| EM7 | Triggered beats scheduled by a wide margin | Nothing fires on product events | Product event pipe, then speed-to-lead and abandoned-signup flows | todo, same as 37 and 20 |
+| EM8 | 4 to 7 touches over 14 to 21 days | Plans run 5 steps at 1, 2, 2, 3, 3 days | Keep the shape, and add the two-week re-ask rather than ending at last call | todo |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -628,6 +662,12 @@ may be the real blocker, and it is cheap to check.
 | 72 | Compose prompt picks an asset per step or states why words alone are better | RL7 | todo |
 | 73 | Per-lead brief: their world, their words, team size, objection; analogy from their world, numbers from assets | RL8 | todo |
 | 74 | Pause screenshots that name people; replace with aggregate, anonymised blocks | RL9 | todo, needs approval |
+| 75 | Publish SPF, DKIM and DMARC, then watch the complaint rate | EM1 | todo, blocking |
+| 76 | Measure opens on every eligible send; grade subjects on clicks and replies | EM2 | todo |
+| 77 | Trigger copy on the problem they typed, team size, timeline and clicks | EM3 | todo |
+| 78 | One ask per mail: reply first, button later, never both | EM4 | todo |
+| 79 | Subject shape rule and two sampled variants per template | EM5 | todo |
+| 80 | Body of 50 to 125 words with one sourced number | EM6 | todo |
 | 75 | Free-trial test of LinkedIn on the 81 UK practices: accept and reply rate, no code | LI1 | todo |
 | 76 | Count how many of the 81 practices have a LinkedIn profile on file | LI2 | todo |
 | 77 | `pending_accept` ladder state: invite, poll for acceptance, DM on accept, withdraw and fall back to email | LI3 | todo, blocked on 75 |
