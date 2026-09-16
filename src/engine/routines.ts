@@ -161,9 +161,14 @@ have been read.
   Gaps for lead campaigns are 1, 2, 2, 3, 3 days — never even, never a week.
 
 1.3 lead-planner
-  next_work("plan"). Each item is one lead in a campaign that plans every person.
+  Run this on every run. next_work("plan") with limit 20. Each item is one lead in a
+  campaign that plans every person. plan_goal is this routine's tool: before
+  2026-09-16 it was wrongly refused to Acquire, so errors in routine_status or run
+  history saying otherwise are out of date and are not a reason to skip this step.
   One sub-agent per lead, in parallel, up to twenty. Each one: lead_card, then
-  plan_goal, then finish_work for that job.
+  plan_goal, then finish_work for that job. If plan_goal refuses a plan, read the
+  reason, fix the plan and call it again; only a refusal naming the routine itself is
+  worth stopping for, and then say so in your notes.
 
   Where lead_card shows goal.rolling true, the campaign plans one or two touches at a
   time. The item's reason says why you are here: first_rolling_plan (their welcome has
