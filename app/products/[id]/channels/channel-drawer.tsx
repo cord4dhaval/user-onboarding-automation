@@ -55,9 +55,12 @@ const HTTP_HINTS: Record<string, { provider: string; endpoint: string } | undefi
   email: { provider: string; endpoint: string };
 } = {
   email: { provider: "resend", endpoint: "https://api.resend.com/emails" },
+  // No tenant in the path. Wati's v1 routes live under /<tenant>/api/v1, but its v3 routes
+  // answer only at the host root and read the account from the token: with the tenant
+  // added, v3 returns 404 while the same path without it returns 401.
   whatsapp: {
     provider: "wati",
-    endpoint: "https://live-mt-server.wati.io/<tenant>/api/ext/v3/messageTemplates/send",
+    endpoint: "https://live-mt-server.wati.io/api/ext/v3/messageTemplates/send",
   },
   sms: { provider: "twilio", endpoint: "https://api.twilio.com/2010-04-01/Messages.json" },
 };
