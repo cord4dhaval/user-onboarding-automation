@@ -41,6 +41,14 @@ export interface AssetMenuRow {
    */
   aimed_at_segment: boolean;
   /**
+   * True when it answers something this person's segment is expected to push back on.
+   *
+   * Ranked below what they actually said, because a segment's likely objections are a
+   * belief about them and a reply is evidence — but above nothing at all, which is what an
+   * asset written for every segment had going for it before.
+   */
+  answers_likely_objection: boolean;
+  /**
    * Smoothed conversion, not a raw rate. `(ledToGoal + 1) / (sent + 2)` puts an asset
    * nobody has tried at 0.5 — above anything that has demonstrably failed and below
    * anything that has demonstrably worked. A raw rate would rank every new asset at zero
@@ -76,6 +84,14 @@ export interface MenuInput {
   channels?: string[];
   /** `person.objections[].text`, so what they pushed back on ranks the answer up. */
   objections?: string[];
+  /**
+   * What their segment is expected to push back on: `belief.objectionsLikely` and the
+   * product's own segment definition. It lifts an asset offered to every segment — the
+   * privacy answer, the trial terms — above one that is merely general, for a person who
+   * has not said the thing out loud yet. Most leads never reply, so waiting for them to
+   * say it means the answer is never sent.
+   */
+  likelyObjections?: string[];
   /** Every asset already sent to this person. Nothing is offered twice. */
   sentAssetIds?: string[];
   limit?: number;
@@ -136,6 +152,7 @@ export async function eligibleAssets(
   const spent = new Set(input.sentAssetIds ?? []);
   const unlocked = accessUnlocked(input.band);
   const objections = (input.objections ?? []).map((o) => o.toLowerCase());
+  const likely = (input.likelyObjections ?? []).map((o) => o.toLowerCase());
 
   const menu = rows
     .filter((row) => !spent.has(String(row._id)))
@@ -148,6 +165,7 @@ export async function eligibleAssets(
       const led = Number(usage.ledToGoal ?? 0);
       const answers = ((row.answers ?? []) as unknown[]).map(String);
       const hit = answers.some((a) => objections.some((o) => o.includes(a.toLowerCase())));
+      const anticipates = answers.some((a) => likely.some((o) => o.includes(a.toLowerCase())));
       const aimed = Boolean(
         input.segment && ((row.forSegment ?? []) as unknown[]).map(String).includes(input.segment),
       );
@@ -165,6 +183,7 @@ export async function eligibleAssets(
         answers,
         answers_an_objection: hit,
         aimed_at_segment: aimed,
+        answers_likely_objection: anticipates,
         score: (led + 1) / (sent + 2),
         sent,
         led_to_goal: led,
@@ -178,6 +197,7 @@ export async function eligibleAssets(
       (a, b) =>
         Number(b.answers_an_objection) - Number(a.answers_an_objection) ||
         Number(b.aimed_at_segment) - Number(a.aimed_at_segment) ||
+        Number(b.answers_likely_objection) - Number(a.answers_likely_objection) ||
         b.score - a.score,
     );
 
@@ -203,6 +223,8 @@ export function assetContextFrom(
   person: Document | null,
   actions: Document[],
   goalDef: Document | null,
+  /** From the product's own definition of this person's segment, where the caller has it. */
+  segmentObjections: string[] = [],
 ): MenuInput {
   const band = (person?.temp as { band?: string } | undefined)?.band;
   const cadence = (goalDef?.cadenceByTemp ?? {}) as Record<string, { maxAssetTier?: string }>;
@@ -212,6 +234,16 @@ export function assetContextFrom(
     maxTier: band ? cadence[band]?.maxAssetTier : undefined,
     channels: (goalDef?.allowedChannels ?? []) as string[],
     objections: ((person?.objections ?? []) as Array<{ text?: unknown }>).map((o) => String(o.text ?? "")),
+    likelyObjections: [
+      ...new Set(
+        [
+          ...(((person?.belief as { objectionsLikely?: unknown[] } | undefined)?.objectionsLikely ?? []) as unknown[]),
+          ...segmentObjections,
+        ]
+          .map((o) => String(o ?? "").trim())
+          .filter(Boolean),
+      ),
+    ],
     sentAssetIds: assetIdsSentTo(actions),
   };
 }
@@ -224,11 +256,23 @@ export async function assetContextFor(
   goalDef: Document | null,
 ): Promise<MenuInput> {
   const db = await getDb();
-  const [person, actions] = await Promise.all([
+  const [person, actions, product] = await Promise.all([
     db.collection(C.people).findOne({ _id: new ObjectId(personId), orgId, productId }),
     db.collection(C.actions).find({ orgId, productId, personId }).project({ assetIds: 1, status: 1 }).toArray(),
+    // One small read for the segment's expected objections. A caller holding the product
+    // already — lead_card does — passes them in instead and pays nothing.
+    db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId }, { projection: { "config.segments": 1 } }),
   ]);
-  return assetContextFrom(person, actions, goalDef);
+  return assetContextFrom(person, actions, goalDef, segmentObjectionsFor(product, person));
+}
+
+/** What the product says this person's segment usually pushes back on. */
+export function segmentObjectionsFor(product: Document | null, person: Document | null): string[] {
+  const key = (person?.belief as { segment?: string } | undefined)?.segment;
+  if (!key) return [];
+  const segments = ((product?.config as { segments?: Array<{ key?: string; objections?: unknown[] }> } | undefined)?.segments ?? []);
+  const match = segments.find((s) => String(s.key ?? "") === key);
+  return ((match?.objections ?? []) as unknown[]).map((o) => String(o ?? "").trim()).filter(Boolean);
 }
 
 export async function loadAssets(orgId: string, productId: string, ids: string[]): Promise<Document[]> {

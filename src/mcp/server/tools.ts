@@ -26,6 +26,7 @@ import {
   accessUnlocked,
   assetContextFrom,
   assetContextFor,
+  segmentObjectionsFor,
   assetMenuFor,
   assetRefusals,
   loadAssets,
@@ -702,7 +703,11 @@ export const TOOLS: ToolDef[] = [
       // study, a second copy of a video they already have, or a calendar link to somebody
       // who has never opened anything.
       const band = (person.temp as { band?: string } | undefined)?.band;
-      const assetsAvailable = await assetMenuFor(orgId, productId, assetContextFrom(person, actions, goalDef));
+      const assetsAvailable = await assetMenuFor(
+        orgId,
+        productId,
+        assetContextFrom(person, actions, goalDef, segmentObjectionsFor(product, person)),
+      );
 
       return {
         person: {
