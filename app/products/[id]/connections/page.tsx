@@ -28,11 +28,15 @@ export default async function Connections({
   const { connect, serverUrl } = await searchParams;
   const { orgId } = await requireSession();
   const db = await getDb();
-  // Gmail mailboxes signed in from Channels share this collection but have no tools to bind
-  // and are managed there; listing them here only invited a delete that breaks a sender.
-  const rows = (await db.collection(C.connections).find(scope(orgId, id)).toArray()).filter(
-    (c) => !(c.authType === "oauth2" && c.provider === "google"),
-  );
+  // This page is MCP servers. Everything else in the collection — a signed-in Gmail mailbox,
+  // a Bolna key, a WhatsApp endpoint, SMTP, SES, an API lead source — was made on Channels
+  // or Sources, has no tools to discover or bind, and is managed there. Listing it here
+  // showed "none" under bound actions and a Configure with nothing behind it, and offered a
+  // delete that silently breaks a live sender.
+  const rows = await db
+    .collection(C.connections)
+    .find({ ...scope(orgId, id), authType: { $regex: "^mcp_" } })
+    .toArray();
   const bindings = await db.collection(C.mcpBindings).find({ orgId: scope(orgId, id).orgId }).toArray();
   const boundBy = new Map(bindings.map((b) => [String(b.connectionId), Object.keys((b.bind ?? {}) as object)]));
 
