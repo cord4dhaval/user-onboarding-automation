@@ -10,6 +10,10 @@ export const planStep = z.object({
   when: z.string(),
   channel: channelKey,
   angle: z.string(),
+  /** Under the rolling planner: the idea for this touch in words. `angle` is its slug. */
+  theme: z.string().optional(),
+  hook: z.string().optional(),
+  format: z.enum(["text", "html"]).optional(),
   templateKey: z.string().optional(),
   cta: z.string().optional(),
   assetTier: z.enum(["A", "B", "C", "D"]).optional(),

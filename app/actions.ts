@@ -1672,7 +1672,11 @@ export async function decide(formData: FormData) {
   const back = String(formData.get("back") ?? "");
   // The reviewer is looking at the designed mail; sending it as plain text is their call
   // to make here, on the message in front of them, not a template-wide setting.
-  const asText = String(formData.get("format") ?? "html") === "text";
+  // A bulk decision from the list carries no format, and must not overwrite the one the
+  // writer chose for each message: a plain note approved in bulk would otherwise go out
+  // rebuilt as a designed mail.
+  const chosen = formData.get("format");
+  const asText = String(chosen ?? "html") === "text";
 
   const result = await db.collection(C.actions).updateMany(
     {
@@ -1691,7 +1695,7 @@ export async function decide(formData: FormData) {
     // for next week keeps that date; approving it early only means it will not stop here
     // again on the way out.
     {
-      $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date(), format: asText ? "text" : "html" },
+      $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date(), ...(chosen !== null ? { format: asText ? "text" : "html" } : {}) },
       // Dropping the rendered HTML is not enough on its own — the sender rebuilds it from
       // the template when it is missing, so the choice is recorded on the action too.
       ...(approve && asText ? { $unset: { "content.bodyHtml": "" } } : {}),
@@ -1895,6 +1899,10 @@ export async function regenerateMessage(formData: FormData) {
 /** What a message actually says, fetched only when a reviewer opens it. */
 export interface HeldMessage {
   subject?: string;
+  /** The idea a written touch was built on, and the writer's format choice with its reason. */
+  theme?: string;
+  chosenFormat?: "text" | "html";
+  formatWhy?: string;
   bodyHtml?: string;
   bodyText?: string;
   rationale?: string;
@@ -1988,6 +1996,9 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
       ? new Date(String(action.rewriteRequestedAt)).toISOString()
       : undefined,
     rationale: action.rationale ? String(action.rationale) : undefined,
+    theme: action.theme ? String(action.theme) : undefined,
+    chosenFormat: action.format === "text" || action.format === "html" ? action.format : undefined,
+    formatWhy: action.formatWhy ? String(action.formatWhy) : undefined,
     canHtml: caps.html !== false,
     status: String(action.status),
     skipReason: action.skipReason ? String(action.skipReason) : action.error ? String(action.error) : undefined,

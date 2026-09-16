@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
-import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors } from "../../engine/outcomes.js";
+import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, evidenceStatus, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors, themePerformance } from "../../engine/outcomes.js";
 import { greetingName } from "../../engine/names.js";
 import { computeTemp, lastFormArrival } from "../../engine/temp.js";
 import { planViewFor } from "../../engine/planView.js";
@@ -18,6 +18,8 @@ import { allowedMailboxIds, mailboxFilter } from "../../engine/channels.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
+import { writingBriefFor } from "../../engine/writingBrief.js";
+import { FRAME_BODY_MAX_WORDS, ROLLING_MAX_STEPS, companyTokens, frameKeyOf, groupFor, isRolling, isRollingPlan, themeSlug, unlabelledNumbers, watchWindowMs } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -747,8 +749,14 @@ export const TOOLS: ToolDef[] = [
               // the same gates and rules advance() applies, and whether it is a session's
               // to write or the engine's to render. compose_batch refuses anything else.
               plan: await planViewFor(goal, actions.filter((a) => String(a.goalInstanceId) === String(goal._id)), band),
+              // A campaign that plans a touch or two at a time. Read `writing` below before
+              // planning or writing: the plan is short, each step is an idea in words, and the
+              // message is written whole.
+              rolling: isRolling(goalDef),
               // In a campaign that plans each lead: the emails this lead's plan is built
               // from, with what each says, whether they already had it, and how it has done.
+              // In a rolling campaign these are only the fallback the engine sends when a plan
+              // or its words never arrive; plan ideas of your own instead.
               plan_from: (goalDef?.perLeadPlan as { family?: string } | undefined)?.family
                 ? await planMenuFor(
                     orgId,
@@ -771,6 +779,21 @@ export const TOOLS: ToolDef[] = [
          * to every message is the one that stops meaning anything by the third.
          */
         assets_available: assetsAvailable,
+        /**
+         * In a rolling campaign: who they are in their own words, what the product can truly
+         * say, what they already had and what came of it, and what worked for leads like them.
+         */
+        writing:
+          goal && isRolling(goalDef)
+            ? await writingBriefFor({
+                orgId,
+                productId,
+                person,
+                goal: goalDef,
+                product,
+                actions: actions.filter((a) => String(a.goalInstanceId) === String(goal._id)),
+              })
+            : null,
         /**
          * Whether this person has earned a way to reach us: a calendar link, a phone
          * number, a named human. False until they are hot, and separate from the tier cap
@@ -996,6 +1019,15 @@ export const TOOLS: ToolDef[] = [
                   "right thing if it fires before anyone writes copy for it.",
               },
               why_asset: { type: "string", description: "What that asset answers for this person." },
+              theme: {
+                type: "string",
+                description:
+                  "Required in a campaign that plans a touch or two at a time (lead_card shows goal.rolling). " +
+                  "The idea this touch is built on, in a few words a person reads: \"Evening calls to every manager\". " +
+                  "Invent it for this lead. The angle is stored as its slug, so results are counted per idea.",
+              },
+              hook: { type: "string", description: "Optional. How the idea lands: story, rupee_math, question, comparison, proof, or your own word." },
+              format: { type: "string", enum: ["text", "html"], description: "Optional intention; the writer decides at compose time." },
               why: { type: "string" },
               advance_if: { type: "string" },
             },
@@ -1043,6 +1075,39 @@ export const TOOLS: ToolDef[] = [
         }
       }
 
+      // A campaign that plans a touch or two at a time. The plan is short on purpose: the engine
+      // watches what this lead does with it and asks again. Each step is an idea in words,
+      // stored under its slug as the angle, rendered through the campaign's frame.
+      const rolling = isRolling(goalDef);
+      const frameKey = frameKeyOf(goalDef);
+      if (rolling) {
+        if (planSteps.length > ROLLING_MAX_STEPS) {
+          throw new Error(
+            `This campaign plans ${ROLLING_MAX_STEPS} touches at a time and this plan has ${planSteps.length}. Plan the next one or two; ` +
+              `the engine asks for the next plan once it has seen what this lead does with these. Nothing was written.`,
+          );
+        }
+        const missing = (planSteps as Array<Record<string, unknown>>).filter((st) => !String(st.theme ?? "").trim());
+        if (missing.length) {
+          throw new Error(`step ${missing.map((st) => String(st.id)).join(", ")} has no theme. Each touch is built on one idea in words. Nothing was written.`);
+        }
+        for (const st of planSteps as Array<Record<string, unknown>>) {
+          st.angle = themeSlug(String(st.theme));
+          if (!String(st.template_key ?? st.templateKey ?? "").trim()) st.template_key = frameKey;
+          if (st.format !== undefined && st.format !== "text" && st.format !== "html") delete st.format;
+        }
+        // An idea this lead was given and did nothing with is spent for them after one send, not
+        // two: a short plan cannot afford to say the same thing twice. A click rescues it.
+        const triedOnce = await anglesTriedOn(ctx.orgId, String(instance.productId), String(instance.personId));
+        const ignored = new Set(triedOnce.filter((t) => !t.clicked).map((t) => t.angle));
+        const again = (planSteps as Array<Record<string, unknown>>).filter((st) => ignored.has(String(st.angle)));
+        if (again.length) {
+          throw new Error(
+            `This lead already had ${again.map((st) => `"${String(st.theme)}"`).join(", ")} and did not act on it. Pick an idea they have not seen. Nothing was written.`,
+          );
+        }
+      }
+
       // Each step names the email it sends. In a campaign that plans each lead that is the
       // plan itself: "Feature followup" seven times told nobody reading the lead page what
       // the lead would get. So there a step names one real email, never the family, never
@@ -1070,6 +1135,10 @@ export const TOOLS: ToolDef[] = [
         const row = templateByKey.get(key);
         if (!row && !families.has(key)) {
           templateProblems.push(`${step}: there is no active template "${key}".`);
+          continue;
+        }
+        if (rolling && key === frameKey) {
+          // The frame is written fresh for every touch, so it is never "already had".
           continue;
         }
         if (perLeadFamily) {
@@ -1137,7 +1206,9 @@ export const TOOLS: ToolDef[] = [
         .findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { belief: 1 } });
       const segment = (person?.belief as { segment?: string } | undefined)?.segment;
       const angles = planSteps.map((st) => String(st.angle));
-      const block = await explorationBlock(ctx.orgId, String(instance.productId), segment, angles);
+      // A plan of one or two touches cannot hold a third of anything. In a rolling campaign
+      // exploration is kept across the group instead, and lead_card says how it stands.
+      const block = rolling ? null : await explorationBlock(ctx.orgId, String(instance.productId), segment, angles);
       if (block) throw new Error(block);
 
       // What this person has already ignored. Attempt two opening on the line that lost
@@ -1191,6 +1262,9 @@ export const TOOLS: ToolDef[] = [
         version,
         steps: storedSteps,
         rationale,
+        // Marks a plan written for the rolling planner. Only these run in a rolling campaign;
+        // anything older reads as spent there.
+        ...(rolling ? { rolling: true } : {}),
         createdBy: "claude",
         createdAt: new Date(),
       });
@@ -1278,6 +1352,16 @@ export const TOOLS: ToolDef[] = [
                   "anyone who has gone quiet. \"link\" keeps the button and is the default.",
               },
               claims_made: { type: "array", items: { type: "string" } },
+              format: {
+                type: "string",
+                enum: ["text", "html"],
+                description:
+                  "Required where the step renders through the campaign's frame (a rolling campaign). \"text\" sends a " +
+                  "plain note with a text link; \"html\" sends the branded design. Links are click-tracked either way.",
+              },
+              format_why: { type: "string", description: "One sentence: why this format for this person now." },
+              theme: { type: "string", description: "The idea in words. Defaults to the plan step's theme." },
+              hook: { type: "string", description: "How the idea lands: story, rupee_math, question, comparison, proof, or your own word." },
               asset_ids: {
                 type: "array",
                 items: { type: "string" },
@@ -1316,6 +1400,52 @@ export const TOOLS: ToolDef[] = [
         if (!String(t.rationale ?? "").trim()) throw new Error(`step ${String(t.step_id)} needs a rationale in words. Nothing was written.`);
       }
 
+      // Where a step renders through the campaign's frame, the session writes the whole
+      // message: more room, a format decision with its reason, and the truth rules that a
+      // fixed template used to carry by being fixed.
+      const campaignDef = await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) });
+      const currentPlan = instance.currentPlanId && ObjectId.isValid(String(instance.currentPlanId))
+        ? await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) })
+        : null;
+      const frameKey = frameKeyOf(campaignDef);
+      const stepRows = new Map(((currentPlan?.steps ?? []) as Array<Record<string, unknown>>).map((st) => [Number(st.id ?? st.step_id), st]));
+      const isFrameTouch = (t: Record<string, unknown>) =>
+        isRolling(campaignDef) && String(stepRows.get(Number(t.step_id))?.templateKey ?? "") === frameKey;
+      const writer = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { config: 1 } });
+      const subjectAvoid = (((writer?.config as { writing?: { subjectAvoid?: string[] } } | undefined)?.writing?.subjectAvoid) ?? []).map(String).filter(Boolean);
+      const lead = await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) });
+      const companyWords = companyTokens(lead);
+      const warnings: string[] = [];
+      for (const t of touches) {
+        const step = String(t.step_id);
+        const subjectText = String(t.subject ?? "");
+        for (const word of subjectAvoid) {
+          if (new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(subjectText)) {
+            throw new Error(`step ${step} subject uses "${word}", which this product keeps out of subjects. Nothing was written.`);
+          }
+        }
+        if (!isFrameTouch(t)) continue;
+        const format = String(t.format ?? "");
+        if (format !== "text" && format !== "html") {
+          throw new Error(`step ${step} renders through the frame and needs format "text" or "html", with format_why. Nothing was written.`);
+        }
+        if (!String(t.format_why ?? "").trim()) {
+          throw new Error(`step ${step} needs format_why: one sentence on why ${format} suits this person now. Nothing was written.`);
+        }
+        if (!String(t.subject ?? "").trim()) {
+          throw new Error(`step ${step} renders through the frame, which has no subject of its own. Write one. Nothing was written.`);
+        }
+        const everything = [t.subject, t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n").toLowerCase();
+        const named = companyWords.find((token) => everything.includes(token));
+        if (named) {
+          throw new Error(`step ${step} names their company ("${named}"). Describe what they do instead of printing the name. Nothing was written.`);
+        }
+        const numbers = unlabelledNumbers(String(t.body ?? ""));
+        if (numbers.length && ((t.asset_ids ?? []) as unknown[]).length === 0) {
+          warnings.push(`step ${step}: ${numbers.join(", ")} reads as a fact. If it is an example, say so in the sentence; if it is a fact, it must come from product_config.writing.facts.`);
+        }
+      }
+
       // Limits a reader feels, enforced here so a human in Review never has to trim a mail.
       // One problem and one thing they would see fits in 90 words; a link in the body is a
       // second ask beside the template's one button; the preheader and PS are short or absent.
@@ -1325,8 +1455,9 @@ export const TOOLS: ToolDef[] = [
         const step = String(t.step_id);
         const body = String(t.body ?? "");
         const words = body.split(/\s+/).filter(Boolean).length;
-        if (words > 90) {
-          throw new Error(`step ${step} is ${words} words. Your part is at most 90: one problem in their words and one thing they would see. Nothing was written.`);
+        const limit = isFrameTouch(t) ? FRAME_BODY_MAX_WORDS : 90;
+        if (words > limit) {
+          throw new Error(`step ${step} is ${words} words. Your part is at most ${limit}: one idea in their world and what the product shows about it. Nothing was written.`);
         }
         if (LINK.test(body)) {
           throw new Error(`step ${step} carries a link. The template already has the one button this mail asks for; a second link is a second ask. Nothing was written.`);
@@ -1622,8 +1753,16 @@ export const TOOLS: ToolDef[] = [
             planStepId: Number(t.step_id),
             channel: channelKey,
             channelId: String(channel._id),
-            angle: String(t.angle),
+            angle: isFrameTouch(t) ? String(stepRows.get(Number(t.step_id))?.angle ?? themeSlug(String(t.theme ?? t.angle))) : String(t.angle),
             rationale: String(t.rationale),
+            ...(isFrameTouch(t)
+              ? {
+                  theme: String(t.theme ?? stepRows.get(Number(t.step_id))?.theme ?? t.angle),
+                  hook: String(t.hook ?? stepRows.get(Number(t.step_id))?.hook ?? "") || undefined,
+                  format: String(t.format),
+                  formatWhy: String(t.format_why ?? "").trim(),
+                }
+              : {}),
             // Claude writes the slot, not the whole message: the greeting, call to action
             // and opt-out block are the template's, and are added when this renders.
             content: {
@@ -1652,7 +1791,7 @@ export const TOOLS: ToolDef[] = [
           if (!(err instanceof Error && err.message.includes("E11000"))) throw err;
         }
       }
-      return { queued: queued.length, action_ids: queued, due_at: dueAts };
+      return { queued: queued.length, action_ids: queued, due_at: dueAts, ...(warnings.length ? { warnings } : {}) };
     },
   },
 
@@ -3048,6 +3187,18 @@ TOOLS.push({
       assetPerformance(orgId, productId, segment),
       summarisePriors(),
     ]);
+    const [themes, notes] = await Promise.all([
+      themePerformance(orgId, productId),
+      getDb().then((db) =>
+        db
+          .collection(C.learningNotes)
+          .find({ orgId, productId })
+          .sort({ updatedAt: -1 })
+          .limit(50)
+          .project({ _id: 0, key: 1, group: 1, finding: 1, themes: 1, evidence: 1, status: 1, updatedAt: 1 })
+          .toArray(),
+      ),
+    ]);
 
     const totalSent = angles.reduce((n, a) => n + a.sent, 0);
     const totalTrackable = angles.reduce((n, a) => n + a.trackable, 0);
@@ -3082,6 +3233,19 @@ TOOLS.push({
         win_rate: a.sent > 0 ? Number((a.won / a.sent).toFixed(3)) : null,
         verdict: a.sent < MIN_SAMPLE ? "untested" : a.won > 0 ? "working" : a.clicked > 0 ? "interest, no conversion" : "no signal",
       })),
+      /**
+       * Written touches from the rolling planner, by lead group (segment|team size band),
+       * idea, hook, format, ask and channel. Read a theme across groups before calling it a
+       * winner: one that works for small teams can fail for large ones. `evidence` is guess
+       * below five sends, confirmed at ten or more with two responses, retire at ten with none.
+       */
+      themes: themes.map((r) => ({
+        ...r,
+        click_rate: r.trackable > 0 ? Number((r.clicked / r.trackable).toFixed(3)) : null,
+        evidence: evidenceStatus(r),
+      })),
+      /** What has been concluded so far, newest first. save_learning writes these. */
+      learning_notes: notes,
       // Shared across products and carrying nothing that identifies one: hours and step
       // positions only. It is what a product with no history of its own starts from.
       timing_priors: priors,
@@ -3097,6 +3261,80 @@ TOOLS.push({
             ? "Nothing sent so far could report a click. Silence here says nothing about any angle — plan on judgement, and check that APP_URL is set."
             : "Rates are over trackable sends only. Spend the budget on what has won; keep trying what is merely untested.",
     };
+  },
+});
+
+/**
+ * A conclusion drawn from results across leads, kept where the next lead's card can show it.
+ *
+ * The rollups say what happened; a note says what it means, in a sentence a planner can act
+ * on ("founders with 11-50 people answered the evening-calls story, not the rupee maths").
+ * Keyed, so the same finding is rewritten as its evidence grows rather than repeated.
+ */
+TOOLS.push({
+  name: "save_learning",
+  description:
+    "Save or update one learning note: a finding from what_works about which ideas, hooks, formats or asks work for a group of leads, with the evidence behind it. Lead cards in that group show it to the next planner and writer. Use a stable key per finding so it is rewritten as evidence grows. Status: guess (under five sends), promising, confirmed (ten or more sends with at least two clicks or replies), retired (ten or more sends with none; planners are told to avoid it). Never mark confirmed or retired on less evidence than that.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      key: { type: "string", description: "Stable identifier for this finding, e.g. founder_11_50_evening_calls." },
+      group: { type: "string", description: "segment|team size band as what_works shows it, or \"all\"." },
+      finding: { type: "string", description: "One or two sentences a planner can act on." },
+      themes: { type: "array", items: { type: "string" }, description: "The themes this finding is about, as what_works names them." },
+      evidence: {
+        type: "object",
+        properties: { sent: { type: "number" }, clicked: { type: "number" }, replied: { type: "number" }, won: { type: "number" } },
+        required: ["sent"],
+      },
+      status: { type: "string", enum: ["guess", "promising", "confirmed", "retired"] },
+    },
+    required: ["product_id", "key", "group", "finding", "evidence", "status"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const key = String(args.key ?? "").trim();
+    const finding = String(args.finding ?? "").trim();
+    if (!key || !finding) throw new Error("A learning note needs a key and a finding in words. Nothing was written.");
+    const ev = (args.evidence ?? {}) as Record<string, unknown>;
+    const evidence = {
+      sent: Math.max(0, Math.round(Number(ev.sent ?? 0))),
+      clicked: Math.max(0, Math.round(Number(ev.clicked ?? 0))),
+      replied: Math.max(0, Math.round(Number(ev.replied ?? 0))),
+      won: Math.max(0, Math.round(Number(ev.won ?? 0))),
+    };
+    const status = String(args.status);
+    if (!["guess", "promising", "confirmed", "retired"].includes(status)) throw new Error(`status "${status}" is not one of guess, promising, confirmed, retired.`);
+    // The thresholds are the whole point of a note: a "confirmed" on three sends is how one
+    // lucky reply becomes every lead's opening line.
+    const responses = evidence.clicked + evidence.replied;
+    if (status === "confirmed" && !(evidence.sent >= 10 && responses >= 2)) {
+      throw new Error(`confirmed needs ten or more sends with at least two clicks or replies; this has ${evidence.sent} sends and ${responses}. Save it as promising or guess. Nothing was written.`);
+    }
+    if (status === "retired" && !(evidence.sent >= 10 && responses === 0)) {
+      throw new Error(`retired needs ten or more sends with no clicks or replies; this has ${evidence.sent} sends and ${responses}. Nothing was written.`);
+    }
+    const db = await getDb();
+    const now = new Date();
+    await db.collection(C.learningNotes).updateOne(
+      { orgId, productId, key },
+      {
+        $set: {
+          group: String(args.group ?? "all"),
+          finding,
+          themes: ((args.themes ?? []) as unknown[]).map(String).filter(Boolean),
+          evidence,
+          status,
+          createdBy: "claude",
+          updatedAt: now,
+        },
+        $setOnInsert: { orgId, productId, key, createdAt: now },
+      },
+      { upsert: true },
+    );
+    return { saved: key, status };
   },
 });
 
@@ -3700,12 +3938,20 @@ TOOLS.push({
       for (const job of mine) {
         const goalInstanceId = str((job.payload as Record<string, unknown> | undefined)?.goalInstanceId);
         const instance = goalInstanceId && ObjectId.isValid(goalInstanceId)
-          ? await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) }, { projection: { currentPlanId: 1, status: 1 } })
+          ? await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) }, { projection: { currentPlanId: 1, status: 1, goalKey: 1, productId: 1 } })
           : null;
         const plan = instance?.currentPlanId && ObjectId.isValid(String(instance.currentPlanId))
-          ? await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) }, { projection: { createdBy: 1 } })
+          ? await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) }, { projection: { createdBy: 1, createdAt: 1, rolling: 1 } })
           : null;
-        if (!instance || instance.status !== "active" || (plan && plan.createdBy !== "playbook")) {
+        const goalRow = instance
+          ? await db.collection(C.goals).findOne({ orgId: ctx.orgId, productId: String(instance.productId), key: String(instance.goalKey) }, { projection: { perLeadPlan: 1 } })
+          : null;
+        // In a campaign that plans a touch or two at a time, a lead is asked about again at
+        // every checkpoint, so the question is only answered by a plan written after it.
+        const answered = isRolling(goalRow)
+          ? Boolean(plan && isRollingPlan(plan) && plan.createdAt && new Date(String(plan.createdAt)) > new Date(String(job.createdAt ?? 0)))
+          : Boolean(plan && plan.createdBy !== "playbook");
+        if (!instance || instance.status !== "active" || answered) {
           await completeAll([job._id]);
           stale++;
         } else {

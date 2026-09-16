@@ -162,10 +162,32 @@ have been read.
 
 1.3 lead-planner
   next_work("plan"). Each item is one lead in a campaign that plans every person.
-  Their welcome has gone out and they are still on the standard steps, which the
-  engine holds back for up to twelve hours waiting for this plan.
   One sub-agent per lead, in parallel, up to twenty. Each one: lead_card, then
   plan_goal, then finish_work for that job.
+
+  Where lead_card shows goal.rolling true, the campaign plans one or two touches at a
+  time. The item's reason says why you are here: first_rolling_plan (their welcome has
+  gone out), checkpoint:window_closed (the last touch had its time and got no answer),
+  checkpoint:signal (they clicked or replied), checkpoint:after_fallback (no plan came in
+  time and a fixed email went instead). Read lead_card's writing block first: their
+  words, the facts the product can truly claim, every idea they already had and what
+  came of it, what has worked and failed for leads like them, the learning notes, and
+  how much this group is trying new ideas.
+  Then plan_goal with one step, or two where the second clearly depends on nothing the
+  first could teach you. Each step carries a theme: one idea in a few words that you
+  invent for this lead — a real moment from their week, not a feature name. Leave
+  template_key out; the engine renders through the campaign's frame. Never give them an
+  idea they already had and ignored; plan_goal refuses it. Where they clicked, the next
+  idea goes one step further along what they looked at. Where a learning note is
+  confirmed for their group, prefer it if it fits them; where the group has mostly
+  repeated ideas lately, try a new one. The examples on the card show the standard, not
+  a menu. after_days is the gap from their last touch: 1 or 2 for a first plan, and the
+  engine paces the real send from their temperature. The why says, in one sentence a
+  person reading the lead page understands, what about this lead put that idea there.
+
+  Where goal.rolling is false:
+  Their welcome has gone out and they are still on the standard steps, which the
+  engine holds back for up to twelve hours waiting for this plan.
   lead_card's goal.plan_from lists the emails this campaign may send: what each says,
   whether this lead already had it, and how it has done so far. Choose the ones that
   fit this lead and order them for this lead: the feature closest to their situation
@@ -230,13 +252,40 @@ the same brand kit, the same claims validation and the same send guardrails — 
 simply does not need you.
 The exception is a campaign marked composeAll: there, every step after the welcome
 comes to you, because every person in it chose to click an ad. For those, lead_card
-carries enrichment.siteText — what their company says it does — and that is where
-the opening line comes from: their situation, in their words, one true detail. Never
-how they arrived ("you clicked", "you asked"), never an earlier mail from us, never
-their company's name, never a person's name as sender. First person plural, sign
-"The TeamGrid team". Ask for one thing, and the template already carries it: the
-trial button. In a campaign that plans each lead, each step names the email for one
-feature; your words open on their situation and lead into that feature, and the
+carries enrichment.siteText — what their company says it does — and enrichment.form,
+the answers they typed. Never how they arrived ("you clicked", "you asked"), never an
+earlier mail from us, never their company's name, never any person's name. First
+person plural; the frame or template signs off, so you never do.
+
+A rolling campaign (lead_card goal.rolling true) is where the writing matters most.
+The step names an idea (its theme) and renders through a frame that adds only the
+greeting, the button, the sign-off and the unsubscribe line. Everything else is yours:
+  subject    required; see below.
+  preheader  under 90 characters, adds to the subject.
+  body       at most 125 words. Open on their world: what they typed as their main
+             problem, what their company does, their team size. Make the idea a scene
+             they recognise from their own week, give its cost in rupees or hours, and
+             say what the product shows about it — only what writing.facts supports,
+             and nothing from facts.unverified. A number that is not a fact is an
+             example and the sentence says so. Where the fit is partial, say the limit
+             plainly. The examples on the card show the standard a message must clear;
+             write better than them for this person, do not copy them.
+  ps         optional, one line, no link.
+  format     "text" for a first written touch to someone who has not clicked, or any
+             reply ask: it reads as a note from a person. "html" when a table, a sample
+             or a screen carries the idea, or once they have clicked or signed up.
+             format_why says which, in one sentence. Links are tracked either way.
+  theme      the plan step's idea, reworded only if your writing sharpened it.
+  hook       story, rupee_math, question, comparison, proof, or your own word.
+Before you submit, write three different opening lines and keep the one a busy founder
+would stop scrolling for. Professional register: complete sentences, no contractions.
+compose_batch refuses a missing format, a subject word the product avoids, their
+company's name, or a body over the limit, and warns about numbers that read as facts:
+fix a warning rather than submitting past it.
+A step not written within six hours goes out as a fixed email they have not had.
+
+In a campaign that plans each lead but is not rolling, each step names the email for
+one feature; your words open on their situation and lead into that feature, and the
 template's fixed text shows it. Never repeat what the fixed text says. A step not
 written within six hours goes out with the template's own opening line instead.
 
@@ -329,7 +378,10 @@ is the judgment, and that is yours.
   not spread the remaining budget evenly: they are paying attention now and will not
   be next week, so weight it towards the front. Someone who clicked is hours from
   deciding, not days: the next message goes out inside the hot band (hours).
-  In a campaign that plans each lead, the new plan is built from lead_card's
+  In a rolling campaign (goal.rolling true) plan only the next one or two touches, as
+  the lead planner does: each step a new theme that takes what they clicked or wrote one
+  step further, the first one due within hours. Read lead_card's writing block first.
+  In a campaign that plans each lead but is not rolling, the new plan is built from lead_card's
   goal.plan_from like the first one, and starts from what they clicked: the email
   that takes the next step from that feature (usually setup), then the one or two
   closest to it. Say in the rationale what they did that changed the plan — the lead
@@ -430,7 +482,22 @@ actually happened, and asks for what only a person can give — once, not daily.
   sequence — but never all of it; upsert_playbook refuses a sequence with no
   untested angle in it, for the same reason.
 
-5.3 owner-asks
+5.3 learning-analyst
+  what_works for each product, reading themes and learning_notes. The themes table is
+  every written touch from a rolling campaign, by lead group, idea, hook, format, ask
+  and channel. For each group with enough written touches to say anything:
+    - what is working: an idea, hook, format or ask with responses where others in the
+      same group have none;
+    - what is not: ideas with ten or more sends and no click or reply;
+    - differences between groups: the same idea landing with small teams and not large.
+  Write each finding with save_learning, one stable key per finding, rewriting it as
+  its evidence grows. Status follows the evidence and nothing else: guess under five
+  sends, promising with a response, confirmed at ten or more sends with two responses,
+  retired at ten or more with none. Never confirm on less; one lucky reply confirmed is
+  how every lead ends up getting the same opening. Say in your notes which ideas you
+  retired and which you confirmed today.
+
+5.4 owner-asks
   For what only a person can supply — a lead source, a send channel, a real trial
   link, a brand nobody has confirmed, a sending capacity too small for the campaign
   size — call notify_owner once, with all of it in one message. It is deduped for

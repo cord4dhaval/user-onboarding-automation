@@ -48,6 +48,13 @@ export async function ensureIndexes(): Promise<void> {
     { key: { orgId: 1, productId: 1, personId: 1, angle: 1 }, name: "angles_tried" },
   ]);
 
+  // One note per finding. Maintain rewrites a note as its evidence grows rather than adding
+  // a second copy of the same conclusion.
+  await db.collection(C.learningNotes).createIndex(
+    { orgId: 1, productId: 1, key: 1 },
+    { name: "learning_note_key", unique: true },
+  );
+
   // One document per {channel, step, hour}. Unique because two rows for the same bucket
   // would split a count that only means anything whole.
   await db.collection(C.outcomePriors).createIndex(

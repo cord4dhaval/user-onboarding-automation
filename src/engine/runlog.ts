@@ -329,7 +329,9 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   // nobody has engaged with has given no evidence that would justify one.
   // It also writes the sentences for newly uploaded assets, because it runs hourly and a
   // person who just added a file should not wait for tomorrow's Maintain run to use it.
-  acquire: [...ALWAYS_ALLOWED, "classify", "save_enrichment", "upsert_playbook", "what_works", "verifiers", "set_checks", "view_asset", "describe_asset", "get_brand"],
+  // Its lead planner writes each lead's plan in a campaign that plans every person, and in a
+  // rolling campaign the next one or two touches at every checkpoint.
+  acquire: [...ALWAYS_ALLOWED, "classify", "save_enrichment", "upsert_playbook", "plan_goal", "what_works", "verifiers", "set_checks", "view_asset", "describe_asset", "get_brand"],
   // Advance writes the messages for people the engine judged worth writing for.
   advance: [...ALWAYS_ALLOWED, "compose_batch", "preview_template", "get_brand"],
   // React is the only routine that rewrites one person's plan, because it is the only one
@@ -338,7 +340,7 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   // Close decides whether someone is done, and repairs the checks that decide it.
   close: [...ALWAYS_ALLOWED, "mark_state", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
   // Maintain finishes setup, and raises the one notification for what only a human can give.
-  maintain: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works", "verifiers", "set_checks"],
+  maintain: [...ALWAYS_ALLOWED, "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works", "save_learning", "verifiers", "set_checks"],
 };
 
 /** Which routine, if any, this session is currently running as. Ad-hoc sessions return null. */

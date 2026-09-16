@@ -31,6 +31,8 @@ export const COLLECTIONS = {
   events: "events",
   /** Cross-tenant structural priors. Carries no org, no angle, no person — see outcomes.ts. */
   outcomePriors: "outcome_priors",
+  /** What Maintain concluded from results across leads, shown on the next lead's card. See engine/rolling.ts. */
+  learningNotes: "learning_notes",
   workQueue: "work_queue",
   suppressions: "suppressions",
   audit: "audit",

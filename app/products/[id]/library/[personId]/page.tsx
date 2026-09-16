@@ -93,6 +93,8 @@ export default async function PersonPage({
 
   /** The name the email has in the templates list — "The four lines", not `four_lines`. */
   const emailName = (action: Document): string =>
+    // A touch written from an idea is named by the idea, not by the frame it rendered in.
+    (typeof action.theme === "string" && action.theme ? action.theme : undefined) ??
     names.templatesById.get(String(action.templateId)) ??
     names.templatesByKey.get(String(stepFor(action)?.templateKey ?? "")) ??
     names.templatesByKey.get(String(action.angle)) ??
@@ -176,6 +178,12 @@ export default async function PersonPage({
           ) : (
             <Result action={action} delivery={`${deliveryLabel(action)}${outcome?.grade ? ` Rated ${outcome.grade}.` : ""}`} />
           )}
+          {action.theme && action.format ? (
+            <div className="muted t-detail">
+              Written as {action.format === "text" ? "plain text" : "a designed email"}
+              {action.formatWhy ? `: ${String(action.formatWhy)}` : "."}
+            </div>
+          ) : null}
           {why ? <div className="muted t-detail">Why: {why}</div> : null}
         </>
       ),
@@ -604,6 +612,12 @@ export default async function PersonPage({
                       />
                     </div>
                     {content.subject ? <div className="muted t-detail">Subject: “{content.subject}”</div> : null}
+                    {action.theme && action.format ? (
+                      <div className="muted t-detail">
+                        Written as {action.format === "text" ? "plain text" : "a designed email"}
+                        {action.formatWhy ? `: ${String(action.formatWhy)}` : "."}
+                      </div>
+                    ) : null}
                     <div className="muted t-detail">
                       {[
                         action.status === "awaiting_approval"
@@ -671,6 +685,11 @@ export default async function PersonPage({
                     reader had to add days up to learn when anything would arrive. */}
                 <div className="card plan-card">
                   <p className="plan-lead">{planHeadline(rows)}</p>
+                  {current.rolling === true ? (
+                    <p className="muted cell-note">
+                      We plan one or two emails at a time. The next one is decided after we see what they do with these.
+                    </p>
+                  ) : null}
                   <p className="muted cell-note">
                     Emails stop as soon as they reply
                     {goal?.success?.describedAs ? ` or the goal is reached (${lowerFirst(String(goal.success.describedAs))})` : ""}.
@@ -928,7 +947,10 @@ function planRows(
   const rows: PlanRow[] = campaignActions
     .filter((a) => a.planStepId == null && a.replacedPlanStepId == null && ["sent", "dispatched"].includes(String(a.status)))
     .sort((a, b) => stamp(a.sentAt ?? a.dueAt) - stamp(b.sentAt ?? b.dueAt))
-    .map((a) => ({ key: String(a._id), date: toDate(a.sentAt ?? a.dueAt), ...label(a.angle, a), why: null, state: "sent", note: null }));
+    .map((a) => {
+      const named = label(a.angle, a);
+      return { key: String(a._id), date: toDate(a.sentAt ?? a.dueAt), ...named, name: a.theme ? String(a.theme) : named.name, why: null, state: "sent", note: null };
+    });
 
   let previous = rows.at(-1)?.date ?? null;
   const steps = (Array.isArray(plan.steps) ? (plan.steps as Document[]) : []).slice().sort((a, b) => Number(a.id) - Number(b.id));
@@ -936,7 +958,15 @@ function planRows(
     const action = campaignActions
       .filter((a) => Number(a.planStepId) === Number(step.id))
       .sort((a, b) => stamp(b.dueAt) - stamp(a.dueAt))[0];
-    const base = { key: `step-${String(step.id)}`, ...label(step.templateKey ?? step.angle, action), why: step.why ? String(step.why) : null };
+    const labelled = label(step.templateKey ?? step.angle, action);
+    // A step planned as an idea is named by the idea; the frame it renders through says nothing.
+    const base = {
+      key: `step-${String(step.id)}`,
+      ...labelled,
+      name: step.theme ? String(step.theme) : labelled.name,
+      blurb: step.theme ? null : labelled.blurb,
+      why: step.why ? String(step.why) : null,
+    };
     const status = String(action?.status ?? "");
 
     if (action && (status === "sent" || status === "dispatched")) {

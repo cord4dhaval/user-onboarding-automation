@@ -260,6 +260,16 @@ export default function PreviewDrawer({
               <p className="muted preview-why">Why this: {message.rationale}</p>
             ) : null}
 
+            {message.theme ? (
+              <p className="muted preview-why">Idea: {message.theme}</p>
+            ) : null}
+            {message.chosenFormat ? (
+              <p className="muted preview-why">
+                Written as {message.chosenFormat === "text" ? "plain text" : "a designed email"}
+                {message.formatWhy ? `: ${message.formatWhy}` : "."}
+              </p>
+            ) : null}
+
             {/* Sticky, because the decision must stay reachable without scrolling back up
                 past a full-height rendered email. */}
             {waiting && (

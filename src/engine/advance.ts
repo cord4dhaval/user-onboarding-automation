@@ -6,6 +6,7 @@ import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
 import { pickChannelFrom, loadChannels, persistAssignments, persistInstanceMailboxes, skipReason, type PooledChannel } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
+import { checkpoint, frameKeyOf, isRolling, isRollingPlan, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
 
 /**
  * Turning a plan into messages, on the clock, for everybody.
@@ -35,6 +36,10 @@ export interface AdvanceSummary {
   queued: number;
   handedToClaude: number;
   parked: number;
+  /** Rolling campaigns: leads whose next one or two touches were asked for at a checkpoint. */
+  plansAsked: number;
+  /** Rolling campaigns: fixed emails sent because a plan or its words never arrived. */
+  fallbacks: number;
   skipped: Array<{ goalInstanceId: string; reason: string }>;
 }
 
@@ -137,14 +142,14 @@ export async function advance(
   deadline = Date.now() + 10_000,
 ): Promise<AdvanceSummary> {
   const db = await getDb();
-  const summary: AdvanceSummary = { examined: 0, queued: 0, handedToClaude: 0, parked: 0, skipped: [] };
+  const summary: AdvanceSummary = { examined: 0, queued: 0, handedToClaude: 0, parked: 0, plansAsked: 0, fallbacks: 0, skipped: [] };
   const s = { orgId, productId };
 
   const instances = await db
     .collection(C.goalInstances)
     .find(
       { ...s, status: "active", currentPlanId: { $exists: true } },
-      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1, startedAt: 1, createdAt: 1, handedOverAt: 1 } },
+      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1, startedAt: 1, createdAt: 1, handedOverAt: 1, checkpointAskedAt: 1 } },
     )
     .sort({ lastAdvancedAt: 1, startedAt: 1 })
     .limit(limit)
@@ -173,21 +178,21 @@ export async function advance(
       .collection(C.people)
       .find(
         { _id: { $in: instances.map((i) => new ObjectId(String(i.personId))) } },
-        { projection: { temp: 1, belief: 1, lifecycle: 1, suppressedAt: 1, lastReplyAt: 1, lastContactedAt: 1, consent: 1, stage: 1 } },
+        { projection: { temp: 1, belief: 1, lifecycle: 1, suppressedAt: 1, lastReplyAt: 1, lastContactedAt: 1, consent: 1, stage: 1, needsClassification: 1 } },
       )
       .toArray(),
     db
       .collection(C.plans)
       .find(
         { _id: { $in: instances.map((i) => new ObjectId(String(i.currentPlanId))) } },
-        { projection: { steps: 1, createdBy: 1 } },
+        { projection: { steps: 1, createdBy: 1, createdAt: 1, rolling: 1 } },
       )
       .toArray(),
     db
       .collection(C.actions)
       .find(
         { ...s, goalInstanceId: { $in: instanceIds } },
-        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1, firstOpenedAt: 1, firstClickedAt: 1 } },
+        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1, channel: 1, sentAt: 1, firstOpenedAt: 1, firstClickedAt: 1, firstRepliedAt: 1 } },
       )
       .toArray(),
   ]);
@@ -212,8 +217,22 @@ export async function advance(
   const engagementBy = new Map<string, { opened: boolean; clicked: boolean }>();
   /** Angles this person has already been given, whatever produced them. */
   const deliveredBy = new Map<string, Set<string>>();
+  /** The last touch that went out in each campaign, and the latest click or reply, for checkpoints. */
+  const lastSentBy = new Map<string, { at: Date; channel: string }>();
+  const lastSignalBy = new Map<string, Date>();
   for (const action of actionRows) {
     const key = String(action.goalInstanceId);
+    if (["sent", "dispatched"].includes(String(action.status)) && action.sentAt) {
+      const at = new Date(String(action.sentAt));
+      const seen = lastSentBy.get(key);
+      if (!seen || at > seen.at) lastSentBy.set(key, { at, channel: String(action.channel ?? "email") });
+    }
+    for (const field of ["firstClickedAt", "firstRepliedAt"] as const) {
+      if (!action[field]) continue;
+      const at = new Date(String(action[field]));
+      const seen = lastSignalBy.get(key);
+      if (!seen || at > seen) lastSignalBy.set(key, at);
+    }
     if (["queued", "awaiting_approval", "sending"].includes(String(action.status))) {
       pendingBy.set(key, (pendingBy.get(key) ?? 0) + 1);
     }
@@ -263,6 +282,9 @@ export async function advance(
   // apart from what another campaign may be sending them from at the same time.
   const instanceMailboxes: Array<{ goalInstanceId: string; channelId: string }> = [];
   const handOver: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
+  // Rolling campaigns: plans asked for at a checkpoint, and the instances to stamp with the ask.
+  const planAsks: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
+  const askedIds: ObjectId[] = [];
 
   for (const instance of instances) {
     if (Date.now() > deadline) break;
@@ -313,24 +335,105 @@ export async function advance(
     // after the welcome; a session writes each step against what the person did.
     if (goal.composeAll === true) tier = 1;
 
-    // A campaign that plans each lead waits for that plan instead of sending the standard
-    // steps stamped on arrival. Only for half a day: a session that never comes round must
-    // not leave the lead with nothing, so past that the standard steps run.
     const plan = planById.get(String(instance.currentPlanId)) ?? null;
-    const perLeadFamily = (goal.perLeadPlan as { family?: string } | undefined)?.family;
+    const perLeadFamily = perLeadPlanOf(goal)?.family;
     const startedAt = new Date(String(instance.startedAt ?? instance.createdAt ?? now)).getTime();
-    if (perLeadFamily && plan?.createdBy === "playbook" && now.getTime() - startedAt < PLAN_WAIT_MS) {
-      summary.skipped.push({ goalInstanceId, reason: "waiting for Claude to plan this lead" });
-      continue;
-    }
-
     const bandNow = (person.temp as { band?: string } | undefined)?.band;
-    const step = nextStep(
-      plan,
-      writtenBy.get(goalInstanceId) ?? new Set(),
-      deliveredBy.get(goalInstanceId) ?? new Set(),
-      { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: bandNow },
-    );
+    const engagementNow = { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: bandNow };
+    const segmentNow = (person.belief as { segment?: string } | undefined)?.segment;
+
+    // A campaign that plans one or two touches at a time. Its lead runs only a plan written
+    // for that; anything older reads as spent, and a spent plan reaches a checkpoint where
+    // the next one or two are asked for. A lead outside the product's customers keeps the
+    // re-qualify playbook, which is not a conversation worth planning.
+    const rolling = isRolling(goal) && segmentNow !== "off_icp";
+    let step: Document | null;
+    let fallback = false;
+    if (rolling) {
+      if (person.needsClassification === true) {
+        summary.skipped.push({ goalInstanceId, reason: "waiting to be read before the first plan" });
+        continue;
+      }
+      step = isRollingPlan(plan)
+        ? nextStep(plan, writtenBy.get(goalInstanceId) ?? new Set(), deliveredBy.get(goalInstanceId) ?? new Set(), engagementNow)
+        : null;
+      if (!step) {
+        const askedAt = instance.checkpointAskedAt ? new Date(String(instance.checkpointAskedAt)) : null;
+        const last = lastSentBy.get(goalInstanceId);
+        // Somebody who wrote back is in a conversation, and React answers it. A planned touch
+        // arriving beside that answer reads as nobody having read what they wrote. Once the
+        // answer has gone out it is the last touch, and the window runs from there.
+        const repliedAt = person.lastReplyAt ? new Date(String(person.lastReplyAt)) : null;
+        if (repliedAt && (!last || repliedAt >= last.at)) {
+          summary.skipped.push({ goalInstanceId, reason: "they replied; the conversation is being answered first" });
+          continue;
+        }
+        // The first ask does not wait out a window: the welcome is not a question the next
+        // plan depends on, and a lead who just arrived is the one most worth a quick second touch.
+        const decision: CheckpointDecision = !askedAt
+          ? { kind: "ask", reason: "nothing_sent" }
+          : checkpoint({
+              lastSentAt: last?.at ?? null,
+              lastChannel: last?.channel,
+              signalAt: lastSignalBy.get(goalInstanceId) ?? null,
+              askedAt,
+              planWrittenAt: isRollingPlan(plan) && plan?.createdAt ? new Date(String(plan.createdAt)) : null,
+              now,
+            });
+        if (decision.kind === "watch") {
+          summary.skipped.push({ goalInstanceId, reason: `watching the last touch until ${decision.until.toISOString()}` });
+          continue;
+        }
+        if (decision.kind === "waiting") {
+          summary.skipped.push({ goalInstanceId, reason: "waiting for Claude to plan the next touch" });
+          continue;
+        }
+        if (decision.kind === "ask") {
+          planAsks.push({
+            subjectId: goalInstanceId,
+            payload: { goalInstanceId, personId: String(person._id), reason: askedAt ? `checkpoint:${decision.reason}` : "first_rolling_plan" },
+            productId,
+            campaignKey: String(instance.goalKey),
+            priority: decision.reason === "signal" ? PRIORITY.urgent : PRIORITY.normal,
+          });
+          askedIds.push(instance._id as ObjectId);
+          summary.plansAsked++;
+          continue;
+        }
+        // No plan arrived in time. One fixed email the lead has not had goes instead, and the
+        // plan is asked for again, so a routine that is down costs a lead one generic
+        // message rather than silence.
+        if (!perLeadFamily) {
+          summary.skipped.push({ goalInstanceId, reason: "no plan arrived and the campaign has no fallback emails" });
+          continue;
+        }
+        step = { id: 0, channel: "email", angle: perLeadFamily, templateKey: perLeadFamily, offsetDays: 1, why: "No plan was written in time for this lead, so an email they have not had went in its place." };
+        fallback = true;
+        planAsks.push({
+          subjectId: goalInstanceId,
+          payload: { goalInstanceId, personId: String(person._id), reason: "checkpoint:after_fallback" },
+          productId,
+          campaignKey: String(instance.goalKey),
+          priority: PRIORITY.normal,
+        });
+        askedIds.push(instance._id as ObjectId);
+      }
+    } else {
+      // A campaign that plans each lead waits for that plan instead of sending the standard
+      // steps stamped on arrival. Only for half a day: a session that never comes round must
+      // not leave the lead with nothing, so past that the standard steps run.
+      if (perLeadFamily && plan?.createdBy === "playbook" && now.getTime() - startedAt < PLAN_WAIT_MS) {
+        summary.skipped.push({ goalInstanceId, reason: "waiting for Claude to plan this lead" });
+        continue;
+      }
+      step = nextStep(
+        plan,
+        writtenBy.get(goalInstanceId) ?? new Set(),
+        deliveredBy.get(goalInstanceId) ?? new Set(),
+        engagementNow,
+      );
+    }
+    if (fallback) tier = 2;
     // A step that names a family of variants ("the next welcome they have not seen") is
     // the engine's to render: the variant IS the message, picked by segment and by what
     // has won. Handing it to a session would replace a tested first mail with freehand.
@@ -340,7 +443,13 @@ export async function advance(
     // round twice is not coming. The template's own words go out instead, and the waiting
     // job is finished by next_work once it sees the queued message.
     const askedAt = composeAskedAt.get(goalInstanceId);
-    if (tier === 1 && askedAt !== undefined && now.getTime() - askedAt > COMPOSE_WAIT_MS) tier = 2;
+    // In a rolling campaign the step renders through a frame whose slot is empty without a
+    // session's words, so the fallback there is a fixed email the lead has not had.
+    let composeLate = false;
+    if (tier === 1 && askedAt !== undefined && now.getTime() - askedAt > COMPOSE_WAIT_MS) {
+      tier = 2;
+      composeLate = true;
+    }
     if (!step) {
       summary.skipped.push({ goalInstanceId, reason: "plan exhausted" });
       continue;
@@ -394,17 +503,29 @@ export async function advance(
       instanceMailboxes.push({ goalInstanceId, channelId: pick.channelId });
     }
 
+    const frameStep = rolling && String(step.templateKey ?? "") === frameKeyOf(goal);
+    const swapToFixed = rolling && frameStep && composeLate && perLeadFamily;
+    if (rolling && frameStep && !swapToFixed) {
+      // A frame with nothing written in it is not a message. Wait for the session instead.
+      summary.skipped.push({ goalInstanceId, reason: "waiting for Claude to write this touch" });
+      continue;
+    }
+    if (fallback || swapToFixed) summary.fallbacks++;
+
     toInsert.push({
       _id: new ObjectId(),
       orgId,
       productId,
       goalInstanceId,
       personId: String(person._id),
-      planStepId: step.id,
+      ...(fallback ? {} : { planStepId: step.id }),
+      ...(fallback || swapToFixed ? { templateKey: String(perLeadFamily) } : {}),
       channel: pick.key,
       channelId: pick.channelId,
-      angle: String(step.angle ?? "follow_up"),
-      rationale: String(step.why ?? `Plan step ${step.id}; ${pick.reason}.`),
+      angle: String(swapToFixed ? perLeadFamily : step.angle ?? "follow_up"),
+      rationale: swapToFixed
+        ? `Nothing was written for step ${step.id} in time, so an email they have not had went in its place.`
+        : String(step.why ?? `Plan step ${step.id}; ${pick.reason}.`),
       // No template id and no composed copy. The ladder rung is chosen at send time from how
       // far through the sequence this person is, and its own fallback text is the message —
       // which is what tier 2 means.
@@ -415,7 +536,7 @@ export async function advance(
       next: {},
       content: { bodyMd: "", personalizationUsed: [], claimsMade: [], wordCount: 0 },
       assetIds: [],
-      idempotencyKey: `${goalInstanceId}:step:${step.id}`,
+      idempotencyKey: fallback ? `${goalInstanceId}:fallback:${now.getTime()}` : `${goalInstanceId}:step:${step.id}`,
     });
   }
 
@@ -444,6 +565,10 @@ export async function advance(
   }
 
   if (handOver.length) await enqueueMany(orgId, "compose", handOver, now);
+  if (planAsks.length) {
+    await enqueueMany(orgId, "plan", planAsks, now);
+    await db.collection(C.goalInstances).updateMany({ _id: { $in: askedIds } }, { $set: { checkpointAskedAt: now } });
+  }
 
   return summary;
 }

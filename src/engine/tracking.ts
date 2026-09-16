@@ -148,6 +148,31 @@ export function applyTracking(html: string, opts: TrackingOptions): { html: stri
 }
 
 /**
+ * The same click wrapping for the plain-text part.
+ *
+ * A message sent as plain text has no HTML to rewrite, so before this it reported nothing:
+ * a comparison of plain text against designed mail compared messages that could report a
+ * click with messages that could not. The text part of a designed message goes through it
+ * too, because some clients show only that part. Idempotent, like the HTML version, because
+ * approved copy passes through again when it finally sends.
+ */
+export function applyTextTracking(text: string, opts: TrackingOptions): { text: string; clicks: boolean } {
+  if (!opts.origin || !opts.choice.clicks) return { text, clicks: false };
+  const origin = opts.origin.replace(/\/$/, "");
+  const never = new Set(opts.neverTrack ?? []);
+  const alreadyTracked = `${origin}/api/t/`;
+  let clicks = false;
+  // Trailing sentence punctuation is not part of a URL a person wrote at the end of a line.
+  const out = text.replace(/https?:\/\/[^\s<>()"']*[^\s<>()"'.,;:!?]/g, (url) => {
+    if (never.has(url)) return url;
+    clicks = true;
+    if (url.startsWith(alreadyTracked)) return url;
+    return `${origin}/api/t/c/${opts.actionId}?u=${b64url(url)}&s=${sign(`c|${opts.actionId}|${url}`)}`;
+  });
+  return { text: out, clicks };
+}
+
+/**
  * The mail as the console shows it, without its open pixel.
  *
  * A stored body carries the live pixel, so a reviewer opening it in the drawer was counted as

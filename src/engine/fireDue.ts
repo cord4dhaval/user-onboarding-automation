@@ -20,7 +20,8 @@ import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, rateBlock, rateHeadroom } from "./governor.js";
 import { bandFor, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
-import { applyTracking, trackingAllowed } from "./tracking.js";
+import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
+import { groupFor } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
 import { localHour } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
@@ -216,7 +217,12 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // a step naming nothing falls back to the ladder rung for how far the person is; that
       // fallback used to serve every composed step, so a "privacy" message written by a
       // session went out inside the "one step left" onboarding frame.
-      const rungKey = await stepTemplateKey(goalInstance, action);
+      // An action can name its own template: the engine sets one when a written touch never
+      // arrived and a fixed email goes in its place. It outranks the plan step's frame, which
+      // would otherwise render an empty slot.
+      const rungKey = typeof action.templateKey === "string" && action.templateKey
+        ? String(action.templateKey)
+        : await stepTemplateKey(goalInstance, action);
       const template = action.templateId
         ? await db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) })
         : await resolveTemplateFor({
@@ -390,6 +396,18 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         content.bodyHtml = wrapped.html;
         trackingApplied = wrapped.applied;
       }
+      // The plain-text part too. A message sent as plain text has no other part, and without
+      // this it could never report a click, so plain text would always look like it lost.
+      if (!dryRun && !isReply && String(action.channel) === "email" && content.bodyMd) {
+        const wrappedText = applyTextTracking(content.bodyMd, {
+          actionId: String(action._id),
+          origin: appOrigin(),
+          choice: trackChoice,
+          neverTrack: [vars.opt_out_url],
+        });
+        content.bodyMd = wrappedText.text;
+        if (wrappedText.clicks) trackingApplied = { ...trackingApplied, clicks: true };
+      }
 
       const check = validate(content, {
         ask: (prior as { ask?: "reply" | "link" } | undefined)?.ask,
@@ -544,7 +562,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
         // A queued message is not a sent message. It waits at "dispatched" until the
         // reconciler confirms it with the provider.
-        const variant = variantOf(person, action, carried);
+        const variant = variantOf(person, action, carried, content.bodyHtml ? "html" : "text");
         const queued = result.disposition === "queued" && !dryRun;
         await db.collection(C.actions).updateOne(
           { _id: action._id },
@@ -652,6 +670,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     person: Record<string, unknown>,
     action: Record<string, unknown>,
     carried: RenderableAsset[] = [],
+    format?: "html" | "text",
   ) {
     const belief = person.belief as { segment?: string; fitKnown?: boolean } | undefined;
     const variant: Record<string, unknown> = {
@@ -677,6 +696,15 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     variant.assetKeys = keys;
     variant.assetKey = keys.length === 1 ? keys[0] : null;
     variant.assetTier = carried.length > 0 ? highestTier(carried.map((asset) => asset.tier)) : null;
+
+    // The rolling planner's labels, so results can be read by the idea, the way it was
+    // delivered, the format and the ask, within a group of similar leads. Frozen like the
+    // rest: a lead's team size or segment can be corrected after the message went out.
+    variant.theme = typeof action.theme === "string" && action.theme ? action.theme : null;
+    variant.hook = typeof action.hook === "string" && action.hook ? action.hook : null;
+    if (format) variant.format = format;
+    variant.ask = (action.content as { ask?: string } | undefined)?.ask === "reply" ? "reply" : "link";
+    variant.group = groupFor(person as Document);
     return variant;
   }
 

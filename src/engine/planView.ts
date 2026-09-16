@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { gateOpen, nextStep, type StepEngagement } from "./advance.js";
 import { engineRenderedKeysFor, skeletonFor, type Skeleton } from "./engineSteps.js";
+import { FRAME_BODY_MAX_WORDS, frameKeyOf, isRolling, isRollingPlan } from "./rolling.js";
 
 /**
  * One person's plan as a session should read it: every step with where it stands, and
@@ -69,6 +70,9 @@ export async function planViewFor(instance: Document, actions: Document[], band:
   const orgId = String(instance.orgId);
   const productId = String(instance.productId);
   const engineOwned = await engineRenderedKeysFor(orgId, productId);
+  const goal = await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey ?? "") }, { projection: { perLeadPlan: 1 } });
+  const rolling = isRolling(goal);
+  const frameKey = frameKeyOf(goal);
 
   const byStep = new Map<number, Document>();
   const written = new Set<number>();
@@ -84,7 +88,8 @@ export async function planViewFor(instance: Document, actions: Document[], band:
     if (WRITTEN_AND_LIVE.includes(String(a.status))) delivered.add(String(a.angle ?? "").toLowerCase());
   }
   const engagement = engagementFrom(actions, band);
-  const next = nextStep(plan, written, delivered, engagement);
+  // In a rolling campaign only a plan written for it runs; an older one is history.
+  const next = rolling && !isRollingPlan(plan) ? null : nextStep(plan, written, delivered, engagement);
   const nextId = next ? Number(next.id) : null;
 
   const steps: PlanStepView[] = ((plan.steps ?? []) as Document[])
@@ -117,6 +122,10 @@ export async function planViewFor(instance: Document, actions: Document[], band:
   let toWrite: PlanStepView | null = null;
   if (waiting > 0) {
     note = `A message is already waiting for this person. Write nothing until it has gone out.`;
+  } else if (rolling && !isRollingPlan(plan)) {
+    note = `This campaign plans one or two touches at a time, and this plan was written before that. It is spent; the engine asks for this lead's next plan at their checkpoint.`;
+  } else if (rolling && !nextView) {
+    note = `Every planned touch is written. The engine watches what this lead does with them and asks for the next plan.`;
   } else if (!nextView) {
     note = `The plan is exhausted for this person: every remaining step is written or its gate is closed.`;
   } else if (nextView.engine_renders) {
@@ -124,7 +133,9 @@ export async function planViewFor(instance: Document, actions: Document[], band:
   } else {
     const skeleton = nextView.template_key ? await skeletonFor(orgId, productId, nextView.template_key, plan.segmentKey ? String(plan.segmentKey) : null) : null;
     toWrite = { ...nextView, skeleton };
-    note = `Write step ${nextView.step_id} (${nextView.template_key ?? nextView.angle ?? "no template"}), and only the your_words part of its skeleton. Later steps are for later runs.`;
+    note = rolling && nextView.template_key === frameKey
+      ? `Write step ${nextView.step_id} whole: subject, preheader, body of at most ${FRAME_BODY_MAX_WORDS} words, an optional ps, format with format_why, ask, theme and hook. The frame adds only the greeting, the button (left off for a reply ask), the sign-off and the unsubscribe line. Read writing on the lead card first.`
+      : `Write step ${nextView.step_id} (${nextView.template_key ?? nextView.angle ?? "no template"}), and only the your_words part of its skeleton. Later steps are for later runs.`;
   }
 
   return {

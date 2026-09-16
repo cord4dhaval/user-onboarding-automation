@@ -55,6 +55,29 @@ export const productConfig = z.object({
   })).default([]),
 
   trialLinkTemplate: z.string().default("https://example.com/start?p={{person_id}}"),
+
+  /**
+   * What a session writing a whole message needs and may not invent.
+   *
+   * `facts` is the truth sheet: what each plan contains, what the product can do, what it
+   * never does, and claims seen somewhere that are not confirmed. `examples` show the bar
+   * a message should clear; they are not a menu. `subjectAvoid` is refused in a subject.
+   */
+  writing: z
+    .object({
+      facts: z
+        .object({
+          plans: z.array(z.object({ name: z.string(), price: z.string(), includes: z.array(z.string()).default([]) })).default([]),
+          canDo: z.array(z.object({ text: z.string(), plan: z.string().optional() })).default([]),
+          neverDoes: z.array(z.string()).default([]),
+          unverified: z.array(z.string()).default([]),
+          limits: z.array(z.string()).default([]),
+        })
+        .default({}),
+      examples: z.array(z.string()).default([]),
+      subjectAvoid: z.array(z.string()).default([]),
+    })
+    .optional(),
 });
 export type ProductConfig = z.infer<typeof productConfig>;
 

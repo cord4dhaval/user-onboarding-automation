@@ -64,6 +64,23 @@ export const action = z.object({
   channelId: objectIdString,
   templateId: objectIdString.optional(),
   angle: z.string(),
+  /**
+   * The idea this touch was built on, in words a person reads ("Evening status calls").
+   * Written by a session under the rolling planner; `angle` carries its slug so every
+   * rollup keyed on angle keeps working.
+   */
+  theme: z.string().optional(),
+  /** How the idea is delivered: story, rupee_math, question, comparison, proof, or another. */
+  hook: z.string().optional(),
+  /** Plain text or designed. Read at send and outranks the template's own format. */
+  format: z.enum(["text", "html"]).optional(),
+  formatWhy: z.string().optional(),
+  /**
+   * Render through this template key rather than the one the plan step names. Set when the
+   * engine falls back to a fixed email because the written one never arrived; a family key
+   * picks the member this person has not had.
+   */
+  templateKey: z.string().optional(),
   content: composedContent,
   assetIds: z.array(objectIdString).default([]),
   rationale: z.string(),
@@ -110,6 +127,13 @@ export const action = z.object({
       assetKey: z.string().nullable().optional(),
       assetKeys: z.array(z.string()).optional(),
       assetTier: z.enum(["A", "B", "C", "D"]).nullable().optional(),
+      /** The rolling planner's labels, frozen here for the same reason the segment is. */
+      theme: z.string().nullable().optional(),
+      hook: z.string().nullable().optional(),
+      format: z.enum(["text", "html"]).optional(),
+      ask: z.enum(["reply", "link"]).optional(),
+      /** segment|team size band, the unit results are compared across. */
+      group: z.string().optional(),
     })
     .optional(),
 

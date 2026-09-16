@@ -93,6 +93,100 @@ export async function anglePerformance(
   }));
 }
 
+export interface ThemeRow {
+  group: string;
+  theme: string;
+  angle: string;
+  hook: string | null;
+  format: string | null;
+  ask: string | null;
+  channel: string;
+  sent: number;
+  trackable: number;
+  opened: number;
+  clicked: number;
+  replied: number;
+  won: number;
+  lastSentAt: Date | null;
+}
+
+/**
+ * What the rolling planner has learned, cut the way it decides.
+ *
+ * The idea, how it was delivered, the format, the ask and the channel, within a group of
+ * similar leads (segment and team size band). Only messages that carried a theme are here:
+ * everything sent before the rolling planner has no theme and is already in the angle table.
+ *
+ * `group` narrows to one group. Omitted, every group comes back and the reader can see a
+ * theme that works for small teams and fails for large ones as the two rows it is.
+ */
+export async function themePerformance(orgId: string, productId: string, group?: string): Promise<ThemeRow[]> {
+  const db = await getDb();
+  const match: Record<string, unknown> = {
+    orgId,
+    productId,
+    status: { $in: ["sent", "dispatched"] },
+    dryRun: { $ne: true },
+    "variant.theme": { $type: "string" },
+  };
+  if (group) match["variant.group"] = group;
+
+  const rows = await db
+    .collection(C.actions)
+    .aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            group: { $ifNull: ["$variant.group", "unknown"] },
+            angle: "$angle",
+            hook: { $ifNull: ["$variant.hook", null] },
+            format: { $ifNull: ["$variant.format", null] },
+            ask: { $ifNull: ["$variant.ask", null] },
+            channel: "$channel",
+          },
+          theme: { $last: "$variant.theme" },
+          sent: { $sum: 1 },
+          trackable: { $sum: { $cond: [{ $eq: ["$tracking.clicks", true] }, 1, 0] } },
+          opened: { $sum: { $cond: [{ $ifNull: ["$firstOpenedAt", false] }, 1, 0] } },
+          clicked: { $sum: { $cond: [{ $ifNull: ["$firstClickedAt", false] }, 1, 0] } },
+          replied: { $sum: { $cond: [{ $ifNull: ["$firstRepliedAt", false] }, 1, 0] } },
+          won: { $sum: { $cond: [{ $eq: ["$goalOutcome", "won"] }, 1, 0] } },
+          lastSentAt: { $max: "$sentAt" },
+        },
+      },
+      { $sort: { won: -1, replied: -1, clicked: -1, sent: -1 } },
+      { $limit: 300 },
+    ])
+    .toArray();
+
+  return rows.map((r) => ({
+    group: String(r._id.group),
+    theme: String(r.theme ?? r._id.angle),
+    angle: String(r._id.angle),
+    hook: r._id.hook ? String(r._id.hook) : null,
+    format: r._id.format ? String(r._id.format) : null,
+    ask: r._id.ask ? String(r._id.ask) : null,
+    channel: String(r._id.channel),
+    sent: r.sent,
+    trackable: r.trackable,
+    opened: r.opened,
+    clicked: r.clicked,
+    replied: r.replied,
+    won: r.won,
+    lastSentAt: r.lastSentAt ?? null,
+  }));
+}
+
+/** How much a row can be trusted, in the words the learning notes use. */
+export function evidenceStatus(row: { sent: number; clicked: number; replied: number }): "guess" | "promising" | "confirmed" | "retire" {
+  const responses = row.clicked + row.replied;
+  if (row.sent < 5) return "guess";
+  if (row.sent >= 10 && responses >= 2) return "confirmed";
+  if (row.sent >= 10 && responses === 0) return "retire";
+  return responses > 0 ? "promising" : "guess";
+}
+
 export interface AssetRow {
   angle: string;
   /** The asset's key, or null for the sends of that angle that carried nothing. */
