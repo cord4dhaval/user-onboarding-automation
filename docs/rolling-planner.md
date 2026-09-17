@@ -356,6 +356,16 @@ Dhaval asked whether the 88 approved ideas were really used. They were not. No p
 
   Three emails explained setup ("start with one team", "5 minutes per computer") instead of giving a no-way moment. They were rewritten on #28 (software seats nobody opens) and #40 (the slip heard on the due date). Ideas #47, #52, #80 and #81 (setup, price and trial reassurance) now carry hook `closing`, so they only go into the closing email.
 
+## teamgrid_leads_v2 merged into v3, 2026-09-17
+
+Dhaval asked to move every v2 lead into v3, give them v3's idea-bank emails, and delete v2.
+
+- **Who moved.** All 31 leads moved. 6 were active; each had a welcome and 1 follow-up from the old qiksteals mailbox. The other 25 were recycled early-September form leads whose only email was "your workspace is ready" on 9 Sep. None was suppressed or in another campaign.
+- **How.** Each goal instance was moved in place, so its sent history stays linked. Its `goalKey` became v3 and `movedFrom` was set to v2. It restarted with a 14-day deadline, the v3 check (`account_created`) and the hello@teamgrid.ai channel, for both the instance and the person. The 6 waiting v2 emails were skipped and their step numbers released. The move skipped the welcome, because these people heard from us over a week ago.
+- **Emails.** Each lead got a shortlist that counts the ideas v3 already uses, then 2 idea-bank emails. That makes 62 emails, and 25 of them carry a sample card. plan_goal's cap refused one idea that 5 leads already had. Three scenes about a "160-hour contractor invoice" were reworded as examples ("Say a contractor sends…").
+- **Deleted.** The v2 goal and its 6 playbooks were deleted. No source pointed at v2. Its 45 finished queue jobs stay as history. Everything is backed up in the session scratchpad (`v2-backup-before-move.json`).
+- **Result.** v3 now holds 54 active leads, each with 2 idea-bank emails waiting for review. Idea #13 (leave that lands before deadlines) reached 5 leads in this batch, the cap, so watch it.
+
 ## Follow-ups
 
 
