@@ -62,6 +62,9 @@ export const productConfig = z.object({
    * `facts` is the truth sheet: what each plan contains, what the product can do, what it
    * never does, and claims seen somewhere that are not confirmed. `examples` show the bar
    * a message should clear; they are not a menu. `subjectAvoid` is refused in a subject.
+   * `oneLine` says what the product is in words a busy owner reads once; a written touch
+   * says it so nobody has to already know. `wordsAvoid` pairs a word readers stumble on
+   * with the plain one to use, and a written touch that uses the first is refused.
    */
   writing: z
     .object({
@@ -76,6 +79,8 @@ export const productConfig = z.object({
         .default({}),
       examples: z.array(z.string()).default([]),
       subjectAvoid: z.array(z.string()).default([]),
+      oneLine: z.string().optional(),
+      wordsAvoid: z.array(z.object({ word: z.string(), use: z.string() })).default([]),
     })
     .optional(),
 });

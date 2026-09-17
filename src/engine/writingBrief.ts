@@ -2,7 +2,7 @@ import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, themePerformance } from "./outcomes.js";
-import { FRAME_BODY_MAX_WORDS, LAYOUT_TESTS, ROLLING_MAX_STEPS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm } from "./rolling.js";
+import { FRAME_BODY_MAX_WORDS, LAYOUT_TESTS, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -27,6 +27,8 @@ export interface WritingBrief {
   examples: string[];
   examples_note: string;
   subject_avoid: string[];
+  product_in_one_line: string | null;
+  plain_words: Array<{ word: string; use: string }>;
   themes_sent: Array<Record<string, unknown>>;
   similar_leads: Array<Record<string, unknown>>;
   learning_notes: Array<Record<string, unknown>>;
@@ -49,6 +51,8 @@ export async function writingBriefFor(input: {
     facts?: unknown;
     examples?: string[];
     subjectAvoid?: string[];
+    oneLine?: string;
+    wordsAvoid?: Array<{ word: string; use: string }>;
   };
   const group = groupFor(person);
   const form = ((person.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;
@@ -112,6 +116,8 @@ export async function writingBriefFor(input: {
     examples_note:
       "A random sample of past ideas, shown for the standard a message should clear. They are not a menu: invent the idea that fits this person, and use one of these only if it truly is the best fit.",
     subject_avoid: (writing.subjectAvoid ?? []).map(String),
+    product_in_one_line: writing.oneLine ? String(writing.oneLine) : null,
+    plain_words: (writing.wordsAvoid ?? []).map((w) => ({ word: String(w.word), use: String(w.use) })),
     themes_sent: actions
       .filter((a) => typeof a.theme === "string" && a.theme)
       .map((a) => ({
@@ -168,6 +174,10 @@ export async function writingBriefFor(input: {
       };
     }),
     rules: [
+      "Write so a busy owner understands it in one quick read, the way a clear professional would explain it across a desk.",
+      "Say what the product is once, in plain words close to product_in_one_line, usually as the line above what they would see. Never assume they already know.",
+      `Short sentences, one idea each, never more than ${SENTENCE_MAX_WORDS} words. Everyday words: no wordplay, no metaphors, no clever phrasing. Where plain_words lists a word, use its plain replacement.`,
+      "Name the problem the way they would say it (\"orders wait for approval\"), not in our words (\"work is blocked\").",
       `Plan at most ${ROLLING_MAX_STEPS} touches. The engine watches the result and asks again.`,
       "Invent the idea for this person: a real moment from their week, with its cost in rupees or hours.",
       "State only what product_config.writing.facts supports. Never quote anything in facts.unverified.",

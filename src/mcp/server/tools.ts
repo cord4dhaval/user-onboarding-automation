@@ -19,7 +19,7 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, companyTokens, emojiProneSymbols, frameKeyOf, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, emojiProneSymbols, frameKeyOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -1550,6 +1550,11 @@ export const TOOLS: ToolDef[] = [
 
         const costTitle = String(t.cost_intro ?? "").trim() || "For example:";
         const showsTitle = String(t.shows_intro ?? "").trim() || "What TeamGrid would show you:";
+        // Plain language: one idea per sentence, short enough to read once.
+        const tooLong = longSentences([opening, scene, limitLine, question, costTitle, showsTitle, ...timeline.map((r) => r.what)].join("\n"));
+        if (tooLong.length) {
+          throw new Error(`step ${step} has a sentence over ${SENTENCE_MAX_WORDS} words: "${tooLong[0]}". Split it into short sentences, one idea each. Nothing was written.`);
+        }
         // The assembled words every other rule reads: word count, links, the form, names, numbers.
         t.body = [
           opening,
@@ -1614,6 +1619,9 @@ export const TOOLS: ToolDef[] = [
         isRolling(campaignDef) && String(stepRows.get(Number(t.step_id))?.templateKey ?? "") === frameKey;
       const writer = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { config: 1 } });
       const subjectAvoid = (((writer?.config as { writing?: { subjectAvoid?: string[] } } | undefined)?.writing?.subjectAvoid) ?? []).map(String).filter(Boolean);
+      const plainWriting = ((writer?.config as { writing?: { oneLine?: string; wordsAvoid?: Array<{ word: string; use: string }> } } | undefined)?.writing ?? {});
+      const wordsAvoid = (plainWriting.wordsAvoid ?? []).filter((w) => w && w.word);
+      const oneLine = String(plainWriting.oneLine ?? "").trim();
       const lead = await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) });
       const companyWords = companyTokens(lead);
       const warnings: string[] = [];
@@ -1645,6 +1653,20 @@ export const TOOLS: ToolDef[] = [
         const pointsAtForm = /\byou (named|mentioned|told us|said|shared|filled|submitted|selected|wrote|listed|indicated|flagged|picked|chose)\b|\byour (form|answer|response|submission)\b|\bon the form\b/i.exec(everything);
         if (pointsAtForm) {
           throw new Error(`step ${step} says "${pointsAtForm[0]}", which tells them we are reading back what they submitted. Write about their situation directly instead. Nothing was written.`);
+        }
+        if (structuredParts.has(t)) {
+          const hard = avoidedWord([t.subject, t.body, t.ps].map((v) => String(v ?? "")).join("\n"), wordsAvoid);
+          if (hard) {
+            throw new Error(`step ${step} uses "${hard.word}", a word readers stumble on. Say "${hard.use}" instead. Nothing was written.`);
+          }
+          // A reader who has never heard of the product must not have to guess what it is.
+          if (oneLine) {
+            const key = [...new Set(oneLine.toLowerCase().match(/[a-z]{4,}/g) ?? [])];
+            const have = key.filter((w) => everything.includes(w)).length;
+            if (key.length && have / key.length < 0.6) {
+              warnings.push(`step ${step} never says what the product is in plain words. Add it once, usually as the line above what they would see, for example: "${oneLine}"`);
+            }
+          }
         }
         const named = companyWords.find((token) => everything.includes(token));
         if (named) {

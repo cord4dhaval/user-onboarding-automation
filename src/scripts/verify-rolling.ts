@@ -4,7 +4,7 @@
  *
  *   MASTER_KEY_B64=$(openssl rand -base64 32) npx tsx src/scripts/verify-rolling.ts
  */
-import { CHECKPOINT_PLAN_WAIT_MS, checkpoint, companyTokens, emojiProneSymbols, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
+import { CHECKPOINT_PLAN_WAIT_MS, avoidedWord, checkpoint, companyTokens, emojiProneSymbols, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { applyTextTracking } from "../engine/tracking";
 import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 import { renderHtml, renderLetter } from "../engine/html";
@@ -167,6 +167,15 @@ const used = arms.filter((a) => a === "use").length;
 check("test arms split roughly in half", used > 150 && used < 250);
 check("a lead keeps its arm", layoutArm("6aa8f1c440e32dfa803fa375", "timeline") === layoutArm("6aa8f1c440e32dfa803fa375", "timeline"));
 check("the two tests are independent", Array.from({ length: 200 }, (_, i) => i.toString(16).padStart(24, "0")).some((id) => layoutArm(id, "timeline") !== layoutArm(id, "reply_options")));
+
+console.log("plain language");
+check("a short sentence passes", longSentences("A quote often needs one manager to approve it. When that manager is busy, the order waits.").length === 0);
+check("a sentence over 20 words is caught", longSentences("In the weeks before rabi sowing dealer orders and service tickets pile up and many of them wait on one engineer to approve.").length === 1);
+check("bold marks do not count as words", longSentences("**Twenty** words is fine here.").length === 0);
+const plainList = [{ word: "sign-off", use: "approval" }, { word: "blocked", use: "stuck" }];
+check("a hard word is caught with its plain one", avoidedWord("Which sign-off holds orders?", plainList)?.use === "approval");
+check("plural and bold forms too", avoidedWord("two **sign-offs** today", plainList)?.word === "sign-off");
+check("part of a longer word is not", avoidedWord("the unblockedness", plainList) === null);
 
 console.log("short unsubscribe link");
 const personHex = "6aa8f1c440e32dfa803fa375";

@@ -299,6 +299,13 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   Plain-text rules, from what respected senders do: quantities as digits ("5 days",
   "9 hours", "3 of 9 hours"), the whole body within 125 words including lists, and
   only these symbols: → – × ÷ = ₹ • ✓ (never ✔ ☑ ➡ ▶ ⚠ ™, styled letters or emoji).
+  Simple and clear, because a busy owner reads it once: say what the product is in
+  one plain line (writing.product_in_one_line), usually as shows_intro, for example
+  "TeamGrid shows how your office team spends its day on the computer. You would
+  see:". Short sentences, one idea each, never over 20 words. Everyday words, no
+  wordplay or metaphor; name the problem the way they would say it ("orders wait
+  for approval"), and use the plain word from writing.plain_words ("approval", not
+  "sign-off"; "stuck", not "blocked").
   format     "text": a plain note that asks for a reply and carries no link; the
              default for early touches and anyone who has not clicked. "letter": HTML
              that looks typed, bold phrases and a link on its own words, no logo, box

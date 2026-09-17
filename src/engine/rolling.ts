@@ -248,3 +248,30 @@ export function layoutArm(personId: string, test: LayoutTest): LayoutArm {
   h ^= h >>> 16;
   return (h >>> 0) % 2 === 0 ? "use" : "hold_out";
 }
+
+/**
+ * Plain language (Dhaval, 2026-09-17): the ideas were right but the words were hard for a
+ * busy owner to follow. One idea per sentence, and no sentence longer than this.
+ */
+export const SENTENCE_MAX_WORDS = 20;
+
+/** Sentences over the limit, emphasis marks ignored. */
+export function longSentences(text: string, max = SENTENCE_MAX_WORDS): string[] {
+  return String(text ?? "")
+    .replace(/\*\*/g, "")
+    .split(/(?<=[.!?:])\s+|\n+/)
+    .map((x) => x.trim())
+    .filter((x) => x.split(/\s+/).filter(Boolean).length > max);
+}
+
+/** The first word from a product's avoid list that the text uses, with the plain word to use instead. */
+export function avoidedWord(text: string, list: Array<{ word: string; use: string }>): { word: string; use: string } | null {
+  const body = String(text ?? "").replace(/\*\*/g, "");
+  for (const entry of list) {
+    const word = String(entry?.word ?? "").trim();
+    if (!word) continue;
+    const re = new RegExp(`(^|[^\\p{L}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:s|es|d|ed)?(?=$|[^\\p{L}])`, "iu");
+    if (re.test(body)) return { word, use: String(entry.use ?? "") };
+  }
+  return null;
+}
