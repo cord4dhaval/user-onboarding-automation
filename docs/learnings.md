@@ -968,6 +968,54 @@ The written layout (commits 9796a97 and e164543) already puts parts on separate 
 
 ---
 
+## 2026-09-17 — Research: Indian office pains and competitor reviews, for short "no way" emails
+
+Source: web research on 2026-09-17, done after Dhaval said the reveal emails were too long. He asked for emails that are very simple, in an Indian business tone, and that make the reader say "I cannot believe it shows that". reddit.com, G2, Glassdoor and AmbitionBox were blocked, so Reddit voices came from news articles quoting them. Also read: Blind (India), Capterra and Trustpilot reviews of Time Doctor, Hubstaff, Insightful, ActivTrak, DeskTime and We360, the Microsoft Work Trend Index, a Slack/Qualtrics survey, and Indian business press (DNA, The Register, Business Today, Storyboard18, People Matters). This builds on the 2026-09-15 Reddit research above. Re-open each link before quoting a line publicly.
+
+### Pains, in order of strength
+
+| # | Pain | Evidence | What TeamGrid shows |
+|---|---|---|---|
+| 1 | Leaders doubt that WFH or hybrid days are real | CEO quote: "Work-from-home doesn't mean you can work one hour and claim eight" (DNA). Microsoft India survey: 91% of leaders unsure, 93% of employees say they are productive | When work starts and stops, hour by hour |
+| 2 | People who look busy | Slack/Qualtrics: Indian workers spend 43% of their time on "performative work", the highest of all countries surveyed | Focus in teal, idle in grey, and a score for each hour |
+| 3 | Chasing status | Blind (India): managers "pinged me every 30-60 minutes"; "Are you there? Reply to me." | A written summary for each person by 6pm |
+| 4 | Calls eat the day | Microsoft (global): an interruption every 2 minutes; 57% of meetings are ad hoc | Meetings shown in blue |
+| 5 | Moonlighting fear | Premji: "cheating, plain and simple"; the LawSikho case drew backlash | Start and stop times, idle hours. Never promise that it detects a second job |
+| 6 | Always-on WhatsApp | "Be active on WhatsApp"; 88% contacted after hours (Indeed survey) | When each person's day really ends |
+| 7 | Screenshot tools feel like a prison | Time Doctor review: "made team feel like prisoners"; Blind: "creates constant anxiety" | No screenshots, no keystrokes |
+| 8 | Calls marked as idle | Insightful review: "idle time recorded during meetings"; Cognizant's ProHance marks idle after 5 minutes | Meetings kept apart from idle; breaks pause on their own |
+| 9 | Attendance disputes | A BMC salary withheld because the fingerprint scanner failed; an overtime dispute settled in 2 hours | Start time recorded automatically |
+| 10 | Too much data | Insightful review: "No one has a time to go through these video recordings" | One written paragraph a day |
+| 11 | "Where does the time go?" | We360 and ActivTrak reviews | Apps and websites per hour |
+| 12 | Dollar pricing | Time Doctor review: "$20 per user… adds up"; Hubstaff review: "nickel and dime" | ₹299 per user, 7-day trial, no card |
+
+### Words people really use
+
+"Are you there?", "any update", "be active on WhatsApp", "can you stay on the call?", WFH, moonlighting, late mark, half day, missed punch, attendance regularisation, biometric, CTC, LPA, appraisals.
+
+Not verified as common usage: "sir, update?", "EOD report", "Monday review", "chai break".
+
+### What to avoid
+
+- Spy words: monitor, track employees, catch, spy, stealth, bossware.
+- "AI caught…"
+- Labelling a person as unproductive, or using an activity percentage as a verdict.
+- Implying the team cheats, or praising hustle (70-hour weeks).
+- Treating idle as an accusation.
+- Promising moonlighting detection.
+
+### Gaps and what to build
+
+| # | Finding | Engine today | Build | Status |
+|---|---|---|---|---|
+| IN-R1 | The reveal emails ran to 145–170 words with three maths lines and a card; Dhaval found them too heavy | Hot emails: 170 words, receipt required | A short hot shape: one phrase they say every day, one surprising truth, one line on what TeamGrid shows, one safety line, one button, in 50–80 words. The receipt card only in "the hour" email | proposed, examples shown 2026-09-17 |
+| IN-R2 | Their own words make the pain real | No phrase list | `writing.phrases`: the verified Indian office phrases above, offered to the writer | proposed |
+| IN-R3 | Measured third-party figures land harder than our examples | Examples only | `facts.external`: Slack 43% performative work (India), Microsoft 91/93%, Indeed 88% after-hours contact, each with its source; usable with the source named | proposed |
+| IN-R4 | Competitor pain is the easiest contrast | Not used | A contrast line without naming the tool ("screenshot tools", "tools that mark a client call as idle") | proposed |
+| IN-R5 | Spy and verdict words trigger backlash | Some are avoided | Add catch, spy, monitor employees, bossware, unproductive employee to `wordsAvoid` for hot emails | proposed |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
