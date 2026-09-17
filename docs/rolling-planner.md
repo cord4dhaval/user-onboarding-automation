@@ -236,6 +236,15 @@ From research into what respected senders do in plain text (docs/learnings.md, P
   lead_card shows the arm under `writing.layout_tests` and compose_batch enforces it. The layout tag records `+options` and `+timeline`, so what_works compares the arms by replies. The frame template has named slots `timeline` (after the opening) and `options` (after the question).
 - **Letter.** Chosen per touch like the other formats, recorded on the send variant as `letter`, and offered in the review drawer as its own pill.
 
+## Plain language, 2026-09-17
+
+Dhaval found the written emails right in substance but hard for a normal business owner to follow. They assumed the reader knew what TeamGrid is, and some lines were clever rather than clear. Built in b316ca5:
+
+- `products.config.writing.oneLine` ("TeamGrid shows how your team spends its working day on the computer.") is on the lead card as `writing.product_in_one_line`. Every written touch says it once, usually as the line above what they would see. compose_batch warns when a touch never does.
+- No sentence over 20 words (`SENTENCE_MAX_WORDS`, refused).
+- `writing.wordsAvoid` pairs hard words with plain ones (sign-off → approval, blocked → stuck, keystroke → what people type), shown on the card as `plain_words`. A touch that uses one is refused.
+- Four rewrites Dhaval approved (dealer approval, 9 paid hours, late handover, 8 PM calls) are the model. The 22 teamgrid_leads_v3 emails were rewritten the same day. The older July–August and v2 emails wait for his review of those.
+
 ## Follow-ups
 
 
