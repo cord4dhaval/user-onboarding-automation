@@ -6,6 +6,7 @@
  */
 import { CHECKPOINT_PLAN_WAIT_MS, checkpoint, companyTokens, groupFor, isRolling, isRollingPlan, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { applyTextTracking } from "../engine/tracking";
+import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -86,6 +87,43 @@ const twice = applyTextTracking(once.text, { actionId: "a1", origin, choice: { o
 check("idempotent", twice.text === once.text);
 const noConsent = applyTextTracking(text, { actionId: "a1", origin, choice: { opens: false, clicks: false } });
 check("no consent → untouched", noConsent.text === text && !noConsent.clicks);
+
+console.log("written layout");
+const frame = [
+  { type: "subject", slot: "subject", fallback: "x" },
+  { type: "text", fixed: "Hi {{first_name}}," },
+  { type: "slot", name: "opening", instruct: "" },
+  { type: "slot", instruct: "", fallback: "fallback scene" },
+  { type: "card", slot: "cost", accent: true },
+  { type: "list", slot: "shows", style: "check" },
+  { type: "slot", name: "limit", instruct: "" },
+  { type: "slot", name: "question", instruct: "" },
+  { type: "cta", fixed: "Start your free trial", url: "{{trial_link}}" },
+  { type: "text", fixed: "Best regards," },
+  { type: "system", fixed: "opt_out_block" },
+];
+const mv = { first_name: "Asha", full_name: "Asha", company: "", person_id: "p", trial_link: "https://t.example/x", opt_out_url: "https://u.example/y" };
+const full = renderTemplate(frame, mv, {
+  subject: "A dealer order waiting five days?",
+  slotText: "A quote waits for the engineer. **The dealer calls** to ask where it is.",
+  slots: { opening: "**Before sowing, orders pile up behind one approval.**", question: "**Which sign-off holds up the most orders?**", limit: "Only work done on a computer is recorded." },
+  parts: {
+    cost: { title: "For example:", rows: [{ label: "₹4 lakh order × 5 days waiting", value: "5 days lost before sowing" }] },
+    shows: { title: "What TeamGrid would show you:", items: ["which orders moved yesterday", "which are blocked, and at whose desk"] },
+  },
+  ask: "reply",
+});
+check("no emphasis markers in plain text", !full.bodyMd.includes("**"));
+check("cost line as an arrow line", full.bodyMd.includes("  ₹4 lakh order × 5 days waiting  →  5 days lost before sowing"));
+check("cost title above it", full.bodyMd.includes("For example:\n  ₹4 lakh"));
+check("shows as dash lines directly under their title", full.bodyMd.includes("What TeamGrid would show you:\n  – which orders moved yesterday\n  – which are blocked"));
+check("reply ask drops the button", !full.bodyMd.includes("Start your free trial"));
+check("opening before scene before question", full.bodyMd.indexOf("Before sowing") < full.bodyMd.indexOf("A quote waits") && full.bodyMd.indexOf("A quote waits") < full.bodyMd.indexOf("Which sign-off"));
+const bare = renderTemplate(frame, mv, { slotText: "Just words.", slots: { opening: "Hi there.", question: "Yes?" } });
+check("no parts means no empty box or list", !bare.bodyMd.includes("For example") && !bare.bodyMd.includes("–"));
+const resolvedFull = resolveBlocks(frame as never, mv, { slotText: "s", slots: {}, parts: { cost: { rows: [{ label: "a", value: "b" }] } } } as never);
+check("card comes from parts, tinted", resolvedFull.blocks.some((b) => b.kind === "card" && b.accent && b.fromParts));
+check("plain() drops bold and italics", plain("**a** and _b_.") === "a and b.");
 
 if (failures) {
   console.error(`\n${failures} check(s) failed`);

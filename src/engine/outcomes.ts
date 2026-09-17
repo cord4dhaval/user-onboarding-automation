@@ -100,6 +100,7 @@ export interface ThemeRow {
   hook: string | null;
   format: string | null;
   ask: string | null;
+  layout: string | null;
   channel: string;
   sent: number;
   trackable: number;
@@ -143,6 +144,7 @@ export async function themePerformance(orgId: string, productId: string, group?:
             hook: { $ifNull: ["$variant.hook", null] },
             format: { $ifNull: ["$variant.format", null] },
             ask: { $ifNull: ["$variant.ask", null] },
+            layout: { $ifNull: ["$variant.layout", null] },
             channel: "$channel",
           },
           theme: { $last: "$variant.theme" },
@@ -167,6 +169,7 @@ export async function themePerformance(orgId: string, productId: string, group?:
     hook: r._id.hook ? String(r._id.hook) : null,
     format: r._id.format ? String(r._id.format) : null,
     ask: r._id.ask ? String(r._id.ask) : null,
+    layout: r._id.layout ? String(r._id.layout) : null,
     channel: String(r._id.channel),
     sent: r.sent,
     trackable: r.trackable,

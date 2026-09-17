@@ -266,18 +266,26 @@ person plural; the frame or template signs off, so you never do.
 
 A rolling campaign (lead_card goal.rolling true) is where the writing matters most.
 The step names an idea (its theme) and renders through a frame that adds only the
-greeting, the button, the sign-off and the unsubscribe line. Everything else is yours:
+greeting, the button, the sign-off and the unsubscribe line. Write it in parts, not
+one block of text, because a wall of paragraphs is skimmed and ignored:
   subject    required; see below.
   preheader  under 90 characters, adds to the subject.
-  body       at most 125 words. Open on their world: what they typed as their main
-             problem, what their company does, their team size. Make the idea a scene
-             they recognise from their own week, give its cost in rupees or hours, and
-             say what the product shows about it — only what writing.facts supports,
-             and nothing from facts.unverified. A number that is not a fact is an
-             example and the sentence says so. Where the fit is partial, say the limit
-             plainly. The examples on the card show the standard a message must clear;
-             write better than them for this person, do not copy them.
+  opening    one sentence, the idea's sharpest line in their world. Set bold in HTML.
+  scene      one or two short paragraphs that make the idea a scene they recognise
+             from their own week. At most two **bold** phrases, on the words that
+             carry the cost or the pain.
+  cost_lines up to three label/value lines with the rupee example ("₹4 lakh order ×
+             5 days waiting" → "5 days a farmer loses before sowing"). A number that
+             is not a fact is an example; cost_intro defaults to "For example:".
+  shows      up to three short lines on what they would see, only what writing.facts
+             supports and nothing from facts.unverified.
+  limit      one line on what is not recorded, only where the fit is partial.
+  question   one line they can answer. Set bold in HTML.
   ps         optional, one line, no link.
+             In HTML the cost lines become a tinted box and shows a check list; in
+             plain text they become aligned arrow lines and dashes. Open on their world
+             (their main problem, what the company does, team size). The examples on
+             the card show the standard; write better than them for this person.
   format     "text" for a first written touch to someone who has not clicked, or any
              reply ask: it reads as a note from a person. "html" when a table, a sample
              or a screen carries the idea, or once they have clicked or signed up.

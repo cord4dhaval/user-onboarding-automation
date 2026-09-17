@@ -129,6 +129,7 @@ export async function writingBriefFor(input: {
       hook: r.hook,
       format: r.format,
       ask: r.ask,
+      layout: r.layout,
       channel: r.channel,
       sent: r.sent,
       clicked: r.clicked,
@@ -160,6 +161,7 @@ export async function writingBriefFor(input: {
       "Professional register: complete sentences, no contractions, first person plural.",
       "Choose format with a reason: text for a first written touch to someone who has not clicked or for a reply ask; html when a table, sample or screen carries the idea, or once they have clicked.",
       "One ask: a reply question, or the button. Never both.",
+      "Write in parts, not one block: opening (one sentence), scene (one or two short paragraphs, at most two **bold** phrases), cost_lines (up to 3 label/value lines with the rupee example), shows (up to 3 short lines on what they would see), limit (one line, only where the fit is partial), question (one line). The frame makes the cost lines a tinted box and the list a check list in HTML, and aligned arrow lines and dashes in plain text. No capitals for emphasis, no emoji.",
     ],
   };
 }

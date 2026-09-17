@@ -705,6 +705,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     if (format) variant.format = format;
     variant.ask = (action.content as { ask?: string } | undefined)?.ask === "reply" ? "reply" : "link";
     variant.group = groupFor(person as Document);
+    if (typeof action.layout === "string" && action.layout) variant.layout = action.layout;
     return variant;
   }
 

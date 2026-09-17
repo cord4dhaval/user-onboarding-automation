@@ -51,6 +51,13 @@ export const composedContent = z.object({
    * asked for a trial, which is the largest ask we have and the one fewest people take.
    */
   ask: z.enum(["reply", "link"]).optional(),
+  /** Cost lines and short list lines a session wrote for a frame that lays them out. */
+  parts: z
+    .object({
+      cost: z.object({ title: z.string().optional(), rows: z.array(z.object({ label: z.string(), value: z.string() })) }).optional(),
+      shows: z.object({ title: z.string().optional(), items: z.array(z.string()) }).optional(),
+    })
+    .optional(),
 });
 
 /** Touch, content, prediction and outcome in one document — one read tells the whole story. */
@@ -75,6 +82,8 @@ export const action = z.object({
   /** Plain text or designed. Read at send and outranks the template's own format. */
   format: z.enum(["text", "html"]).optional(),
   formatWhy: z.string().optional(),
+  /** How the touch is laid out: story, cost_box, checklist or cost_and_list. Learned on like format. */
+  layout: z.string().optional(),
   /**
    * Render through this template key rather than the one the plan step names. Set when the
    * engine falls back to a fixed email because the written one never arrived; a family key
@@ -134,6 +143,7 @@ export const action = z.object({
       ask: z.enum(["reply", "link"]).optional(),
       /** segment|team size band, the unit results are compared across. */
       group: z.string().optional(),
+      layout: z.string().optional(),
     })
     .optional(),
 

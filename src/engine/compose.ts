@@ -41,6 +41,18 @@ export interface ComposedContent {
    * reason as `slotText`: a message rendered a second time must still carry them.
    */
   slots?: Record<string, string>;
+  /**
+   * Structured parts a session wrote for a frame that lays them out: the cost lines a
+   * card shows and the short lines a check list shows. Kept on the content for the same
+   * reason as `slots`: a second render must still find them.
+   */
+  parts?: ComposedParts;
+}
+
+/** The pieces of a written touch that are not prose. See the `written_email` frame. */
+export interface ComposedParts {
+  cost?: { title?: string; rows: Array<{ label: string; value: string }> };
+  shows?: { title?: string; items: string[] };
 }
 
 type Block = Record<string, unknown>;
@@ -290,9 +302,9 @@ export function merge(text: string, vars: MergeVars): string {
 export type ResolvedBlock =
   | { kind: "preheader"; text: string }
   | { kind: "heading"; level: number; text: string }
-  | { kind: "text"; text: string }
-  | { kind: "list"; style: "bullet" | "strike" | "check"; items: string[] }
-  | { kind: "card"; title?: string; rows: Array<{ label: string; value: string }>; accent: boolean }
+  | { kind: "text"; text: string; tight?: boolean }
+  | { kind: "list"; style: "bullet" | "strike" | "check"; items: string[]; fromParts?: boolean }
+  | { kind: "card"; title?: string; rows: Array<{ label: string; value: string }>; accent: boolean; fromParts?: boolean }
   | { kind: "callout"; text: string }
   | { kind: "divider" }
   | { kind: "image"; url: string; alt: string; width?: number; href?: string }
@@ -412,6 +424,29 @@ export function resolveBlocks(
       continue;
     }
 
+    // A list or card that names a part is filled from what the session wrote, and says
+    // nothing at all when it wrote none: an empty cost box reads as a broken email.
+    if ((type === "list" || type === "card") && typeof block.slot === "string" && block.slot) {
+      const part = (precomposed?.parts as Record<string, unknown> | undefined)?.[block.slot] as
+        | { title?: string; rows?: Array<{ label?: unknown; value?: unknown }>; items?: unknown[] }
+        | undefined;
+      if (type === "list") {
+        const items = (part?.items ?? []).map((item) => merge(String(item ?? ""), vars).trim()).filter(Boolean);
+        if (items.length) {
+          if (part?.title) out.push({ kind: "text", text: merge(String(part.title), vars), tight: true });
+          out.push({ kind: "list", style: (String(block.style ?? "check") as "bullet" | "strike" | "check"), items, fromParts: true });
+        }
+      } else {
+        const rows = (part?.rows ?? [])
+          .map((row) => ({ label: merge(String(row?.label ?? ""), vars).trim(), value: merge(String(row?.value ?? ""), vars).trim() }))
+          .filter((row) => row.label || row.value);
+        if (rows.length) {
+          out.push({ kind: "card", title: part?.title ? merge(String(part.title), vars) : text(block.title), rows, accent: Boolean(block.accent ?? true), fromParts: true });
+        }
+      }
+      continue;
+    }
+
     if (type === "list" && Array.isArray(block.items)) {
       const items = (block.items as unknown[]).map((item) => merge(String(item), vars)).filter(Boolean);
       if (items.length) {
@@ -517,6 +552,7 @@ export function renderTemplate(
   let ctaText: string | undefined;
   let ctaUrl: string | undefined;
   let preheader: string | undefined;
+  const tightAfter = new Set<number>();
 
   for (const block of resolved.blocks) {
     switch (block.kind) {
@@ -524,16 +560,28 @@ export function renderTemplate(
         preheader ??= block.text;
         break;
       case "heading":
-      case "text":
       case "callout":
-        parts.push(block.text);
+        parts.push(plain(block.text));
+        break;
+      case "text":
+        // A title that belongs to the list under it sits directly above it in plain text.
+        if (block.tight) tightAfter.add(parts.length);
+        parts.push(plain(block.text));
         break;
       case "list":
-        parts.push(block.items.map((item) => `• ${item}`).join("\n"));
+        // Written parts read as a short indented dash list; a template's own list keeps its bullets.
+        parts.push(block.items.map((item) => (block.fromParts ? `  – ${plain(item)}` : `• ${plain(item)}`)).join("\n"));
         break;
       case "card":
         parts.push(
-          [block.title, ...block.rows.map((row) => `${row.label}: ${row.value}`)]
+          [
+            block.title ? plain(block.title) : undefined,
+            ...block.rows.map((row) =>
+              block.fromParts
+                ? `  ${plain(row.label)}${row.value ? `  →  ${plain(row.value)}` : ""}`
+                : `${plain(row.label)}: ${plain(row.value)}`,
+            ),
+          ]
             .filter(Boolean)
             .join("\n"),
         );
@@ -564,7 +612,10 @@ export function renderTemplate(
     if (vars[key] && vars[key] !== "there") personalizationUsed.push(key);
   }
 
-  const bodyMd = parts.join("\n\n").trim();
+  const bodyMd = parts
+    .map((part, index) => (index < parts.length - 1 ? part + (tightAfter.has(index) ? "\n" : "\n\n") : part))
+    .join("")
+    .trim();
   return {
     subject: resolved.subject,
     bodyMd,
@@ -582,7 +633,18 @@ export function renderTemplate(
     // and without this the next render would find nothing but its own previous output.
     slotText: precomposed?.slotText,
     slots: precomposed?.slots,
+    parts: precomposed?.parts,
   };
+}
+
+/**
+ * Emphasis markers read as noise in plain text. The HTML part turns **x** into bold and
+ * _x_ into italics; the text part keeps the words and drops the marks.
+ */
+export function plain(text: string): string {
+  return String(text ?? "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(^|[\s(])_([^_]+)_(?=[\s).,;:!?]|$)/g, "$1$2");
 }
 
 export function toOutbound(

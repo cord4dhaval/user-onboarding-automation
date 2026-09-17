@@ -1365,6 +1365,22 @@ export const TOOLS: ToolDef[] = [
                   "plain note with a text link; \"html\" sends the branded design. Links are click-tracked either way.",
               },
               format_why: { type: "string", description: "One sentence: why this format for this person now." },
+              opening: {
+                type: "string",
+                description:
+                  "Frame touches, written in parts instead of body: the first line, one sentence, shown bold in HTML and on its own line in plain text.",
+              },
+              scene: { type: "string", description: "One or two short paragraphs (blank line between) that make the idea their scene. At most two **bold** phrases." },
+              cost_intro: { type: "string", description: "Optional heading over the cost lines. Defaults to \"For example:\"." },
+              cost_lines: {
+                type: "array",
+                items: { type: "object", properties: { label: { type: "string" }, value: { type: "string" } }, required: ["label"] },
+                description: "Up to 3 short cost lines: label is the situation with its numbers, value is what it costs. A tinted box in HTML, arrow lines in plain text.",
+              },
+              shows_intro: { type: "string", description: "Optional line over the list. Defaults to \"What TeamGrid would show you:\"." },
+              shows: { type: "array", items: { type: "string" }, description: "Up to 3 short lines on what they would see. A check list in HTML, dashes in plain text." },
+              limit: { type: "string", description: "Optional one line on what is not recorded, where the fit is partial." },
+              question: { type: "string", description: "The closing question, one line they can answer; shown bold in HTML." },
               theme: { type: "string", description: "The idea in words. Defaults to the plan step's theme." },
               hook: { type: "string", description: "How the idea lands: story, rupee_math, question, comparison, proof, or your own word." },
               asset_ids: {
@@ -1379,7 +1395,7 @@ export const TOOLS: ToolDef[] = [
               },
               rationale: { type: "string" },
             },
-            required: ["step_id", "after_days", "channel", "angle", "body", "rationale"],
+            required: ["step_id", "after_days", "channel", "angle", "rationale"],
           },
         },
       },
@@ -1403,6 +1419,79 @@ export const TOOLS: ToolDef[] = [
       if (touches.length === 0) throw new Error("compose_batch needs at least one touch. Nothing was written.");
       for (const t of touches) {
         if (!String(t.rationale ?? "").trim()) throw new Error(`step ${String(t.step_id)} needs a rationale in words. Nothing was written.`);
+      }
+
+      // A touch written in parts: opening, scene, cost lines, what they would see, a limit
+      // and the question. The frame lays each part out for the format; everything below
+      // checks the assembled words, so a part cannot slip past a rule the body obeys.
+      const structuredParts = new Map<Record<string, unknown>, {
+        opening: string; scene: string; question: string; limit: string;
+        cost?: { title: string; rows: Array<{ label: string; value: string }> };
+        shows?: { title: string; items: string[] };
+        layout: string;
+      }>();
+      const CAPS_OK = new Set(["CRM", "HRMS", "MIS", "KPI", "KPIS", "GST", "TDS", "ITR", "HVAC", "OEM", "CTC", "SLA", "ERP", "SAAS", "B2B", "D2C", "HR", "IT", "AI", "CEO", "COO", "CFO", "CA", "USA", "UAE", "NOC", "RERA", "AMC", "MEP", "ICU", "OPD", "BPO", "KPO", "FMCG", "TAT", "PAN", "GSTIN", "EMI", "CAD", "BOQ", "RFQ", "PO", "QA", "QC", "UPI", "NBFC"]);
+      for (const t of touches) {
+        const step = String(t.step_id);
+        const structured = ["opening", "scene", "question", "cost_lines", "shows"].some((k) => t[k] !== undefined);
+        if (!structured) {
+          if (!String(t.body ?? "").trim()) throw new Error(`step ${step} has no body. Write body, or the parts: opening, scene, question. Nothing was written.`);
+          continue;
+        }
+        const opening = String(t.opening ?? "").trim();
+        const scene = String(t.scene ?? "").trim();
+        const question = String(t.question ?? "").trim();
+        const limitLine = String(t.limit ?? "").trim();
+        if (!opening || !scene || !question) {
+          throw new Error(`step ${step} is written in parts and needs opening, scene and question. Nothing was written.`);
+        }
+        if (/\*\*/.test(opening) || /\*\*/.test(question)) {
+          throw new Error(`step ${step}: leave the ** off opening and question; the frame already sets them bold. Nothing was written.`);
+        }
+        const boldCount = ((scene + limitLine).match(/\*\*[^*]+\*\*/g) ?? []).length;
+        if (boldCount > 2) {
+          throw new Error(`step ${step} bolds ${boldCount} phrases in the scene. At most two, or nothing stands out. Nothing was written.`);
+        }
+        const rawRows = Array.isArray(t.cost_lines) ? (t.cost_lines as Array<Record<string, unknown>>) : [];
+        const rows = rawRows.map((r) => ({ label: String(r?.label ?? "").trim(), value: String(r?.value ?? "").trim() })).filter((r) => r.label);
+        if (rows.length > 3) throw new Error(`step ${step} has ${rows.length} cost lines; keep it to 3 at most. Nothing was written.`);
+        const items = (Array.isArray(t.shows) ? (t.shows as unknown[]) : []).map((x) => String(x ?? "").trim()).filter(Boolean);
+        if (items.length > 3) throw new Error(`step ${step} lists ${items.length} things they would see; keep it to 3 at most. Nothing was written.`);
+        for (const line of [...rows.map((r) => `${r.label} ${r.value}`), ...items]) {
+          if (line.split(/\s+/).filter(Boolean).length > 16) {
+            throw new Error(`step ${step}: "${line.slice(0, 60)}…" is too long for a line meant to be scanned; keep each under 16 words. Nothing was written.`);
+          }
+        }
+        const costTitle = String(t.cost_intro ?? "").trim() || "For example:";
+        const showsTitle = String(t.shows_intro ?? "").trim() || "What TeamGrid would show you:";
+        // The assembled words every other rule reads: word count, links, the form, names, numbers.
+        t.body = [
+          opening,
+          scene,
+          rows.length ? [costTitle, ...rows.map((r) => `${r.label} ${r.value}`)].join("\n") : "",
+          items.length ? [showsTitle, ...items].join("\n") : "",
+          limitLine,
+          question,
+        ].filter(Boolean).join("\n\n");
+        structuredParts.set(t, {
+          opening,
+          scene,
+          question,
+          limit: limitLine,
+          ...(rows.length ? { cost: { title: costTitle, rows } } : {}),
+          ...(items.length ? { shows: { title: showsTitle, items } } : {}),
+          layout: rows.length && items.length ? "cost_and_list" : rows.length ? "cost_box" : items.length ? "checklist" : "story",
+        });
+      }
+      for (const t of touches) {
+        const text = [t.subject, t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n");
+        if (/\p{Extended_Pictographic}/u.test(text)) {
+          throw new Error(`step ${String(t.step_id)} carries an emoji. Keep the register professional. Nothing was written.`);
+        }
+        const shouting = (text.match(/\b[A-Z]{4,}\b/g) ?? []).filter((w) => !CAPS_OK.has(w));
+        if (shouting.length) {
+          throw new Error(`step ${String(t.step_id)} writes "${shouting[0]}" in capitals. Use normal case; emphasis comes from layout and at most two bold phrases. Nothing was written.`);
+        }
       }
 
       // Where a step renders through the campaign's frame, the session writes the whole
@@ -1464,7 +1553,7 @@ export const TOOLS: ToolDef[] = [
         const step = String(t.step_id);
         const body = String(t.body ?? "");
         const words = body.split(/\s+/).filter(Boolean).length;
-        const limit = isFrameTouch(t) ? FRAME_BODY_MAX_WORDS : 90;
+        const limit = isFrameTouch(t) ? FRAME_BODY_MAX_WORDS + (structuredParts.has(t) ? 15 : 0) : 90;
         if (words > limit) {
           throw new Error(`step ${step} is ${words} words. Your part is at most ${limit}: one idea in their world and what the product shows about it. Nothing was written.`);
         }
@@ -1594,10 +1683,24 @@ export const TOOLS: ToolDef[] = [
           if (ps && !hasPs) {
             throw new Error(`step ${String(t.step_id)} writes a ps, but the "${key}" template has no PS line. Leave ps out. Nothing was written.`);
           }
+          const sp = structuredParts.get(t);
+          if (sp && !blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === "opening")) {
+            throw new Error(`step ${String(t.step_id)} is written in parts, but the "${key}" template has no place for them. Write body instead. Nothing was written.`);
+          }
           const rendered = renderForCount(blocks, varsForCount(reader, productForCount), {
             subject: t.subject ? String(t.subject) : undefined,
-            slotText: String(t.body ?? ""),
-            ...(ps ? { slots: { ps: psLine(ps) } } : {}),
+            slotText: sp ? sp.scene : String(t.body ?? ""),
+            ...(sp
+              ? {
+                  slots: {
+                    opening: `**${sp.opening}**`,
+                    question: `**${sp.question}**`,
+                    ...(sp.limit ? { limit: sp.limit } : {}),
+                    ...(ps ? { ps: psLine(ps) } : {}),
+                  },
+                  parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}) },
+                }
+              : ps ? { slots: { ps: psLine(ps) } } : {}),
             ...(t.preheader ? { preheader: String(t.preheader).trim() } : {}),
           });
           const total = readableWords(rendered.bodyMd);
@@ -1774,12 +1877,29 @@ export const TOOLS: ToolDef[] = [
               : {}),
             // Claude writes the slot, not the whole message: the greeting, call to action
             // and opt-out block are the template's, and are added when this renders.
+            ...(structuredParts.has(t) ? { layout: structuredParts.get(t)!.layout } : {}),
             content: {
               subject: t.subject ? String(t.subject) : undefined,
               preheader: String(t.preheader ?? "").trim() || undefined,
               bodyMd: "",
-              slotText: body,
-              slots: String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : undefined,
+              ...(structuredParts.has(t)
+                ? (() => {
+                    const sp = structuredParts.get(t)!;
+                    return {
+                      slotText: sp.scene,
+                      slots: {
+                        opening: `**${sp.opening}**`,
+                        question: `**${sp.question}**`,
+                        ...(sp.limit ? { limit: sp.limit } : {}),
+                        ...(String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : {}),
+                      },
+                      parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}) },
+                    };
+                  })()
+                : {
+                    slotText: body,
+                    slots: String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : undefined,
+                  }),
               ask: String(t.ask ?? "") === "reply" ? "reply" : undefined,
               personalizationUsed: [],
               claimsMade: [...new Set([...((t.claims_made ?? []) as string[]), ...assetClaims])],

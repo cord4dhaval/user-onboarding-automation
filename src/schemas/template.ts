@@ -45,17 +45,24 @@ export const block = z.discriminatedUnion("type", [
   }),
 
   /** `strike` is the crossed-out "here is what we will not do" pattern. */
+  /**
+   * `slot` fills the list from lines a session wrote (the `shows` part of a written touch);
+   * the block then renders nothing when none were written.
+   */
   z.object({
     type: z.literal("list"),
     style: z.enum(["bullet", "strike", "check"]).default("bullet"),
-    items: z.array(z.string()).min(1),
+    items: z.array(z.string()).min(1).optional(),
+    slot: z.string().optional(),
   }),
 
   /** A spec sheet: pricing rows, plan details, a summary of what was set up. */
+  /** `slot` fills the rows from cost lines a session wrote, and renders nothing without them. */
   z.object({
     type: z.literal("card"),
     title: z.string().optional(),
-    rows: z.array(z.object({ label: z.string(), value: z.string() })).min(1),
+    rows: z.array(z.object({ label: z.string(), value: z.string() })).min(1).optional(),
+    slot: z.string().optional(),
     accent: z.boolean().default(false),
   }),
 
