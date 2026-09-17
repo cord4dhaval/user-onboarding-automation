@@ -317,6 +317,17 @@ Cursor's draft also had three claims TeamGrid cannot back, and the engine does n
 - "a meeting 4 of them needed"
 - team head-counts per activity presented as a product view
 
+## Short no-way emails, 2026-09-17 (replaces the long reveal shape)
+
+Dhaval found the four-beat reveal emails too heavy: about 170 words, three maths lines and a receipt card. He asked for very simple emails that make an Indian founder think "no way, it can do that?". Humor is an occasional add-on, never a style. The colour legend was removed. Built in 565453a:
+
+- **Five blocks, 60 to 110 words.** Their moment (opening, scene); the hidden truth (scene, or one cost line for money); `reveal`; the safety line (`limit`: no screenshots, nothing typed); a short closing line (`question`). Then the button.
+- **The `reveal` part** is a named slot in the frame after the cost card. It holds what TeamGrid already knows or does, and the letter sets it between thin lines with the product name in the brand shade. Named slots now keep their name in resolved blocks.
+- **Hooks chosen per lead.** `daily_question`, `hidden_bill`, `office_habit`, `just_ask`, `found_out_late`, `no_watching`, `closing`. The planner picks the two that fit best, joined to an idea from the idea bank.
+- **Refused by compose_batch in hot emails:** no reveal (or receipt), no safety line, colour or screen words (teal, "in blue", dashboard), and spy or verdict words (time pass, spying, unproductive employee).
+- **What the writer sees.** The brief carries `writing.phrases` (Indian office words), `writing.hookExamples` and `facts.external` (Slack 43%, Microsoft 91%, Indeed 88%, each quotable only with its source). The button list grows to name what the reader will see ("See tomorrow's 6pm summary").
+- **teamgrid_leads_v3.** The 45 waiting emails were replaced with two no-way emails per lead for review.
+
 ## Follow-ups
 
 
