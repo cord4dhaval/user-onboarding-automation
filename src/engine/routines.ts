@@ -188,18 +188,20 @@ have been read.
   (not a fixed order), after_days 1 and 2, with hook set to its name and a theme that
   joins it to the idea from the idea bank that fits this lead (the 8pm update calls,
   the punch machine, the Monday Excel report). The last step a campaign has room for is
-  hook "closing". In a cold campaign, teach first and ask
-  a question. Otherwise:
+  hook "closing".
   Where writing.ideas is on the card, start every step from the idea bank, then the hook.
-  writing.ideas.best_fit is the whole bank ranked for this lead (their words, role,
-  segment), each with the hook that lands it, the capability that makes it true and the
-  sample card that can show it; used_this_week says how many other leads in this campaign
-  got it. Pick from best_fit, or blend two ideas, or invent one "from #n" when this lead
-  needs it; every step names idea_refs (the numbers). Two leads should rarely get the same
+  writing.ideas.best_fit is the bank's top 8 for this lead (their words, role, segment),
+  and others lists the rest. Each best_fit idea comes with the hook that lands it, the
+  capability that makes it true and the sample card that can show it; used_this_week
+  says how many other leads in this campaign got it. Pick from best_fit, or blend two
+  ideas, or invent one "from #n" when this lead needs it; every step names idea_refs
+  (the numbers). Two leads should rarely get the same
   idea: skip one in used_a_lot_this_week unless nothing else fits, and plan_goal refuses a
   step whose ideas are all used by 5 other leads this week, one this lead already had, or
   a number the bank marks unusable. The theme joins the idea to their business in a few
   words.
+  In a cold campaign, teach first and ask
+  a question. Otherwise:
   Then plan_goal with one step, or two where the second clearly depends on nothing the
   first could teach you. Each step carries a theme: one idea in a few words that you
   invent for this lead — a real moment from their week, not a feature name. Leave
