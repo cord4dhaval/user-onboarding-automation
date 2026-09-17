@@ -21,7 +21,7 @@ import { limitsFor, rateBlock, rateHeadroom } from "./governor.js";
 import { bandFor, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
-import { groupFor } from "./rolling.js";
+import { effectiveBand, groupFor, leadTypeOf } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
 import { localHour } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
@@ -298,8 +298,15 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // An answer to something they wrote is exempt: that is a conversation, not a
       // campaign touch, and holding it for the band would be the worse rudeness.
       if (String(action.angle) !== "reply") {
+        // Paced at the campaign's lead type where that is warmer than the person's own reading,
+        // the same band the due date was set from; otherwise a hot campaign's next email is
+        // held for a warm gap here after being dated for a hot one.
         const band = bandFor(
-          (person.temp as { band?: string } | undefined)?.band,
+          effectiveBand(
+            (person.temp as { band?: string } | undefined)?.band,
+            leadTypeOf(goal),
+            (person.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
+          ),
           goal?.cadenceByTemp as Record<string, CadenceBand> | undefined,
         );
         const last = latestOf([contactedThisRun.get(String(person._id)), person.lastContactedAt]);
