@@ -328,6 +328,29 @@ Dhaval found the four-beat reveal emails too heavy: about 170 words, three maths
 - **What the writer sees.** The brief carries `writing.phrases` (Indian office words), `writing.hookExamples` and `facts.external` (Slack 43%, Microsoft 91%, Indeed 88%, each quotable only with its source). The button list grows to name what the reader will see ("See tomorrow's 6pm summary").
 - **teamgrid_leads_v3.** The 45 waiting emails were replaced with two no-way emails per lead for review.
 
+## Idea bank on every plan, and sample cards, 2026-09-17
+
+Dhaval asked whether the 88 approved ideas were really used. They were not. No plan step named an idea, and the lead card showed 10 ideas picked at random, so every lead got the same handful of scenes. Built in dd395db and e08b32f:
+
+- **Each idea is tagged** in `products.config.writing.ideas`. The tags are the hook that lands it, `proof` (the verified capability that makes it true), `plan` (Standard or Advanced), `card` (summary, apps, day or none), segments, keywords, and `usable`. 50 of the 88 are usable. The other 38 rest on features that are unverified or not in `canDo`: AI Tool Radar, Org Graph, Org Memory, the Managed Services builds and the Gujarat case figures, among others. Each one says why in `note`. Ideas 10, 11, 12 and 22 carry made-up example numbers, and their notes say so.
+- **lead_card `writing.ideas`** (`src/engine/ideas.ts`) ranks the bank for the lead:
+  - their words (main problem, role, team size, company site) against each idea's keywords and title
+  - their segment
+  - a penalty once an idea is planned for 3 or more other leads in the campaign this week, and a large one at 5
+  - ideas the lead was already sent go last
+
+  The card shows `best_fit` (the top 8), `others`, `used_a_lot_this_week` and `already_had`. The 10 random examples are gone when a bank exists.
+- **plan_goal requires `idea_refs`** on every step when the bank is tagged. It refuses:
+  - a step with no ideas
+  - ideas that are unknown or unusable
+  - ideas this lead was already sent
+  - ideas already planned for 5 other leads in the campaign this week
+
+  A blend or a new idea still names the ideas it came from. compose_batch copies the refs onto the action as `ideaRefs`, so what_works can report by idea later.
+- **Show, do not describe.** When the idea has a card, a hot email adds `receipt` after the reveal: a title that says it is a sample, and 2 to 4 plain lines. The letter renders it without colours, inside the same thin-line section as the reveal. compose_batch refuses any figure (hours, minutes, times, percentages, counts) that `writing.facts.samples` does not show (`unsampledFigures` in rolling.ts). The nouns may fit the reader's business. Two samples were added from teamgrid.ai: app time for a sample day, and a sample 6pm summary.
+- **Routines.** The Acquire prompt says to start from the idea bank, then the hook. The Advance prompt carries the sample card rule. Both triggers were pushed.
+- **teamgrid_leads_v3.** The 46 waiting no-way emails were skipped. Each lead was replanned on two ideas from a shortlist reserved for them, so no idea went to more than 2 leads in the first picks.
+
 ## Follow-ups
 
 
