@@ -210,9 +210,18 @@ One real v3 lead (property advisory founder, 11–50 people, "not able to gauge 
 - A manual Acquire run at 16:44 wrote 13 rolling plans, each a single step with an idea invented for that lead (a travel planner: "An itinerary stuck two days before anyone notices"; an events agency: "Calling around to every site lead before you can tell a client what actually happened").
 - A manual Advance run at 16:50 wrote 7 of them in full: plain text, reply asks, examples labelled, and the limit stated where the fit was partial (work away from a computer is not recorded). They are queued for 17–18 September and wait in Review.
 
+## Fixes after the first night, 2026-09-17
+
+What the data showed by 04:40 UTC, twelve hours in: 252 rolling plans, 206 whole emails written, nothing sent. Three problems, fixed the same morning (e7af90a):
+
+| Problem | Cause | Fix |
+|---|---|---|
+| 36 emails went out in the old style (one opening line inside a fixed feature email) | 27 rolling plans named a feature email as the template, which plan_goal allowed; 9 off_icp leads were still on the old playbook | plan_goal now forces the frame on every rolling step; off_icp leads are planned too, as one short question; the 36 were skipped and the 27 plans pointed at the frame, so Advance rewrites them |
+| 20 fixed backup emails for old leads | the planner ran at 20 an hour and the old list was paced at 20 an hour, so any slow run pushed leads past the 12-hour wait | the 20 were skipped; the 108 leads still waiting for a plan had their clock restarted; the lead planner and the writer now take 50 per run in waves of 25 |
+| 1 email said "the problem you named" | the rule against saying how they arrived did not cover pointing back at the form | compose_batch refuses "you named", "you mentioned", "your form" and similar; the email was skipped and is rewritten |
+
 ## Follow-ups
 
-- Tighten the writer on phrases that point at the form ("the problem you named"), which sit close to "never say how they arrived".
 
 - Confirm the "verify" items with the product team, then move confirmed ones from `facts.unverified` to `facts.canDo`.
 - Watch the first Acquire and Advance runs under the new prompts; the lead planner handles twenty leads an hour, so the old-lead backlog takes about sixteen hours.
