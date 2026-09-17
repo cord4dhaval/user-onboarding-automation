@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { gateOpen } from "@/engine/advance.js";
 import { personHistory } from "@/engine/library.js";
+import { getDb } from "@/db/client.js";
+import { COLLECTIONS as C } from "@/db/collections.js";
 import { signalsOf } from "@/engine/engagement.js";
 import { heldMessage, suppressPerson } from "../../../../actions";
 import { requireSession } from "../../../../tenant";
@@ -53,6 +55,13 @@ export default async function PersonPage({
   if (!history) return <main><h1>Not found</h1></main>;
 
   const { person, campaigns, actions, plans, events, names } = history;
+  // The From header each message goes out with, so the inbox preview shows the sender the
+  // reader will see rather than "Provider default sender".
+  const fromById = new Map(
+    (await (await getDb()).collection(C.channels).find({ orgId, productId: id }, { projection: { from: 1 } }).toArray())
+      .filter((c) => c.from)
+      .map((c) => [String(c._id), String(c.from)]),
+  );
   const belief = person.belief as
     | {
         segment: string;
@@ -163,6 +172,7 @@ export default async function PersonPage({
               personName={name}
               personEmail={email}
               meta={`${String(action.channel)} · sent ${ist(action.sentAt ?? action.dueAt)}`}
+              from={fromById.get(String(action.channelId))}
               fetchMessage={heldMessage}
             />
           </div>
@@ -214,6 +224,7 @@ export default async function PersonPage({
               personName={name}
               personEmail={email}
               meta={`${String(action.channel)} · never sent`}
+              from={fromById.get(String(action.channelId))}
               fetchMessage={heldMessage}
             />
           </div>
@@ -608,7 +619,8 @@ export default async function PersonPage({
                         personName={name}
                         personEmail={email}
                         meta={`${String(action.channel)} · due ${ist(action.dueAt)}`}
-                        fetchMessage={heldMessage}
+                        from={fromById.get(String(action.channelId))}
+              fetchMessage={heldMessage}
                       />
                     </div>
                     {content.subject ? <div className="muted t-detail">Subject: “{content.subject}”</div> : null}
