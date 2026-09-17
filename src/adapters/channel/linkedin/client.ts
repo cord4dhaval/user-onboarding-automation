@@ -126,7 +126,7 @@ export class LinkedInClient {
    * `customMessage`, capped at 300 characters (LinkedIn rejects longer; free accounts are
    * held to 200 — the channel's maxBodyLength enforces the tighter one upstream).
    */
-  async sendInvite(providerId: string, note?: string): Promise<{ invitationUrn: string }> {
+  async sendInvite(providerId: string, note?: string): Promise<{ invitationUrn: string; already: boolean }> {
     const body: Record<string, unknown> = {
       invitee: { inviteeUnion: { memberProfile: fsdProfileUrn(providerId) } },
     };
@@ -136,12 +136,23 @@ export class LinkedInClient {
       headers: { "content-type": "application/json; charset=UTF-8" },
       body: JSON.stringify(body),
     });
-    const data = await voyagerJson<unknown>(res, "invite");
+    const text = await res.text();
+
+    // "Already invited", "already connected" and "can't resend yet" are not failures — the
+    // relationship is already where an invite would move it, so the touch is spent, not
+    // wasted. The engine reads `already` to keep the lead moving rather than retrying.
+    if (!res.ok) {
+      const code = text.match(/"code":"([A-Z_]+)"/)?.[1] ?? "";
+      if (/CANT_RESEND_YET|ALREADY_INVITED|ALREADY_CONNECTED|CONNECTION_LIMIT/.test(code + text)) {
+        return { invitationUrn: "", already: true };
+      }
+      throw new Error(`LinkedIn invite answered HTTP ${res.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
+    }
     // The created invitation's urn, best-effort: the decorated response carries it, but the
     // exact field moves, so pull the first invitation urn out of the body. Absent is fine —
     // withdraw resolves the id from the sent-invitations list when it needs it.
-    const urn = JSON.stringify(data).match(/urn:li:fsd_invitation:\d+|urn:li:invitation:\d+/)?.[0] ?? "";
-    return { invitationUrn: urn };
+    const urn = text.match(/urn:li:fsd_invitation:\d+|urn:li:invitation:\d+/)?.[0] ?? "";
+    return { invitationUrn: urn, already: false };
   }
 
   async withdrawInvite(_invitationUrn: string): Promise<void> {

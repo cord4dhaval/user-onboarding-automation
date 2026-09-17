@@ -516,6 +516,16 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         };
       }
 
+      // LinkedIn is not one kind of send. A lead the account is not yet connected to gets a
+      // connection invite carrying the rendered note; once connected, a later touch is a DM.
+      // The profile slug is already in `outbound.to` (the channel's address), and the adapter
+      // resolves it to a member id. The note is the rendered body, capped by the adapter.
+      if (String(action.channel) === "linkedin") {
+        const stage = (person.linkedin as { stage?: string } | undefined)?.stage;
+        outbound.op = stage === "connected" ? "message" : "invite";
+        outbound.note = content.bodyMd;
+      }
+
       // The same address the body's opt-out link points at, promoted to a header so Gmail
       // and Yahoo can offer their own unsubscribe control beside the sender's name. Where
       // they cannot, the reader's remaining option is the spam button — and a complaint is
