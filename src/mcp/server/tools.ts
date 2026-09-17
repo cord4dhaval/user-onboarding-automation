@@ -1973,10 +1973,16 @@ export const TOOLS: ToolDef[] = [
       // A meeting time nobody has checked is a promise the calendar may not keep. Live
       // times render from the calendar only when the access asset rides along; without it
       // the skeleton asks the reader to reply with a time, and the copy must not name one.
-      const proposesTime =
+      const dayAndTime =
         /\b(mon|tues|wednes|thurs|fri|satur|sun)day\b[^.\n]{0,40}?\b\d{1,2}(:\d{2})?\s*(am|pm)\b|\b\d{1,2}(:\d{2})?\s*(am|pm)\b[^.\n]{0,40}?\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/i;
+      // Only an offer to meet counts. A scene set on "a normal Tuesday at 2:15pm" names a day
+      // and a time too, and refusing it cost the hot emails their strongest opening.
+      const offerToMeet =
+        /\b(are you free|would you be free|shall we|could we|can we (talk|speak|meet|connect)|let us (talk|speak|meet)|works for you|does .{0,20} work for you|book (a|the|your)|slot|available (on|at)|meet (on|at)|call (on|at)|speak (on|at)|catch up (on|at)|demo (on|at)|walk-?through (on|at))\b/i;
+      const proposesTime = (text: string) =>
+        text.split(/(?<=[.!?])\s+|\n+/).some((sentence) => dayAndTime.test(sentence) && offerToMeet.test(sentence));
       for (const t of touches) {
-        if (!proposesTime.test(String(t.body ?? ""))) continue;
+        if (!proposesTime(String(t.body ?? "") + "\n" + String(t.ps ?? ""))) continue;
         const withCalendar = (carried.get(Number(t.step_id)) ?? []).some((id) => {
           const doc = assetDocs.get(id) as { kind?: unknown; access?: { calendar?: unknown } } | undefined;
           return String(doc?.kind) === "access" && Boolean(doc?.access?.calendar);
