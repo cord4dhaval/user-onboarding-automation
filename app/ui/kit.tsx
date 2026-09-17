@@ -78,11 +78,7 @@ export function SubmitButton({
   disabled,
   ...rest
 }: ButtonProps & { pendingLabel?: string }) {
-  const { pending, data } = useFormStatus();
-  // Approve and Reject share one form. Both lock while it posts, but only the one that was
-  // pressed says what is happening — two spinners read as two decisions in flight.
-  const pressed =
-    pending && (!rest.name || !data?.has(rest.name) || data.get(rest.name) === String(rest.value ?? ""));
+  const { pending } = useFormStatus();
 
   return (
     <button
@@ -90,10 +86,10 @@ export function SubmitButton({
       type="submit"
       className={classes(variant, size, className)}
       disabled={disabled || pending}
-      aria-busy={pressed || undefined}
+      aria-busy={pending || undefined}
     >
-      {pressed ? <Spinner size={size === "sm" ? 13 : 15} /> : icon}
-      {pressed ? (pendingLabel ?? children) : children}
+      {pending ? <Spinner size={size === "sm" ? 13 : 15} /> : icon}
+      {pending ? (pendingLabel ?? children) : children}
     </button>
   );
 }

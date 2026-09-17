@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import {
   Archive,
   ArrowLeft,
@@ -34,9 +34,6 @@ export default function InboxPreview({
   html,
   text,
   when,
-  device: shownDevice,
-  compact = false,
-  fit = false,
 }: {
   /** The channel's From header, `Name <address>` or a bare address. Missing means the provider default. */
   from?: string;
@@ -46,73 +43,23 @@ export default function InboxPreview({
   text: string;
   /** When it lands: the send for a sent message, the due date for one still waiting. */
   when?: string;
-  /** Set by a caller that shows its own device switch; the built-in one is hidden then. */
-  device?: "web" | "mobile";
-  /**
-   * The web view without the imitation around it — no browser bar, captions, or second
-   * subject and sender block — so the message starts right under its inbox line. For a
-   * panel with a fixed height, where that furniture cost half the screen.
-   */
-  compact?: boolean;
-  /** Shrinks a designed message until all of it shows in the space it is given. */
-  fit?: boolean;
 }) {
-  const [ownDevice, setDevice] = useState<"web" | "mobile">("web");
-  const device = shownDevice ?? ownDevice;
+  const [device, setDevice] = useState<"web" | "mobile">("web");
   const sender = useMemo(() => parseFrom(from), [from]);
   const snippet = useMemo(() => snippetOf(html, text), [html, text]);
   const at = when ?? new Date().toISOString();
   const shownSubject = subject || "(no subject)";
 
-  // The height the message has to fit into, read off its box rather than guessed from the
-  // window, so it follows the panel through a resize or an edit form opening above it.
-  const box = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState(0);
-  useEffect(() => {
-    const el = box.current;
-    if (!el || !fit) return;
-    const observer = new ResizeObserver(([entry]) => setRoom(Math.floor(entry?.contentRect.height ?? 0)));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [fit, compact, device]);
-
   // Each device mounts its own frame, so switching reloads it at the new width and it
   // measures itself again; a new srcDoc does the same when the format changes.
   const body = html ? (
-    <MailFrame html={html} title={`Message from ${sender.name}`} fitHeight={compact && fit ? room : undefined} />
+    <MailFrame html={html} title={`Message from ${sender.name}`} />
   ) : (
     <div className="inbox-text">{linkify(text)}</div>
   );
 
-  const row = (
-    <div className="inbox-row">
-      <Square size={15} className="inbox-icon" />
-      <Star size={15} className="inbox-icon" />
-      <strong className="inbox-row-from">{sender.name}</strong>
-      <span className="inbox-row-line">
-        <strong>{shownSubject}</strong>
-        <span className="inbox-soft"> &ndash; {snippet}</span>
-      </span>
-      <strong className="inbox-row-time">{istTime(at)}</strong>
-    </div>
-  );
-
-  if (compact && device === "web") {
-    return (
-      <div className="inbox inbox-compact">
-        <div className="inbox-web">
-          {row}
-          <div className={`inbox-fit ${fit ? "on" : ""}`} ref={box}>
-            {body}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="inbox">
-      {shownDevice ? null : (
       <div className="preview-bar">
         <div className="seg" role="tablist" aria-label="Inbox preview device">
           <button
@@ -136,7 +83,6 @@ export default function InboxPreview({
         </div>
         <span className="muted inbox-note">As it lands in the recipient&rsquo;s inbox</span>
       </div>
-      )}
 
       {device === "web" ? (
         <div className="inbox-web">
@@ -152,7 +98,16 @@ export default function InboxPreview({
           </div>
 
           <p className="inbox-cap">Inbox</p>
-          {row}
+          <div className="inbox-row">
+            <Square size={15} className="inbox-icon" />
+            <Star size={15} className="inbox-icon" />
+            <strong className="inbox-row-from">{sender.name}</strong>
+            <span className="inbox-row-line">
+              <strong>{shownSubject}</strong>
+              <span className="inbox-soft"> &ndash; {snippet}</span>
+            </span>
+            <strong className="inbox-row-time">{istTime(at)}</strong>
+          </div>
 
           <p className="inbox-cap">Opened</p>
           <div className="inbox-open">
@@ -253,41 +208,12 @@ function Avatar({ name }: { name: string }) {
 }
 
 /**
- * How far a message may shrink to fit. Low enough that an ordinary message shows whole on a
- * laptop screen; a longer one scrolls in its box, and Fit off shows it at full size.
- */
-const MIN_FIT = 0.55;
-
-/**
  * The rendered email at its natural height. A fixed-height frame puts a second scrollbar
  * inside the drawer's, which no inbox has, and hides how long the message really is.
- *
- * Given a height to fit, the message is zoomed out until all of it shows — down to a floor
- * where the text would stop being legible, past which the box around it scrolls.
  */
-function MailFrame({ html, title, fitHeight }: { html: string; title: string; fitHeight?: number }) {
-  const ref = useRef<HTMLIFrameElement>(null);
-
-  const size = useCallback(() => {
-    const frame = ref.current;
-    const doc = frame?.contentDocument;
-    if (!frame || !doc?.documentElement) return;
-    const root = doc.documentElement;
-    root.style.zoom = "";
-    const natural = Math.max(root.offsetHeight, doc.body?.scrollHeight ?? 0);
-    const scale = fitHeight && natural > fitHeight ? Math.max(MIN_FIT, fitHeight / natural) : 1;
-    if (scale < 1) root.style.zoom = String(scale);
-    // A measured value, so it is set on the element rather than written as a class.
-    frame.style.height = `${Math.ceil(natural * scale)}px`;
-  }, [fitHeight]);
-
-  useEffect(() => {
-    size();
-  }, [size]);
-
+function MailFrame({ html, title }: { html: string; title: string }) {
   return (
     <iframe
-      ref={ref}
       title={title}
       srcDoc={html}
       className="inbox-frame"
@@ -295,11 +221,15 @@ function MailFrame({ html, title, fitHeight }: { html: string; title: string; fi
       // opt-out and tracked links are real, and a click here would count as the lead's.
       sandbox="allow-same-origin"
       onLoad={(event) => {
-        const doc = event.currentTarget.contentDocument;
-        doc?.addEventListener("click", (click) => {
+        const frame = event.currentTarget;
+        const doc = frame.contentDocument;
+        if (!doc) return;
+        doc.addEventListener("click", (click) => {
           if ((click.target as Element | null)?.closest?.("a")) click.preventDefault();
         });
-        size();
+        // A measured value, so it is set on the element rather than written as a class.
+        const height = Math.max(doc.documentElement.offsetHeight, doc.body?.scrollHeight ?? 0);
+        frame.style.height = `${height}px`;
       }}
     />
   );

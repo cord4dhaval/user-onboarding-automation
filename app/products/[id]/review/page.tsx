@@ -6,13 +6,15 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { peopleEngagement } from "@/engine/engagement.js";
 import { isReplacedPlan, REPLACED_PLAN } from "@/engine/replaced.js";
 import { requireSession, scope } from "../../../tenant";
+import { decide, heldMessage, returnToReview } from "../../../actions";
+import { Check, CheckCheck, Flame, MessageSquare, MousePointerClick, RotateCcw, X } from "lucide-react";
+import { SubmitButton } from "../../../ui/kit";
 import { BusyArea, BusyLink, BusyProvider, BusySelect } from "../../../ui/busy";
-import { ist, istLong, istShort } from "../../../ui/time";
+import { ist, istLong } from "../../../ui/time";
 import CampaignFilter, { type CampaignOption } from "./campaign-filter";
 import SearchBox from "./search-box";
 import DecisionToast from "./decision-toast";
-import ReviewQueue from "./review-queue";
-import type { QueueRow } from "./queue-row";
+import PreviewDrawer from "./preview-drawer";
 
 export const dynamic = "force-dynamic";
 
@@ -444,89 +446,78 @@ export default async function Review({
   })();
   // One undecided queue now, so the decision controls belong to exactly one tab.
   const decidable = waiting;
+  // Which half of that queue goes out on this send run, and which is dated for later. The
+  // bulk button has to say both, or "approve this page" reads as "send all of these now".
   const now = Date.now();
-
-  const queue: QueueRow[] = rows.map(({ action, person, run }) => {
-    const content = (action.content ?? {}) as { subject?: string; slotText?: string };
-    const goalKey = String(run?.goalKey ?? "—");
-    const engagement = responded.get(String(action.personId));
-    const state = statusOf(action);
-    // What happened, not merely when it was due: a sent message is dated by its send, a
-    // decided one by its decision. The queue is dated by when it will go.
-    const when = (decidable ? action.dueAt : (action.sentAt ?? action.reviewedAt ?? action.dueAt)) as string;
-    return {
-      id: String(action._id),
-      name: String(person?.name ?? person?.primaryEmail ?? "Unknown"),
-      email: String(person?.primaryEmail ?? ""),
-      campaign: totals.find((t) => t.key === goalKey)?.name ?? goalKey,
-      angle: action.angle ? String(action.angle) : "",
-      channel: String(action.channel),
-      // The mailbox, not the kind of channel: once cold outreach and the product's own
-      // sender are both connected, which address it leaves from is part of the decision.
-      sender: senderById.get(String(action.channelId)) ?? String(action.channel),
-      from: fromById.get(String(action.channelId)),
-      subject: content.subject || undefined,
-      opening: content.slotText || undefined,
-      decidable,
-      whenShort: istShort(when),
-      whenLong: istLong(when),
-      dueNow: new Date(String(action.dueAt)).getTime() <= now,
-      lifted: lifted.includes(String(action.personId)),
-      band: (person?.temp as { band?: string } | undefined)?.band,
-      replied: (engagement?.replied ?? 0) > 0,
-      clicked: (engagement?.clicked ?? 0) > 0,
-      engagedAgo: ago(engagement?.lastRepliedAt ?? engagement?.lastClickedAt),
-      state: { ...state, origin: state.origin ? ORIGIN_LABEL[state.origin] : undefined },
-      recoverable: recoverable(action),
-    };
-  });
-
-  // Search, campaign and channel. They sit at the head of the list they narrow, so the
-  // queue can start right under the tabs and give the open message the height.
-  const filters = (
-    <>
-      {/* Still a real GET form underneath — see the component. */}
-      <SearchBox action={`/products/${id}/review`} hiddenQuery={searchFilters} current={search} />
-      {goals.length > 1 || channelKinds.length > 1 ? (
-        <div className="rq-filter-row">
-          {goals.length > 1 && (
-            <CampaignFilter
-              options={options}
-              current={campaign}
-              allCount={allInView}
-              allHref={url({ campaign: null, page: 1 })}
-            />
-          )}
-          {/* Only worth the space once a product actually sends more than one way. */}
-          {channelKinds.length > 1 && (
-            <BusySelect
-              value={channelKey ?? ""}
-              ariaLabel="Channel"
-              width={120}
-              options={[
-                { value: "", label: "All channels", href: url({ channel: null, page: 1 }) },
-                ...channelKinds.map((kind) => ({ value: kind, label: kind, href: url({ channel: kind, page: 1 }) })),
-              ]}
-            />
-          )}
-        </div>
-      ) : null}
-    </>
-  );
+  const dueNow = held.filter((a) => new Date(String(a.dueAt)).getTime() <= now).length;
+  const later = held.length - dueNow;
 
   return (
     <BusyProvider>
-      <h1 className="sr-only">Review</h1>
-      {/* A toast rather than a line under the title: a sentence above a list that has just
-          redrawn is a sentence nobody sees. */}
-      <Suspense fallback={null}>
-        <DecisionToast />
-      </Suspense>
+      <div className="head">
+        <div>
+          <h1>Review</h1>
+          <p className="sub" style={{ marginBottom: 0 }}>
+            {waiting && allInView === 0
+              ? "Campaigns set to hold each message queue them here before anything goes out."
+              : waiting
+                ? `${allInView} pending. Approving returns a message to the send queue, where every guardrail still applies.`
+                : VIEWS[view].blurb}
+          </p>
+          {/* Said as a toast rather than as a line under the title. A sentence that appears
+              above a list which has just redrawn is a sentence nobody sees; it also stayed
+              in the address bar, so a refresh re-announced a decision made an hour ago. */}
+          <Suspense fallback={null}>
+            <DecisionToast />
+          </Suspense>
+        </div>
+        {view === "failed" && held.length > 0 && (
+          <>
+            <div className="spacer" />
+            {/* Returns them to review rather than resending them: whatever stopped them —
+                our limit or the provider's refusal — may still be in force, and the
+                reviewer is the one who decides whether it has actually been dealt with. */}
+            <form action={returnToReview}>
+              <input type="hidden" name="productId" value={id} />
+              {held.map((a) => (
+                <input key={String(a._id)} type="hidden" name="ids" value={String(a._id)} />
+              ))}
+              <SubmitButton variant="quiet" icon={<RotateCcw />} pendingLabel="Returning…">
+                Return this page to review ({held.length} of {matching})
+              </SubmitButton>
+            </form>
+          </>
+        )}
+        {decidable && held.length > 1 && (
+          <>
+            <div className="spacer" />
+            <form action={decide}>
+              <input type="hidden" name="productId" value={id} />
+              <input type="hidden" name="decision" value="approve" />
+              <input type="hidden" name="back" value={back} />
+              {held.map((a) => (
+                <input key={String(a._id)} type="hidden" name="ids" value={String(a._id)} />
+              ))}
+              {/* Says which messages it releases, and when they go. "All 25 shown" read as
+                  "all 25 waiting" on a queue of 137, which is a send you cannot take back —
+                  and on the scheduled list the same words hid the fact that approving there
+                  releases mail dated days out. */}
+              <SubmitButton variant="quiet" icon={<CheckCheck />} pendingLabel="Approving…">
+                {later === 0
+                  ? `Approve page — sends ${dueNow} now`
+                  : dueNow === 0
+                    ? `Approve page — ${later} send on their dates`
+                    : `Approve page — ${dueNow} now, ${later} on their dates`}
+              </SubmitButton>
+            </form>
+          </>
+        )}
+      </div>
 
       {/* The states, as one row. Approving used to make a message vanish from the only
           screen that had ever shown it, so "what happened to the batch I released" was a
-          question nothing in the product could answer. What each one holds is on hover. */}
-      <div className="tabs rq-tabs" role="tablist">
+          question nothing in the product could answer. */}
+      <div className="tabs" role="tablist">
         {VIEW_KEYS.map((key) => (
           <BusyLink
             key={key}
@@ -534,7 +525,6 @@ export default async function Review({
             className={key === view ? "on" : undefined}
             role="tab"
             aria-selected={key === view}
-            title={key === "waiting" ? "Waiting on a decision. Approving sends each one on its date — today's go within the minute." : VIEWS[key].blurb}
           >
             {VIEWS[key].label}
             {viewCounts[key] ? <span className="tab-count">{viewCounts[key]}</span> : null}
@@ -542,49 +532,346 @@ export default async function Review({
         ))}
       </div>
 
+      <div className="row" style={{ marginBottom: 16 }}>
+        {/* Still a real GET form underneath — see the component. The debounce is an
+            enhancement on top of it, not the thing that makes it work. */}
+        <SearchBox
+          action={`/products/${id}/review`}
+          hiddenQuery={searchFilters}
+          current={search}
+        />
+        {goals.length > 1 && (
+          <CampaignFilter
+            options={options}
+            current={campaign}
+            allCount={allInView}
+            allHref={url({ campaign: null, page: 1 })}
+          />
+        )}
+        {/* Only worth the space once a product actually sends more than one way. */}
+        {channelKinds.length > 1 && (
+          <div className="seg" role="tablist" aria-label="Channel">
+            <BusyLink
+              className={!channelKey ? "on" : ""}
+              href={url({ channel: null, page: 1 })}
+            >
+              All channels
+            </BusyLink>
+            {channelKinds.map((kind) => (
+              <BusyLink
+                key={kind}
+                className={channelKey === kind ? "on" : ""}
+                href={url({ channel: kind, page: 1 })}
+              >
+                {kind}
+              </BusyLink>
+            ))}
+          </div>
+        )}
+        <span className="spacer" />
+        {matching > 0 && (
+          <span className="muted" style={{ fontSize: 13 }}>
+            {first}–{last} of {matching}
+          </span>
+        )}
+      </div>
+
+      {decidable && liftedHere > 0 && (
+        <div className="note">
+          <p style={{ margin: 0 }}>
+            <Flame size={14} /> <strong>{liftedHere}</strong>{" "}
+            {liftedHere === 1 ? "message on this page is" : "messages on this page are"} going to someone who has
+            just clicked or written back. They are at the top of the queue — their interest is the
+            thing on this page with a shelf life.
+          </p>
+        </div>
+      )}
+
       <BusyArea>
         {held.length === 0 ? (
-          <>
-            <div className="rq-filters rq-filters-bare">{filters}</div>
-            <div className="empty">
-              <strong>
-                {search
-                  ? `No ${VIEWS[view].label.toLowerCase()} matches “${search}”`
-                  : campaign
-                    ? `Nothing ${VIEWS[view].label.toLowerCase()} in this campaign`
-                    : `Nothing ${VIEWS[view].label.toLowerCase()}`}
-              </strong>
+          <div className="empty">
+            <strong>
               {search
-                ? "Recipient name, email address and subject line are all searched. Clear the search to see the rest."
-                : waiting
-                  ? "Messages appear here once a campaign set to hold each one has something to send."
-                  : VIEWS[view].blurb}
+                ? `No ${VIEWS[view].label.toLowerCase()} matches “${search}”`
+                : campaign
+                  ? `Nothing ${VIEWS[view].label.toLowerCase()} in this campaign`
+                  : `Nothing ${VIEWS[view].label.toLowerCase()}`}
+            </strong>
+            {search
+              ? "Recipient name, email address and subject line are all searched. Clear the search to see the rest."
+              : waiting
+                ? "Messages appear here once a campaign set to hold each one has something to send."
+                : VIEWS[view].blurb}
+          </div>
+        ) : (
+          <>
+            <div className="tw scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Recipient</th>
+                    <th>Engagement</th>
+                    <th>Campaign</th>
+                    <th>Subject</th>
+                    <th>Sending from</th>
+                    <th>{decidable ? "Scheduled (IST)" : "Status"}</th>
+                    <th>{decidable ? "Actions" : "Updated (IST)"}</th>
+                    {!decidable && <th />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ action, person, run }) => {
+                    const content = (action.content ?? {}) as { subject?: string; slotText?: string };
+                    const name = String(person?.name ?? person?.primaryEmail ?? "Unknown");
+                    const email = String(person?.primaryEmail ?? "");
+                    const goalKey = String(run?.goalKey ?? "—");
+                    const sender = senderById.get(String(action.channelId)) ?? String(action.channel);
+                    const meta = `${goalKey} · ${sender} · angle ${String(action.angle)}`;
+                    const state = statusOf(action);
+                    // What happened, not merely when it was due: a sent message is dated by
+                    // its send, a decided one by its decision.
+                    const when = action.sentAt ?? action.reviewedAt ?? action.dueAt;
+                    return (
+                      <tr key={String(action._id)}>
+                        <td>
+                          <strong>{name}</strong>
+                          <div className="muted" style={{ fontSize: 12.5 }}>{email}</div>
+                        </td>
+                        {/* The column that turns a queue into a set of decisions. Everything
+                            else on this row describes the message; this one describes the
+                            person it is going to. */}
+                        <td>
+                          <Signal
+                            temp={person?.temp as { band?: string } | undefined}
+                            engagement={responded.get(String(action.personId))}
+                          />
+                        </td>
+                        <td>
+                          {totals.find((t) => t.key === goalKey)?.name ?? goalKey}
+                          <div className="muted" style={{ fontSize: 12.5 }}>angle {String(action.angle)}</div>
+                        </td>
+                        {/* "no subject" read as a broken row, and it is not one.
+                            A tier-2 touch is queued with no copy on purpose: which rung of
+                            the ladder it lands on is decided at send time from how far
+                            through the sequence this person actually is, so the subject
+                            genuinely does not exist yet and will when it goes. Saying that
+                            is the difference between a queue somebody approves and one
+                            they stop trusting. */}
+                        <td className="cell-wide">
+                          {content.subject ? (
+                            content.subject
+                          ) : content.slotText ? (
+                            // Claude wrote the opening and kept the template's subject. That
+                            // row is written; calling it "not written yet" hid the words a
+                            // reviewer is here to approve.
+                            <>
+                              <span className="pill">opening by Claude</span>
+                              <div className="muted cell-note">“{content.slotText}”</div>
+                              <div className="muted cell-note">subject from the template — Preview shows the whole email</div>
+                            </>
+                          ) : (
+                            <>
+                              <span className="pill">not written yet</span>
+                              <div className="muted" style={{ fontSize: 12.5 }}>
+                                sends the template rung for their touch — Preview shows which
+                              </div>
+                            </>
+                          )}
+                        </td>
+                        {/* The mailbox, not the kind of channel. "email" was true of every
+                            row on the page; which address it leaves from is the thing that
+                            differs, and once cold outreach and the product's own sender are
+                            both connected it is the difference somebody is approving. */}
+                        <td>
+                          <span className="pill">{String(action.channel)}</span>
+                          <div className="muted" style={{ fontSize: 12.5 }}>{sender}</div>
+                        </td>
+
+                        {decidable ? (
+                          <td className="num" title={istLong(action.dueAt as string)}>
+                            <div className="muted">{ist(action.dueAt as string)}</div>
+                            {/* The distinction the Scheduled tab used to carry. Approving a
+                                row marked "due now" puts mail in front of someone within the
+                                minute; approving one dated next week does not. */}
+                            <span className={`pill ${new Date(String(action.dueAt)).getTime() <= now ? "hot" : ""}`}>
+                              {new Date(String(action.dueAt)).getTime() <= now ? "Due now" : "Scheduled"}
+                            </span>
+                          </td>
+                        ) : (
+                          <td>
+                            <div className="state-pills">
+                              <span className={`pill ${state.tone}`}>{state.label}</span>
+                              {/* Which side stopped it. The two used to be two tabs; now the
+                                  row carries the difference the tabs did. */}
+                              {state.origin ? (
+                                <span className="pill">{ORIGIN_LABEL[state.origin]}</span>
+                              ) : null}
+                            </div>
+                            {/* A provider error is a line of JSON. Fifty of them printed in
+                                full turned the list into a wall nobody could read down, so
+                                it is clamped and the whole thing is in the tooltip. */}
+                            {state.detail ? (
+                              <div className="state-why" title={state.detail}>{state.detail}</div>
+                            ) : null}
+                          </td>
+                        )}
+
+                        {decidable ? (
+                          <td>
+                            <div className="row-actions">
+                              <PreviewDrawer
+                                productId={id}
+                                actionId={String(action._id)}
+                                personName={name}
+                                personEmail={email}
+                                from={fromById.get(String(action.channelId))}
+                                meta={meta}
+                                fetchMessage={heldMessage}
+                              />
+                              <form action={decide}>
+                                <input type="hidden" name="back" value={back} />
+                                <input type="hidden" name="productId" value={id} />
+                                <input type="hidden" name="ids" value={String(action._id)} />
+                                <SubmitButton
+                                  name="decision"
+                                  value="approve"
+                                  size="sm"
+                                  icon={<Check />}
+                                  pendingLabel="Sending…"
+                                >
+                                  Approve
+                                </SubmitButton>
+                                <SubmitButton name="decision" value="reject" variant="quiet" size="sm" icon={<X />}>
+                                  Reject
+                                </SubmitButton>
+                              </form>
+                            </div>
+                          </td>
+                        ) : (
+                          <>
+                            <td className="muted num" title={istLong(when as string)}>
+                              {ist(when as string)}
+                            </td>
+                            <td>
+                              <div className="row-actions">
+                                <PreviewDrawer
+                                  productId={id}
+                                  actionId={String(action._id)}
+                                  personName={name}
+                                  personEmail={email}
+                                  from={fromById.get(String(action.channelId))}
+                                  meta={meta}
+                                  fetchMessage={heldMessage}
+                                />
+                                {recoverable(action) ? (
+                                  <form action={returnToReview}>
+                                    <input type="hidden" name="productId" value={id} />
+                                    <input type="hidden" name="ids" value={String(action._id)} />
+                                    <SubmitButton
+                                      variant="quiet"
+                                      size="sm"
+                                      icon={<RotateCcw />}
+                                      pendingLabel="Returning…"
+                                    >
+                                      Return to review
+                                    </SubmitButton>
+                                  </form>
+                                ) : null}
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pager">
+              <label className="pager-per">
+                <span className="muted">Per page</span>
+                {/* Changing the size lands you on page one — page 12 of tens is page 2 of
+                    fifties, and guessing which is worse than starting over. It applies on
+                    change: an Apply button next to a select is a second click for a decision
+                    already made. */}
+                <BusySelect
+                  value={String(per)}
+                  options={PER_PAGE.map((n) => ({
+                    value: String(n),
+                    label: String(n),
+                    href: url({ per: n, page: 1 }),
+                  }))}
+                />
+              </label>
+
+              <span className="spacer" />
+
+              <span className="muted" style={{ fontSize: 13 }}>Page {current} of {pages}</span>
+              <BusyLink
+                href={url({ page: current - 1 })}
+                  className={`btn ghost sm ${current === 1 ? "off" : ""}`}
+                disabled={current === 1}
+              >
+                Previous
+              </BusyLink>
+              <BusyLink
+                href={url({ page: current + 1 })}
+                  className={`btn ghost sm ${current === pages ? "off" : ""}`}
+                disabled={current === pages}
+              >
+                Next
+              </BusyLink>
             </div>
           </>
-        ) : (
-          <ReviewQueue
-            productId={id}
-            rows={queue}
-            back={back}
-            grouped={decidable && liftedHere > 0}
-            selectable={decidable ? "decide" : view === "failed" || view === "all" ? "return" : false}
-            filters={filters}
-            pager={{
-              first,
-              last,
-              total: matching,
-              current,
-              pages,
-              prevHref: url({ page: Math.max(1, current - 1) }),
-              nextHref: url({ page: Math.min(pages, current + 1) }),
-              per,
-              // Changing the size lands you on page one — page 12 of tens is page 2 of fifties.
-              perOptions: PER_PAGE.map((n) => ({ value: String(n), label: `${n} / page`, href: url({ per: n, page: 1 }) })),
-            }}
-          />
         )}
       </BusyArea>
     </BusyProvider>
+  );
+}
+
+/**
+ * What the person on this row has already done about us.
+ *
+ * A reviewer approving fifty messages needs one thing the queue never told them: which of
+ * these people are already interested. The temperature is the engine's own reading, and the
+ * line under it is the evidence for that reading, because "hot" without a reason is a colour
+ * rather than a fact.
+ */
+function Signal({
+  temp,
+  engagement,
+}: {
+  temp?: { band?: string };
+  engagement?: { clicked: number; replied: number; lastClickedAt?: Date; lastRepliedAt?: Date };
+}) {
+  const band = temp?.band ? String(temp.band) : undefined;
+  const clicked = engagement?.clicked ?? 0;
+  const replied = engagement?.replied ?? 0;
+
+  if (!clicked && !replied) {
+    return (
+      <>
+        {band && band !== "cold" ? <span className={`pill ${band}`}>{band}</span> : null}
+        <div className="muted" style={{ fontSize: 12.5 }}>no response yet</div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="responded">
+        {replied > 0 && (
+          <span className="pill ok"><MessageSquare /> replied</span>
+        )}
+        {clicked > 0 && (
+          <span className="pill hot"><MousePointerClick /> clicked</span>
+        )}
+      </div>
+      <div className="muted" style={{ fontSize: 12.5 }}>
+        {ago(engagement?.lastRepliedAt ?? engagement?.lastClickedAt)}
+      </div>
+    </>
   );
 }
 
@@ -597,9 +884,9 @@ function ago(at?: Date): string {
   if (!at) return "";
   const minutes = Math.round((Date.now() - at.getTime()) / 60_000);
   if (minutes < 1) return "just now";
-  // Short units: this sits in a chip beside a name, where "28 hours ago" took the whole line.
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 36) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 36) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
