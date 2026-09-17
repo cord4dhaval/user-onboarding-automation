@@ -10,7 +10,7 @@ import {
   type RenderableAsset,
 } from "./compose.js";
 import { addressFor, identityValue } from "./address.js";
-import { renderHtml, renderLetter } from "./html.js";
+import { letterBrandFrom, renderHtml, renderLetter } from "./html.js";
 import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
@@ -373,7 +373,9 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       if (!content.bodyHtml && wantsHtml && String(action.channel) === "email" && caps?.html !== false) {
         const resolvedForHtml = resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender);
         content.bodyHtml =
-          String(action.format) === "letter" ? renderLetter(resolvedForHtml) : renderHtml(resolvedForHtml, await brandKit());
+          String(action.format) === "letter"
+            ? renderLetter(resolvedForHtml, letterBrandFrom(await brandKit(), product))
+            : renderHtml(resolvedForHtml, await brandKit());
       }
       // Tracking is wrapped in at send rather than at compose. What a reviewer approved is
       // the words, and a redirect does not change them — but a draft that never goes out

@@ -163,10 +163,33 @@ const letter = renderLetter(resolveBlocks(frame as never, mv, {
   parts: { cost: { title: "For example:", rows: [{ label: "₹4 lakh order", value: "5 days lost" }] }, shows: { title: "What TeamGrid would show you:", items: ["what moved"] } },
 } as never));
 check("letter: bold phrases", letter.includes("<strong>one phrase</strong>") && letter.includes("<strong>1</strong> = quotes"));
-check("letter: no logo, box or button", !/<img|<table|border-radius/.test(letter) && !/background:(?!#ffffff)/.test(letter));
+check("letter with no brand: no logo, header or signature", !/<img|<table/.test(letter));
 check("letter: white page and dark text, never a dark-capable colour scheme", letter.includes('content="light"') && !letter.includes("light dark") && letter.includes("color:#202124"));
 check("letter: cost as a line and an arrow", letter.includes("₹4 lakh order<br />&rarr; <strong>5 days lost</strong>"));
-check("letter: the call to action is a link on its words", letter.includes('style="color:#1a73e8;">Start your free trial</a>'));
+check("letter: the call to action is one button", (letter.match(/display:inline-block;background:/g) ?? []).length === 1 && letter.includes("Start your free trial &rarr;</a>"));
+{
+  const branded = renderLetter(
+    resolveBlocks(frame as never, mv, {
+      slotText: "Scene.",
+      slots: { opening: "**Open.**", question: "**Setup takes about 5 minutes.**", ps: "P.S. Reply call." },
+      parts: { shows: { title: "TeamGrid shows how your team spends its day. You would see:", items: ["each hour", "what moved"] } },
+    } as never),
+    { name: "TeamGrid", logoUrl: "https://teamgrid.ai/logo.png", accent: "#28b4ae", tagline: "See how your team spends its working day.", website: "https://teamgrid.ai" },
+  );
+  const imgs = branded.match(/<img /g) ?? [];
+  check("branded letter: logo on top and in the signature only", imgs.length === 2 && branded.indexOf("<img") < branded.indexOf("Hi Asha"));
+  const section = branded.slice(branded.indexOf("border-top:1px solid #e5e7eb"), branded.indexOf("border-top:1px solid #e5e7eb") + 900);
+  check("branded letter: the product part sits between thin lines, name in the accent shade, no logo", section.includes("border-bottom:1px solid #e5e7eb") && /<strong style="color:#[0-9a-f]{6};">TeamGrid<\/strong> shows/.test(section) && !section.includes("<img"));
+  check("branded letter: accent ticks", section.includes('color:#28b4ae;font-weight:700;">&#10003;'));
+  const ink = /display:inline-block;background:(#[0-9a-f]{6})/.exec(branded)?.[1] ?? "";
+  check("branded letter: button dark enough for white text", ink !== "" && ink !== "#28b4ae");
+  check("branded letter: signature after the sign-off, before the opt-out", branded.indexOf("Best regards") < branded.indexOf("See how your team spends its working day.") && branded.indexOf("See how your team spends its working day.") < branded.indexOf("Not useful?") && branded.includes(">teamgrid.ai</a>"));
+  const withPs = renderLetter(
+    { blocks: [{ kind: "text", text: "Best regards,\nThe TeamGrid Team" }, { kind: "text", text: "P.S. Reply call." }, { kind: "optout", url: "https://u.example/x" }] } as never,
+    { name: "TeamGrid", accent: "#28b4ae", tagline: "Line." },
+  );
+  check("branded letter: signature sits before the P.S. and only once", withPs.indexOf("Line.") < withPs.indexOf("P.S. Reply call.") && withPs.split("Line.").length === 2);
+}
 check("letter: opt-out invites a reply", letter.includes('Reply "remove me", or <a href="https://u.example/api/u/long?s=abc" style="color:#5f6368;">unsubscribe</a>'));
 
 console.log("plain-text rules");

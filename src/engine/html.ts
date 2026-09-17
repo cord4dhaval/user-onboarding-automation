@@ -172,12 +172,72 @@ ${preheaderHtml(preheader)}
  * whole note black. Mail apps with their own dark mode still darken it the way they darken a
  * person's mail.
  */
-export function renderLetter(resolved: ResolvedTemplate): string {
+/** What a letter carries of the brand: the name, the logo mark, the accent and a signature line. */
+export interface LetterBrand {
+  name: string;
+  logoUrl?: string;
+  accent: string;
+  tagline?: string;
+  website?: string;
+}
+
+/** The letter's brand from the product's brand kit and config, so any product's letters wear its own. */
+export function letterBrandFrom(kit: ResolvedKit, product?: Record<string, unknown> | null): LetterBrand {
+  const config = (product?.config ?? {}) as { website?: unknown; writing?: { signatureLine?: unknown } };
+  return {
+    name: String(kit.footer.legalName || product?.name || kit.logo?.alt || ""),
+    logoUrl: kit.logo?.light || undefined,
+    accent: kit.color.accent,
+    tagline: typeof config.writing?.signatureLine === "string" ? config.writing.signatureLine : undefined,
+    website: typeof config.website === "string" ? config.website : undefined,
+  };
+}
+
+export function renderLetter(resolved: ResolvedTemplate, brand?: LetterBrand): string {
   const preheader = resolved.blocks.find((b) => b.kind === "preheader");
   const para = (inner: string, margin = 16) => `<p style="margin:0 0 ${margin}px;">${inner}</p>`;
   const out: string[] = [];
+  // The accent as the ticks and lines use it, and a darker shade of it where text or a
+  // button needs to be read against white.
+  const accent = brand?.accent || "#1a73e8";
+  const ink = inkOf(accent);
+  const name = brand?.name?.trim() || "";
+  const logo = (size: number, radius: number) =>
+    brand?.logoUrl
+      ? `<img src="${attr(brand.logoUrl)}" width="${size}" height="${size}" alt="${attr(name)}" style="display:block;border:0;border-radius:${radius}px;" />`
+      : "";
+  const withName = (html: string) =>
+    name ? html.replace(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `<strong style="color:${ink};">${esc(name)}</strong>`) : html;
 
-  for (const block of resolved.blocks) {
+  // Dhaval chose the layout on 2026-09-17: the logo and name on top, the part about the
+  // product set between two thin lines with its name in the accent, one button, and the
+  // logo again in the signature. The problem stays in black bold, so the reader sees the
+  // problem and then the answer.
+  if (name) {
+    out.push(
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;"><tr>${
+        brand?.logoUrl ? `<td style="vertical-align:middle;padding:0 8px 0 0;">${logo(28, 6)}</td>` : ""
+      }<td style="vertical-align:middle;font-size:17px;font-weight:700;color:#101114;">${esc(name)}</td></tr></table>`,
+    );
+  }
+
+  const blocks = resolved.blocks;
+  let signed = false;
+  const signature = () => {
+    if (signed || !name) return "";
+    signed = true;
+    const lines = [
+      `<strong style="color:#101114;font-size:13px;">${esc(name)}</strong>`,
+      brand?.tagline ? esc(brand.tagline) : "",
+      brand?.website ? `<a href="${attr(brand.website)}" style="color:${ink};text-decoration:none;font-weight:700;">${esc(brand.website.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</a>` : "",
+    ].filter(Boolean);
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;"><tr>${
+      brand?.logoUrl ? `<td style="vertical-align:top;padding:2px 10px 0 0;">${logo(32, 6)}</td>` : ""
+    }<td style="vertical-align:top;font-size:12px;line-height:1.5;color:#5f6368;">${lines.join("<br />")}</td></tr></table>`;
+  };
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]!;
     switch (block.kind) {
       case "preheader":
       case "divider":
@@ -188,12 +248,27 @@ export function renderLetter(resolved: ResolvedTemplate): string {
       case "callout":
         out.push(para(inline(block.text)));
         break;
-      case "text":
-        // A title that belongs to the list or lines under it sits directly above them.
+      case "text": {
+        const next = blocks[i + 1];
+        // What they would see: the title and its list, set apart between two thin lines,
+        // with the product's name in the accent.
+        if (block.tight && next?.kind === "list" && next.fromParts) {
+          const items = next.items
+            .map((item, k) => para(`<span style="color:${accent};font-weight:700;">&#10003;</span>&nbsp; ${inline(item)}`, k === next.items.length - 1 ? 0 : 4))
+            .join("");
+          out.push(
+            `<div style="margin:0 0 16px;padding:12px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">${para(withName(inline(block.text)), 8)}${items}</div>`,
+          );
+          i++;
+          break;
+        }
+        // The signature goes in front of the P.S., which is the last thing a reader reads.
+        if (/^P\.S\./.test(block.text.trim())) out.push(signature());
         for (const part of block.text.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean)) {
           out.push(para(inline(part), block.tight ? 4 : 16));
         }
         break;
+      }
       case "list":
         out.push(
           `<ul style="margin:0 0 16px;padding:0 0 0 22px;">${block.items
@@ -219,11 +294,16 @@ export function renderLetter(resolved: ResolvedTemplate): string {
         break;
       }
       case "cta":
-        // A link on its own words, not a button: a button is the first thing that makes a
-        // note look like a campaign.
-        out.push(para(`<a href="${attr(block.url)}" style="color:#1a73e8;">${inline(block.text)}</a>`));
+        // One button in the brand's shade, the only thing in the letter asking to be pressed.
+        out.push(
+          para(
+            `<a href="${attr(block.url)}" style="display:inline-block;background:${ink};color:#ffffff;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:6px;">${inline(block.text)} &rarr;</a>`,
+            20,
+          ),
+        );
         break;
       case "optout":
+        out.push(signature());
         out.push(
           `<p style="margin:24px 0 0;font-size:12px;color:#5f6368;">Not useful? Reply "remove me", or <a href="${attr(block.url)}" style="color:#5f6368;">unsubscribe</a>.</p>`,
         );
@@ -247,6 +327,18 @@ ${out.join("\n")}
 </div>
 </body>
 </html>`;
+}
+
+/** The accent darkened until white text on it, or it on white, reads at 4.5:1. */
+function inkOf(accent: string): string {
+  let [r, g, b] = rgb(accent);
+  const hex = () => `#${[r, g, b].map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("")}`;
+  for (let step = 0; step < 16 && contrast(hex(), "#ffffff") < 4.5; step++) {
+    r *= 0.9;
+    g *= 0.9;
+    b *= 0.9;
+  }
+  return hex();
 }
 
 // ── pieces ────────────────────────────────────────────────────────────────────

@@ -80,6 +80,8 @@ export const productConfig = z.object({
       examples: z.array(z.string()).default([]),
       subjectAvoid: z.array(z.string()).default([]),
       oneLine: z.string().optional(),
+      /** The short line under the product's name in a letter's signature. */
+      signatureLine: z.string().optional(),
       wordsAvoid: z.array(z.object({ word: z.string(), use: z.string() })).default([]),
     })
     .optional(),
