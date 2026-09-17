@@ -76,6 +76,8 @@ export const productConfig = z.object({
           unverified: z.array(z.string()).default([]),
           /** Sample figures the product's own site shows, quotable only as a sample. */
           samples: z.array(z.string()).default([]),
+          /** Published third-party figures, quotable only with their source named. */
+          external: z.array(z.object({ text: z.string(), source: z.string() })).default([]),
           limits: z.array(z.string()).default([]),
         })
         .default({}),
@@ -84,6 +86,10 @@ export const productConfig = z.object({
       oneLine: z.string().optional(),
       /** The short line under the product's name in a letter's signature. */
       signatureLine: z.string().optional(),
+      /** Office words the product's readers really use ("any update?", late mark), for the writer. */
+      phrases: z.array(z.string()).default([]),
+      /** Short emails that clear the bar for a hot lead: the shape and the "no way" moment. */
+      hookExamples: z.array(z.string()).default([]),
       wordsAvoid: z.array(z.object({ word: z.string(), use: z.string() })).default([]),
     })
     .optional(),

@@ -315,30 +315,32 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 24,
     ask: "link",
     replyHooks: ["closing"],
-    maxWords: 170,
+    maxWords: 110,
     reveal: true,
-    // Dhaval, 2026-09-17: every email should make the reader think "no way it can show that".
-    // One job per email, in this order; each is fitted to the lead's own business.
+    // Dhaval, 2026-09-17: short, simple, and "no way, it can do that?". Each email picks the
+    // hook that fits this lead best, not a fixed order; the planner takes two not yet sent.
     sequence: [
-      { hook: "hidden_bill", job: "The salary bill nobody sees: paid hours with no work attached, in rupees for a team their size." },
-      { hook: "the_hour", job: "One real hour of their week (Tuesday 2:15pm, the dealer desk at 3pm) and what that hour looks like when it is written down. The one that makes them stare." },
-      { hook: "sacred_cow", job: "A habit they never question (the 11am standup on the best hour, the Monday review) and what it costs, shown in hours." },
-      { hook: "no_watching", job: "What day 1 shows without watching anyone: when the day started, focus, meetings, idle, the written summary. Privacy is the point of this one." },
-      { hook: "meeting_bill", job: "One meeting as a bill: people in the room × hours × salary, the invoice their calendar never sends." },
+      { hook: "daily_question", job: "The question they ask every day (\"any update?\", \"what happened today?\") and the answer TeamGrid already writes by 6pm." },
+      { hook: "hidden_bill", job: "The money nobody counted: paid hours with no owner, in rupees for a team their size, and TeamGrid showing those hours from day 1." },
+      { hook: "office_habit", job: "An office habit everyone lives with (the quick call that takes an hour, the Monday Excel report, the punch machine, the green dot on WhatsApp) and the feature that makes it unnecessary." },
+      { hook: "just_ask", job: "The thing that sounds impossible: ask \"why was this week slow?\" in plain English (Advanced), the team's best hour, or the Monday report that writes itself (Advanced)." },
+      { hook: "found_out_late", job: "What they find out too late (the deadline that slipped on Monday, heard on Friday; the few people carrying everything) and seeing it the same day." },
+      { hook: "no_watching", job: "The fear of the team's reaction: no screenshots, no keystrokes, breaks pause on their own, everyone sees their own day." },
       { hook: "closing", job: "The last note: should we close the request, or reply call for a walk-through." },
     ],
     rules: [
-      "These people asked about the product. Every email should make them think: no way it can show that. It explains nothing; it lets them see their own office.",
-      "Four beats, in order. 1 a scene they recognise, with a day or time (Tuesday 2:15pm, the 11am standup). 2 a number they feel in salary, in rupees, labelled as an example. 3 what day 1 would show, written like a receipt in the receipt part (a sample hour, the apps, focus, meetings, idle), never a feature list. 4 the twist, in limit, before the button: no screenshots, nothing people type is recorded; patterns, not people.",
-      "Beat 3 missing and they nod and delete. Beat 4 missing and it feels like spyware.",
-      "Follow lead_type.sequence: the next job not yet sent to this lead, fitted to their business. One idea per email; never four features in one mail.",
-      "receipt lines are a sample, and its title says so (\"A sample hour in TeamGrid:\"). Write them the way the product shows a day: \"14:00–15:00 · score 40%\", \"meetings in blue · idle in grey\", \"09:04 standup · 18m\". Only what writing.facts says the product shows.",
-      "Numbers about their team are examples and say so. Never a customer quote, a testimonial or a result nobody measured. Never \"caught\" or \"wasting\": the hour had no owner.",
-      "ask \"link\" and format \"letter\". cta_text is the reveal, not the signup: \"See the first day\", \"See your team's hours\" or \"See a day without watching anyone\"; \"Start your free trial\" on the hidden bill email.",
-      "question is the one line before the button, for example \"5 minutes per computer. 7 days. No card.\"",
-      "ps offers a walk-through: \"P.S. Prefer a 15-minute walk-through first? Reply call.\"",
-      "Subject is money or a scene they open to check: \"3 of 9 hours on a 30-person payroll\", \"What Tuesday 2:15pm actually looked like\", \"Your 11am standup is sitting on the best hour\", \"12 people in one meeting = 12 hours of salary\". Never \"try TeamGrid\". Preheader: \"Not a report. The hour, the apps, and the salary that went with it.\"",
-      "The closing email (hook \"closing\") may ask for a reply instead: close the request, or reply call.",
+      "These people asked about the product. Each email makes them think: no way, it can do that? It explains one thing simply, never a list of features.",
+      "Five small blocks, a blank line between each: 1 their moment, a line from their own day (opening, then scene); 2 the hidden truth, what it costs or hides (scene, or one cost line for money); 3 the no-way part in reveal: what TeamGrid already knows or does, said plainly and true; 4 the safety line in limit: no screenshots, nothing people type is recorded; 5 question: one short closing line. Then the button.",
+      "60 to 110 words. Short lines, one thing per line. If it needs more words, add a line; never make a line longer. The reader must understand it in one quick read.",
+      "Pick the hook from lead_type.sequence and the idea from the idea bank that fit this lead best. Their business can colour a line or two; the email stays simple enough for any founder.",
+      "Humor is an add-on, not a style. Use one light line only where it fits this lead and this idea naturally (the quick call that took 47 minutes, MIS_final_FINAL_v3.xlsx, the punch machine). Most emails have none. Joke about habits, never about people.",
+      "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, appraisal, resignation, CTC, ₹ and lakh. Simple English, respectful to the team.",
+      "Never colours or screen words (teal, blue, grey, dashboard, widget). Never spy or verdict words (monitor, catch, spy, lazy, unproductive employee). Never a customer quote or a result nobody measured.",
+      "Numbers: an example about their team says so; a survey figure names its source (writing.facts.external). Features only from writing.facts; say \"on the Advanced plan\" where it applies.",
+      "ask \"link\", format \"letter\". cta_text names what they will see (\"See tomorrow's 6pm summary\", \"See where the hours go\"), from the allowed list.",
+      "Subject: their own words or a surprising truth, 20 to 60 characters (\"The 8pm 'any update?' calls can stop tomorrow\", \"Nobody forgets to work. Everybody forgets to punch.\").",
+      "ps is optional: \"P.S. Prefer a 15-minute walk-through first? Reply call.\"",
+      "The closing email (hook \"closing\") may ask for a reply instead.",
     ],
   },
   warm: {
@@ -419,7 +421,28 @@ export function watchWindowFor(channel: string | undefined, leadType: LeadType |
 }
 
 /** Words a hot email's button may carry: the reveal, or the plain signup. */
-export const CTA_TEXTS = ["Start your free trial", "See the first day", "See your team's hours", "See a day without watching anyone", "See your own hours"] as const;
+export const CTA_TEXTS = [
+  "Start your free trial",
+  "See the first day",
+  "See your team's hours",
+  "See a day without watching anyone",
+  "See your own hours",
+  "See tomorrow's 6pm summary",
+  "See where the hours go",
+  "See what your office did today",
+  "See a real workday",
+  "Find your team's best hour",
+  "Ask your first question",
+  "See the Monday report",
+  "See who is carrying the work",
+  "See how it works",
+] as const;
+
+/** Colour and screen words: a hot email says what TeamGrid shows, never what its screen looks like. */
+export function screenWords(text: string): string[] {
+  const hits = String(text ?? "").match(/\b(teal|in blue|in grey|in gray|dashboard|widgets?)\b/gi);
+  return [...new Set((hits ?? []).map((h) => h.toLowerCase()))];
+}
 
 /** A day-1 receipt: 2 to 5 short lines under a title that says they are a sample. */
 export const RECEIPT_MAX_LINES = 5;
@@ -434,7 +457,7 @@ export function unprovenClaims(text: string): string[] {
   const hits = [
     ...body.matchAll(/\b(founders?|customers?|clients?|users?|managers?|owners?|teams?|companies|people)\s+(who|that)\s+(use|install|tried|try|switch|start)\w*[^.]{0,60}?\b(say|said|tell|told|report|found|saw)\b/gi),
     ...body.matchAll(/\b(customers?|clients?|users?)\s+(say|tell us|love|report)\b/gi),
-    ...body.matchAll(/\b(caught|wasting|slacking|lazy)\b/gi),
+    ...body.matchAll(/\b(caught|wasting|slacking|lazy|time pass|shirking|spying|spy on|unproductive employees?)\b/gi),
   ].map((m) => m[0]);
   return [...new Set(hits)];
 }

@@ -304,7 +304,7 @@ export function merge(text: string, vars: MergeVars): string {
 export type ResolvedBlock =
   | { kind: "preheader"; text: string }
   | { kind: "heading"; level: number; text: string }
-  | { kind: "text"; text: string; tight?: boolean }
+  | { kind: "text"; text: string; tight?: boolean; slot?: string }
   | { kind: "list"; style: "bullet" | "strike" | "check" | "receipt"; items: string[]; fromParts?: boolean }
   | { kind: "card"; title?: string; rows: Array<{ label: string; value: string }>; accent: boolean; fromParts?: boolean }
   | { kind: "callout"; text: string }
@@ -409,7 +409,9 @@ export function resolveBlocks(
         // Merge first: copy written by a session carries `{{person_id}}` rather than the
         // finished URL, so a link is only comparable to the button's once both are real.
         const merged = merge(filled, vars);
-        out.push({ kind: "text", text: usedComposed ? withoutDuplicateCta(merged, ctaUrls) : merged });
+        // A named slot keeps its name, so a renderer can give one part its own treatment
+        // (the letter sets the "reveal" part apart between thin lines).
+        out.push({ kind: "text", text: usedComposed ? withoutDuplicateCta(merged, ctaUrls) : merged, ...(named && name ? { slot: name } : {}) });
       }
       continue;
     }

@@ -19,7 +19,7 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, effectiveBand, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, effectiveBand, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -1380,6 +1380,12 @@ export const TOOLS: ToolDef[] = [
                   "Layout test, story ideas only: 2 to 4 moments in order, when is a day or time (\"Monday\", \"8 PM\"), what is " +
                   "one short sentence. Shown under the opening. Follow the arm in lead_card writing.layout_tests.",
               },
+              reveal: {
+                type: "string",
+                description:
+                  "Hot emails: the no-way part, 1 to 3 short lines (blank line between) saying what TeamGrid already knows or " +
+                  "does about the moment above, plainly and truly. Shown between two thin lines with TeamGrid's name in the brand shade.",
+              },
               receipt: {
                 type: "object",
                 properties: { title: { type: "string" }, lines: { type: "array", items: { type: "string" } } },
@@ -1390,7 +1396,7 @@ export const TOOLS: ToolDef[] = [
               },
               cta_text: {
                 type: "string",
-                enum: ["Start your free trial", "See the first day", "See your team's hours", "See a day without watching anyone", "See your own hours"],
+                enum: [...CTA_TEXTS],
                 description: "Optional words on the button. The reveal (\"See the first day\") rather than the signup, except on the hidden bill email.",
               },
               reply_options: {
@@ -1463,6 +1469,7 @@ export const TOOLS: ToolDef[] = [
         timeline?: Array<{ when: string; what: string }>;
         options?: string[];
         receipt?: { title: string; items: string[] };
+        reveal?: string;
         ctaText?: string;
         layout: string;
       }>();
@@ -1471,7 +1478,7 @@ export const TOOLS: ToolDef[] = [
       const armFor = (test: LayoutTest) => layoutArm(String(instance.personId), test);
       for (const t of touches) {
         const step = String(t.step_id);
-        const structured = ["opening", "scene", "question", "cost_lines", "shows", "receipt"].some((k) => t[k] !== undefined);
+        const structured = ["opening", "scene", "question", "cost_lines", "shows", "receipt", "reveal"].some((k) => t[k] !== undefined);
         if (!structured) {
           if (!String(t.body ?? "").trim()) throw new Error(`step ${step} has no body. Write body, or the parts: opening, scene, question. Nothing was written.`);
           continue;
@@ -1578,6 +1585,10 @@ export const TOOLS: ToolDef[] = [
             throw new Error(`step ${step} receipt title "${receiptTitle}" must say it is a sample (for example "A sample hour in TeamGrid:"): these are not the reader's real numbers. Nothing was written.`);
           }
         }
+        const revealText = String(t.reveal ?? "").trim();
+        if (/\*\*/.test(revealText)) {
+          throw new Error(`step ${step}: leave ** off reveal; the frame sets TeamGrid's name apart. Nothing was written.`);
+        }
         const ctaText = String(t.cta_text ?? "").trim();
         if (ctaText && !(CTA_TEXTS as readonly string[]).includes(ctaText)) {
           throw new Error(`step ${step} cta_text "${ctaText}" is not one of: ${CTA_TEXTS.join(", ")}. Nothing was written.`);
@@ -1586,7 +1597,7 @@ export const TOOLS: ToolDef[] = [
         const costTitle = String(t.cost_intro ?? "").trim() || "For example:";
         const showsTitle = String(t.shows_intro ?? "").trim() || "What TeamGrid would show you:";
         // Plain language: one idea per sentence, short enough to read once.
-        const tooLong = longSentences([opening, scene, limitLine, question, costTitle, showsTitle, receiptTitle, ...timeline.map((r) => r.what)].join("\n"));
+        const tooLong = longSentences([opening, scene, revealText, limitLine, question, costTitle, showsTitle, receiptTitle, ...timeline.map((r) => r.what)].join("\n"));
         if (tooLong.length) {
           throw new Error(`step ${step} has a sentence over ${SENTENCE_MAX_WORDS} words: "${tooLong[0]}". Split it into short sentences, one idea each. Nothing was written.`);
         }
@@ -1596,6 +1607,7 @@ export const TOOLS: ToolDef[] = [
           timeline.map((r) => `${r.when}: ${r.what}`).join("\n"),
           scene,
           rows.length ? [costTitle, ...rows.map((r) => `${r.label} ${r.value}`)].join("\n") : "",
+          revealText,
           items.length ? [showsTitle, ...items].join("\n") : "",
           receiptLines.length ? [receiptTitle, ...receiptLines].join("\n") : "",
           limitLine,
@@ -1613,6 +1625,7 @@ export const TOOLS: ToolDef[] = [
           ...(timeline.length ? { timeline } : {}),
           ...(options.length ? { options } : {}),
           ...(receiptLines.length ? { receipt: { title: receiptTitle, items: receiptLines } } : {}),
+          ...(revealText ? { reveal: revealText } : {}),
           ...(ctaText ? { ctaText } : {}),
           layout: `${base}${receiptLines.length ? "+receipt" : ""}${timeline.length ? "+timeline" : ""}${options.length ? "+options" : ""}`,
         });
@@ -1697,11 +1710,15 @@ export const TOOLS: ToolDef[] = [
           // it reads as spyware. The closing note is exempt.
           const sp = structuredParts.get(t);
           if (profile.reveal && sp && !profile.replyHooks.includes(hookNow)) {
-            if (!sp.receipt) {
-              throw new Error(`step ${step} is a ${profile.label.toLowerCase()} email with no receipt. Add receipt: a sample of what day 1 shows (2 to 5 lines, for example "14:00–15:00 · score 40%"). Nothing was written.`);
+            if (!sp.reveal && !sp.receipt) {
+              throw new Error(`step ${step} is a ${profile.label.toLowerCase()} email with no reveal. Add reveal: 1 to 3 short lines on what TeamGrid already knows or does about this moment. Nothing was written.`);
+            }
+            const screen = screenWords([t.subject, t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n"));
+            if (screen.length) {
+              throw new Error(`step ${step} says "${screen[0]}". Say what TeamGrid shows, never what its screen looks like: no colours or screen words. Nothing was written.`);
             }
             if (!/screenshot/i.test(sp.limit) || !/\btype|typed|typing\b/i.test(sp.limit)) {
-              throw new Error(`step ${step} needs the twist in limit, before the button: no screenshots, and nothing people type is recorded. Nothing was written.`);
+              throw new Error(`step ${step} needs the safety line in limit, before the button: no screenshots, and nothing people type is recorded. Nothing was written.`);
             }
           }
           if (profile.ask === "link" && askNow === "reply" && !profile.replyHooks.includes(hookNow)) {
@@ -1758,6 +1775,7 @@ export const TOOLS: ToolDef[] = [
         opening: `**${sp.opening}**`,
         question: `**${sp.question}**`,
         ...(sp.limit ? { limit: sp.limit } : {}),
+        ...(sp.reveal ? { reveal: sp.reveal } : {}),
         ...(sp.timeline ? { timeline: sp.timeline.map((r) => `**${r.when}:** ${r.what}`).join("\n") } : {}),
         ...(sp.options ? { options: ["Reply with one number:", ...sp.options.map((o, i) => `**${i + 1}** = ${o}`)].join("\n") } : {}),
         ...(sp.ctaText ? { cta_text: sp.ctaText } : {}),
@@ -1901,6 +1919,9 @@ export const TOOLS: ToolDef[] = [
           const sp = structuredParts.get(t);
           if (sp && !blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === "opening")) {
             throw new Error(`step ${String(t.step_id)} is written in parts, but the "${key}" template has no place for them. Write body instead. Nothing was written.`);
+          }
+          if (sp?.reveal && !blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === "reveal")) {
+            throw new Error(`step ${String(t.step_id)} writes a reveal, but the "${key}" template has no place for it. Nothing was written.`);
           }
           if (sp?.receipt && !blocks.some((b) => String(b.type) === "list" && String(b.slot ?? "") === "receipt")) {
             throw new Error(`step ${String(t.step_id)} writes a receipt, but the "${key}" template has no place for it. Leave it out. Nothing was written.`);

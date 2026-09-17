@@ -4,7 +4,7 @@
  *
  *   MASTER_KEY_B64=$(openssl rand -base64 32) npx tsx src/scripts/verify-rolling.ts
  */
-import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, unprovenClaims, checkpoint, companyTokens, effectiveBand, emojiProneSymbols, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
+import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, screenWords, unprovenClaims, checkpoint, companyTokens, effectiveBand, emojiProneSymbols, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { applyTextTracking } from "../engine/tracking";
 import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 import { renderHtml, renderLetter } from "../engine/html";
@@ -112,6 +112,7 @@ const frame = [
   { type: "slot", name: "timeline", instruct: "" },
   { type: "slot", instruct: "", fallback: "fallback scene" },
   { type: "card", slot: "cost", accent: true },
+  { type: "slot", name: "reveal", instruct: "" },
   { type: "list", slot: "shows", style: "check" },
   { type: "list", slot: "receipt", style: "receipt" },
   { type: "slot", name: "limit", instruct: "" },
@@ -229,8 +230,19 @@ console.log("reveal emails");
   check("receipt in a letter: grey fixed-width card between the thin lines", branded.includes("background:#f6f7f9") && branded.includes("monospace") && branded.indexOf("border-top:1px solid #e5e7eb") < branded.indexOf("background:#f6f7f9"));
   check("receipt words in the product's colours", branded.includes('color:#2563eb;">meetings</strong>') && branded.includes('color:#80868b;">idle</strong>'));
   check("button carries the reveal words", branded.includes("See the first day &rarr;</a>"));
-  check("hot emails have room for the receipt", LEAD_TYPE_PROFILES.hot.maxWords === 170 && LEAD_TYPE_PROFILES.cold.maxWords === 125 && LEAD_TYPE_PROFILES.hot.reveal === true);
-  check("hot sequence ends on the closing note", LEAD_TYPE_PROFILES.hot.sequence?.at(-1)?.hook === "closing" && LEAD_TYPE_PROFILES.hot.sequence?.[1]?.hook === "the_hour");
+  check("hot emails stay short", LEAD_TYPE_PROFILES.hot.maxWords === 110 && LEAD_TYPE_PROFILES.cold.maxWords === 125 && LEAD_TYPE_PROFILES.hot.reveal === true);
+  check("hot hooks start with the daily question and end on the closing note", LEAD_TYPE_PROFILES.hot.sequence?.[0]?.hook === "daily_question" && LEAD_TYPE_PROFILES.hot.sequence?.at(-1)?.hook === "closing");
+  const noWay = {
+    slotText: "Here is the funny part. The update already exists.",
+    slots: { opening: "**Your team spends the morning answering any update?**", reveal: "TeamGrid writes it for you. By 6pm, one short summary per person.", limit: "No screenshots. Nothing people type is recorded.", question: "**You can finally retire the question.**", cta_text: "See tomorrow's 6pm summary" },
+  };
+  const noWayText = renderTemplate(frame, mv, noWay as never);
+  check("reveal reads as its own paragraph in plain text", noWayText.bodyMd.includes("The update already exists.\n\nTeamGrid writes it for you. By 6pm, one short summary per person.\n\nNo screenshots."));
+  const noWayLetter = renderLetter(resolveBlocks(frame as never, mv, noWay as never), { name: "TeamGrid", accent: "#28b4ae" });
+  const at = noWayLetter.indexOf("border-top:1px solid #e5e7eb");
+  check("reveal sits between thin lines in a letter, name in the brand shade", at > 0 && /<strong style="color:#[0-9a-f]{6};">TeamGrid<\/strong> writes it for you/.test(noWayLetter.slice(at, at + 600)));
+  check("reveal button words", noWayLetter.includes("See tomorrow&#39;s 6pm summary &rarr;") || noWayLetter.includes("See tomorrow's 6pm summary &rarr;"));
+  check("screen words caught", screenWords("Teal is focus. Meetings in blue, idle in grey on the dashboard.").length === 4 && screenWords("By 6pm, one short summary per person.").length === 0);
   check("an invented testimonial is caught", unprovenClaims("Founders who install this do not say nice dashboard. They say wow.").length > 0);
   check("customers say is caught", unprovenClaims("Customers love how simple it is.").length > 0);
   check("caught and wasting are caught", unprovenClaims("We caught them wasting the afternoon.").length === 2);

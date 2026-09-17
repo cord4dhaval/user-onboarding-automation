@@ -30,6 +30,8 @@ export interface WritingBrief {
   subject_avoid: string[];
   product_in_one_line: string | null;
   plain_words: Array<{ word: string; use: string }>;
+  phrases: string[];
+  hook_examples: string[];
   themes_sent: Array<Record<string, unknown>>;
   similar_leads: Array<Record<string, unknown>>;
   learning_notes: Array<Record<string, unknown>>;
@@ -54,6 +56,8 @@ export async function writingBriefFor(input: {
     subjectAvoid?: string[];
     oneLine?: string;
     wordsAvoid?: Array<{ word: string; use: string }>;
+    phrases?: string[];
+    hookExamples?: string[];
   };
   const group = groupFor(person);
   const form = ((person.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;
@@ -139,6 +143,10 @@ export async function writingBriefFor(input: {
     subject_avoid: (writing.subjectAvoid ?? []).map(String),
     product_in_one_line: writing.oneLine ? String(writing.oneLine) : null,
     plain_words: (writing.wordsAvoid ?? []).map((w) => ({ word: String(w.word), use: String(w.use) })),
+    // Words the reader's office really uses, and emails that clear the bar for a hot lead.
+    // The examples show the shape and the "no way" moment; they are not templates.
+    phrases: (writing.phrases ?? []).map(String),
+    hook_examples: (writing.hookExamples ?? []).map(String),
     themes_sent: actions
       .filter((a) => typeof a.theme === "string" && a.theme)
       .map((a) => ({

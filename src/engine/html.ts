@@ -269,6 +269,17 @@ export function renderLetter(resolved: ResolvedTemplate, brand?: LetterBrand): s
           i++;
           break;
         }
+        // The "no way" part: what the product already knows, set apart between two thin lines
+        // with the product's name in the brand shade.
+        if (block.slot === "reveal") {
+          const lines = block.text.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
+          out.push(
+            `<div style="margin:0 0 16px;padding:12px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">${lines
+              .map((part, k) => para(withName(inline(part)), k === lines.length - 1 ? 0 : 8))
+              .join("")}</div>`,
+          );
+          break;
+        }
         // The signature goes in front of the P.S., which is the last thing a reader reads.
         if (/^P\.S\./.test(block.text.trim())) out.push(signature());
         for (const part of block.text.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean)) {
