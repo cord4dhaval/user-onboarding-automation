@@ -245,6 +245,32 @@ Dhaval found the written emails right in substance but hard for a normal busines
 - `writing.wordsAvoid` pairs hard words with plain ones (sign-off → approval, blocked → stuck, keystroke → what people type), shown on the card as `plain_words`. A touch that uses one is refused.
 - Four rewrites Dhaval approved (dealer approval, 9 paid hours, late handover, 8 PM calls) are the model. The 22 teamgrid_leads_v3 emails were rewritten the same day. The older July–August and v2 emails wait for his review of those.
 
+## Lead types, 2026-09-17
+
+Dhaval: the leads in teamgrid_leads_v3 filled in our own ad form, so they are hot and should be pushed to sign up. The system was writing to them like a cold list: a lesson, a question and a 2-day wait. A campaign now says what kind of people it holds, in `goals.leadType`, and `LEAD_TYPE_PROFILES` in `src/engine/rolling.ts` turns that into behaviour:
+
+| Type | Who | Paced as | Watch window | Default ask |
+|---|---|---|---|---|
+| hot | filled in our own form, asked for a demo, visited pricing | hot (12–24 h gaps) | 24 h | trial link; reply only on hook `closing` |
+| warm | clicked an ad, downloaded a guide, just exploring | warm | 48 h | link; reply on `question` or `closing` |
+| cold | uploaded or bought list | cold | 72 h | reply question, teach first |
+| reengage | old leads gone quiet, expired trials | warm | 72 h | reply question |
+| trial | signed up, not paid | hot | 24 h | link; reply on `question` |
+
+- **Pacing.** `effectiveBand(personBand, leadType, formTimeline)` is the band used for due dates in advance, compose_batch and rescheduling.
+  - A lead's own reading can make them hotter than their type, never cooler.
+  - A dead lead stays dead.
+  - Someone in a hot campaign who wrote that they are only exploring is paced warm until they click.
+- **Checks.** compose_batch refuses a reply-only touch where the type's default ask is the link, unless the hook is one the type allows.
+- **What the writer sees.** lead_card's writing brief shows `lead_type` first, with its rules. The Acquire planner plans two steps for hot leads: the idea as the reason to start, then how short setup is. The Advance writer uses the letter format with the trial link, and a P.S. offering a walk-through when they reply "call".
+- **teamgrid_leads_v3.**
+  - Set to `hot` with a budget of 7 emails in 14 days, and active deadlines moved to 14 days from start.
+  - The 22 plain-language emails were replanned as two hot emails each, for review.
+- **Parked.** The payment link and a separate demo booking link, by Dhaval's choice.
+- **Still needed.** The signup event from TeamGrid. Without it a lead who signs up keeps getting trial emails.
+
+Found the same day: 18 of those plain-language emails failed at their due time. Nothing was sent. `validate()` exempted only the full `/api/u/` opt-out link, so the short `/u/<id>.<sig>` link in a plain-text reply ask read as a second link. Fixed in 3a0e09f.
+
 ## Follow-ups
 
 
