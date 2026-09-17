@@ -6,6 +6,7 @@ import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
 import { loadChannels, pickChannelFrom, persistAssignments, persistInstanceMailboxes } from "./channels.js";
 import { HOME_TIMEZONE, nextSendableAt, timezoneFor } from "./time.js";
 import { mailboxFields } from "./mailbox.js";
+import { linkedinSlug } from "./address.js";
 import { stampPlaybook } from "./playbooks.js";
 import { chooseVariant } from "./templates.js";
 import { readSitesFor } from "./enrich.js";
@@ -76,7 +77,12 @@ function phoneOf(mapped: Record<string, unknown>): string {
 }
 
 /** Mapped fields the person record has its own place for. Anything else is a form answer. */
-const PERSON_FIELDS = new Set(["email", "name", "phone", "role", "company_domain", "timezone"]);
+const PERSON_FIELDS = new Set(["email", "name", "phone", "role", "company_domain", "timezone", "linkedin"]);
+
+/** The LinkedIn profile slug from a mapped `linkedin` cell (a URL or bare slug), or "". */
+function linkedinOf(mapped: Record<string, unknown>): string {
+  return linkedinSlug(String(mapped.linkedin ?? ""));
+}
 
 /**
  * The rest of what the lead wrote — team size, timeline, the problem in their own words —
@@ -297,6 +303,16 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
           },
         });
       }
+      // Same for a LinkedIn profile: a later list can carry the URL an earlier one lacked.
+      const linkedin = rows.map(linkedinOf).find(Boolean);
+      if (linkedin) {
+        attachments.push({
+          updateOne: {
+            filter: { _id: found._id, "identities.kind": { $ne: "linkedin" } },
+            update: { $push: { identities: { kind: "linkedin", value: linkedin, verified: false } } } as never,
+          },
+        });
+      }
       summary.attachedToExisting += rows.length;
       summary.arrivalsSkipped += rows.length - fresh.length;
       entries.push({ personId: found._id as ObjectId, person: found });
@@ -314,6 +330,7 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       identities: [
         { kind: "email", value, verified: false },
         ...(phoneOf(mapped) ? [{ kind: "phone", value: phoneOf(mapped), verified: false }] : []),
+        ...(linkedinOf(mapped) ? [{ kind: "linkedin", value: linkedinOf(mapped), verified: false }] : []),
       ],
       primaryEmail: mapped.email ?? value,
       name: mapped.name,

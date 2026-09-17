@@ -48,6 +48,11 @@ export function guessFieldMap(columns: string[]): Record<string, string> {
   const phone = find(/phone|mobile|cell|whats.?app|contact.?(no|num)|^tel/i);
   if (phone) map.phone = phone;
 
+  // A LinkedIn profile URL (or bare slug) is the one input the LinkedIn channel needs; the
+  // engine resolves it to a provider id on its own.
+  const linkedin = find(/linked.?in|li.?(url|profile)/i);
+  if (linkedin) map.linkedin = linkedin;
+
   // Lead-form answers. Ingest keeps anything mapped beyond the person fields under
   // enrichment.form, where the lead planner reads it.
   const answers: Array<[string, RegExp]> = [

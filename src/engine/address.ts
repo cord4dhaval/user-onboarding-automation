@@ -60,6 +60,24 @@ export function digitsOnly(value: string): string {
 }
 
 /**
+ * The vanity slug from a LinkedIn profile URL — the part after `/in/` — which is what we
+ * store as the person's `linkedin` identity and later resolve to a provider id.
+ *
+ * Accepts a full URL, a bare `/in/slug`, or an already-bare slug, and tolerates a trailing
+ * slash, query string or locale prefix. Returns "" for anything that isn't a personal
+ * profile (a company URL, a post link), so those never masquerade as a member.
+ */
+export function linkedinSlug(value: string): string {
+  const s = value.trim();
+  if (!s) return "";
+  const m = s.match(/\/in\/([^/?#]+)/i);
+  if (m?.[1]) return decodeURIComponent(m[1]);
+  // A bare token with no slashes or protocol is taken as the slug itself.
+  if (!/[/:]/.test(s)) return s;
+  return "";
+}
+
+/**
  * International form, which voice providers require. A bare ten-digit number, or one with a
  * leading trunk zero, is read as Indian: every lead this product calls today is, and a
  * number stored as "98765 43210" would otherwise be dialled as a nine-digit foreign one.
