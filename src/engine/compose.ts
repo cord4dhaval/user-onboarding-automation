@@ -354,7 +354,7 @@ export function resolveBlocks(
   // The template's own closing lines, so copy that ends on one of them is not printed twice.
   const fixedLines = blocks
     .filter((block) => String(block.type) === "text" && typeof block.fixed === "string")
-    .map((block) => merge(String(block.fixed), vars));
+    .flatMap((block) => merge(String(block.fixed), vars).split("\n"));
 
   for (const block of blocks) {
     const type = String(block.type);

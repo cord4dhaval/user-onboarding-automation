@@ -235,13 +235,18 @@ function card(
   const title = block.title
     ? `<tr><td colspan="2" class="dm-ink" style="padding:0 0 14px;font-family:${attr(font.headingStack)};font-size:${size + 2}px;font-weight:${font.headingWeight};letter-spacing:-0.01em;color:${color.text};">${inline(block.title)}</td></tr>`
     : "";
+  // In a written touch the label carries the example's numbers, so it reads at body size in
+  // ink rather than as a small grey caption; a template's own card keeps the caption style.
+  const labelStyle = block.fromParts
+    ? `class="dm-ink" style="padding:0 0 2px;font-family:${attr(font.bodyStack)};font-size:${size - 1}px;line-height:1.45;color:${color.text};"`
+    : `class="dm-muted" style="padding:0 0 4px;font-family:${attr(font.bodyStack)};font-size:${small}px;line-height:1.4;color:${color.muted};"`;
   const rows = block.rows
     .map(
       (r) => `<tr>
-        <td class="dm-muted" style="padding:0 0 4px;font-family:${attr(font.bodyStack)};font-size:${small}px;line-height:1.4;color:${color.muted};">${inline(r.label)}</td>
+        <td ${labelStyle}>${inline(r.label)}</td>
       </tr>
       <tr>
-        <td class="dm-ink" style="padding:0 0 14px;font-family:${attr(font.bodyStack)};font-size:${size}px;line-height:1.45;color:${color.text};font-weight:600;">${inline(r.value)}</td>
+        <td class="dm-ink" style="padding:0 0 14px;font-family:${attr(font.bodyStack)};font-size:${size}px;line-height:1.45;color:${color.text};font-weight:600;">${block.fromParts ? "→ " : ""}${inline(r.value)}</td>
       </tr>`,
     )
     .join("");

@@ -7,6 +7,8 @@
 import { CHECKPOINT_PLAN_WAIT_MS, checkpoint, companyTokens, groupFor, isRolling, isRollingPlan, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { applyTextTracking } from "../engine/tracking";
 import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
+import { renderHtml } from "../engine/html";
+import { DEFAULT_KIT } from "../engine/brand";
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -99,7 +101,7 @@ const frame = [
   { type: "slot", name: "limit", instruct: "" },
   { type: "slot", name: "question", instruct: "" },
   { type: "cta", fixed: "Start your free trial", url: "{{trial_link}}" },
-  { type: "text", fixed: "Best regards," },
+  { type: "text", fixed: "Best regards,\nThe TeamGrid Team" },
   { type: "system", fixed: "opt_out_block" },
 ];
 const mv = { first_name: "Asha", full_name: "Asha", company: "", person_id: "p", trial_link: "https://t.example/x", opt_out_url: "https://u.example/y" };
@@ -123,6 +125,11 @@ const bare = renderTemplate(frame, mv, { slotText: "Just words.", slots: { openi
 check("no parts means no empty box or list", !bare.bodyMd.includes("For example") && !bare.bodyMd.includes("–"));
 const resolvedFull = resolveBlocks(frame as never, mv, { slotText: "s", slots: {}, parts: { cost: { rows: [{ label: "a", value: "b" }] } } } as never);
 check("card comes from parts, tinted", resolvedFull.blocks.some((b) => b.kind === "card" && b.accent && b.fromParts));
+check("sign-off lines sit together", full.bodyMd.includes("Best regards,\nThe TeamGrid Team"));
+const signed = renderTemplate(frame, mv, { slotText: "Just words.\n\nBest regards,\nThe TeamGrid Team", slots: {} });
+check("copy ending on the two-line sign-off is not printed twice", signed.bodyMd.split("The TeamGrid Team").length === 2);
+const html = renderHtml(resolveBlocks(frame as never, mv, { slotText: "s", slots: {}, parts: { cost: { title: "For example:", rows: [{ label: "₹4 lakh order", value: "5 days lost" }] } } } as never), DEFAULT_KIT);
+check("written cost value carries the arrow in HTML", html.includes("→ 5 days lost"));
 check("plain() drops bold and italics", plain("**a** and _b_.") === "a and b.");
 
 if (failures) {
