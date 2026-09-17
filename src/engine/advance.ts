@@ -340,13 +340,13 @@ export async function advance(
     const startedAt = new Date(String(instance.startedAt ?? instance.createdAt ?? now)).getTime();
     const bandNow = (person.temp as { band?: string } | undefined)?.band;
     const engagementNow = { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: bandNow };
-    const segmentNow = (person.belief as { segment?: string } | undefined)?.segment;
 
     // A campaign that plans one or two touches at a time. Its lead runs only a plan written
     // for that; anything older reads as spent, and a spent plan reaches a checkpoint where
-    // the next one or two are asked for. A lead outside the product's customers keeps the
-    // re-qualify playbook, which is not a conversation worth planning.
-    const rolling = isRolling(goal) && segmentNow !== "off_icp";
+    // the next one or two are asked for. A lead read as outside the product's customers is
+    // planned too: the planner is told to ask one short question rather than pitch, which
+    // is what the old re-qualify playbook did with less to go on.
+    const rolling = isRolling(goal);
     let step: Document | null;
     let fallback = false;
     if (rolling) {

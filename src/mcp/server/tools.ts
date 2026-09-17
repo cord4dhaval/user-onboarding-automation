@@ -1094,7 +1094,11 @@ export const TOOLS: ToolDef[] = [
         }
         for (const st of planSteps as Array<Record<string, unknown>>) {
           st.angle = themeSlug(String(st.theme));
-          if (!String(st.template_key ?? st.templateKey ?? "").trim()) st.template_key = frameKey;
+          // Always the frame. A step that named one of the fixed feature emails got a single
+          // opening line written into it, which is the old mail under a new label; the fixed
+          // emails are only the engine's fallback here.
+          st.template_key = frameKey;
+          delete st.templateKey;
           if (st.format !== undefined && st.format !== "text" && st.format !== "html") delete st.format;
         }
         // An idea this lead was given and did nothing with is spent for them after one send, not
@@ -1437,6 +1441,10 @@ export const TOOLS: ToolDef[] = [
           throw new Error(`step ${step} renders through the frame, which has no subject of its own. Write one. Nothing was written.`);
         }
         const everything = [t.subject, t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n").toLowerCase();
+        const pointsAtForm = /\byou (named|mentioned|told us|said|shared|filled|submitted|selected|wrote|listed|indicated|flagged|picked|chose)\b|\byour (form|answer|response|submission)\b|\bon the form\b/i.exec(everything);
+        if (pointsAtForm) {
+          throw new Error(`step ${step} says "${pointsAtForm[0]}", which tells them we are reading back what they submitted. Write about their situation directly instead. Nothing was written.`);
+        }
         const named = companyWords.find((token) => everything.includes(token));
         if (named) {
           throw new Error(`step ${step} names their company ("${named}"). Describe what they do instead of printing the name. Nothing was written.`);

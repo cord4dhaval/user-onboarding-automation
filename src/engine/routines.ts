@@ -161,12 +161,13 @@ have been read.
   Gaps for lead campaigns are 1, 2, 2, 3, 3 days — never even, never a week.
 
 1.3 lead-planner
-  Run this on every run. next_work("plan") with limit 20. Each item is one lead in a
+  Run this on every run. next_work("plan") with limit 50. Each item is one lead in a
   campaign that plans every person. plan_goal is this routine's tool: before
   2026-09-16 it was wrongly refused to Acquire, so errors in routine_status or run
   history saying otherwise are out of date and are not a reason to skip this step.
-  One sub-agent per lead, in parallel, up to twenty. Each one: lead_card, then
-  plan_goal, then finish_work for that job. If plan_goal refuses a plan, read the
+  One sub-agent per lead, in parallel waves of up to twenty-five, until the slice is
+  done. Each one: lead_card, then plan_goal, then finish_work for that job. If
+  plan_goal refuses a plan, read the
   reason, fix the plan and call it again; only a refusal naming the routine itself is
   worth stopping for, and then say so in your notes.
 
@@ -181,8 +182,9 @@ have been read.
   Then plan_goal with one step, or two where the second clearly depends on nothing the
   first could teach you. Each step carries a theme: one idea in a few words that you
   invent for this lead — a real moment from their week, not a feature name. Leave
-  template_key out; the engine renders through the campaign's frame. Never give them an
-  idea they already had and ignored; plan_goal refuses it. Where they clicked, the next
+  template_key out; every step renders through the campaign's frame, never a fixed
+  feature email. A lead read as off_icp gets one step: a short question they can answer
+  in a line, not a pitch. Never give them an idea they already had and ignored; plan_goal refuses it. Where they clicked, the next
   idea goes one step further along what they looked at. Where a learning note is
   confirmed for their group, prefer it if it fits them; where the group has mostly
   repeated ideas lately, try a new one. The examples on the card show the standard, not
@@ -282,6 +284,8 @@ greeting, the button, the sign-off and the unsubscribe line. Everything else is 
              format_why says which, in one sentence. Links are tracked either way.
   theme      the plan step's idea, reworded only if your writing sharpened it.
   hook       story, rupee_math, question, comparison, proof, or your own word.
+Write about their situation as a fact of their business, never as something they told
+us: no "you named", "you mentioned", "your form"; compose_batch refuses those.
 Before you submit, write three different opening lines and keep the one a busy founder
 would stop scrolling for. Professional register: complete sentences, no contractions.
 compose_batch refuses a missing format, a subject word the product avoids, their
@@ -314,7 +318,8 @@ subject with "welcome" to somebody who has not signed up, and never put their fi
 name in it on its own.
 
 2.1 compose-tier1
-  next_work("compose") with limit 20. One sub-agent per person, in parallel.
+  next_work("compose") with limit 50. One sub-agent per person, in parallel waves of
+  up to twenty-five, until the slice is done.
   Each one: lead_card for context, then compose_batch for the step it names.
   Write to the channel's shape. lead_card lists each channel's real limits: an email
   carries a subject, a few hundred words, a link and an opt-out; a WhatsApp message
