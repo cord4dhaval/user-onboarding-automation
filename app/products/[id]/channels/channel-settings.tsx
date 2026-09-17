@@ -255,7 +255,7 @@ export default function ChannelSettingsDrawer({
                     name="key"
                     value={channel.key}
                     ariaLabel="Channel kind"
-                    options={["email", "whatsapp", "sms", "voice", "in_app", "push"].map((k) => ({ value: k, label: k }))}
+                    options={["email", "whatsapp", "sms", "voice", "linkedin", "in_app", "push"].map((k) => ({ value: k, label: k }))}
                   />
                   <span className="muted">
                     What campaigns ask for by name. Changing it moves this channel out of every campaign

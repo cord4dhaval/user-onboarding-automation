@@ -21,6 +21,8 @@ import {
   tenantArnFor,
 } from "@/engine/sesIdentity.js";
 import { refreshChannelHealth } from "@/engine/channelHealth.js";
+import { LinkedInClient } from "@/adapters/channel/linkedin/client.js";
+import { SessionError, type LinkedInSession } from "@/adapters/channel/linkedin/session.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import {
   buildGoogleAuthorizeUrl,
@@ -2410,6 +2412,115 @@ export async function createBolnaChannel(formData: FormData) {
     // uploaded leads. Under TRAI a sales call to someone who never asked must come from a
     // registered 140-series number, so that is the number to put on this channel before a
     // campaign reaches real prospects; narrowing the audience stays a checkbox on the row.
+    policy: { audience: ["cold", "warm_lead", "existing_user"] },
+    status: "healthy",
+    enabled: true,
+  });
+
+  revalidatePath(`/products/${productId}/channels`);
+}
+
+/**
+ * Connects a LinkedIn account by its own browser session (method A). The account owner
+ * pastes the `li_at` and `JSESSIONID` cookies and the browser's user agent from a logged-in
+ * session; the engine replays them against LinkedIn's own web API. No password is stored,
+ * and no vendor sits in between.
+ *
+ * The session is verified before anything is saved: we call LinkedIn as the pasted cookies
+ * and read back whose account it is. A cookie that does not resolve never becomes a channel,
+ * so the row can never sit there healthy while every send bounces.
+ *
+ * Automating a personal LinkedIn account is against LinkedIn's User Agreement and the risk
+ * sits with the connected account, so the drawer carries that warning and a consent tick,
+ * checked here.
+ */
+export async function createLinkedInChannel(formData: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const productId = String(formData.get("productId"));
+
+  if (String(formData.get("consent") ?? "") !== "on") {
+    throw new Error("Please confirm you understand the account risk before connecting LinkedIn.");
+  }
+
+  const li_at = String(formData.get("li_at") ?? "").trim();
+  const jsessionid = String(formData.get("jsessionid") ?? "").trim();
+  const userAgent = String(formData.get("userAgent") ?? "").trim();
+  if (!li_at || !jsessionid || !userAgent) {
+    throw new Error("The li_at cookie, the JSESSIONID cookie and the browser user agent are all required.");
+  }
+  const session: LinkedInSession = { li_at, jsessionid, userAgent };
+
+  // Prove the session before storing it, and learn whose account it is in the same call.
+  let me: Awaited<ReturnType<LinkedInClient["me"]>>;
+  try {
+    me = await new LinkedInClient(session).me();
+  } catch (err) {
+    if (err instanceof SessionError) {
+      throw new Error("LinkedIn did not accept that session. Copy fresh cookies from a logged-in browser and try again.");
+    }
+    throw new Error(`Could not reach LinkedIn: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const memberName = `${me.firstName} ${me.lastName}`.trim() || me.publicIdentifier;
+
+  const connectionId = new ObjectId();
+  await db.collection(C.connections).insertOne({
+    _id: connectionId,
+    orgId,
+    productId,
+    key: "linkedin",
+    provider: "linkedin",
+    authType: "cookie",
+    // Whose account this is. Read once at connect, used to label the row and, later, to poll
+    // this member's own posts for comments to reply to.
+    linkedin: { memberName, providerId: me.providerId, publicIdentifier: me.publicIdentifier },
+    scopes: [],
+    status: "healthy",
+    directions: ["out", "in"],
+    createdBy: orgId,
+    createdAt: new Date(),
+  });
+
+  await db.collection(C.credentials).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    connectionId: String(connectionId),
+    authType: "cookie",
+    ...sealSecret(JSON.stringify(session)),
+    status: "verified",
+  });
+
+  await db.collection(C.channels).insertOne({
+    _id: new ObjectId(),
+    orgId,
+    productId,
+    connectionId: String(connectionId),
+    key: "linkedin",
+    kind: "native",
+    from: memberName,
+    capabilities: {
+      send: true,
+      html: false,
+      attachments: false,
+      richTypes: [],
+      trackingOpens: false,
+      trackingClicks: false,
+      bounceWebhook: false,
+      // Replies come back into the LinkedIn inbox, read by the inbound poll.
+      inboundReplies: true,
+      // Cold lists arrive without an opt-in; the invite itself is the permission ask.
+      consentRequired: false,
+      fromDomain: "controlled_by_provider",
+      // A LinkedIn note is 300 characters on a paid account, 200 on a free one. The tighter
+      // limit is the safe default until the account's plan is known.
+      maxBodyLength: 200,
+      costPerMsg: 0,
+      // An invite is accepted later or never, so a send is queued and reconciled.
+      asyncDelivery: true,
+    },
+    // LinkedIn's caps are far tighter than email. Conservative starting numbers; the weekly
+    // ceiling and per-op limits (invite vs message vs comment) are tuned in P2.
+    governor: { dailyCap: 25, perMinute: 1, perHour: 6, warmupDay: 1, sentToday: 0, windowStartedAt: new Date() },
     policy: { audience: ["cold", "warm_lead", "existing_user"] },
     status: "healthy",
     enabled: true,

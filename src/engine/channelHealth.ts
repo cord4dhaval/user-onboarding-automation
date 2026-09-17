@@ -87,6 +87,20 @@ export async function evaluateChannel(orgId: string, channelId: string): Promise
     }
   }
 
+  // A LinkedIn account is healthy while its browser session is still accepted. Nothing is
+  // probed here — a live call on every health refresh would burn LinkedIn's request budget
+  // and could itself trip a restriction — so this mirrors the credential the send path
+  // maintains: a send that meets a dead or blocked session marks the credential, and the
+  // row turns red with the reason to reconnect.
+  if (connection.provider === "linkedin") {
+    const cred = await db
+      .collection(C.credentials)
+      .findOne({ orgId, connectionId: String(connection._id) });
+    if (!cred || ["expired", "revoked", "pending"].includes(String(cred.status))) {
+      reasons.push("the LinkedIn session has ended — reconnect the account");
+    }
+  }
+
   return { healthy: reasons.length === 0, reasons };
 }
 

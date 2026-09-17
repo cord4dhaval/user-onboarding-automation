@@ -42,6 +42,11 @@ export const TRANSPORTS = [
   { id: "smtp", label: "SMTP", blurb: "Any mail account or relay, with a password." },
   { id: "http", label: "API endpoint", blurb: "Any provider that takes a token over HTTP." },
   { id: "key", label: "API key", blurb: "Paste the provider's API key and choose what it runs." },
+  {
+    id: "session",
+    label: "Browser session",
+    blurb: "Paste the session from a logged-in browser. Acts as that account; no password stored.",
+  },
 ] as const;
 
 export type TransportId = (typeof TRANSPORTS)[number]["id"];
@@ -118,6 +123,18 @@ export const CHANNEL_CATALOG: ChannelOption[] = [
     transports: ["key"],
   },
   {
+    id: "linkedin",
+    channelKey: "linkedin",
+    label: "LinkedIn",
+    typeLabel: "LinkedIn",
+    status: "live",
+    blurb: "Invites, messages and comments from a connected LinkedIn account.",
+    // No sign-in and no vendor: the account owner pastes their own logged-in browser
+    // session (method A). A password-driven login with the email-code screen is the "soon"
+    // second door — see docs/linkedin-channel-plan.md.
+    transports: ["session"],
+  },
+  {
     id: "sms",
     channelKey: "sms",
     label: "SMS",
@@ -176,6 +193,7 @@ const CONNECTED_AS: Record<TransportId, string> = {
   smtp: "SMTP",
   http: "API endpoint",
   key: "API key",
+  session: "browser session",
 };
 
 /**

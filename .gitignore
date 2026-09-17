@@ -12,3 +12,6 @@ backups/
 
 # Crawled marketing and app screenshots (82 MB, contains rendered customer data). public/assets is separate and tracked.
 /assets/
+
+# LinkedIn session for local testing — never commit
+.linkedin-session.json

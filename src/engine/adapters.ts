@@ -12,6 +12,8 @@ import { SesAdapter } from "../adapters/channel/ses.js";
 import { sesEnv } from "./sesIdentity.js";
 import { HttpChannelAdapter, type HttpChannelConfig } from "../adapters/channel/http.js";
 import { BolnaAdapter, type BolnaConfig } from "../adapters/channel/bolna.js";
+import { LinkedInChannelAdapter } from "../adapters/channel/linkedin/adapter.js";
+import type { LinkedInSession } from "../adapters/channel/linkedin/session.js";
 import type { ChannelAdapter } from "../adapters/channel/types.js";
 
 /**
@@ -58,6 +60,19 @@ export async function resolveChannelAdapter(orgId: string, channelId: string): P
     const cfg = connection.bolna as BolnaConfig | undefined;
     if (!cfg?.agentId) throw new Error("Bolna connection is missing its agent id");
     return new BolnaAdapter(String(channel.key), secret, cfg);
+  }
+
+  // A LinkedIn account acting for the user. The secret is the browser session (li_at,
+  // JSESSIONID, user agent) as JSON; the adapter replays it against LinkedIn's own web API.
+  if (connection.provider === "linkedin") {
+    let session: LinkedInSession;
+    try {
+      session = JSON.parse(secret) as LinkedInSession;
+    } catch {
+      throw new Error("LinkedIn session is corrupt; reconnect the account");
+    }
+    const ownProviderId = (connection.linkedin as { providerId?: string } | undefined)?.providerId;
+    return new LinkedInChannelAdapter(String(channel.key), session, ownProviderId);
   }
 
   if (connection.authType === "smtp") {

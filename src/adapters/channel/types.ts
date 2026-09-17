@@ -41,6 +41,21 @@ export interface OutboundMessage {
    * body above.
    */
   providerTemplate?: { name: string; params: Record<string, string> };
+  /**
+   * What a LinkedIn touch actually is. Unlike email, "send" is not one shape on LinkedIn: an
+   * invite, a direct message, a comment and a reply are different calls with different
+   * targets. The adapter reads `op` to pick the call; the fields below carry its target.
+   *
+   * `providerId` is the member (urn:li:fs_miniProfile:…), resolved from the person's
+   * LinkedIn URL just before sending. `conversationUrn` threads a DM; `postUrn` /
+   * `parentCommentUrn` target a comment or a reply. Absent on every non-LinkedIn channel.
+   */
+  op?: "invite" | "message" | "comment" | "reply";
+  providerId?: string;
+  note?: string;
+  conversationUrn?: string;
+  postUrn?: string;
+  parentCommentUrn?: string;
 }
 
 export interface SendResult {

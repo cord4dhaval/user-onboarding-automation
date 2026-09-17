@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Mail, MessageCircle, PhoneCall, Plug, Plus, Smartphone } from "lucide-react";
+import { Contact, Mail, MessageCircle, PhoneCall, Plug, Plus, Smartphone } from "lucide-react";
 import { Button } from "../../../ui/kit";
 import ChannelDrawer, { type ConnectionTools } from "./channel-drawer";
 import { CHANNEL_CATALOG } from "@/channels/catalog.js";
@@ -12,6 +12,7 @@ const ICONS: Record<string, ReactNode> = {
   whatsapp: <MessageCircle />,
   voice: <PhoneCall />,
   sms: <Smartphone />,
+  linkedin: <Contact />,
   other: <Plug />,
 };
 
@@ -53,6 +54,7 @@ export default function ChannelCards({
   mcpAction,
   httpAction,
   bolnaAction,
+  linkedinAction,
   googleAction,
   sesAction,
 }: {
@@ -68,6 +70,7 @@ export default function ChannelCards({
   mcpAction: (formData: FormData) => void | Promise<void>;
   httpAction: (formData: FormData) => void | Promise<void>;
   bolnaAction: (formData: FormData) => void | Promise<void>;
+  linkedinAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
   sesAction: (formData: FormData) => void | Promise<void>;
 }) {
@@ -167,6 +170,7 @@ export default function ChannelCards({
           mcpAction={mcpAction}
           httpAction={httpAction}
           bolnaAction={bolnaAction}
+          linkedinAction={linkedinAction}
           googleAction={googleAction}
           sesAction={sesAction}
         />

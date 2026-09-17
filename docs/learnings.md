@@ -535,6 +535,52 @@ ladder. The numbers get logged by hand. That is the point: the test buys informa
 Open question before any of this starts: how many of the 81 practices have a LinkedIn profile on file at all. That
 may be the real blocker, and it is cheap to check.
 
+### Update 2026-09-17 — decision reversed: build it ourselves, no Unipile
+
+The PM decided against renting Unipile (or any vendor). The engine itself now plays Unipile's
+role for LinkedIn: it stores each connected account's browser session cookie encrypted and
+calls LinkedIn's own internal web API ("Voyager") directly. The engine is product-agnostic,
+so every product on it can connect LinkedIn accounts, the way products connect Gmail
+mailboxes today; TeamGrid is only the first. This supersedes the "Unipile at €49/month is the
+buy" conclusion above. The full build plan is in `docs/linkedin-channel-plan.md`.
+
+Connection method A (ship first): the account owner pastes their own logged-in browser
+session — `li_at` and `JSESSIONID` cookies plus the browser user agent — captured from
+DevTools. No password, no vendor. Method B (the credentials-plus-email-code screen Unipile
+shows) is the "soon" second door; it needs a server-driven login and hits captcha, so it
+waits.
+
+P1 built and verified 2026-09-17: `src/adapters/channel/linkedin/` (endpoints, session,
+client, adapter), a `cookie` auth type and a `session` transport, a `linkedin` catalogue
+entry, the connect action `createLinkedInChannel` (verifies the session with a live `me()`
+call before storing anything), a health rule, and the connect drawer with the risk warning
+and consent tick. Proven: a real pasted cookie calls Voyager and returns the account's
+profile and provider id (`npm run linkedin:check`).
+
+Write ops confirmed 2026-09-17 by capturing the real requests from a live session and
+re-issuing them through the client. All four are wired with the confirmed shapes; DM and
+comment were run live end-to-end and succeeded (a message started a conversation, a comment
+returned its urn). Key findings:
+- **Invite**: `POST /voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2`,
+  body `{invitee:{inviteeUnion:{memberProfile:"urn:li:fsd_profile:<id>"}},customMessage?}`.
+  Target is an `fsd_profile` urn; `me()` returns `fs_miniProfile` with the same id, so it is
+  rewritten (`fsdProfileUrn`).
+- **Comment / reply**: `POST /voyagerSocialDashNormComments?decorationId=…NormComment-43`,
+  body `{commentary:{text,attributesV2:[],$type:…TextViewModel},threadUrn}`. A reply is the
+  same call with `threadUrn` set to the parent comment's urn
+  (`urn:li:comment:(activity:<postId>,<commentId>)`) instead of the post's activity urn —
+  there is no separate parent field.
+- **DM**: `POST /voyagerMessagingDashMessengerMessages?action=createMessage`, sent as
+  `text/plain`, body carries `mailboxUrn` (our own fsd_profile urn), `hostRecipientUrns`
+  (the recipient), a UUID `originToken` and a 16-random-byte `trackingId`.
+  `hostRecipientUrns` starts or reuses the 1-to-1 conversation, so no conversationUrn is
+  needed for a first DM.
+
+Still stale: `profileBySlug()` (URL slug → provider id). The old REST `networkinfo` /
+`profileView` endpoints now return HTTP 410; the modern GraphQL profile call needs one more
+capture. Not on the send path once the engine stores the id, so it is P2 work. The
+`x-li-track` `clientVersion` (currently 1.13.46685) rotates and lives in `endpoints.ts`.
+
 ### Gaps and what to build
 
 | # | Finding | Engine today | Build | Status |

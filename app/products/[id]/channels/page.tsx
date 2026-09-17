@@ -9,6 +9,7 @@ import {
   createChannel,
   createHttpChannel,
   createBolnaChannel,
+  createLinkedInChannel,
   createSmtpChannel,
   deleteChannel,
   setChannelEnabled,
@@ -483,6 +484,7 @@ export default async function Channels({
         mcpAction={createChannel}
         httpAction={createHttpChannel}
         bolnaAction={createBolnaChannel}
+        linkedinAction={createLinkedInChannel}
         googleAction={startGoogleOAuth}
         sesAction={connectSesDomain}
       />

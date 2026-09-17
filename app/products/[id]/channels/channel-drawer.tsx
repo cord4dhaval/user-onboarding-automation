@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Drawer from "../../../ui/drawer";
-import { Globe, KeyRound, Mail, Plug, ShieldCheck, Server } from "lucide-react";
+import { Contact, Globe, KeyRound, Mail, Plug, ShieldCheck, Server } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { FormatChoice, SendToolFields } from "./channel-fields";
 import { catalogById, transportsFor, type TransportId } from "@/channels/catalog.js";
@@ -80,6 +80,7 @@ const TRANSPORT_ICONS: Record<TransportId, React.ReactNode> = {
   smtp: <Mail />,
   http: <Globe />,
   key: <KeyRound />,
+  session: <Contact />,
 };
 
 /**
@@ -101,6 +102,7 @@ export default function ChannelDrawer({
   mcpAction,
   httpAction,
   bolnaAction,
+  linkedinAction,
   googleAction,
   sesAction,
   googleReady,
@@ -117,6 +119,7 @@ export default function ChannelDrawer({
   mcpAction: (formData: FormData) => void | Promise<void>;
   httpAction: (formData: FormData) => void | Promise<void>;
   bolnaAction: (formData: FormData) => void | Promise<void>;
+  linkedinAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
   sesAction: (formData: FormData) => void | Promise<void>;
   /** Whether this deployment has an OAuth client at all. Checked on the server: the id is
@@ -464,6 +467,49 @@ export default function ChannelDrawer({
             <label>Daily cap<input name="dailyCap" type="number" defaultValue={20} /></label>
           </div>
           <SubmitButton pendingLabel="Connecting…">Connect Bolna</SubmitButton>
+        </form>
+      )}
+
+      {active === "session" && (
+        <form action={linkedinAction} className="stack drawer-block">
+          <input type="hidden" name="productId" value={productId} />
+          <div className="note">
+            <p>
+              <strong>This automates your own LinkedIn account.</strong> LinkedIn&rsquo;s User Agreement does not
+              permit automated messaging or invitations, and the risk falls on the connected account, not on us.
+              Keep volumes low, use an account you can afford to lose, and connect only your own.
+            </p>
+          </div>
+          <p className="sub tight">
+            Paste the session from a browser already logged in to LinkedIn. No password is typed here and none is
+            stored — only the session, encrypted, which you can end any time from LinkedIn&rsquo;s{" "}
+            <em>Where you&rsquo;re signed in</em> settings.
+          </p>
+          <p className="sub tight">
+            In that browser: DevTools (F12) → Application → Cookies → <code>https://www.linkedin.com</code>. Copy{" "}
+            <code>li_at</code> and <code>JSESSIONID</code> (keep its quotes). Copy the <code>user-agent</code> from any
+            request under the Network tab.
+          </p>
+          <label>
+            li_at cookie
+            <input name="li_at" placeholder="AQEDAT…" required autoComplete="off" />
+          </label>
+          <label>
+            JSESSIONID cookie
+            <input name="jsessionid" placeholder={'"ajax:1234567890"'} required autoComplete="off" />
+          </label>
+          <label>
+            Browser user agent
+            <input name="userAgent" placeholder="Mozilla/5.0 (Macintosh…) Chrome/…" required autoComplete="off" />
+          </label>
+          <label className="check">
+            <input type="checkbox" name="consent" />
+            <span>
+              I understand this acts as my LinkedIn account and may put it at risk, and I am connecting an account I
+              control.
+            </span>
+          </label>
+          <SubmitButton pendingLabel="Checking the session…">Connect LinkedIn</SubmitButton>
         </form>
       )}
     </Drawer>

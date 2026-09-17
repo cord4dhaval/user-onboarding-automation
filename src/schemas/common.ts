@@ -29,6 +29,7 @@ export const authType = z.enum([
   "oauth2",
   "smtp",
   "bearer",
+  "cookie",
   "mcp_oauth",
   "mcp_bearer",
   "mcp_stdio",
