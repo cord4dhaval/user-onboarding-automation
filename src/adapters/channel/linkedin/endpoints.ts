@@ -28,16 +28,18 @@ export const CLIENT_VERSION = "1.13.46685";
 export const ME = `${BASE}/me`;
 
 /**
- * A member's profile by the slug in their URL (linkedin.com/in/<slug>). HIGH.
- * Returns the fsd_profile / miniProfile entityUrn we need as the person's provider id, plus
- * the network distance (1st / 2nd / 3rd) that decides whether a DM is even allowed.
+ * A member's profile by the slug in their URL, or by their member id. CONFIRMED queryId
+ * (2026-09-17). The old REST `/identity/profiles/<slug>/profileView` and `/networkinfo`
+ * paths now 410; the web app fetches profiles through this graphql query, keyed on
+ * `memberIdentity`, which accepts either the slug (vanity) or the `ACoAA…` id. The response
+ * carries the `fsd_profile` entityUrn (our provider id) and the network distance.
+ *
+ * The queryId rotates like the messaging ones — re-read it from a live session (filter
+ * `voyagerIdentityDashProfiles`) when profile lookups start failing. LOW on the queryId.
  */
-export const PROFILE_VIEW = (publicId: string) =>
-  `${BASE}/identity/profiles/${encodeURIComponent(publicId)}/profileView`;
-
-/** The leaner networkinfo call: just distance + a pending-invitation flag. MED. */
-export const PROFILE_NETWORKINFO = (publicId: string) =>
-  `${BASE}/identity/profiles/${encodeURIComponent(publicId)}/networkinfo`;
+export const PROFILE_QUERY_ID = "voyagerIdentityDashProfiles.b5c27c04968c409fc0ed3546575b9b7a";
+export const PROFILE_BY_IDENTITY = (identity: string) =>
+  `${BASE}/graphql?includeWebMetadata=true&variables=(memberIdentity:${identity})&queryId=${PROFILE_QUERY_ID}`;
 
 /**
  * Connection invitation. CONFIRMED against a live session 2026-09-17.

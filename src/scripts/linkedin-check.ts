@@ -76,6 +76,14 @@ async function main() {
         console.log(`provider id: ${me.providerId}`);
         break;
       }
+      case "raw": {
+        if (!arg1) throw new Error("usage: raw <slug|providerId>");
+        const data = await client.rawProfile(arg1);
+        const s = JSON.stringify(data);
+        console.log(`length: ${s.length}`);
+        console.log(s.slice(0, 4000));
+        break;
+      }
       case "profile": {
         if (!arg1) throw new Error("usage: profile <slug>");
         const p = await client.profileBySlug(arg1);

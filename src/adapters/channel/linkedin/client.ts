@@ -65,30 +65,55 @@ export class LinkedInClient {
   }
 
   /**
-   * A member's profile by the slug in their URL. This is the one call that turns a LinkedIn
-   * URL into a provider id and tells us the network distance, which decides whether a DM is
-   * allowed at all. It counts as a profile view against LinkedIn's daily cap, so the send
-   * path caches the result and only calls it when the id is not already on the person.
+   * A member's profile by the slug in their URL — the call that turns a LinkedIn URL into a
+   * provider id, which every send needs.
+   *
+   * LinkedIn removed the old REST profile endpoints (they now 410) and its web app resolves
+   * the vanity slug to the member id server-side, in the profile page itself: the SPA only
+   * ever fetches a profile by id afterwards. So the slug is resolved the same way — fetch
+   * the `/in/<slug>/` document and read the `fsd_profile` id (and, where the page embeds it,
+   * the network distance) out of the JSON LinkedIn ships inside the HTML.
+   *
+   * This counts as a profile view against LinkedIn's daily cap, so the send path caches the
+   * result on the person and only calls it when the id is not already known.
    */
   async profileBySlug(publicId: string): Promise<Profile> {
-    const res = await voyagerFetch(this.session, E.PROFILE_NETWORKINFO(publicId));
-    const net = await voyagerJson<NetworkInfo>(res, "profile networkinfo");
-    // networkinfo gives distance + pending flag but not always the name/urn, so pull the
-    // mini profile too. Both are one view between them as far as the cap is concerned.
-    const viewRes = await voyagerFetch(this.session, E.PROFILE_VIEW(publicId));
-    const view = await voyagerJson<ProfileViewBody>(viewRes, "profileView");
-    const mini = view.included?.find((x) => x?.$type === "com.linkedin.voyager.identity.shared.MiniProfile" && x.publicIdentifier === publicId)
-      ?? view.included?.find((x) => x?.$type === "com.linkedin.voyager.identity.shared.MiniProfile");
-    if (!mini?.entityUrn) throw new Error(`LinkedIn profile ${publicId} not found`);
+    const res = await voyagerFetch(this.session, E.PROFILE_BY_IDENTITY(publicId));
+    const body = await voyagerJson<GraphqlProfile>(res, "profile");
+
+    // The normalized response lists every referenced object in `included`. The member we
+    // asked for is the Profile whose publicIdentifier matches the slug; from it we read the
+    // entityUrn (our provider id) and the display fields.
+    // This queryId is the lean "resolve identity to id" one: `included` holds a single
+    // Profile object carrying just its entityUrn (our provider id). Name and distance are
+    // not in this response — a richer profile query would add them, but the id is all the
+    // send path needs, so distance defaults to unknown (OUT_OF_NETWORK) and the ladder
+    // invites first unless it already knows the lead is a 1st-degree connection.
+    const included = Array.isArray(body.included) ? body.included : [];
+    const profile = included.find(
+      (x) => typeof x?.entityUrn === "string" && String(x.entityUrn).startsWith("urn:li:fsd_profile:"),
+    );
+    if (!profile?.entityUrn) {
+      throw new Error(`LinkedIn returned no profile for "${publicId}" — the slug may be wrong or the queryId stale`);
+    }
+    const distance =
+      (JSON.stringify(body).match(/"(DISTANCE_[123]|SELF|OUT_OF_NETWORK)"/)?.[1] as Distance | undefined) ??
+      "OUT_OF_NETWORK";
     return {
-      providerId: mini.entityUrn,
-      publicIdentifier: mini.publicIdentifier ?? publicId,
-      firstName: mini.firstName ?? "",
-      lastName: mini.lastName ?? "",
-      headline: mini.occupation,
-      distance: net.distance?.value ?? "OUT_OF_NETWORK",
-      pendingInvitation: Boolean(net.distance?.value === "DISTANCE_2" && net.following === false && net.pendingInvitation),
+      providerId: String(profile.entityUrn),
+      publicIdentifier: profile.publicIdentifier ?? publicId,
+      firstName: profile.firstName ?? "",
+      lastName: profile.lastName ?? "",
+      headline: profile.headline,
+      distance,
+      pendingInvitation: /"invitationState":"PENDING"|"pendingInvitation":true/.test(JSON.stringify(body)),
     };
+  }
+
+  /** Debug: the raw profile-by-identity response, for inspecting its shape. */
+  async rawProfile(identity: string): Promise<unknown> {
+    const res = await voyagerFetch(this.session, E.PROFILE_BY_IDENTITY(identity));
+    return voyagerJson<unknown>(res, "profile-raw");
   }
 
   // ── write ops ──
@@ -215,11 +240,14 @@ interface MeBody {
   miniProfile?: MiniProfile;
   included?: MiniProfile[];
 }
-interface ProfileViewBody {
-  included?: MiniProfile[];
+
+interface GraphqlProfileNode {
+  entityUrn?: string;
+  publicIdentifier?: string;
+  firstName?: string;
+  lastName?: string;
+  headline?: string;
 }
-interface NetworkInfo {
-  distance?: { value?: Distance };
-  following?: boolean;
-  pendingInvitation?: boolean;
+interface GraphqlProfile {
+  included?: GraphqlProfileNode[];
 }
