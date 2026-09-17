@@ -516,13 +516,25 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         };
       }
 
-      // LinkedIn is not one kind of send. A lead the account is not yet connected to gets a
-      // connection invite carrying the rendered note; once connected, a later touch is a DM.
-      // The profile slug is already in `outbound.to` (the channel's address), and the adapter
-      // resolves it to a member id. The note is the rendered body, capped by the adapter.
+      // LinkedIn is not one kind of send. The first touch to a lead is a connection invite
+      // carrying the rendered note; every later touch is a direct message. The engine does
+      // not need to poll for acceptance to make this work: a DM sent before the invite is
+      // accepted comes back NOT_FIRST_DEGREE, which the adapter turns into a deferral, so the
+      // message simply waits in the queue and goes out the moment they accept.
+      //
+      // "First touch" is read from what has actually been sent, not a flag: the first
+      // LinkedIn send to this person is the invite, anything after it is a DM. The slug is
+      // already in `outbound.to`; the adapter resolves it to a member id.
       if (String(action.channel) === "linkedin") {
-        const stage = (person.linkedin as { stage?: string } | undefined)?.stage;
-        outbound.op = stage === "connected" ? "message" : "invite";
+        const priorSent = await db.collection(C.actions).countDocuments({
+          orgId: opts.orgId,
+          productId: opts.productId,
+          personId: action.personId,
+          channel: "linkedin",
+          status: "sent",
+          _id: { $ne: action._id },
+        });
+        outbound.op = priorSent > 0 ? "message" : "invite";
         outbound.note = content.bodyMd;
       }
 
