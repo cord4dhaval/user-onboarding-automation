@@ -408,7 +408,7 @@ export function sampleRows(lines: string[]): SampleRow[] {
  * time per app or score per hour, a time list for a tracked day, and label rows for Done and
  * Stuck. Tables only, so it holds in Gmail and Outlook; the brand shade is the only colour.
  */
-function sampleCard(title: string, lines: string[], ink: string): string {
+export function sampleCard(title: string, lines: string[], ink: string): string {
   const rows = sampleRows(lines);
   const font = "font-family:Arial,Helvetica,sans-serif;";
   const rule = "border-top:1px solid #e5e7eb;";
