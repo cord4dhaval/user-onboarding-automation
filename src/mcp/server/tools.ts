@@ -1742,7 +1742,9 @@ export const TOOLS: ToolDef[] = [
             throw new Error(`step ${step} uses "${hard.word}", a word readers stumble on. Say "${hard.use}" instead. Nothing was written.`);
           }
           // A reader who has never heard of the product must not have to guess what it is.
-          if (oneLine) {
+          // A hot email's reveal already says what the product does, in the reader's moment.
+          const revealed = Boolean(structuredParts.get(t)?.reveal) && Boolean(leadTypeOf(campaignDef) && LEAD_TYPE_PROFILES[leadTypeOf(campaignDef)!].reveal);
+          if (oneLine && !revealed) {
             const key = [...new Set(oneLine.toLowerCase().match(/[a-z]{4,}/g) ?? [])];
             const have = key.filter((w) => everything.includes(w)).length;
             if (key.length && have / key.length < 0.6) {
