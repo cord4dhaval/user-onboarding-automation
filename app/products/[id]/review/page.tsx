@@ -266,6 +266,9 @@ export default async function Review({
   const senderById = new Map(
     channels.map((c) => [String(c._id), String(c.from ?? `${String(c.key)} · provider default sender`)]),
   );
+  // The From header itself, for the inbox preview. Absent rather than the label above, so
+  // the preview can say the provider picks the sender instead of showing a label as one.
+  const fromById = new Map(channels.filter((c) => c.from).map((c) => [String(c._id), String(c.from)]));
 
   // One box over two collections. The reviewer hunting a row does not know or care whether
   // what they remember is on the person or on the message, so a name, an email address and
@@ -721,6 +724,7 @@ export default async function Review({
                                 actionId={String(action._id)}
                                 personName={name}
                                 personEmail={email}
+                                from={fromById.get(String(action.channelId))}
                                 meta={meta}
                                 fetchMessage={heldMessage}
                               />
@@ -755,6 +759,7 @@ export default async function Review({
                                   actionId={String(action._id)}
                                   personName={name}
                                   personEmail={email}
+                                  from={fromById.get(String(action.channelId))}
                                   meta={meta}
                                   fetchMessage={heldMessage}
                                 />

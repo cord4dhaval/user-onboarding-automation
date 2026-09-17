@@ -1914,6 +1914,8 @@ export interface HeldMessage {
   canHtml: boolean;
   /** The action's own status, so the drawer knows whether a decision is still on offer. */
   status: string;
+  /** The channel kind. Only email is previewed as an inbox; the rest have no inbox to show. */
+  channel: string;
   /** Why a message that was approved never went out — a cap, a suppression, an error. */
   skipReason?: string;
   sentAt?: string;
@@ -2017,6 +2019,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     formatWhy: action.formatWhy ? String(action.formatWhy) : undefined,
     canHtml: caps.html !== false,
     status: String(action.status),
+    channel: String(action.channel),
     skipReason: action.skipReason ? String(action.skipReason) : action.error ? String(action.error) : undefined,
     sentAt: action.sentAt ? new Date(String(action.sentAt)).toISOString() : undefined,
     reviewedAt: action.reviewedAt ? new Date(String(action.reviewedAt)).toISOString() : undefined,

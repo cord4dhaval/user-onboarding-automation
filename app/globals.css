@@ -1022,6 +1022,124 @@ details.asset-more > summary .reason { max-width: none; margin-top: 0; font-weig
 .preview-frame.tall { height: 700px; }
 .preview .preheader { font-size: 12.5px; margin-top: 3px; }
 
+/* ── inbox preview ─────────────────────────────────────────────────────────── */
+/* An imitation of a mail client, not a piece of the console. Its palette stays light in
+   both themes on purpose: it shows what the recipient sees, email HTML is authored on
+   white, and a dark console should not make a message look different from how it lands. */
+.inbox {
+  --mail-bg: #FFFFFF;
+  --mail-chrome: #F6F8FC;
+  --mail-hover: #F2F6FC;
+  --mail-ink: #1F1F1F;
+  --mail-ink-2: #5E5E5E;
+  --mail-rule: #E3E3E3;
+  --mail-chip: #DDDDDD;
+  --mail-link: #1A0DAB;
+  --mail-avatar: #026873;
+  --mail-bezel: #1B1B1F;
+  font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.inbox .preview-bar { font-family: var(--font-body), -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+.inbox-note { font-size: 12.5px; }
+.inbox-soft { color: var(--mail-ink-2); }
+.inbox-link { color: var(--mail-link); text-decoration: underline; word-break: break-all; }
+
+.inbox-web {
+  background: var(--mail-bg); color: var(--mail-ink);
+  border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; box-shadow: var(--e1);
+}
+.inbox-chrome {
+  display: flex; align-items: center; gap: 14px; padding: 9px 14px;
+  background: var(--mail-chrome); border-bottom: 1px solid var(--mail-rule);
+}
+.inbox-dots { display: inline-flex; gap: 6px; }
+.inbox-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--mail-chip); }
+.inbox-search {
+  display: inline-flex; align-items: center; gap: 8px; flex: 1; max-width: 360px;
+  padding: 6px 12px; border-radius: 999px; background: var(--mail-bg);
+  color: var(--mail-ink-2); font-size: 13px;
+}
+/* Labels the two moments — the list and the open message — without looking like mail. */
+.inbox-cap {
+  margin: 0; padding: 5px 14px; background: var(--mail-chrome);
+  border-bottom: 1px solid var(--mail-rule);
+  font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--mail-ink-2);
+}
+.inbox-open + .inbox-cap, .inbox-row + .inbox-cap, .m-row + .inbox-cap { border-top: 1px solid var(--mail-rule); }
+
+.inbox-row {
+  display: grid; grid-template-columns: auto auto 168px minmax(0, 1fr) auto; align-items: center;
+  gap: 10px; padding: 9px 14px; font-size: 14px; background: var(--mail-bg);
+  box-shadow: inset 3px 0 0 var(--mail-avatar);
+}
+.inbox-icon { color: var(--mail-chip); }
+.inbox-row-from, .inbox-row-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.inbox-row-line .inbox-soft { font-weight: 400; }
+.inbox-row-time { font-size: 12.5px; }
+
+.inbox-open { padding: 18px 18px 20px; }
+.inbox-subject { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 16px 52px; }
+.inbox-subject h3, .m-subject h3 { margin: 0; font-weight: 400; color: var(--mail-ink); }
+.inbox-subject h3 { font-size: 21px; line-height: 1.3; }
+.inbox-chip {
+  font-size: 11.5px; padding: 1px 6px; border-radius: 4px;
+  background: var(--mail-chip); color: var(--mail-ink-2);
+}
+.inbox-sender { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.inbox-sender-who { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; }
+.inbox-sender-who > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-sender-who .inbox-soft { font-size: 12.5px; display: inline-flex; align-items: center; gap: 2px; }
+.inbox-sender-side { display: inline-flex; align-items: center; gap: 12px; font-size: 12.5px; white-space: nowrap; }
+.inbox-avatar {
+  flex: none; width: 40px; height: 40px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--mail-avatar); color: #FFFFFF; font-size: 17px; font-weight: 500;
+}
+.inbox-content { margin-left: 52px; }
+.inbox-frame { display: block; width: 100%; height: 160px; border: 0; background: var(--mail-bg); }
+.inbox-text {
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--mail-ink);
+  font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.5;
+}
+
+/* Phone: a 390pt screen, the width most of these are read at. The screen scrolls and the
+   status bar stays, the way it does on the device. */
+.phone {
+  width: 414px; max-width: 100%; margin: 0 auto; padding: 12px;
+  background: var(--mail-bezel); border-radius: 48px; box-shadow: var(--e3);
+}
+.phone-screen {
+  height: 760px; overflow-y: auto; overflow-x: hidden;
+  background: var(--mail-bg); color: var(--mail-ink); border-radius: 36px;
+  scrollbar-width: none;
+}
+.phone-screen::-webkit-scrollbar { display: none; }
+.phone-status {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 28px 8px; background: var(--mail-bg); font-size: 14px;
+}
+.phone-status span { display: inline-flex; align-items: center; gap: 5px; }
+.m-row { display: flex; gap: 12px; padding: 12px 16px; background: var(--mail-bg); }
+.m-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 14px; line-height: 1.4; }
+.m-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.m-row-top strong:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.m-row-time { font-size: 12px; flex: none; }
+.m-row-subject, .m-row-snippet { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.m-row-snippet { color: var(--mail-ink-2); }
+.m-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; color: var(--mail-ink-2);
+}
+.m-bar span { display: inline-flex; gap: 22px; }
+.m-subject { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 16px 14px; }
+.m-subject h3 { font-size: 20px; line-height: 1.3; }
+.m-sender { display: flex; align-items: flex-start; gap: 10px; padding: 0 16px 12px; }
+.m-sender .inbox-avatar { width: 36px; height: 36px; font-size: 15px; }
+.m-sender-tools { display: inline-flex; gap: 18px; padding-top: 6px; }
+.m-content .inbox-text { padding: 0 16px 24px; }
+
 /* ── brand ─────────────────────────────────────────────────────────────────── */
 
 .swatches { margin: 6px 0 14px; }

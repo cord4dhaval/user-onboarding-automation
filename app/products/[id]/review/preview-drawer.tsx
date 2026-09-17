@@ -7,6 +7,7 @@ import { Button, Spinner, SubmitButton } from "../../../ui/kit";
 import { decide, editMessage, regenerateMessage, rescheduleMessage, returnToReview, type HeldMessage } from "../../../actions";
 import { ist, istInputValue } from "../../../ui/time";
 import { isReplacedPlan } from "@/engine/replaced.js";
+import InboxPreview from "./inbox-preview";
 
 /**
  * One held message, previewed as it will actually arrive.
@@ -24,6 +25,7 @@ export default function PreviewDrawer({
   actionId,
   personName,
   personEmail,
+  from,
   meta,
   fetchMessage,
 }: {
@@ -31,6 +33,8 @@ export default function PreviewDrawer({
   actionId: string;
   personName: string;
   personEmail: string;
+  /** The channel's From header, for the inbox preview. */
+  from?: string;
   meta: string;
   fetchMessage: (actionId: string) => Promise<HeldMessage | null>;
 }) {
@@ -250,24 +254,43 @@ export default function PreviewDrawer({
               </div>
             )}
 
-            <div className="preview">
-              {message.subject && (
-                <div className="preview-head">
-                  <span className="k">Subject</span> <strong>{message.subject}</strong>
-                </div>
-              )}
-              {(format === "html" && message.bodyHtml) || (format === "letter" && message.bodyLetter) ? (
-                <iframe
-                  title={`Message to ${personEmail}`}
-                  srcDoc={format === "letter" ? message.bodyLetter : message.bodyHtml}
-                  className="preview-frame"
-                />
-              ) : (
-                <div className="preview-body">
-                  {message.bodyText || message.previewError || "This message has no body."}
-                </div>
-              )}
-            </div>
+            {/* Email is shown the way the recipient meets it — sender line, subject, the
+                words beside it, then the message opened. Other channels have no inbox to
+                imitate, so they keep the plain body. */}
+            {message.channel === "email" ? (
+              <InboxPreview
+                from={from}
+                subject={message.subject}
+                html={
+                  format === "letter"
+                    ? message.bodyLetter
+                    : format === "html"
+                      ? message.bodyHtml
+                      : undefined
+                }
+                text={message.bodyText || message.previewError || "This message has no body."}
+                when={message.sentAt ?? message.dueAt}
+              />
+            ) : (
+              <div className="preview">
+                {message.subject && (
+                  <div className="preview-head">
+                    <span className="k">Subject</span> <strong>{message.subject}</strong>
+                  </div>
+                )}
+                {(format === "html" && message.bodyHtml) || (format === "letter" && message.bodyLetter) ? (
+                  <iframe
+                    title={`Message to ${personEmail}`}
+                    srcDoc={format === "letter" ? message.bodyLetter : message.bodyHtml}
+                    className="preview-frame"
+                  />
+                ) : (
+                  <div className="preview-body">
+                    {message.bodyText || message.previewError || "This message has no body."}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* A body rendered on open, not read off the action. Saying so is the difference
                 between "this is the message" and "this is the message as long as nobody
