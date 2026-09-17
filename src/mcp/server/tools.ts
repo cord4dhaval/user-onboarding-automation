@@ -19,7 +19,7 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, emojiProneSymbols, frameKeyOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, effectiveBand, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -1646,6 +1646,21 @@ export const TOOLS: ToolDef[] = [
         if (!String(t.format_why ?? "").trim()) {
           throw new Error(`step ${step} needs format_why: one sentence on why ${format} suits this person now. Nothing was written.`);
         }
+        // What the campaign's lead type asks for. People who asked for the product are pushed
+        // to the next step with the link; a reply-only touch is kept for the hooks the type
+        // allows it on, such as a hot campaign's closing email.
+        const leadType = leadTypeOf(campaignDef);
+        if (leadType) {
+          const profile = LEAD_TYPE_PROFILES[leadType];
+          const askNow = String(t.ask ?? "link");
+          const hookNow = String(t.hook ?? stepRows.get(Number(t.step_id))?.hook ?? "").trim().toLowerCase();
+          if (profile.ask === "link" && askNow === "reply" && !profile.replyHooks.includes(hookNow)) {
+            throw new Error(
+              `step ${step} asks only for a reply, but this is a ${profile.label.toLowerCase()} campaign: these people ${profile.who}. ` +
+                `Ask "link" (format "letter" or "html") so the touch leads to the trial${profile.replyHooks.length ? `; a reply ask is kept for hook ${profile.replyHooks.map((h) => `"${h}"`).join(" or ")}` : ""}. Nothing was written.`,
+            );
+          }
+        }
         if (!String(t.subject ?? "").trim()) {
           throw new Error(`step ${step} renders through the frame, which has no subject of its own. Write one. Nothing was written.`);
         }
@@ -1921,7 +1936,7 @@ export const TOOLS: ToolDef[] = [
         .collection(C.people)
         .findOne(
           { _id: new ObjectId(String(instance.personId)) },
-          { projection: { temp: 1, lastContactedAt: 1, assignedChannelId: 1 } },
+          { projection: { temp: 1, lastContactedAt: 1, assignedChannelId: 1, "enrichment.form.timeline": 1 } },
         );
       const waiting = await db
         .collection(C.actions)
@@ -1939,7 +1954,11 @@ export const TOOLS: ToolDef[] = [
         .map((value) => (value ? new Date(String(value)) : null))
         .filter((date): date is Date => !!date && !Number.isNaN(date.getTime()));
       let anchor: Date | null = stamps.length > 0 ? new Date(Math.max(...stamps.map((d) => d.getTime()))) : null;
-      const band = (person?.temp as { band?: string } | undefined)?.band;
+      const band = effectiveBand(
+        (person?.temp as { band?: string } | undefined)?.band,
+        leadTypeOf(goalDef),
+        (person?.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
+      );
       const cadence = goalDef?.cadenceByTemp as Record<string, CadenceBand> | undefined;
       const planOffset = new Map<number, number>();
       for (const step of ((plan?.steps ?? []) as Array<Record<string, unknown>>)) {

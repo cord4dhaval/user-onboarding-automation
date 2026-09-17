@@ -179,6 +179,14 @@ have been read.
   words, the facts the product can truly claim, every idea they already had and what
   came of it, what has worked and failed for leads like them, the learning notes, and
   how much this group is trying new ideas.
+  Read writing.lead_type before anything else: it says what kind of people this campaign
+  holds and how hard to push. In a hot campaign (they filled in our own form and asked
+  about the product) every step leads to signing up. Plan two steps, after_days 1 and 1:
+  the idea that fits this lead as the reason to start now, then a short step on how
+  little setup takes and what they see on day one. After a click with no signup, the
+  next step is about finishing setup. The last step a campaign has room for is hook
+  "closing": ask whether to close their request. In a cold campaign, teach first and ask
+  a question. Otherwise:
   Then plan_goal with one step, or two where the second clearly depends on nothing the
   first could teach you. Each step carries a theme: one idea in a few words that you
   invent for this lead — a real moment from their week, not a feature name. Leave
@@ -306,6 +314,13 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   wordplay or metaphor; name the problem the way they would say it ("orders wait
   for approval"), and use the plain word from writing.plain_words ("approval", not
   "sign-off"; "stuck", not "blocked").
+  lead_type  read writing.lead_type first; its default_ask and rules override the
+             format and ask defaults here. In a hot campaign every touch asks "link"
+             with format "letter": the idea is the reason to start, question is the one
+             line leading into the trial ("Setup takes about 5 minutes per computer, and
+             the 7-day trial needs no card."), and ps offers a walk-through by replying
+             "call". Only hook "closing" may ask for a reply. compose_batch refuses a
+             reply-only touch in a hot campaign.
   format     "text": a plain note that asks for a reply and carries no link; the
              default for early touches and anyone who has not clicked. "letter": HTML
              that looks typed, bold phrases and a link on its own words, no logo, box

@@ -7,6 +7,7 @@ import { accessAssetFor, assetContextFor } from "./assets.js";
 import { mailboxFilter } from "./channels.js";
 import { ACCESS_RUNG, resolveTemplateFor } from "./templates.js";
 import { notify } from "./notify.js";
+import { effectiveBand, leadTypeOf } from "./rolling.js";
 
 /**
  * Temperature, recomputed from what a person actually did.
@@ -324,7 +325,9 @@ async function rescheduleFor(
     : null;
   const person = await db
     .collection(C.people)
-    .findOne({ _id: new ObjectId(personId) }, { projection: { lastContactedAt: 1 } });
+    .findOne({ _id: new ObjectId(personId) }, { projection: { lastContactedAt: 1, "enrichment.form.timeline": 1 } });
+  // A hot campaign keeps its pace when a person's own reading is cooler.
+  const pace = effectiveBand(band, leadTypeOf(goal), (person?.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline) ?? band;
 
   let moved = 0;
   for (const action of queued) {
@@ -332,7 +335,7 @@ async function rescheduleFor(
       // What remains of the gap the plan asked for, measured from the last contact rather
       // than from when the plan was written.
       offsetDays: gapDaysOf(action, person?.lastContactedAt as Date | undefined),
-      band,
+      band: pace,
       lastContactedAt: person?.lastContactedAt as Date | undefined,
       configured: goal?.cadenceByTemp as Record<string, CadenceBand> | undefined,
       now,

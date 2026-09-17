@@ -80,6 +80,8 @@ export interface CheckpointInput {
   /** When the current plan was written. A plan written after the ask answers it. */
   planWrittenAt?: Date | null;
   now: Date;
+  /** The campaign's lead type, which can shorten the watch window. */
+  leadType?: LeadType | null;
 }
 
 export type CheckpointDecision =
@@ -111,7 +113,7 @@ export function checkpoint(input: CheckpointInput): CheckpointDecision {
   if (!input.lastSentAt) return { kind: "ask", reason: "nothing_sent" };
   const sent = input.lastSentAt.getTime();
   if (input.signalAt && input.signalAt.getTime() >= sent) return { kind: "ask", reason: "signal" };
-  const until = sent + watchWindowMs(input.lastChannel);
+  const until = sent + watchWindowFor(input.lastChannel, input.leadType ?? null);
   if (now < until) return { kind: "watch", until: new Date(until) };
   return { kind: "ask", reason: "window_closed" };
 }
@@ -274,4 +276,119 @@ export function avoidedWord(text: string, list: Array<{ word: string; use: strin
     if (re.test(body)) return { word, use: String(entry.use ?? "") };
   }
   return null;
+}
+
+/**
+ * Lead types (Dhaval, 2026-09-17). A campaign says what kind of people it holds, because
+ * that decides how hard each message pushes. Leads who filled in our own ad form asked for
+ * the product; writing to them like strangers, with a question and a two-day wait, costs
+ * the signup they came for. People on a bought list are the opposite case.
+ */
+export const LEAD_TYPES = ["hot", "warm", "cold", "reengage", "trial"] as const;
+export type LeadType = (typeof LEAD_TYPES)[number];
+
+export interface LeadTypeProfile {
+  label: string;
+  who: string;
+  /** The temperature a lead in this campaign is paced at until their own signals say more. */
+  band: "hot" | "warm" | "cold";
+  /** How long a sent email is watched before the next plan is asked for. */
+  watchHours: number;
+  /** What every touch asks for by default. */
+  ask: "link" | "reply";
+  /** Hooks on which a reply ask is still allowed where the default ask is the link. */
+  replyHooks: string[];
+  rules: string[];
+}
+
+export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
+  hot: {
+    label: "Hot",
+    who: "filled in our own ad or website form, asked for a demo, or visited pricing",
+    band: "hot",
+    watchHours: 24,
+    ask: "link",
+    replyHooks: ["closing"],
+    rules: [
+      "These people asked about the product. Every touch pushes the next step: sign up with the trial link.",
+      "The idea for this lead is the reason to act now, not a lesson. Keep it short, then lead straight into the trial.",
+      "ask \"link\" and format \"letter\" (or \"html\" where a table or screen carries the idea). Never a plain note that only asks a question.",
+      "question is the one line that leads into the trial link, for example \"Setup takes about 5 minutes per computer, and the 7-day trial needs no card.\" It does not have to be a question.",
+      "ps offers a walk-through for anyone not ready to start alone: \"Prefer a quick walk-through first? Reply \\\"call\\\" and we will send 15-minute times.\"",
+      "Where they clicked a trial link and have not signed up, the next touch is about finishing setup: how short it is and what they see on day one.",
+      "The last touch of the campaign may ask for a reply instead (hook \"closing\"): \"Should we close your request, or is it still on your list?\" with reply options where the lead's test arm uses them.",
+      "Subject promises what they get or see, in plain words (\"See which dealer orders are stuck, from tomorrow\"), not a question to think about.",
+    ],
+  },
+  warm: {
+    label: "Warm",
+    who: "showed interest without asking: clicked an ad, downloaded a guide, or said they are just exploring",
+    band: "warm",
+    watchHours: 48,
+    ask: "link",
+    replyHooks: ["question", "closing"],
+    rules: [
+      "One idea from their world, then the trial link or a short reply question when a link has already been ignored.",
+    ],
+  },
+  cold: {
+    label: "Cold",
+    who: "an uploaded or bought list who never contacted us",
+    band: "cold",
+    watchHours: 72,
+    ask: "reply",
+    replyHooks: [],
+    rules: [
+      "Teach first. Plain text, a question they can answer in a line, and no link until they reply or click.",
+    ],
+  },
+  reengage: {
+    label: "Re-engage",
+    who: "old leads who went quiet, or trials that expired without paying",
+    band: "warm",
+    watchHours: 72,
+    ask: "reply",
+    replyHooks: [],
+    rules: [
+      "Say what is new or what may have changed for them, and ask one easy question before offering the trial again.",
+    ],
+  },
+  trial: {
+    label: "Trial user",
+    who: "signed up and has not paid",
+    band: "hot",
+    watchHours: 24,
+    ask: "link",
+    replyHooks: ["question"],
+    rules: [
+      "Help them reach the first useful report, then lead to the plan that fits. Never ask them to sign up again.",
+    ],
+  },
+};
+
+export function leadTypeOf(goal: Document | null | undefined): LeadType | null {
+  const value = String((goal as { leadType?: unknown } | null | undefined)?.leadType ?? "");
+  return (LEAD_TYPES as readonly string[]).includes(value) ? (value as LeadType) : null;
+}
+
+/**
+ * The temperature a lead is paced at inside their campaign.
+ *
+ * A campaign's lead type sets the floor. A person gone dead stays dead, and a lead in a hot
+ * campaign who told us they are only exploring is paced as warm until they click.
+ */
+export function effectiveBand(personBand: string | undefined, leadType: LeadType | null, formTimeline?: unknown): string | undefined {
+  if (!leadType || personBand === "dead") return personBand;
+  const floor = LEAD_TYPE_PROFILES[leadType].band;
+  const rank: Record<string, number> = { cold: 0, warm: 1, hot: 2 };
+  let wanted: string = floor;
+  if (floor === "hot" && personBand !== "hot" && /explor|research|just looking|not sure/i.test(String(formTimeline ?? ""))) wanted = "warm";
+  return (rank[personBand ?? ""] ?? -1) > (rank[wanted] ?? -1) ? personBand : wanted;
+}
+
+/** The watch window for a touch, shortened for a lead type that decides fast. */
+export function watchWindowFor(channel: string | undefined, leadType: LeadType | null): number {
+  const base = watchWindowMs(channel);
+  if (!leadType) return base;
+  return Math.min(base, LEAD_TYPE_PROFILES[leadType].watchHours * 3_600_000);
 }

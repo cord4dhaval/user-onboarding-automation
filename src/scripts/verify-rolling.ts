@@ -4,7 +4,7 @@
  *
  *   MASTER_KEY_B64=$(openssl rand -base64 32) npx tsx src/scripts/verify-rolling.ts
  */
-import { CHECKPOINT_PLAN_WAIT_MS, avoidedWord, checkpoint, companyTokens, emojiProneSymbols, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
+import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, checkpoint, companyTokens, effectiveBand, emojiProneSymbols, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { applyTextTracking } from "../engine/tracking";
 import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 import { renderHtml, renderLetter } from "../engine/html";
@@ -47,6 +47,19 @@ check("asked 13 h ago but a plan was written after → not waiting on it", (() =
 check("plan written after the ask, its touch sent 1 h ago → watch", checkpoint({ now, lastSentAt: ago(1), askedAt: ago(20), planWrittenAt: ago(19) }).kind === "watch");
 check("fallback wait is 12 h", CHECKPOINT_PLAN_WAIT_MS === 12 * H);
 check("unknown channel watches like email", watchWindowMs("carrier_pigeon") === watchWindowMs("email"));
+
+console.log("lead types");
+check("hot campaign read from the goal", leadTypeOf({ leadType: "hot" }) === "hot");
+check("unknown lead type ignored", leadTypeOf({ leadType: "lukewarm" }) === null && leadTypeOf(null) === null);
+check("a warm person in a hot campaign is paced hot", effectiveBand("warm", "hot", "ASAP — actively evaluating tools") === "hot");
+check("'just exploring' in a hot campaign is paced warm", effectiveBand("warm", "hot", "just_exploring") === "warm");
+check("a click still makes an explorer hot", effectiveBand("hot", "hot", "just_exploring") === "hot");
+check("dead stays dead", effectiveBand("dead", "hot") === "dead");
+check("no lead type keeps the person's band", effectiveBand("warm", null) === "warm");
+check("a cold campaign does not cool a hot person", effectiveBand("hot", "cold") === "hot");
+check("hot email watched 24 h: 30 h after send asks", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39), leadType: "hot" }).kind === "ask");
+check("the same without a lead type still watches (48 h)", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39) }).kind === "watch");
+check("hot asks for the link, closing hook may ask for a reply", LEAD_TYPE_PROFILES.hot.ask === "link" && LEAD_TYPE_PROFILES.hot.replyHooks.includes("closing"));
 
 console.log("mode");
 check("rolling campaign", isRolling({ perLeadPlan: { family: "feature_followup", mode: "rolling" } }));

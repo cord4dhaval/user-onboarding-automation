@@ -140,6 +140,12 @@ export const goal = z.object({
   sourceIds: z.array(objectIdString).default([]),
   /** Reached on success; goals chain rather than overlap. */
   nextGoalKey: z.string().optional(),
+  /**
+   * What kind of people this campaign holds: hot (asked for us through our own form), warm,
+   * cold (a list), reengage or trial. It sets the pace, the watch window and what each
+   * written touch asks for. See LEAD_TYPE_PROFILES in src/engine/rolling.ts.
+   */
+  leadType: z.enum(["hot", "warm", "cold", "reengage", "trial"]).optional(),
   enabled: z.boolean().default(true),
 });
 export type Goal = z.infer<typeof goal>;

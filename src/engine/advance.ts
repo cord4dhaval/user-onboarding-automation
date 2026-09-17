@@ -6,7 +6,7 @@ import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
 import { pickChannelFrom, loadChannels, persistAssignments, persistInstanceMailboxes, skipReason, type PooledChannel } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
-import { checkpoint, frameKeyOf, isRolling, isRollingPlan, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
+import { checkpoint, effectiveBand, frameKeyOf, isRolling, isRollingPlan, leadTypeOf, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
 
 /**
  * Turning a plan into messages, on the clock, for everybody.
@@ -178,7 +178,7 @@ export async function advance(
       .collection(C.people)
       .find(
         { _id: { $in: instances.map((i) => new ObjectId(String(i.personId))) } },
-        { projection: { temp: 1, belief: 1, lifecycle: 1, suppressedAt: 1, lastReplyAt: 1, lastContactedAt: 1, consent: 1, stage: 1, needsClassification: 1 } },
+        { projection: { temp: 1, belief: 1, lifecycle: 1, suppressedAt: 1, lastReplyAt: 1, lastContactedAt: 1, consent: 1, stage: 1, needsClassification: 1, "enrichment.form.timeline": 1 } },
       )
       .toArray(),
     db
@@ -379,6 +379,7 @@ export async function advance(
               askedAt,
               planWrittenAt: isRollingPlan(plan) && plan?.createdAt ? new Date(String(plan.createdAt)) : null,
               now,
+              leadType: leadTypeOf(goal),
             });
         if (decision.kind === "watch") {
           summary.skipped.push({ goalInstanceId, reason: `watching the last touch until ${decision.until.toISOString()}` });
@@ -455,7 +456,12 @@ export async function advance(
       continue;
     }
 
-    const band = (person.temp as { band?: string } | undefined)?.band;
+    // Paced at the campaign's lead type where that is warmer than the person's own reading.
+    const band = effectiveBand(
+      (person.temp as { band?: string } | undefined)?.band,
+      leadTypeOf(goal),
+      (person.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
+    );
     const dueAt = dueAtFor({
       offsetDays: Number(step.offsetDays ?? step.after_days ?? 3),
       band,
