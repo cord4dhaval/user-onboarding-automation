@@ -910,15 +910,15 @@ The written layout (commits 9796a97 and e164543) already puts parts on separate 
 
 | # | Finding | Engine today | Build | Status |
 |---|---|---|---|---|
-| PT1 | Digits catch the eye | Numbers spelled out in copy | Writing rule: numerals for every quantity that carries the point; compose_batch warns on a number word before a unit | todo |
-| PT2 | Long lines wrap badly on phones; no columns | One "label → value" line | Render each cost line as two lines, the situation then "→ result", each short | todo |
-| PT3 | The opening is the inbox preview | Preheader written but unused in plain text | Opening under 90 characters, not a repeat of the subject; the preheader is used only for HTML | todo |
-| PT4 | No links or tracking in first touches | Text mail may carry a tracked link | Plain text asks for a reply only; a link ask goes out as HTML | todo |
-| PT5 | Opt-out as an easy sentence | 110-character vercel.app unsubscribe URL | "Not useful? Reply 'remove me' and we will not write again." plus a short link on the sending domain; header kept | todo |
-| PT6 | Some symbols become emoji | Only emoji refused | Allow → – × ÷ = ₹ • ✓ ─; refuse ✔ ☑ ✖ ➡ ▶ ▪ ⚠ ™ and Unicode bold letters | todo |
-| PT7 | 50 to 125 words | 125 + 15 words | 125 words for the whole body including the list lines | todo |
-| PT8 | Unproven patterns worth a test | Layout is tagged on every send | Test as layout variants: reply-with-a-number options, weekday timelines for story ideas, a short divider around the example | test |
-| PT9 | Plain-looking HTML (Superhuman, Buffer, HEY) gives bold words without looking designed | HTML means logo, card and button | Decide whether a third format, HTML with no logo or card, is worth adding | decision for Dhaval |
+| PT1 | Digits catch the eye | Numbers spelled out in copy | Writing rule: numerals for every quantity that carries the point; compose_batch warns on a number word before a unit | done 2026-09-17 |
+| PT2 | Long lines wrap badly on phones; no columns | One "label → value" line | Render each cost line as two lines, the situation then "→ result", each short | done 2026-09-17 |
+| PT3 | The opening is the inbox preview | Preheader written but unused in plain text | Opening under 90 characters, not a repeat of the subject; the preheader is used only for HTML | done 2026-09-17 |
+| PT4 | No links or tracking in first touches | Text mail may carry a tracked link | Plain text asks for a reply only; a link ask goes out as HTML | done 2026-09-17 |
+| PT5 | Opt-out as an easy sentence | 110-character vercel.app unsubscribe URL | "Not useful? Reply 'remove me' and we will not write again." plus a short link on the sending domain; header kept | done 2026-09-17, short link on the app domain until a link domain on teamgrid.ai exists |
+| PT6 | Some symbols become emoji | Only emoji refused | Allow → – × ÷ = ₹ • ✓ ─; refuse ✔ ☑ ✖ ➡ ▶ ▪ ⚠ ™ and Unicode bold letters | done 2026-09-17 |
+| PT7 | 50 to 125 words | 125 + 15 words | 125 words for the whole body including the list lines | done 2026-09-17 |
+| PT8 | Unproven patterns worth a test | Layout is tagged on every send | Test as layout variants: reply-with-a-number options and weekday timelines for story ideas (a divider was left out: two tests at once already split a small list) | running since 2026-09-17 |
+| PT9 | Plain-looking HTML (Superhuman, Buffer, HEY) gives bold words without looking designed | HTML means logo, card and button | Decide whether a third format, HTML with no logo or card, is worth adding | done 2026-09-17: format `letter` |
 
 ---
 
@@ -1023,7 +1023,7 @@ The written layout (commits 9796a97 and e164543) already puts parts on separate 
 | 89 | Plan tag on ideas and templates so ₹299 mails never promise Advanced features | IN7 | todo |
 | 90 | Employee explainer page to forward | IN8 | site task |
 | 91 | Rolling planner end to end: plan 1–2 touches, Claude writes whole mail, learning across leads | RP1–RP6 | done 2026-09-16 |
-| 92 | Plain-text shape: numerals, two-line cost lines, opening as preview, symbol allow-list, 125-word cap | PT1–PT3, PT6, PT7 | todo |
-| 93 | Plain text carries no link; short opt-out sentence and link on the sending domain | PT4, PT5 | todo |
-| 94 | Layout tests: reply-with-a-number, weekday timeline, divider | PT8 | test |
-| 95 | Plain-looking HTML as a third format | PT9 | decision |
+| 92 | Plain-text shape: numerals, two-line cost lines, opening as preview, symbol allow-list, 125-word cap | PT1–PT3, PT6, PT7 | done 2026-09-17 |
+| 93 | Plain text carries no link; short opt-out sentence and link on the sending domain | PT4, PT5 | done 2026-09-17; link domain on teamgrid.ai needs DNS |
+| 94 | Layout tests: reply-with-a-number, weekday timeline | PT8 | running since 2026-09-17 |
+| 95 | Plain-looking HTML as a third format (`letter`) | PT9 | done 2026-09-17 |

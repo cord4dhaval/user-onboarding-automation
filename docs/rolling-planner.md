@@ -146,7 +146,8 @@ Thresholds Maintain applies: below 5 sends it is a guess; 10 or more sends with 
 | Where | Refused |
 |---|---|
 | plan_goal (rolling) | more than 2 steps; a step with no theme; a theme this lead already got and ignored; a template other than the frame or the fallback family; a channel the campaign does not allow |
-| compose_batch (frame) | body over 125 words; the whole mail over 200; no `format`; a link in the body; the lead's company name; a subject word from `subjectAvoid`; a reply ask that does not end on a question; first person singular |
+| compose_batch (frame) | body over 125 words (lists and titles included); the whole mail over 200; no `format`; plain text with a link ask; a link in the body; the lead's company name; a subject word from `subjectAvoid`; a reply ask whose question has no question mark; first person singular |
+| compose_batch (written in parts) | an opening over 90 characters or one that repeats the subject; a cost label of 40 characters or more, a cost value or list line over 50; quantities spelled out ("five days"); symbols phones turn into emoji (✔ ▶ ™) and styled Unicode letters; a timeline or reply options against the lead's test arm, or missing where the arm requires them |
 | compose_batch (warnings, not refusals) | a number with no "for example" nearby and no asset |
 | fireDue | everything it refuses today (opt-out, repeats, gaps, quiet hours, approval) |
 
@@ -154,11 +155,14 @@ Thresholds Maintain applies: below 5 sends it is a guess; 10 or more sends with 
 
 | Situation | Format |
 |---|---|
-| no click yet, first two written touches | text |
+| no click yet, early written touches | text, reply ask, no link |
 | reply ask | text |
+| link ask, or a bold phrase carries the idea | letter |
+| clicked, visited or signed up | letter, or html where a sample, table or screen carries the idea |
 | the idea needs a visual (table, sample summary, screen) | html |
-| clicked, visited or signed up | html |
 | answering their reply | text (already forced) |
+
+Three formats since 2026-09-17: `text` (text/plain only), `letter` (HTML that looks typed: no logo, box or button, client fonts and colours, bold phrases, a link on its own words, rendered by `renderLetter` in `src/engine/html.ts`) and `html` (the branded design). Review offers all three for a written touch.
 
 ## Channels
 
@@ -219,6 +223,18 @@ What the data showed by 04:40 UTC, twelve hours in: 252 rolling plans, 206 whole
 | 36 emails went out in the old style (one opening line inside a fixed feature email) | 27 rolling plans named a feature email as the template, which plan_goal allowed; 9 off_icp leads were still on the old playbook | plan_goal now forces the frame on every rolling step; off_icp leads are planned too, as one short question; the 36 were skipped and the 27 plans pointed at the frame, so Advance rewrites them |
 | 20 fixed backup emails for old leads | the planner ran at 20 an hour and the old list was paced at 20 an hour, so any slow run pushed leads past the 12-hour wait | the 20 were skipped; the 108 leads still waiting for a plan had their clock restarted; the lead planner and the writer now take 50 per run in waves of 25 |
 | 1 email said "the problem you named" | the rule against saying how they arrived did not cover pointing back at the form | compose_batch refuses "you named", "you mentioned", "your form" and similar; the email was skipped and is rewritten |
+
+## Plain-text shape, letter format and layout tests, 2026-09-17
+
+From research into what respected senders do in plain text (docs/learnings.md, PT1–PT9). Built in 71930f6.
+
+- **Plain text.** A cost line renders as the situation, then "→ result" on the line under it, with a blank line between rows. Gmail uses a proportional font, so columns cannot line up, and Outlook joins a long line to the next unless a blank line or end punctuation stops it. Quantities are digits. The opening doubles as the inbox preview. The body is 125 words at most.
+- **No links in plain text.** A plain-text touch asks for a reply. The opt-out line reads `Not useful? Reply "remove me" and we will not write again.` with a short unsubscribe link under it. The short link is `/u/<id>.<sig>`: 16 characters of person id and 72 bits of the same signature, redirecting to the full `/api/u` link. The mail header still carries the full link for one-click unsubscribe.
+- **Layout tests.** `layoutArm(personId, test)` puts each lead in the use or hold-out arm of each test, for good:
+  - `reply_options`: on reply asks, "Reply with one number:" followed by numbered answers.
+  - `timeline`: on story ideas, 2 to 4 moments such as "Monday: …".
+  lead_card shows the arm under `writing.layout_tests` and compose_batch enforces it. The layout tag records `+options` and `+timeline`, so what_works compares the arms by replies. The frame template has named slots `timeline` (after the opening) and `options` (after the question).
+- **Letter.** Chosen per touch like the other formats, recorded on the send variant as `letter`, and offered in the review drawer as its own pill.
 
 ## Follow-ups
 
