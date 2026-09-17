@@ -90,8 +90,11 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
     }
   }
   if (ctx.ask === "reply") {
-    // Every link but the opt-out, which the footer adds and the reader is entitled to.
-    const links = (content.bodyMd.match(/https?:\/\/\S+/g) ?? []).filter((url) => !/\/api\/u\//.test(url));
+    // Every link but the opt-out, which the footer adds and the reader is entitled to: the
+    // full signed /api/u/ link, or the short /u/<id>.<sig> form printed in plain text.
+    const links = (content.bodyMd.match(/https?:\/\/\S+/g) ?? []).filter(
+      (url) => !/\/api\/u\//.test(url) && !/\/u\/[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{12}\b/.test(url),
+    );
     if (links.length > 0) hardFails.push(`this message asks for a reply but carries a link: ${links[0]}`);
     if (content.ctaUrl) hardFails.push("this message asks for a reply but still renders a button");
   }

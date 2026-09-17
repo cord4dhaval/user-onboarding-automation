@@ -191,6 +191,14 @@ check("plural and bold forms too", avoidedWord("two **sign-offs** today", plainL
 check("part of a longer word is not", avoidedWord("the unblockedness", plainList) === null);
 
 console.log("short unsubscribe link");
+{
+  const { validate } = await import("../engine/validate");
+  const replyMail = renderTemplate(frame, { ...mv, opt_out_short_url: "https://app.example.com/u/aqjxxEDjLfqAP6N1.4c2J-6xEByV2" }, { subject: "How many of 9 hours are focused?", slotText: "Scene.", slots: { opening: "**Open.**", question: "**Which one?**" }, ask: "reply" });
+  const verdict = validate({ ...replyMail, claimsMade: [] } as never, { channelKey: "email", ask: "reply", isReply: false, priorClaims: [] } as never);
+  check("a reply ask with the short unsubscribe link passes validation", !verdict.hardFails.some((f: string) => f.includes("carries a link")));
+  const withLink = validate({ ...replyMail, bodyMd: replyMail.bodyMd + "\nSee https://teamgrid.ai/pricing", claimsMade: [] } as never, { channelKey: "email", ask: "reply", isReply: false, priorClaims: [] } as never);
+  check("a reply ask with any other link still fails", withLink.hardFails.some((f: string) => f.includes("carries a link")));
+}
 const personHex = "6aa8f1c440e32dfa803fa375";
 const short = shortUnsubscribeUrl("https://app.example.com/", personHex)!;
 check("short link is short", short.length < 60 && short.startsWith("https://app.example.com/u/"));
