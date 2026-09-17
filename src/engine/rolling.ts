@@ -332,7 +332,8 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
       "These people asked about the product. Each email makes them think: no way, it can do that? It explains one thing simply, never a list of features.",
       "Five small blocks, a blank line between each: 1 their moment, a line from their own day (opening, then scene); 2 the hidden truth, what it costs or hides (scene, or one cost line for money); 3 the no-way part in reveal: what TeamGrid already knows or does, said plainly and true; 4 the safety line in limit: no screenshots, nothing people type is recorded; 5 question: one short closing line. Then the button.",
       "60 to 110 words. Short lines, one thing per line. If it needs more words, add a line; never make a line longer. The reader must understand it in one quick read.",
-      "Pick the hook from lead_type.sequence and the idea from the idea bank that fit this lead best. Their business can colour a line or two; the email stays simple enough for any founder.",
+      "Start from the idea, then the hook: plan from writing.ideas (best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got), and use the idea's hook and proof. Every plan step names idea_refs. Two leads should rarely get the same idea. Their business can colour a line or two; the email stays simple enough for any founder.",
+      "Show, do not describe. When the reveal is about the 6pm summary, time per app or the hours of a day, add receipt: a small sample card right after it, titled as a sample (\"A sample 6pm summary:\", \"A sample day's apps:\", \"A sample day:\"), 2 to 4 lines using only the figures in writing.facts.samples. The nouns may fit their business (\"dealer order lines\"); the figures stay as the sample shows them. The idea's card tag says which card fits.",
       "Humor is an add-on, not a style. Use one light line only where it fits this lead and this idea naturally (the quick call that took 47 minutes, MIS_final_FINAL_v3.xlsx, the punch machine). Most emails have none. Joke about habits, never about people.",
       "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, appraisal, resignation, CTC, ₹ and lakh. Simple English, respectful to the team.",
       "Never colours or screen words (teal, blue, grey, dashboard, widget). Never spy or verdict words (monitor, catch, spy, lazy, unproductive employee). Never a customer quote or a result nobody measured.",
@@ -442,6 +443,20 @@ export const CTA_TEXTS = [
 export function screenWords(text: string): string[] {
   const hits = String(text ?? "").match(/\b(teal|in blue|in grey|in gray|dashboard|widgets?)\b/gi);
   return [...new Set((hits ?? []).map((h) => h.toLowerCase()))];
+}
+
+/**
+ * Figures on a sample card that the product's published samples do not carry. A card
+ * titled "A sample 6pm summary" is only honest when its hours, times and percentages are
+ * the ones on the product's own site; the nouns around them may fit the reader's business.
+ */
+export function unsampledFigures(lines: string[], samples: string[]): string[] {
+  const spelled: Record<string, string> = { one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10", eleven: "11", twelve: "12" };
+  const figures = (text: string) =>
+    (String(text ?? "").replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/gi, (w) => spelled[w.toLowerCase()] ?? w).match(/\d+(?:[.,:]\d+)*\s?(?:h|m|%)?(?![a-z])/gi) ?? [])
+      .map((f) => f.replace(/\s+/g, "").toLowerCase());
+  const known = new Set(samples.flatMap(figures));
+  return [...new Set(lines.flatMap(figures).filter((f) => !known.has(f)))];
 }
 
 /** A day-1 receipt: 2 to 5 short lines under a title that says they are a sample. */

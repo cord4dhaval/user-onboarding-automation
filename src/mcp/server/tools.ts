@@ -19,7 +19,8 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, effectiveBand, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { IDEA_CAP, ideaUsage, ideasOf } from "../../engine/ideas.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, unsampledFigures, effectiveBand, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -792,6 +793,8 @@ export const TOOLS: ToolDef[] = [
                 goal: goalDef,
                 product,
                 actions: actions.filter((a) => String(a.goalInstanceId) === String(goal._id)),
+                goalInstanceId: String(goal._id),
+                goalKey: String(goal.goalKey),
               })
             : null,
         /**
@@ -1028,6 +1031,7 @@ export const TOOLS: ToolDef[] = [
                   "Invent it for this lead. The angle is stored as its slug, so results are counted per idea.",
               },
               hook: { type: "string", description: "Optional. How the idea lands: story, rupee_math, question, comparison, proof, or your own word." },
+              idea_refs: { type: "array", items: { type: "number" }, description: "The idea numbers from lead_card writing.ideas this step is built on. Required where the product's idea bank is tagged." },
               format: { type: "string", enum: ["text", "letter", "html"], description: "Optional intention; the writer decides at compose time." },
               why: { type: "string" },
               advance_if: { type: "string" },
@@ -1099,7 +1103,30 @@ export const TOOLS: ToolDef[] = [
           // emails are only the engine's fallback here.
           st.template_key = frameKey;
           delete st.templateKey;
-          if (st.format !== undefined && st.format !== "text" && st.format !== "html") delete st.format;
+          if (st.format !== undefined && st.format !== "text" && st.format !== "html" && st.format !== "letter") delete st.format;
+        }
+        // Every step names the ideas it is built on, when the product's idea bank is tagged, and a
+        // step whose ideas the campaign has already given to many leads this week is refused, so
+        // the bank is used rather than the same few scenes.
+        const productDocForIdeas = await db.collection(C.products).findOne({ _id: new ObjectId(String(instance.productId)) }, { projection: { "config.writing.ideas": 1 } });
+        const bank = ideasOf(productDocForIdeas);
+        if (bank.length) {
+          const known = new Map(bank.map((idea) => [idea.n, idea]));
+          const usage = await ideaUsage({ orgId: ctx.orgId, productId: String(instance.productId), goalKey: String(instance.goalKey), excludeInstanceId: String(instance._id) });
+          for (const st of planSteps as Array<Record<string, unknown>>) {
+            const refs = (Array.isArray(st.idea_refs) ? st.idea_refs : []).map(Number).filter((n) => Number.isFinite(n));
+            if (refs.length === 0) {
+              throw new Error(`step ${String(st.id)} names no idea. Pick from lead_card writing.ideas (best_fit first) and pass idea_refs, for example [16]. A new idea still names the ideas it came from. Nothing was written.`);
+            }
+            const unknown = refs.filter((n) => !known.has(n) || known.get(n)!.usable === false);
+            if (unknown.length === refs.length) {
+              throw new Error(`step ${String(st.id)} idea_refs ${unknown.join(", ")} are not usable ideas in the bank. Pick from lead_card writing.ideas. Nothing was written.`);
+            }
+            if (refs.every((n) => (usage.get(n) ?? 0) >= IDEA_CAP)) {
+              throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, already planned for ${IDEA_CAP} or more other leads in this campaign this week. Pick another idea that fits this lead. Nothing was written.`);
+            }
+            st.idea_refs = refs;
+          }
         }
         // An idea this lead was given and did nothing with is spent for them after one send, not
         // two: a short plan cannot afford to say the same thing twice. A click rescues it.
@@ -1673,6 +1700,7 @@ export const TOOLS: ToolDef[] = [
       const plainWriting = ((writer?.config as { writing?: { oneLine?: string; wordsAvoid?: Array<{ word: string; use: string }> } } | undefined)?.writing ?? {});
       const wordsAvoid = (plainWriting.wordsAvoid ?? []).filter((w) => w && w.word);
       const oneLine = String(plainWriting.oneLine ?? "").trim();
+      const samples = (((writer?.config as { writing?: { facts?: { samples?: unknown[] } } } | undefined)?.writing?.facts?.samples) ?? []).map(String).filter(Boolean);
       const lead = await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) });
       const companyWords = companyTokens(lead);
       const warnings: string[] = [];
@@ -1740,6 +1768,11 @@ export const TOOLS: ToolDef[] = [
           const hard = avoidedWord([t.subject, t.body, t.ps].map((v) => String(v ?? "")).join("\n"), wordsAvoid);
           if (hard) {
             throw new Error(`step ${step} uses "${hard.word}", a word readers stumble on. Say "${hard.use}" instead. Nothing was written.`);
+          }
+          const card = structuredParts.get(t)?.receipt;
+          const invented = card && samples.length ? unsampledFigures(card.items, samples) : [];
+          if (invented.length) {
+            throw new Error(`step ${step} sample card has ${invented.map((f) => `"${f}"`).join(", ")}, which the product's published samples do not show. Use only the figures in writing.facts.samples; the nouns may fit their business. Nothing was written.`);
           }
           // A reader who has never heard of the product must not have to guess what it is.
           // A hot email's reveal already says what the product does, in the reader's moment.
@@ -2128,6 +2161,7 @@ export const TOOLS: ToolDef[] = [
                   hook: String(t.hook ?? stepRows.get(Number(t.step_id))?.hook ?? "") || undefined,
                   format: String(t.format),
                   formatWhy: String(t.format_why ?? "").trim(),
+                  ...(Array.isArray(stepRows.get(Number(t.step_id))?.idea_refs) ? { ideaRefs: (stepRows.get(Number(t.step_id))!.idea_refs as unknown[]).map(Number) } : {}),
                 }
               : {}),
             // Claude writes the slot, not the whole message: the greeting, call to action

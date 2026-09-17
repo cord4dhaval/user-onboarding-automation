@@ -82,6 +82,8 @@ export const action = z.object({
   /** Plain text, designed, or a letter (HTML that looks typed). Read at send and outranks the template's own format. */
   format: z.enum(["text", "html", "letter"]).optional(),
   formatWhy: z.string().optional(),
+  /** The idea-bank numbers the touch was built on, copied from its plan step, for learning by idea. */
+  ideaRefs: z.array(z.number()).optional(),
   /** How the touch is laid out: story, cost_box, checklist or cost_and_list. Learned on like format. */
   layout: z.string().optional(),
   /**

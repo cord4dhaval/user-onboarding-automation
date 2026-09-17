@@ -190,6 +190,16 @@ have been read.
   the punch machine, the Monday Excel report). The last step a campaign has room for is
   hook "closing". In a cold campaign, teach first and ask
   a question. Otherwise:
+  Where writing.ideas is on the card, start every step from the idea bank, then the hook.
+  writing.ideas.best_fit is the whole bank ranked for this lead (their words, role,
+  segment), each with the hook that lands it, the capability that makes it true and the
+  sample card that can show it; used_this_week says how many other leads in this campaign
+  got it. Pick from best_fit, or blend two ideas, or invent one "from #n" when this lead
+  needs it; every step names idea_refs (the numbers). Two leads should rarely get the same
+  idea: skip one in used_a_lot_this_week unless nothing else fits, and plan_goal refuses a
+  step whose ideas are all used by 5 other leads this week, one this lead already had, or
+  a number the bank marks unusable. The theme joins the idea to their business in a few
+  words.
   Then plan_goal with one step, or two where the second clearly depends on nothing the
   first could teach you. Each step carries a theme: one idea in a few words that you
   invent for this lead — a real moment from their week, not a feature name. Leave
@@ -332,6 +342,12 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
              format "letter", cta_text from the allowed list naming what they will see.
              writing.hook_examples show the bar. compose_batch refuses a hot email with no
              reveal, no safety line, screen words, or a reply-only ask outside "closing".
+             Show, do not describe: where the step's idea has a card (summary, apps or
+             day, on writing.ideas), add receipt after the reveal, titled as a sample
+             ("A sample 6pm summary:"), 2 to 4 lines using only the figures in
+             writing.facts.samples. Nouns may fit their business ("GST filings" for a CA
+             firm); the times, hours and percentages stay as the sample shows them. It
+             renders plain, in the same section as the reveal, and counts in the words.
   format     "text": a plain note that asks for a reply and carries no link; the
              default for early touches and anyone who has not clicked. "letter": HTML
              that looks typed, bold phrases and a link on its own words, no logo, box

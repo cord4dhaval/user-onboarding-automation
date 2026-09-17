@@ -273,11 +273,17 @@ export function renderLetter(resolved: ResolvedTemplate, brand?: LetterBrand): s
         // with the product's name in the brand shade.
         if (block.slot === "reveal") {
           const lines = block.text.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
+          // A sample card that follows the reveal sits inside the same section: the claim, then
+          // the sample that shows it.
+          const title = blocks[i + 1];
+          const card = blocks[i + 2];
+          const withCard = title?.kind === "text" && title.tight && card?.kind === "list" && card.fromParts && card.style === "receipt";
           out.push(
             `<div style="margin:0 0 16px;padding:12px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">${lines
-              .map((part, k) => para(withName(inline(part)), k === lines.length - 1 ? 0 : 8))
-              .join("")}</div>`,
+              .map((part, k) => para(withName(inline(part)), k === lines.length - 1 && !withCard ? 0 : 8))
+              .join("")}${withCard ? `${para(inline(title.text), 6)}${receipt(card.items, accent)}` : ""}</div>`,
           );
+          if (withCard) i += 2;
           break;
         }
         // The signature goes in front of the P.S., which is the last thing a reader reads.
@@ -352,14 +358,10 @@ ${out.join("\n")}
  * with fixed-width figures, and the activity words in the colours the product uses for them
  * (focus in the accent, meetings in blue, idle in grey).
  */
-function receipt(lines: string[], accent: string): string {
-  const colour = (html: string) =>
-    html
-      .replace(/\b(deep focus|focused|focus)\b/gi, `<strong style="color:${inkOf(accent)};">$1</strong>`)
-      .replace(/\b(meetings?)\b/gi, `<strong style="color:#2563eb;">$1</strong>`)
-      .replace(/\b(idle)\b/gi, `<strong style="color:#80868b;">$1</strong>`);
-  const rows = lines.map((line) => colour(inline(line))).join("<br />");
-  return `<div style="margin:0;background:#f6f7f9;border-radius:8px;padding:10px 14px;font-family:SFMono-Regular,Menlo,Consolas,'Courier New',monospace;font-size:13px;line-height:1.75;color:#202124;">${rows}</div>`;
+function receipt(lines: string[], _accent: string): string {
+  // Plain on purpose (Dhaval, 2026-09-17): no colours inside the card, only the sample itself.
+  const rows = lines.map((line) => inline(line)).join("<br />");
+  return `<div style="margin:0;background:#f6f7f9;border-radius:8px;padding:10px 14px;font-family:SFMono-Regular,Menlo,Consolas,'Courier New',monospace;font-size:13px;line-height:1.75;color:#202124;white-space:pre-wrap;">${rows}</div>`;
 }
 
 /** The accent darkened until white text on it, or it on white, reads at 4.5:1. */

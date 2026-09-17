@@ -2,6 +2,7 @@ import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, themePerformance } from "./outcomes.js";
+import { IDEA_BUSY_AT, ideaUsage, ideasHadBy, ideasOf, rankIdeas } from "./ideas.js";
 import { FRAME_BODY_MAX_WORDS, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
 
 /**
@@ -27,6 +28,13 @@ export interface WritingBrief {
   facts: unknown;
   examples: string[];
   examples_note: string;
+  ideas: {
+    note: string;
+    best_fit: Array<{ n: number; title: string; detail?: string; hook: string; proof: string; plan?: string; card?: string; used_this_week: number }>;
+    others: string[];
+    used_a_lot_this_week: number[];
+    already_had: number[];
+  } | null;
   subject_avoid: string[];
   product_in_one_line: string | null;
   plain_words: Array<{ word: string; use: string }>;
@@ -47,6 +55,9 @@ export async function writingBriefFor(input: {
   goal: Document | null;
   product: Document | null;
   actions: Document[];
+  /** The lead's run of this campaign, so the idea bank can be ranked against the rest of it. */
+  goalInstanceId?: string;
+  goalKey?: string;
 }): Promise<WritingBrief> {
   const { orgId, productId, person, goal, product, actions } = input;
   const db = await getDb();
@@ -100,7 +111,31 @@ export async function writingBriefFor(input: {
     .limit(20)
     .toArray();
 
-  const examples = shuffle((writing.examples ?? []).map(String)).slice(0, EXAMPLES_SHOWN);
+  // The idea bank, ranked for this lead, when the product's ideas are tagged. Ten random
+  // examples are only the fallback for a product whose ideas are not.
+  const bank = ideasOf(product);
+  let ideas: WritingBrief["ideas"] = null;
+  if (bank.length && input.goalInstanceId && input.goalKey) {
+    const [usage, had] = await Promise.all([
+      ideaUsage({ orgId, productId, goalKey: input.goalKey, excludeInstanceId: input.goalInstanceId }),
+      ideasHadBy({ orgId, goalInstanceId: input.goalInstanceId }),
+    ]);
+    const leadText = [form.main_problem, form.role, person.role, form.team_size, (person.enrichment as { siteText?: unknown } | undefined)?.siteText]
+      .map((v) => String(v ?? ""))
+      .join(" ")
+      .slice(0, 2000);
+    const ranked = rankIdeas(bank, { text: leadText, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had);
+    const fresh = ranked.filter((i) => !i.already_had);
+    ideas = {
+      note:
+        "Plan from these. best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. Every plan step names idea_refs. You may blend two ideas or invent a new one from them; still name the ideas it came from.",
+      best_fit: fresh.slice(0, 8).map((i) => ({ n: i.n, title: i.title, detail: i.detail, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week })),
+      others: fresh.slice(8).map((i) => `#${i.n} ${i.title} (${i.hook}${i.used_this_week ? `, used by ${i.used_this_week} this week` : ""})`),
+      used_a_lot_this_week: [...usage.entries()].filter(([, count]) => count >= IDEA_BUSY_AT).map(([n]) => n).sort((a, b) => a - b),
+      already_had: [...had].sort((a, b) => a - b),
+    };
+  }
+  const examples = ideas ? [] : shuffle((writing.examples ?? []).map(String)).slice(0, EXAMPLES_SHOWN);
 
   return {
     mode: "rolling",
@@ -138,6 +173,7 @@ export async function writingBriefFor(input: {
     },
     facts: writing.facts ?? null,
     examples,
+    ideas,
     examples_note:
       "A random sample of past ideas, shown for the standard a message should clear. They are not a menu: invent the idea that fits this person, and use one of these only if it truly is the best fit.",
     subject_avoid: (writing.subjectAvoid ?? []).map(String),

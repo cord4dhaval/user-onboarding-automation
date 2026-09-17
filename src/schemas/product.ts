@@ -90,6 +90,24 @@ export const productConfig = z.object({
       phrases: z.array(z.string()).default([]),
       /** Short emails that clear the bar for a hot lead: the shape and the "no way" moment. */
       hookExamples: z.array(z.string()).default([]),
+      /** The idea bank, tagged: the hook that lands each idea, the capability that proves it, its sample card. */
+      ideas: z
+        .array(
+          z.object({
+            n: z.number(),
+            title: z.string(),
+            detail: z.string().optional(),
+            hook: z.string(),
+            proof: z.string(),
+            plan: z.string().optional(),
+            card: z.enum(["summary", "apps", "day", "none"]).optional(),
+            segments: z.array(z.string()).default([]),
+            keywords: z.array(z.string()).default([]),
+            usable: z.boolean().default(true),
+            note: z.string().optional(),
+          }),
+        )
+        .default([]),
       wordsAvoid: z.array(z.object({ word: z.string(), use: z.string() })).default([]),
     })
     .optional(),

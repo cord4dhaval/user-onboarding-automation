@@ -228,7 +228,7 @@ console.log("reveal emails");
   check("button words come from cta_text", text.bodyMd.includes("See the first day: https://t.example/x"));
   const branded = renderLetter(resolveBlocks(frame as never, mv, reveal as never), { name: "TeamGrid", accent: "#28b4ae" });
   check("receipt in a letter: grey fixed-width card between the thin lines", branded.includes("background:#f6f7f9") && branded.includes("monospace") && branded.indexOf("border-top:1px solid #e5e7eb") < branded.indexOf("background:#f6f7f9"));
-  check("receipt words in the product's colours", branded.includes('color:#2563eb;">meetings</strong>') && branded.includes('color:#80868b;">idle</strong>'));
+  check("sample card carries no colours", !branded.includes("#2563eb") && !branded.includes("#80868b") && branded.includes("white-space:pre-wrap"));
   check("button carries the reveal words", branded.includes("See the first day &rarr;</a>"));
   check("hot emails stay short", LEAD_TYPE_PROFILES.hot.maxWords === 110 && LEAD_TYPE_PROFILES.cold.maxWords === 125 && LEAD_TYPE_PROFILES.hot.reveal === true);
   check("hot hooks start with the daily question and end on the closing note", LEAD_TYPE_PROFILES.hot.sequence?.[0]?.hook === "daily_question" && LEAD_TYPE_PROFILES.hot.sequence?.at(-1)?.hook === "closing");
@@ -247,6 +247,41 @@ console.log("reveal emails");
   check("customers say is caught", unprovenClaims("Customers love how simple it is.").length > 0);
   check("caught and wasting are caught", unprovenClaims("We caught them wasting the afternoon.").length === 2);
   check("a plain product line is not", unprovenClaims("TeamGrid shows each hour of the day, and the apps behind it.").length === 0);
+}
+
+console.log("idea bank");
+{
+  const { rankIdeas } = await import("../engine/ideas");
+  const bank = [
+    { n: 7, title: "The 8 PM status calls", hook: "daily_question", proof: "6pm summary", keywords: ["update", "calls", "evening"], segments: ["founder"] },
+    { n: 71, title: "Forty forgot to punch requests a month", hook: "office_habit", proof: "attendance from activity", keywords: ["attendance", "punch", "biometric", "payroll"], segments: ["hr_ops"] },
+    { n: 20, title: "A manufacturer case", hook: "hidden_bill", proof: "none", keywords: ["attendance"], usable: false },
+  ];
+  const hr = rankIdeas(bank, { text: "Attendance and payroll disputes every month, biometric punch misses", segment: "hr_ops" }, new Map(), new Set());
+  check("an HR lead with punch problems gets the punch idea first", hr[0]?.n === 71);
+  check("an unusable idea is never offered", !hr.some((i) => i.n === 20));
+  const busy = rankIdeas(bank, { text: "Attendance and payroll disputes, biometric punch", segment: "hr_ops" }, new Map([[71, 6]]), new Set());
+  check("an idea many leads got this week drops down", busy[0]?.n === 7);
+  const had = rankIdeas(bank, { text: "Attendance punch biometric payroll", segment: "hr_ops" }, new Map(), new Set([71]));
+  check("an idea the lead already had goes last", had.at(-1)?.n === 71 && had.at(-1)?.already_had === true);
+  const withCard = renderLetter(
+    resolveBlocks(frame as never, mv, {
+      slotText: "Scene.",
+      slots: { opening: "**Open.**", reveal: "By 6pm, TeamGrid writes what each desk did today.", limit: "No screenshots. Nothing people type is recorded.", question: "**Close.**" },
+      parts: { receipt: { title: "A sample 6pm summary:", items: ["Operations · 6h 40m tracked · 4.2h focus", "Shipped: 214 order lines reconciled"] } },
+    } as never),
+    { name: "TeamGrid", accent: "#28b4ae" },
+  );
+  const sections = withCard.split("border-top:1px solid #e5e7eb").length - 1;
+  check("the sample card sits inside the reveal section, not a second one", sections === 1 && withCard.indexOf("writes what each desk") < withCard.indexOf("A sample 6pm summary:") && withCard.indexOf("A sample 6pm summary:") < withCard.indexOf("214 order lines"));
+}
+
+console.log("sample card figures");
+{
+  const { unsampledFigures } = await import("../engine/rolling");
+  const samples = ["Sample 6pm summary: Operations, 6h 40m tracked, 4.2h deep focus; shipped: 214 order lines reconciled; flag: one research task stalled again, week four.", "hourly scores 11:00–12:00 85%, 14:00–15:00 40%."];
+  check("site figures pass with the nouns changed", unsampledFigures(["Accounts · 6h 40m tracked · 4.2h focus", "Done: 214 GST entries matched", "Stuck: 1 notice reply, week 4", "11:00–12:00 · 85%"], samples).length === 0);
+  check("an invented figure is named", JSON.stringify(unsampledFigures(["Sales · 7h 10m tracked", "Done: 214 calls"], samples)) === JSON.stringify(["7h", "10m"]));
 }
 
 console.log("short unsubscribe link");
