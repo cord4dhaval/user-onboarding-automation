@@ -1515,7 +1515,7 @@ export const TOOLS: ToolDef[] = [
           .filter((r) => r.when && r.what)
           // One style for every line: lower case after the colon ("Monday: the drawing waits."),
           // unless the first word is a name-like one such as TeamGrid or WhatsApp.
-          .map((r) => ({ ...r, what: /^[A-Z][a-z]+\b/.test(r.what) && !/^[A-Z][a-z]+[A-Z]/.test(r.what) ? r.what[0]!.toLowerCase() + r.what.slice(1) : r.what }))
+          .map((r) => ({ ...r, what: /^[A-Z][a-z]*\b/.test(r.what) && !/^[A-Z][a-z]+[A-Z]/.test(r.what) ? r.what[0]!.toLowerCase() + r.what.slice(1) : r.what }))
           .map((r) => ({ ...r, what: /[.!?]$/.test(r.what) ? r.what : `${r.what}.` }));
         const options = (Array.isArray(t.reply_options) ? (t.reply_options as unknown[]) : []).map((x) => String(x ?? "").trim()).filter(Boolean);
         if (timeline.length) {
