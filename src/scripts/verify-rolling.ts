@@ -227,8 +227,9 @@ console.log("reveal emails");
   check("receipt in plain text: title, then aligned lines with no marker", text.bodyMd.includes("A sample hour in TeamGrid:\n  14:00–15:00 · score 40%\n  meetings in blue · idle in grey"));
   check("button words come from cta_text", text.bodyMd.includes("See the first day: https://t.example/x"));
   const branded = renderLetter(resolveBlocks(frame as never, mv, reveal as never), { name: "TeamGrid", accent: "#28b4ae" });
-  check("receipt in a letter: grey fixed-width card between the thin lines", branded.includes("background:#f6f7f9") && branded.includes("monospace") && branded.indexOf("border-top:1px solid #e5e7eb") < branded.indexOf("background:#f6f7f9"));
-  check("sample card carries no colours", !branded.includes("#2563eb") && !branded.includes("#80868b") && branded.includes("white-space:pre-wrap"));
+  check("receipt in a letter: a bordered card in the body font between the thin lines", branded.includes("border-radius:10px;border-collapse:separate") && !branded.includes("monospace") && branded.indexOf("border-top:1px solid #e5e7eb") < branded.indexOf("border-radius:10px;border-collapse:separate"));
+  check("the card's title is its small header", branded.includes("SAMPLE HOUR IN TEAMGRID") && !branded.includes("A sample hour in TeamGrid:"));
+  check("sample card carries no colour words' colours", !branded.includes("#2563eb") && !branded.includes("#80868b"));
   check("button carries the reveal words", branded.includes("See the first day &rarr;</a>"));
   check("hot emails stay short", LEAD_TYPE_PROFILES.hot.maxWords === 110 && LEAD_TYPE_PROFILES.cold.maxWords === 125 && LEAD_TYPE_PROFILES.hot.reveal === true);
   check("hot hooks start with the daily question and end on the closing note", LEAD_TYPE_PROFILES.hot.sequence?.[0]?.hook === "daily_question" && LEAD_TYPE_PROFILES.hot.sequence?.at(-1)?.hook === "closing");
@@ -272,8 +273,22 @@ console.log("idea bank");
     } as never),
     { name: "TeamGrid", accent: "#28b4ae" },
   );
-  const sections = withCard.split("border-top:1px solid #e5e7eb").length - 1;
-  check("the sample card sits inside the reveal section, not a second one", sections === 1 && withCard.indexOf("writes what each desk") < withCard.indexOf("A sample 6pm summary:") && withCard.indexOf("A sample 6pm summary:") < withCard.indexOf("214 order lines"));
+  const sections = withCard.split("padding:12px 0;border-top:1px solid #e5e7eb").length - 1;
+  check("the sample card sits inside the reveal section, not a second one", sections === 1 && withCard.indexOf("writes what each desk") < withCard.indexOf("SAMPLE 6PM SUMMARY · OPERATIONS") && withCard.indexOf("SAMPLE 6PM SUMMARY · OPERATIONS") < withCard.indexOf("214 order lines"));
+  check("a summary card leads with its 2 figures", withCard.includes(">6h 40m</div>") && withCard.includes(">4.2h</div>"));
+}
+
+console.log("sample card layout");
+{
+  const { sampleRows } = await import("../engine/html");
+  const kinds = (lines: string[]) => sampleRows(lines).map((r) => r.kind).join(",");
+  check("apps read as bars and a total", kinds(["Excel · 4h 53m", "Chrome · 1h 22m", "Teams · 12m", "6h 27m active · 0m idle"]) === "bar,bar,bar,total");
+  check("a tracked day reads as a time list", kinds(["09:04 standup · 18m", "12:18 break · paused on its own · 31m"]) === "timed,timed");
+  const hour = sampleRows(["11:00–12:00 · 85%", "14:00–15:00 · score 40%"]);
+  check("hourly scores read as bars labelled by the hour", hour[0]?.kind === "bar" && (hour[0] as { label: string }).label === "11–12" && (hour[1] as { amount: number }).amount === 40);
+  check("a summary reads as figures and labelled rows", kinds(["Operations · 6h 40m tracked · 4.2h focus", "Done: 214 order lines reconciled", "Stuck: 1 task, opened again, week 4"]) === "headline,labelled,labelled");
+  const break_ = sampleRows(["12:18 break · paused on its own · 31m"])[0] as { what: string; value: string };
+  check("a time row keeps its words and its duration", break_.what === "Break, paused on its own" && break_.value === "31m");
 }
 
 console.log("sample card figures");

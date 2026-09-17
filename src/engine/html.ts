@@ -254,7 +254,7 @@ export function renderLetter(resolved: ResolvedTemplate, brand?: LetterBrand): s
         // with the product's name in the accent.
         if (block.tight && next?.kind === "list" && next.fromParts && next.style === "receipt") {
           out.push(
-            `<div style="margin:0 0 16px;padding:12px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">${para(withName(inline(block.text)), 8)}${receipt(next.items, accent)}</div>`,
+            `<div style="margin:0 0 16px;padding:12px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">${sampleCard(block.text, next.items, ink)}</div>`,
           );
           i++;
           break;
@@ -281,7 +281,7 @@ export function renderLetter(resolved: ResolvedTemplate, brand?: LetterBrand): s
           out.push(
             `<div style="margin:0 0 16px;padding:12px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">${lines
               .map((part, k) => para(withName(inline(part)), k === lines.length - 1 && !withCard ? 0 : 8))
-              .join("")}${withCard ? `${para(inline(title.text), 6)}${receipt(card.items, accent)}` : ""}</div>`,
+              .join("")}${withCard ? sampleCard(title.text, card.items, ink) : ""}</div>`,
           );
           if (withCard) i += 2;
           break;
@@ -354,14 +354,113 @@ ${out.join("\n")}
 }
 
 /**
- * A day-1 receipt: the lines written the way the product shows a day, in a quiet grey card
- * with fixed-width figures, and the activity words in the colours the product uses for them
- * (focus in the accent, meetings in blue, idle in grey).
+ * A day-1 receipt in the designed format: the lines as they were written, in the body font.
  */
-function receipt(lines: string[], _accent: string): string {
-  // Plain on purpose (Dhaval, 2026-09-17): no colours inside the card, only the sample itself.
-  const rows = lines.map((line) => inline(line)).join("<br />");
-  return `<div style="margin:0;background:#f6f7f9;border-radius:8px;padding:10px 14px;font-family:SFMono-Regular,Menlo,Consolas,'Courier New',monospace;font-size:13px;line-height:1.75;color:#202124;white-space:pre-wrap;">${rows}</div>`;
+function receipt(lines: string[], accent: string): string {
+  return sampleCard("", lines, accent);
+}
+
+type SampleRow =
+  | { kind: "headline"; name: string; tracked: string; focus: string }
+  | { kind: "total"; text: string }
+  | { kind: "bar"; label: string; value: string; amount: number }
+  | { kind: "timed"; at: string; what: string; value: string }
+  | { kind: "labelled"; label: string; value: string }
+  | { kind: "other"; text: string };
+
+const minutesOf = (text: string): number | null => {
+  const m = /^(?:(\d+)h)?\s*(?:(\d+)m)?$/.exec(text.trim());
+  if (!m || (!m[1] && !m[2])) return null;
+  return Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0);
+};
+
+/** Reads a sample card's lines ("Excel · 4h 53m", "09:04 standup · 18m", "Done: 214 …") into rows. */
+export function sampleRows(lines: string[]): SampleRow[] {
+  return lines.map((raw): SampleRow => {
+    const line = raw.trim();
+    let m = /^(?:(.+?)\s*·\s*)?(\d+h(?:\s*\d+m)?)\s+tracked\s*·\s*([\d.]+h)\s+(?:deep\s+)?focus$/i.exec(line);
+    if (m) return { kind: "headline", name: m[1] ?? "", tracked: m[2]!, focus: m[3]! };
+    m = /^(\d+h(?:\s*\d+m)?|\d+m)\s+active(?:\s*·\s*(\d+m)\s+idle)?$/i.exec(line);
+    if (m) return { kind: "total", text: `${m[1]} active${m[2] ? ` · ${m[2]} idle` : ""}` };
+    m = /^(\d{1,2})(?::(\d{2}))?\s*[–-]\s*(\d{1,2})(?::(\d{2}))?\s*·\s*(?:score\s*)?(\d{1,3})%$/i.exec(line);
+    if (m) {
+      const whole = (m[2] ?? "00") === "00" && (m[4] ?? "00") === "00";
+      const label = whole ? `${m[1]}–${m[3]}` : line.split("·")[0]!.trim();
+      return { kind: "bar", label, value: `${m[5]}%`, amount: Number(m[5]) };
+    }
+    m = /^(\d{1,2}:\d{2})\s+(.+?)\s*·\s*([^·]+)$/.exec(line);
+    if (m && minutesOf(m[3]!) !== null) {
+      const what = m[2]!.replace(/\s*·\s*/g, ", ");
+      return { kind: "timed", at: m[1]!, what: what.charAt(0).toUpperCase() + what.slice(1), value: m[3]!.trim() };
+    }
+    m = /^(.+?)\s*·\s*([^·]+)$/.exec(line);
+    if (m && minutesOf(m[2]!) !== null) return { kind: "bar", label: m[1]!, value: m[2]!.trim(), amount: minutesOf(m[2]!)! };
+    m = /^([A-Z][A-Za-z]{2,11}):\s+(.+)$/.exec(line);
+    if (m) return { kind: "labelled", label: m[1]!, value: m[2]! };
+    return { kind: "other", text: line };
+  });
+}
+
+/**
+ * A sample card as a small piece of the product (Dhaval chose this look, 2026-09-17): a light
+ * bordered card in the body font, the title as a small header with the day's total on the
+ * right, and the lines laid out for what they are. Two headline figures for a summary, bars for
+ * time per app or score per hour, a time list for a tracked day, and label rows for Done and
+ * Stuck. Tables only, so it holds in Gmail and Outlook; the brand shade is the only colour.
+ */
+function sampleCard(title: string, lines: string[], ink: string): string {
+  const rows = sampleRows(lines);
+  const font = "font-family:Arial,Helvetica,sans-serif;";
+  const rule = "border-top:1px solid #e5e7eb;";
+  const headline = rows.find((r): r is Extract<SampleRow, { kind: "headline" }> => r.kind === "headline");
+  const total = rows.find((r): r is Extract<SampleRow, { kind: "total" }> => r.kind === "total");
+  const bars = rows.filter((r): r is Extract<SampleRow, { kind: "bar" }> => r.kind === "bar");
+  const hourly = bars.length > 0 && bars.every((b) => b.value.endsWith("%"));
+  const best = hourly ? bars.reduce((a, b) => (b.amount > a.amount ? b : a)) : null;
+  const heading = [title.trim().replace(/:$/, "").replace(/^an?\s+/i, ""), headline?.name ?? ""].filter(Boolean).join(" · ").toUpperCase();
+  const right = total ? total.text : best ? `Best: ${best.label}` : "";
+  const parts: string[] = [];
+  if (heading || right) {
+    parts.push(
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="${font}font-size:11px;letter-spacing:0.06em;color:#5f6368;">${inline(heading)}</td>${
+        right ? `<td align="right" style="${font}font-size:12px;font-weight:700;color:${ink};white-space:nowrap;">${inline(right)}</td>` : ""
+      }</tr></table>`,
+    );
+  }
+  if (headline) {
+    const figure = (value: string, label: string, color: string) =>
+      `<td width="50%" valign="top" style="${font}"><div style="font-size:20px;line-height:1.2;font-weight:700;color:${color};">${inline(value)}</div><div style="font-size:12px;color:#5f6368;">${label}</div></td>`;
+    parts.push(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 10px;"><tr>${figure(headline.tracked, "tracked", ink)}${figure(headline.focus, "deep focus", "#202124")}</tr></table>`);
+  }
+  if (bars.length) {
+    const most = Math.max(...bars.map((b) => b.amount), 1);
+    const scale = hourly ? 100 : most;
+    parts.push(
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 0;">${bars
+        .map((b) => {
+          const width = Math.max(3, Math.min(100, Math.round((b.amount * 100) / scale)));
+          return `<tr><td width="30%" style="padding:6px 10px 6px 0;${font}font-size:13px;color:#202124;">${inline(b.label)}</td><td style="padding:6px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td bgcolor="#eef2f2" style="background:#eef2f2;border-radius:4px;font-size:0;line-height:0;"><table role="presentation" width="${width}%" cellpadding="0" cellspacing="0"><tr><td bgcolor="${ink}" height="10" style="background:${ink};height:10px;border-radius:4px;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr></table></td><td width="64" align="right" style="padding:6px 0 6px 10px;${font}font-size:13px;font-weight:700;color:#202124;white-space:nowrap;">${inline(b.value)}</td></tr>`;
+        })
+        .join("")}</table>`,
+    );
+  }
+  const listed = rows.filter((r) => r.kind === "timed" || r.kind === "labelled" || r.kind === "other");
+  if (listed.length) {
+    parts.push(
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 0;">${listed
+        .map((r) => {
+          if (r.kind === "timed") {
+            return `<tr><td width="52" style="padding:7px 0;${rule}${font}font-size:13px;color:#5f6368;">${inline(r.at)}</td><td style="padding:7px 8px 7px 0;${rule}${font}font-size:14px;color:#202124;">${inline(r.what)}</td><td align="right" style="padding:7px 0;${rule}${font}font-size:14px;font-weight:700;color:#202124;white-space:nowrap;">${inline(r.value)}</td></tr>`;
+          }
+          if (r.kind === "labelled") {
+            return `<tr><td width="52" valign="top" style="padding:7px 0;${rule}${font}font-size:13px;color:#5f6368;">${inline(r.label)}</td><td colspan="2" style="padding:7px 0;${rule}${font}font-size:14px;color:#202124;">${inline(r.value)}</td></tr>`;
+          }
+          return `<tr><td colspan="3" style="padding:7px 0;${rule}${font}font-size:14px;color:#202124;">${inline((r as { text: string }).text)}</td></tr>`;
+        })
+        .join("")}</table>`,
+    );
+  }
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:10px;border-collapse:separate;margin:4px 0 0;"><tr><td style="padding:12px 14px 8px;">${parts.join("")}</td></tr></table>`;
 }
 
 /** The accent darkened until white text on it, or it on white, reads at 4.5:1. */
