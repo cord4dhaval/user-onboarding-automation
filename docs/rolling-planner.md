@@ -349,7 +349,12 @@ Dhaval asked whether the 88 approved ideas were really used. They were not. No p
   A blend or a new idea still names the ideas it came from. compose_batch copies the refs onto the action as `ideaRefs`, so what_works can report by idea later.
 - **Show, do not describe.** When the idea has a card, a hot email adds `receipt` after the reveal: a title that says it is a sample, and 2 to 4 plain lines. The letter renders it without colours, inside the same thin-line section as the reveal. compose_batch refuses any figure (hours, minutes, times, percentages, counts) that `writing.facts.samples` does not show (`unsampledFigures` in rolling.ts). The nouns may fit the reader's business. Two samples were added from teamgrid.ai: app time for a sample day, and a sample 6pm summary.
 - **Routines.** The Acquire prompt says to start from the idea bank, then the hook. The Advance prompt carries the sample card rule. Both triggers were pushed.
-- **teamgrid_leads_v3.** The 46 waiting no-way emails were skipped. Each lead was replanned on two ideas from a shortlist reserved for them, so no idea went to more than 2 leads in the first picks.
+- **teamgrid_leads_v3.** The 46 waiting no-way emails were skipped. Each lead was replanned on two ideas from a shortlist reserved for them. The result is 23 leads and 46 emails:
+  - 27 different ideas, with no idea used by more than 4 leads (#16, client emails waiting since Monday)
+  - 22 emails with a sample card
+  - every claim checked against `canDo`
+
+  Three emails explained setup ("start with one team", "5 minutes per computer") instead of giving a no-way moment. They were rewritten on #28 (software seats nobody opens) and #40 (the slip heard on the due date). Ideas #47, #52, #80 and #81 (setup, price and trial reassurance) now carry hook `closing`, so they only go into the closing email.
 
 ## Follow-ups
 
