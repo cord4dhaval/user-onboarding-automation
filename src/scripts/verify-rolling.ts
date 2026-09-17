@@ -4,7 +4,7 @@
  *
  *   MASTER_KEY_B64=$(openssl rand -base64 32) npx tsx src/scripts/verify-rolling.ts
  */
-import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, checkpoint, companyTokens, effectiveBand, emojiProneSymbols, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
+import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, unprovenClaims, checkpoint, companyTokens, effectiveBand, emojiProneSymbols, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { applyTextTracking } from "../engine/tracking";
 import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 import { renderHtml, renderLetter } from "../engine/html";
@@ -113,6 +113,7 @@ const frame = [
   { type: "slot", instruct: "", fallback: "fallback scene" },
   { type: "card", slot: "cost", accent: true },
   { type: "list", slot: "shows", style: "check" },
+  { type: "list", slot: "receipt", style: "receipt" },
   { type: "slot", name: "limit", instruct: "" },
   { type: "slot", name: "question", instruct: "" },
   { type: "slot", name: "options", instruct: "" },
@@ -213,6 +214,28 @@ const plainList = [{ word: "sign-off", use: "approval" }, { word: "blocked", use
 check("a hard word is caught with its plain one", avoidedWord("Which sign-off holds orders?", plainList)?.use === "approval");
 check("plural and bold forms too", avoidedWord("two **sign-offs** today", plainList)?.word === "sign-off");
 check("part of a longer word is not", avoidedWord("the unblockedness", plainList) === null);
+
+console.log("reveal emails");
+{
+  const reveal = {
+    slotText: "Picture a normal Tuesday at 2:15pm.",
+    slots: { opening: "**Open.**", question: "**5 minutes per computer. 7 days. No card.**", limit: "No screenshots. Nothing people type is recorded.", cta_text: "See the first day" },
+    parts: { receipt: { title: "A sample hour in TeamGrid:", items: ["14:00–15:00 · score 40%", "meetings in blue · idle in grey"] } },
+  };
+  const text = renderTemplate(frame, mv, reveal as never);
+  check("receipt in plain text: title, then aligned lines with no marker", text.bodyMd.includes("A sample hour in TeamGrid:\n  14:00–15:00 · score 40%\n  meetings in blue · idle in grey"));
+  check("button words come from cta_text", text.bodyMd.includes("See the first day: https://t.example/x"));
+  const branded = renderLetter(resolveBlocks(frame as never, mv, reveal as never), { name: "TeamGrid", accent: "#28b4ae" });
+  check("receipt in a letter: grey fixed-width card between the thin lines", branded.includes("background:#f6f7f9") && branded.includes("monospace") && branded.indexOf("border-top:1px solid #e5e7eb") < branded.indexOf("background:#f6f7f9"));
+  check("receipt words in the product's colours", branded.includes('color:#2563eb;">meetings</strong>') && branded.includes('color:#80868b;">idle</strong>'));
+  check("button carries the reveal words", branded.includes("See the first day &rarr;</a>"));
+  check("hot emails have room for the receipt", LEAD_TYPE_PROFILES.hot.maxWords === 170 && LEAD_TYPE_PROFILES.cold.maxWords === 125 && LEAD_TYPE_PROFILES.hot.reveal === true);
+  check("hot sequence ends on the closing note", LEAD_TYPE_PROFILES.hot.sequence?.at(-1)?.hook === "closing" && LEAD_TYPE_PROFILES.hot.sequence?.[1]?.hook === "the_hour");
+  check("an invented testimonial is caught", unprovenClaims("Founders who install this do not say nice dashboard. They say wow.").length > 0);
+  check("customers say is caught", unprovenClaims("Customers love how simple it is.").length > 0);
+  check("caught and wasting are caught", unprovenClaims("We caught them wasting the afternoon.").length === 2);
+  check("a plain product line is not", unprovenClaims("TeamGrid shows each hour of the day, and the apps behind it.").length === 0);
+}
 
 console.log("short unsubscribe link");
 {

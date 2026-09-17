@@ -305,7 +305,7 @@ export type ResolvedBlock =
   | { kind: "preheader"; text: string }
   | { kind: "heading"; level: number; text: string }
   | { kind: "text"; text: string; tight?: boolean }
-  | { kind: "list"; style: "bullet" | "strike" | "check"; items: string[]; fromParts?: boolean }
+  | { kind: "list"; style: "bullet" | "strike" | "check" | "receipt"; items: string[]; fromParts?: boolean }
   | { kind: "card"; title?: string; rows: Array<{ label: string; value: string }>; accent: boolean; fromParts?: boolean }
   | { kind: "callout"; text: string }
   | { kind: "divider" }
@@ -436,7 +436,7 @@ export function resolveBlocks(
         const items = (part?.items ?? []).map((item) => merge(String(item ?? ""), vars).trim()).filter(Boolean);
         if (items.length) {
           if (part?.title) out.push({ kind: "text", text: merge(String(part.title), vars), tight: true });
-          out.push({ kind: "list", style: (String(block.style ?? "check") as "bullet" | "strike" | "check"), items, fromParts: true });
+          out.push({ kind: "list", style: (String(block.style ?? "check") as "bullet" | "strike" | "check" | "receipt"), items, fromParts: true });
         }
       } else {
         const rows = (part?.rows ?? [])
@@ -452,7 +452,7 @@ export function resolveBlocks(
     if (type === "list" && Array.isArray(block.items)) {
       const items = (block.items as unknown[]).map((item) => merge(String(item), vars)).filter(Boolean);
       if (items.length) {
-        const style = String(block.style ?? "bullet") as "bullet" | "strike" | "check";
+        const style = String(block.style ?? "bullet") as "bullet" | "strike" | "check" | "receipt";
         out.push({ kind: "list", style, items });
       }
       continue;
@@ -500,7 +500,9 @@ export function resolveBlocks(
       // A message asking for a reply carries no button. Two asks in one mail is the
       // reader choosing between them, and the cheaper one is the one we want taken.
       if (precomposed?.ask !== "reply") {
-        out.push({ kind: "cta", text: merge(block.fixed, vars), url: merge(block.url, vars) });
+        // A written touch may name its own button words, from the short list compose_batch allows.
+        const words = typeof precomposed?.slots?.cta_text === "string" && precomposed.slots.cta_text.trim() ? precomposed.slots.cta_text.trim() : block.fixed;
+        out.push({ kind: "cta", text: merge(words, vars), url: merge(block.url, vars) });
       }
       continue;
     }
@@ -572,7 +574,12 @@ export function renderTemplate(
         break;
       case "list":
         // Written parts read as a short indented dash list; a template's own list keeps its bullets.
-        parts.push(block.items.map((item) => (block.fromParts ? `  – ${plain(item)}` : `• ${plain(item)}`)).join("\n"));
+        // A day-1 receipt reads as aligned lines with no marker, like the product's own view.
+        parts.push(
+          block.items
+            .map((item) => (block.style === "receipt" ? `  ${plain(item)}` : block.fromParts ? `  – ${plain(item)}` : `• ${plain(item)}`))
+            .join("\n"),
+        );
         break;
       case "card":
         parts.push(

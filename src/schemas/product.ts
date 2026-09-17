@@ -71,9 +71,11 @@ export const productConfig = z.object({
       facts: z
         .object({
           plans: z.array(z.object({ name: z.string(), price: z.string(), includes: z.array(z.string()).default([]) })).default([]),
-          canDo: z.array(z.object({ text: z.string(), plan: z.string().optional() })).default([]),
+          canDo: z.array(z.object({ text: z.string(), plan: z.string().optional(), source: z.string().optional() })).default([]),
           neverDoes: z.array(z.string()).default([]),
           unverified: z.array(z.string()).default([]),
+          /** Sample figures the product's own site shows, quotable only as a sample. */
+          samples: z.array(z.string()).default([]),
           limits: z.array(z.string()).default([]),
         })
         .default({}),

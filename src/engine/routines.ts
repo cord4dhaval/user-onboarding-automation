@@ -181,11 +181,14 @@ have been read.
   how much this group is trying new ideas.
   Read writing.lead_type before anything else: it says what kind of people this campaign
   holds and how hard to push. In a hot campaign (they filled in our own form and asked
-  about the product) every step leads to signing up. Plan two steps, after_days 1 and 1:
-  the idea that fits this lead as the reason to start now, then a short step on how
-  little setup takes and what they see on day one. After a click with no signup, the
-  next step is about finishing setup. The last step a campaign has room for is hook
-  "closing": ask whether to close their request. In a cold campaign, teach first and ask
+  about the product) every step leads to signing up, and every email should make them
+  think "no way it can show that". writing.lead_type.sequence lists the jobs in order,
+  each marked sent or not: hidden_bill, the_hour, sacred_cow, no_watching, meeting_bill,
+  closing. Plan the next two jobs not yet sent, after_days 1 and 2, with hook set to the
+  job's name and a theme that fits the job to this lead's own business (the dealer desk
+  at 3pm, the clinic front desk after lunch). After a click with no signup, the next
+  step still takes the next job; the_hour and no_watching are the strongest there.
+  The last step a campaign has room for is hook "closing". In a cold campaign, teach first and ask
   a question. Otherwise:
   Then plan_goal with one step, or two where the second clearly depends on nothing the
   first could teach you. Each step carries a theme: one idea in a few words that you
@@ -314,13 +317,21 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   wordplay or metaphor; name the problem the way they would say it ("orders wait
   for approval"), and use the plain word from writing.plain_words ("approval", not
   "sign-off"; "stuck", not "blocked").
-  lead_type  read writing.lead_type first; its default_ask and rules override the
-             format and ask defaults here. In a hot campaign every touch asks "link"
-             with format "letter": the idea is the reason to start, question is the one
-             line leading into the trial ("Setup takes about 5 minutes per computer, and
-             the 7-day trial needs no card."), and ps offers a walk-through by replying
-             "call". Only hook "closing" may ask for a reply. compose_batch refuses a
-             reply-only touch in a hot campaign.
+  lead_type  read writing.lead_type first; its default_ask, rules and sequence override
+             the defaults here. A hot email explains nothing: it lets them see their own
+             office, in four beats. 1 a scene with a day or time; 2 a salary number in
+             rupees, labelled as an example (cost_lines); 3 receipt: what day 1 would show,
+             written like the product's own view and titled as a sample ("A sample hour
+             in TeamGrid:", "14:00–15:00 · score 40%", "meetings in blue · idle in grey"),
+             only from writing.facts and facts.samples; 4 the twist in limit, before the
+             button: no screenshots, nothing people type is recorded. Up to 170 words.
+             ask "link", format "letter", cta_text the reveal ("See the first day") except
+             on hidden_bill. question: "5 minutes per computer. 7 days. No card." ps: a
+             walk-through by replying call. Subjects are money or a scene: "3 of 9 hours
+             on a 30-person payroll", "What Tuesday 2:15pm actually looked like". Never a
+             customer quote, a result nobody measured, "caught" or "wasting".
+             compose_batch refuses a hot email with no receipt, no twist, or a reply-only
+             ask outside hook "closing".
   format     "text": a plain note that asks for a reply and carries no link; the
              default for early touches and anyone who has not clicked. "letter": HTML
              that looks typed, bold phrases and a link on its own words, no logo, box

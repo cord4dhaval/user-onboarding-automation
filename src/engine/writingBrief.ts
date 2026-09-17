@@ -18,7 +18,7 @@ const EXAMPLES_SHOWN = 10;
 export interface WritingBrief {
   mode: "rolling";
   frame_key: string;
-  lead_type: { type: string; label: string; who: string; paced_as: string | null; default_ask: string; reply_ask_only_for_hooks: string[]; rules: string[] } | null;
+  lead_type: { type: string; label: string; who: string; paced_as: string | null; default_ask: string; reply_ask_only_for_hooks: string[]; body_max_words: number; sequence: Array<{ hook: string; job: string; sent: boolean }> | null; rules: string[] } | null;
   max_steps_per_plan: number;
   body_max_words: number;
   watch_hours: Record<string, number>;
@@ -113,11 +113,16 @@ export async function writingBriefFor(input: {
         paced_as: effectiveBand((person.temp as { band?: string } | undefined)?.band, type, form.timeline) ?? null,
         default_ask: profile.ask,
         reply_ask_only_for_hooks: profile.replyHooks,
+        body_max_words: profile.maxWords,
+        // Which jobs this lead has already had, so the next plan takes the next one.
+        sequence: profile.sequence
+          ? profile.sequence.map((s) => ({ ...s, sent: actions.some((a) => String(a.hook ?? "") === s.hook && ["sent", "dispatched"].includes(String(a.status))) }))
+          : null,
         rules: profile.rules,
       };
     })(),
     max_steps_per_plan: ROLLING_MAX_STEPS,
-    body_max_words: FRAME_BODY_MAX_WORDS,
+    body_max_words: leadTypeOf(goal) ? LEAD_TYPE_PROFILES[leadTypeOf(goal)!].maxWords : FRAME_BODY_MAX_WORDS,
     watch_hours: Object.fromEntries(Object.entries(WATCH_WINDOW_MS).map(([k, ms]) => [k, ms / 3_600_000])),
     group,
     their_words: {
@@ -207,7 +212,7 @@ export async function writingBriefFor(input: {
       "Choose format with a reason. text: a plain note that asks for a reply and carries no link; the default for early touches and anyone who has not clicked in a campaign with no lead type or a cold one. letter: HTML that looks typed, with bold phrases and a link on its own words and no logo, box or button; for a link ask, or where a bolded phrase carries the idea. html: the branded design, for a sample, table or screen, or a lead who engages with designed mail.",
       "One ask: a reply question, or the button. Never both.",
       "Write in parts, not one block: opening (one sentence under 90 characters), scene (one or two short paragraphs, at most two **bold** phrases), cost_lines (up to 3: label under 40 characters, value under 50), shows (up to 3 lines under 50 characters), limit (one line, only where the fit is partial), question (one line), plus the timeline or reply_options your layout_tests arm asks for. The frame makes the cost lines a tinted box and the list a check list in HTML, and a label with an arrow line under it and dashes in plain text.",
-      `The whole body, lists and titles included, stays within ${FRAME_BODY_MAX_WORDS} words.`,
+      `The whole body, lists and titles included, stays within ${leadTypeOf(goal) ? LEAD_TYPE_PROFILES[leadTypeOf(goal)!].maxWords : FRAME_BODY_MAX_WORDS} words.`,
       "Write quantities as digits: 5 days, 9 hours, 3 of 9 hours, 30 people, ₹4 lakh. A skimming eye stops on digits and passes over words.",
       "In plain text there is no hidden preview line: the inbox shows the opening after the subject. Make the opening add to the subject, never repeat it.",
       "Only these symbols: → – × ÷ = ₹ • ✓. Never ✔ ☑ ➡ ▶ ⚠ ™ or other symbols phones turn into emoji, never styled Unicode letters, no capitals for emphasis, no emoji.",

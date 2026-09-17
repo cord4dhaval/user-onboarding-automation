@@ -298,6 +298,12 @@ export interface LeadTypeProfile {
   ask: "link" | "reply";
   /** Hooks on which a reply ask is still allowed where the default ask is the link. */
   replyHooks: string[];
+  /** Most words in the body. Hot emails carry a day-1 receipt and need the room. */
+  maxWords: number;
+  /** The jobs written touches do in order, where the type has a sequence. */
+  sequence?: Array<{ hook: string; job: string }>;
+  /** Whether each touch must show the day-1 receipt and the privacy twist before its ask. */
+  reveal?: boolean;
   rules: string[];
 }
 
@@ -309,15 +315,30 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 24,
     ask: "link",
     replyHooks: ["closing"],
+    maxWords: 170,
+    reveal: true,
+    // Dhaval, 2026-09-17: every email should make the reader think "no way it can show that".
+    // One job per email, in this order; each is fitted to the lead's own business.
+    sequence: [
+      { hook: "hidden_bill", job: "The salary bill nobody sees: paid hours with no work attached, in rupees for a team their size." },
+      { hook: "the_hour", job: "One real hour of their week (Tuesday 2:15pm, the dealer desk at 3pm) and what that hour looks like when it is written down. The one that makes them stare." },
+      { hook: "sacred_cow", job: "A habit they never question (the 11am standup on the best hour, the Monday review) and what it costs, shown in hours." },
+      { hook: "no_watching", job: "What day 1 shows without watching anyone: when the day started, focus, meetings, idle, the written summary. Privacy is the point of this one." },
+      { hook: "meeting_bill", job: "One meeting as a bill: people in the room × hours × salary, the invoice their calendar never sends." },
+      { hook: "closing", job: "The last note: should we close the request, or reply call for a walk-through." },
+    ],
     rules: [
-      "These people asked about the product. Every touch pushes the next step: sign up with the trial link.",
-      "The idea for this lead is the reason to act now, not a lesson. Keep it short, then lead straight into the trial.",
-      "ask \"link\" and format \"letter\" (or \"html\" where a table or screen carries the idea). Never a plain note that only asks a question.",
-      "question is the one line that leads into the trial link, for example \"Setup takes about 5 minutes per computer, and the 7-day trial needs no card.\" It does not have to be a question.",
-      "ps offers a walk-through for anyone not ready to start alone: \"Prefer a quick walk-through first? Reply \\\"call\\\" and we will send 15-minute times.\"",
-      "Where they clicked a trial link and have not signed up, the next touch is about finishing setup: how short it is and what they see on day one.",
-      "The last touch of the campaign may ask for a reply instead (hook \"closing\"): \"Should we close your request, or is it still on your list?\" with reply options where the lead's test arm uses them.",
-      "Subject promises what they get or see, in plain words (\"See which dealer orders are stuck, from tomorrow\"), not a question to think about.",
+      "These people asked about the product. Every email should make them think: no way it can show that. It explains nothing; it lets them see their own office.",
+      "Four beats, in order. 1 a scene they recognise, with a day or time (Tuesday 2:15pm, the 11am standup). 2 a number they feel in salary, in rupees, labelled as an example. 3 what day 1 would show, written like a receipt in the receipt part (a sample hour, the apps, focus, meetings, idle), never a feature list. 4 the twist, in limit, before the button: no screenshots, nothing people type is recorded; patterns, not people.",
+      "Beat 3 missing and they nod and delete. Beat 4 missing and it feels like spyware.",
+      "Follow lead_type.sequence: the next job not yet sent to this lead, fitted to their business. One idea per email; never four features in one mail.",
+      "receipt lines are a sample, and its title says so (\"A sample hour in TeamGrid:\"). Write them the way the product shows a day: \"14:00–15:00 · score 40%\", \"meetings in blue · idle in grey\", \"09:04 standup · 18m\". Only what writing.facts says the product shows.",
+      "Numbers about their team are examples and say so. Never a customer quote, a testimonial or a result nobody measured. Never \"caught\" or \"wasting\": the hour had no owner.",
+      "ask \"link\" and format \"letter\". cta_text is the reveal, not the signup: \"See the first day\", \"See your team's hours\" or \"See a day without watching anyone\"; \"Start your free trial\" on the hidden bill email.",
+      "question is the one line before the button, for example \"5 minutes per computer. 7 days. No card.\"",
+      "ps offers a walk-through: \"P.S. Prefer a 15-minute walk-through first? Reply call.\"",
+      "Subject is money or a scene they open to check: \"3 of 9 hours on a 30-person payroll\", \"What Tuesday 2:15pm actually looked like\", \"Your 11am standup is sitting on the best hour\", \"12 people in one meeting = 12 hours of salary\". Never \"try TeamGrid\". Preheader: \"Not a report. The hour, the apps, and the salary that went with it.\"",
+      "The closing email (hook \"closing\") may ask for a reply instead: close the request, or reply call.",
     ],
   },
   warm: {
@@ -327,6 +348,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 48,
     ask: "link",
     replyHooks: ["question", "closing"],
+    maxWords: 125,
     rules: [
       "One idea from their world, then the trial link or a short reply question when a link has already been ignored.",
     ],
@@ -338,6 +360,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 72,
     ask: "reply",
     replyHooks: [],
+    maxWords: 125,
     rules: [
       "Teach first. Plain text, a question they can answer in a line, and no link until they reply or click.",
     ],
@@ -349,6 +372,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 72,
     ask: "reply",
     replyHooks: [],
+    maxWords: 125,
     rules: [
       "Say what is new or what may have changed for them, and ask one easy question before offering the trial again.",
     ],
@@ -360,6 +384,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 24,
     ask: "link",
     replyHooks: ["question"],
+    maxWords: 125,
     rules: [
       "Help them reach the first useful report, then lead to the plan that fits. Never ask them to sign up again.",
     ],
@@ -391,4 +416,25 @@ export function watchWindowFor(channel: string | undefined, leadType: LeadType |
   const base = watchWindowMs(channel);
   if (!leadType) return base;
   return Math.min(base, LEAD_TYPE_PROFILES[leadType].watchHours * 3_600_000);
+}
+
+/** Words a hot email's button may carry: the reveal, or the plain signup. */
+export const CTA_TEXTS = ["Start your free trial", "See the first day", "See your team's hours", "See a day without watching anyone", "See your own hours"] as const;
+
+/** A day-1 receipt: 2 to 5 short lines under a title that says they are a sample. */
+export const RECEIPT_MAX_LINES = 5;
+export const RECEIPT_LINE_MAX_CHARS = 48;
+
+/**
+ * Lines that read as proof nobody has: a customer or founder being quoted, a result
+ * attributed to people who use the product, or catching staff at something.
+ */
+export function unprovenClaims(text: string): string[] {
+  const body = String(text ?? "");
+  const hits = [
+    ...body.matchAll(/\b(founders?|customers?|clients?|users?|managers?|owners?|teams?|companies|people)\s+(who|that)\s+(use|install|tried|try|switch|start)\w*[^.]{0,60}?\b(say|said|tell|told|report|found|saw)\b/gi),
+    ...body.matchAll(/\b(customers?|clients?|users?)\s+(say|tell us|love|report)\b/gi),
+    ...body.matchAll(/\b(caught|wasting|slacking|lazy)\b/gi),
+  ].map((m) => m[0]);
+  return [...new Set(hits)];
 }

@@ -19,7 +19,7 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, effectiveBand, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, effectiveBand, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -1380,6 +1380,19 @@ export const TOOLS: ToolDef[] = [
                   "Layout test, story ideas only: 2 to 4 moments in order, when is a day or time (\"Monday\", \"8 PM\"), what is " +
                   "one short sentence. Shown under the opening. Follow the arm in lead_card writing.layout_tests.",
               },
+              receipt: {
+                type: "object",
+                properties: { title: { type: "string" }, lines: { type: "array", items: { type: "string" } } },
+                description:
+                  "Hot emails: what day 1 would show, written like the product's own view, as a sample. title says it is a " +
+                  "sample (default \"A sample hour in TeamGrid:\"); 2 to 5 lines under 48 characters, for example " +
+                  "\"14:00–15:00 · score 40%\", \"meetings in blue · idle in grey\", \"09:04 standup · 18m\".",
+              },
+              cta_text: {
+                type: "string",
+                enum: ["Start your free trial", "See the first day", "See your team's hours", "See a day without watching anyone", "See your own hours"],
+                description: "Optional words on the button. The reveal (\"See the first day\") rather than the signup, except on the hidden bill email.",
+              },
               reply_options: {
                 type: "array",
                 items: { type: "string" },
@@ -1449,6 +1462,8 @@ export const TOOLS: ToolDef[] = [
         shows?: { title: string; items: string[] };
         timeline?: Array<{ when: string; what: string }>;
         options?: string[];
+        receipt?: { title: string; items: string[] };
+        ctaText?: string;
         layout: string;
       }>();
       const CAPS_OK = new Set(["CRM", "HRMS", "MIS", "KPI", "KPIS", "GST", "TDS", "ITR", "HVAC", "OEM", "CTC", "SLA", "ERP", "SAAS", "B2B", "D2C", "HR", "IT", "AI", "CEO", "COO", "CFO", "CA", "USA", "UAE", "NOC", "RERA", "AMC", "MEP", "ICU", "OPD", "BPO", "KPO", "FMCG", "TAT", "PAN", "GSTIN", "EMI", "CAD", "BOQ", "RFQ", "PO", "QA", "QC", "UPI", "NBFC"]);
@@ -1456,7 +1471,7 @@ export const TOOLS: ToolDef[] = [
       const armFor = (test: LayoutTest) => layoutArm(String(instance.personId), test);
       for (const t of touches) {
         const step = String(t.step_id);
-        const structured = ["opening", "scene", "question", "cost_lines", "shows"].some((k) => t[k] !== undefined);
+        const structured = ["opening", "scene", "question", "cost_lines", "shows", "receipt"].some((k) => t[k] !== undefined);
         if (!structured) {
           if (!String(t.body ?? "").trim()) throw new Error(`step ${step} has no body. Write body, or the parts: opening, scene, question. Nothing was written.`);
           continue;
@@ -1548,10 +1563,30 @@ export const TOOLS: ToolDef[] = [
           throw new Error(`step ${step} asks for a reply but the question does not end with a question mark. Nothing was written.`);
         }
 
+        // The day-1 receipt: a sample of what the product shows, never a feature list.
+        const rawReceipt = (t.receipt ?? null) as { title?: unknown; lines?: unknown } | null;
+        const receiptLines = (Array.isArray(rawReceipt?.lines) ? (rawReceipt!.lines as unknown[]) : []).map((x) => String(x ?? "").trim()).filter(Boolean);
+        const receiptTitle = String(rawReceipt?.title ?? "").trim() || "A sample hour in TeamGrid:";
+        if (receiptLines.length) {
+          if (receiptLines.length < 2 || receiptLines.length > RECEIPT_MAX_LINES) {
+            throw new Error(`step ${step} receipt has ${receiptLines.length} lines; use 2 to ${RECEIPT_MAX_LINES}. Nothing was written.`);
+          }
+          for (const line of receiptLines) {
+            if (line.length > RECEIPT_LINE_MAX_CHARS) throw new Error(`step ${step} receipt line "${line}" is ${line.length} characters; keep each under ${RECEIPT_LINE_MAX_CHARS + 1}. Nothing was written.`);
+          }
+          if (!/sample|example/i.test(receiptTitle)) {
+            throw new Error(`step ${step} receipt title "${receiptTitle}" must say it is a sample (for example "A sample hour in TeamGrid:"): these are not the reader's real numbers. Nothing was written.`);
+          }
+        }
+        const ctaText = String(t.cta_text ?? "").trim();
+        if (ctaText && !(CTA_TEXTS as readonly string[]).includes(ctaText)) {
+          throw new Error(`step ${step} cta_text "${ctaText}" is not one of: ${CTA_TEXTS.join(", ")}. Nothing was written.`);
+        }
+        if (ctaText && ask !== "link") throw new Error(`step ${step}: cta_text goes with ask "link" only. Nothing was written.`);
         const costTitle = String(t.cost_intro ?? "").trim() || "For example:";
         const showsTitle = String(t.shows_intro ?? "").trim() || "What TeamGrid would show you:";
         // Plain language: one idea per sentence, short enough to read once.
-        const tooLong = longSentences([opening, scene, limitLine, question, costTitle, showsTitle, ...timeline.map((r) => r.what)].join("\n"));
+        const tooLong = longSentences([opening, scene, limitLine, question, costTitle, showsTitle, receiptTitle, ...timeline.map((r) => r.what)].join("\n"));
         if (tooLong.length) {
           throw new Error(`step ${step} has a sentence over ${SENTENCE_MAX_WORDS} words: "${tooLong[0]}". Split it into short sentences, one idea each. Nothing was written.`);
         }
@@ -1562,6 +1597,7 @@ export const TOOLS: ToolDef[] = [
           scene,
           rows.length ? [costTitle, ...rows.map((r) => `${r.label} ${r.value}`)].join("\n") : "",
           items.length ? [showsTitle, ...items].join("\n") : "",
+          receiptLines.length ? [receiptTitle, ...receiptLines].join("\n") : "",
           limitLine,
           question,
           options.length ? ["Reply with one number:", ...options.map((o, i) => `${i + 1} = ${o}`)].join("\n") : "",
@@ -1576,7 +1612,9 @@ export const TOOLS: ToolDef[] = [
           ...(items.length ? { shows: { title: showsTitle, items } } : {}),
           ...(timeline.length ? { timeline } : {}),
           ...(options.length ? { options } : {}),
-          layout: `${base}${timeline.length ? "+timeline" : ""}${options.length ? "+options" : ""}`,
+          ...(receiptLines.length ? { receipt: { title: receiptTitle, items: receiptLines } } : {}),
+          ...(ctaText ? { ctaText } : {}),
+          layout: `${base}${receiptLines.length ? "+receipt" : ""}${timeline.length ? "+timeline" : ""}${options.length ? "+options" : ""}`,
         });
       }
       for (const t of touches) {
@@ -1654,6 +1692,18 @@ export const TOOLS: ToolDef[] = [
           const profile = LEAD_TYPE_PROFILES[leadType];
           const askNow = String(t.ask ?? "link");
           const hookNow = String(t.hook ?? stepRows.get(Number(t.step_id))?.hook ?? "").trim().toLowerCase();
+          // The reveal: every hot email shows the day-1 receipt and says, before its button, that
+          // nobody is watched. Without the first the reader nods and deletes; without the second
+          // it reads as spyware. The closing note is exempt.
+          const sp = structuredParts.get(t);
+          if (profile.reveal && sp && !profile.replyHooks.includes(hookNow)) {
+            if (!sp.receipt) {
+              throw new Error(`step ${step} is a ${profile.label.toLowerCase()} email with no receipt. Add receipt: a sample of what day 1 shows (2 to 5 lines, for example "14:00–15:00 · score 40%"). Nothing was written.`);
+            }
+            if (!/screenshot/i.test(sp.limit) || !/\btype|typed|typing\b/i.test(sp.limit)) {
+              throw new Error(`step ${step} needs the twist in limit, before the button: no screenshots, and nothing people type is recorded. Nothing was written.`);
+            }
+          }
           if (profile.ask === "link" && askNow === "reply" && !profile.replyHooks.includes(hookNow)) {
             throw new Error(
               `step ${step} asks only for a reply, but this is a ${profile.label.toLowerCase()} campaign: these people ${profile.who}. ` +
@@ -1683,6 +1733,10 @@ export const TOOLS: ToolDef[] = [
             }
           }
         }
+        const unproven = unprovenClaims([t.subject, t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n"));
+        if (unproven.length) {
+          throw new Error(`step ${step} says "${unproven[0]}". Never quote customers or claim a result nobody measured, and never say anyone was caught or wasting time: the hour had no owner. Nothing was written.`);
+        }
         const named = companyWords.find((token) => everything.includes(token));
         if (named) {
           throw new Error(`step ${step} names their company ("${named}"). Describe what they do instead of printing the name. Nothing was written.`);
@@ -1706,13 +1760,15 @@ export const TOOLS: ToolDef[] = [
         ...(sp.limit ? { limit: sp.limit } : {}),
         ...(sp.timeline ? { timeline: sp.timeline.map((r) => `**${r.when}:** ${r.what}`).join("\n") } : {}),
         ...(sp.options ? { options: ["Reply with one number:", ...sp.options.map((o, i) => `**${i + 1}** = ${o}`)].join("\n") } : {}),
+        ...(sp.ctaText ? { cta_text: sp.ctaText } : {}),
         ...(ps ? { ps } : {}),
       });
       for (const t of touches) {
         const step = String(t.step_id);
         const body = String(t.body ?? "");
         const words = body.split(/\s+/).filter(Boolean).length;
-        const limit = isFrameTouch(t) ? FRAME_BODY_MAX_WORDS : 90;
+        const typeNow = leadTypeOf(campaignDef);
+        const limit = isFrameTouch(t) ? (typeNow ? LEAD_TYPE_PROFILES[typeNow].maxWords : FRAME_BODY_MAX_WORDS) : 90;
         if (words > limit) {
           throw new Error(`step ${step} is ${words} words. Your part is at most ${limit}: one idea in their world and what the product shows about it. Nothing was written.`);
         }
@@ -1846,6 +1902,9 @@ export const TOOLS: ToolDef[] = [
           if (sp && !blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === "opening")) {
             throw new Error(`step ${String(t.step_id)} is written in parts, but the "${key}" template has no place for them. Write body instead. Nothing was written.`);
           }
+          if (sp?.receipt && !blocks.some((b) => String(b.type) === "list" && String(b.slot ?? "") === "receipt")) {
+            throw new Error(`step ${String(t.step_id)} writes a receipt, but the "${key}" template has no place for it. Leave it out. Nothing was written.`);
+          }
           for (const name of ["timeline", "options"] as const) {
             const given = name === "timeline" ? sp?.timeline : sp?.options;
             if (given && !blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === name)) {
@@ -1858,14 +1917,17 @@ export const TOOLS: ToolDef[] = [
             ...(sp
               ? {
                   slots: partSlots(sp, ps ? psLine(ps) : ""),
-                  parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}) },
+                  parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}), ...(sp.receipt ? { receipt: sp.receipt } : {}) },
                 }
               : ps ? { slots: { ps: psLine(ps) } } : {}),
             ...(t.preheader ? { preheader: String(t.preheader).trim() } : {}),
           });
           const total = readableWords(rendered.bodyMd);
-          if (total > 200) {
-            throw new Error(`step ${String(t.step_id)} renders to ${total} words with the "${key}" template. The whole mail stays under 200; cut your part. Nothing was written.`);
+          // Room for the greeting, sign-off, P.S. and opt-out around a body at its type's limit.
+          const typeCap = leadTypeOf(campaignDef);
+          const mailCap = typeCap && LEAD_TYPE_PROFILES[typeCap].maxWords > FRAME_BODY_MAX_WORDS ? 250 : 200;
+          if (total > mailCap) {
+            throw new Error(`step ${String(t.step_id)} renders to ${total} words with the "${key}" template. The whole mail stays under ${mailCap}; cut your part. Nothing was written.`);
           }
         }
       }
@@ -2052,7 +2114,7 @@ export const TOOLS: ToolDef[] = [
                     return {
                       slotText: sp.scene,
                       slots: partSlots(sp, String(t.ps ?? "").trim() ? psLine(String(t.ps).trim()) : ""),
-                      parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}) },
+                      parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}), ...(sp.receipt ? { receipt: sp.receipt } : {}) },
                     };
                   })()
                 : {

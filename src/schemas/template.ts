@@ -51,7 +51,7 @@ export const block = z.discriminatedUnion("type", [
    */
   z.object({
     type: z.literal("list"),
-    style: z.enum(["bullet", "strike", "check"]).default("bullet"),
+    style: z.enum(["bullet", "strike", "check", "receipt"]).default("bullet"),
     items: z.array(z.string()).min(1).optional(),
     slot: z.string().optional(),
   }),
