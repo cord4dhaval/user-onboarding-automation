@@ -163,10 +163,11 @@ const letter = renderLetter(resolveBlocks(frame as never, mv, {
   parts: { cost: { title: "For example:", rows: [{ label: "₹4 lakh order", value: "5 days lost" }] }, shows: { title: "What TeamGrid would show you:", items: ["what moved"] } },
 } as never));
 check("letter: bold phrases", letter.includes("<strong>one phrase</strong>") && letter.includes("<strong>1</strong> = quotes"));
-check("letter: no logo, box or button", !/<img|<table|border-radius|background:/.test(letter));
+check("letter: no logo, box or button", !/<img|<table|border-radius/.test(letter) && !/background:(?!#ffffff)/.test(letter));
+check("letter: white page and dark text, never a dark-capable colour scheme", letter.includes('content="light"') && !letter.includes("light dark") && letter.includes("color:#202124"));
 check("letter: cost as a line and an arrow", letter.includes("₹4 lakh order<br />&rarr; <strong>5 days lost</strong>"));
-check("letter: the call to action is a link on its words", letter.includes('>Start your free trial</a>'));
-check("letter: opt-out invites a reply", letter.includes('Reply "remove me", or <a href="https://u.example/api/u/long?s=abc">unsubscribe</a>'));
+check("letter: the call to action is a link on its words", letter.includes('style="color:#1a73e8;">Start your free trial</a>'));
+check("letter: opt-out invites a reply", letter.includes('Reply "remove me", or <a href="https://u.example/api/u/long?s=abc" style="color:#5f6368;">unsubscribe</a>'));
 
 console.log("plain-text rules");
 check("spelled quantities found", spelledQuantities("It waits five days, three of nine hours, for two sign-offs.").length === 3);

@@ -166,8 +166,11 @@ ${preheaderHtml(preheader)}
  * a bold phrase, a short list, a link on its words — so the reader sees a note and the
  * engine still gets bold emphasis, a clean link and click tracking.
  *
- * Text colour and background are left to the client on purpose, so dark mode treats it the
- * way it treats a person's mail.
+ * Colours are the ones a typed Gmail message has: dark grey text on white, blue links. They
+ * used to be left to the client with a "light dark" colour scheme declared, and any viewer on
+ * a dark screen that honours that declaration (the review preview, some web mail) painted the
+ * whole note black. Mail apps with their own dark mode still darken it the way they darken a
+ * person's mail.
  */
 export function renderLetter(resolved: ResolvedTemplate): string {
   const preheader = resolved.blocks.find((b) => b.kind === "preheader");
@@ -218,11 +221,11 @@ export function renderLetter(resolved: ResolvedTemplate): string {
       case "cta":
         // A link on its own words, not a button: a button is the first thing that makes a
         // note look like a campaign.
-        out.push(para(`<a href="${attr(block.url)}">${inline(block.text)}</a>`));
+        out.push(para(`<a href="${attr(block.url)}" style="color:#1a73e8;">${inline(block.text)}</a>`));
         break;
       case "optout":
         out.push(
-          `<p style="margin:24px 0 0;font-size:12px;opacity:.7;">Not useful? Reply "remove me", or <a href="${attr(block.url)}">unsubscribe</a>.</p>`,
+          `<p style="margin:24px 0 0;font-size:12px;color:#5f6368;">Not useful? Reply "remove me", or <a href="${attr(block.url)}" style="color:#5f6368;">unsubscribe</a>.</p>`,
         );
         break;
     }
@@ -233,12 +236,13 @@ export function renderLetter(resolved: ResolvedTemplate): string {
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<meta name="color-scheme" content="light dark" />
+<meta name="color-scheme" content="light" />
+<meta name="supported-color-schemes" content="light" />
 <title>${esc(resolved.subject ?? "")}</title>
 </head>
-<body style="margin:0;padding:0;">
+<body style="margin:0;padding:0;background:#ffffff;">
 ${preheaderHtml(preheader)}
-<div style="max-width:600px;padding:8px 4px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;">
+<div style="max-width:600px;padding:8px 4px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#202124;background:#ffffff;">
 ${out.join("\n")}
 </div>
 </body>
