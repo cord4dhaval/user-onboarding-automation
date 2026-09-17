@@ -271,6 +271,18 @@ Dhaval: the leads in teamgrid_leads_v3 filled in our own ad form, so they are ho
 
 Found the same day: 18 of those plain-language emails failed at their due time. Nothing was sent. `validate()` exempted only the full `/api/u/` opt-out link, so the short `/u/<id>.<sig>` link in a plain-text reply ask read as a second link. Fixed in 3a0e09f.
 
+## Letter format: white and branded, 2026-09-17
+
+- **White, always.** The letter declared a "light dark" colour scheme and set no colours, so the review's inbox preview on a dark screen showed it black. It now declares light only, with dark grey text on white (8357965).
+- **Sender name.** The hello@teamgrid.ai channel had a bare `from`, so inboxes showed the sender as "hello". It is now "TeamGrid <hello@teamgrid.ai>".
+- **Branding (032ae44).** Dhaval compared seven layouts and picked one, asking for the logo only twice. `renderLetter(resolved, letterBrandFrom(kit, product))` now builds:
+  - the logo and product name on top;
+  - the "what you would see" part between two thin grey lines, with the product name in a darker shade of the brand accent and accent ticks (no left border);
+  - one button in that shade;
+  - a signature with the logo, the name, `config.writing.signatureLine` and the website, placed before the P.S.
+  - The problem stays in black bold.
+- **Waiting emails.** The 19 letters already held for review were sent back through the approval gate, re-rendered with click tracking and held again. Letters due later render branded when they come due.
+
 ## Follow-ups
 
 
