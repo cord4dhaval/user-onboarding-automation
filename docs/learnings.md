@@ -865,6 +865,63 @@ What was decided:
 
 ---
 
+## 2026-09-17 — What respected senders do in plain-text email (web research)
+
+Source: web research on 2026-09-17 into how mail apps show text/plain and what cold-email tools, email platforms and plain-text senders do. Read: Microsoft and Apple support pages, Unicode's emoji data (version 18.0), Litmus, Campaign Monitor, Mailchimp, HubSpot's plain versus HTML tests, Boomerang (40 million emails), Gong (304,000 emails), lemlist, Instantly, Woodpecker, Nielsen Norman Group, GMass, and Google's sender rules. Asked by Dhaval after the written layout went live, to make plain-text mail more appealing before touching HTML again.
+
+### How mail apps show plain text
+
+- **Gmail shows plain text in a proportional font** and offers no fixed-width option, so anything lined up with spaces falls out of line. Column alignment is not possible.
+- **Outlook joins lines** ("We removed extra line breaks") by default. A blank line between blocks is never removed. A short line ending in `.` `?` `!` or `:` is kept, and so is a line starting with two spaces or a tab. A line of 40 or more characters with no end punctuation pulls the next line up into it.
+- **Hard wrapping at 76–78 characters leaves ragged lines on a phone.** Each paragraph should go out as one line and let the app wrap it. Ours already does (quoted-printable).
+- **There is no separate preview line in plain text.** The inbox preview is the first words of the body, so after the short greeting the opening sentence is the preview text.
+- **Tracked links show in full** in plain text, and Gmail and iOS also turn addresses, phone numbers and dates into links.
+- **Some symbols turn into colour emoji on phones.** These never do: → • – × ÷ ₹ ─ ━ ✓ ✗ ★ ● ① ►. These can: ✔ ☑ ✖ ➡ ↔ ▶ ▪ ⚠ ™. These always are: ✅ ❌ ⭐ ❗. "Unicode bold" (𝗯𝗼𝗹𝗱) is a known spam trick and screen readers spell it out letter by letter.
+
+### What the evidence says works
+
+- **50 to 125 words, one to three questions.** Boomerang's 40 million emails: one to three questions drew 50% more replies. lemlist puts the best length around 120 words and Instantly under 80.
+- **One easy question.** Gong's 304,000 cold emails: a low-effort interest question beat asking for a meeting, and ROI language cut replies by 15%.
+- **Plain beats designed.** In HubSpot's tests the HTML version with images drew 21% fewer clicks, and a single image already lowered them. Litmus found plain text won with customers and made no difference with others.
+- **No links and no tracking in a first touch.** lemlist and Instantly both say tracked links and pixels hurt inbox placement, and that bot clicks make click data unreliable. They measure replies instead.
+- **Numerals, not words.** Nielsen Norman Group's eye-tracking: digits catch the eye even in text the reader skips ("5 days", not "five days").
+- **The P.S. is read.** It is the recommended place for one extra line, though the popular "90% read it first" figure has no primary source.
+- **Opt-out as a sentence.** Woodpecker words the opt-out as an easy reply. Gmail still requires the one-click unsubscribe header from bulk senders, which we already send.
+
+### What we checked and will not use
+
+- CAPS section labels and `*asterisk*` or `_underscore_` emphasis. Gmail and Apple Mail show the symbols literally, and capitals read as shouting in a professional register.
+- Unicode bold letters, columns aligned with spaces, and hard-wrapped lines.
+- Newsletter habits such as reply-with-a-number options, weekday timelines and dividers. No primary evidence was found, so they are worth testing but not assuming.
+
+### What the engine does today
+
+The written layout (commits 9796a97 and e164543) already puts parts on separate lines with blank lines between them. The cost lines and the list start with two spaces, which keeps Outlook from joining them. It never hard-wraps, sends the one-click unsubscribe header, and suppresses a lead who replies "unsubscribe" or "remove me". It stops at emoji. The gaps:
+
+- Writers spell out numbers ("five days", "nine hours").
+- A cost line is one long "situation → result" line that wraps mid-arrow on a phone.
+- The preheader a writer supplies is invisible in plain text.
+- A plain-text mail may carry a link, which shows as a long tracked vercel.app address.
+- The opt-out line prints a 110-character vercel.app URL.
+- Emoji-prone symbols are not refused.
+- The word cap is 125 plus 15 when structured.
+
+### Gaps and what to build
+
+| # | Finding | Engine today | Build | Status |
+|---|---|---|---|---|
+| PT1 | Digits catch the eye | Numbers spelled out in copy | Writing rule: numerals for every quantity that carries the point; compose_batch warns on a number word before a unit | todo |
+| PT2 | Long lines wrap badly on phones; no columns | One "label → value" line | Render each cost line as two lines, the situation then "→ result", each short | todo |
+| PT3 | The opening is the inbox preview | Preheader written but unused in plain text | Opening under 90 characters, not a repeat of the subject; the preheader is used only for HTML | todo |
+| PT4 | No links or tracking in first touches | Text mail may carry a tracked link | Plain text asks for a reply only; a link ask goes out as HTML | todo |
+| PT5 | Opt-out as an easy sentence | 110-character vercel.app unsubscribe URL | "Not useful? Reply 'remove me' and we will not write again." plus a short link on the sending domain; header kept | todo |
+| PT6 | Some symbols become emoji | Only emoji refused | Allow → – × ÷ = ₹ • ✓ ─; refuse ✔ ☑ ✖ ➡ ▶ ▪ ⚠ ™ and Unicode bold letters | todo |
+| PT7 | 50 to 125 words | 125 + 15 words | 125 words for the whole body including the list lines | todo |
+| PT8 | Unproven patterns worth a test | Layout is tagged on every send | Test as layout variants: reply-with-a-number options, weekday timelines for story ideas, a short divider around the example | test |
+| PT9 | Plain-looking HTML (Superhuman, Buffer, HEY) gives bold words without looking designed | HTML means logo, card and button | Decide whether a third format, HTML with no logo or card, is worth adding | decision for Dhaval |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -966,3 +1023,7 @@ What was decided:
 | 89 | Plan tag on ideas and templates so ₹299 mails never promise Advanced features | IN7 | todo |
 | 90 | Employee explainer page to forward | IN8 | site task |
 | 91 | Rolling planner end to end: plan 1–2 touches, Claude writes whole mail, learning across leads | RP1–RP6 | done 2026-09-16 |
+| 92 | Plain-text shape: numerals, two-line cost lines, opening as preview, symbol allow-list, 125-word cap | PT1–PT3, PT6, PT7 | todo |
+| 93 | Plain text carries no link; short opt-out sentence and link on the sending domain | PT4, PT5 | todo |
+| 94 | Layout tests: reply-with-a-number, weekday timeline, divider | PT8 | test |
+| 95 | Plain-looking HTML as a third format | PT9 | decision |
