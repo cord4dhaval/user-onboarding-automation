@@ -283,6 +283,40 @@ Found the same day: 18 of those plain-language emails failed at their due time. 
   - The problem stays in black bold.
 - **Waiting emails.** The 19 letters already held for review were sent back through the approval gate, re-rendered with click tracking and held again. Letters due later render branded when they come due.
 
+## Reveal strategy for hot leads, 2026-09-17
+
+Dhaval brought a stronger pattern, written by Cursor: emails that make the reader think "no way it can show that", instead of explaining the product. Built in 7613d32.
+
+**What changed in the engine**
+
+- **Four beats in every hot email.** A scene with a day or time; a salary number labelled as an example; a day-1 receipt; the privacy twist before the button. compose_batch refuses a hot email with no `receipt` or with a `limit` that does not say no screenshots and nothing typed. The closing email is exempt.
+- **Receipt.** A new list style: a grey fixed-width card in HTML, with focus, meetings and idle in the product's colours, and aligned lines in plain text. The frame template has a `receipt` list slot after `shows`. Its title must say it is a sample.
+- **Button words.** `cta_text` lets the button carry the reveal: "See the first day", "See your team's hours" or "See a day without watching anyone". "Start your free trial" stays for the hidden-bill email.
+- **The hot sequence of jobs.** `hidden_bill`, `the_hour`, `sacred_cow`, `no_watching`, `meeting_bill`, `closing`. lead_card shows it with each job marked sent or not, and the planner plans the next two.
+- **Longer hot emails.** Up to 170 words (other types stay at 125), and the whole mail may reach 250 words.
+- **Truth checks.** Refused: testimonial-like lines ("founders who install this say…", "customers love…"), and "caught", "wasting", "slacking" or "lazy".
+
+**Checked against teamgrid.ai**
+
+The product facts were checked against the live feature pages for hourly breakdown, automatic time tracking and AI work summaries:
+
+- hourly blocks, each with its own apps, score and summary
+- focus in teal, meetings in blue, idle in grey
+- start and stop detection, and auto-paused breaks
+- the view is live: at 3pm the dashboard shows 3pm
+- a summary for each person by 6pm, which they see first
+- end-to-end encryption, and "patterns, not people"
+
+The site's sample figures are stored in `facts.samples` and may be quoted only as samples. "idle" was removed from the plain-words list because it is the product's own word.
+
+**What the engine will not claim**
+
+Cursor's draft also had three claims TeamGrid cannot back, and the engine does not use them:
+
+- a founder quote
+- "a meeting 4 of them needed"
+- team head-counts per activity presented as a product view
+
 ## Follow-ups
 
 
