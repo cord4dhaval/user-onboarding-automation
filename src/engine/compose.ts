@@ -65,7 +65,9 @@ export interface MergeVars {
   person_id: string;
   trial_link: string;
   opt_out_url: string;
-  [key: string]: string;
+  /** The same way out, short enough to print in a plain-text mail. Absent where no app origin is set. */
+  opt_out_short_url?: string;
+  [key: string]: string | undefined;
 }
 
 /**
@@ -309,7 +311,7 @@ export type ResolvedBlock =
   | { kind: "divider" }
   | { kind: "image"; url: string; alt: string; width?: number; href?: string }
   | { kind: "cta"; text: string; url: string }
-  | { kind: "optout"; url: string };
+  | { kind: "optout"; url: string; shortUrl?: string };
 
 export interface ResolvedTemplate {
   subject?: string;
@@ -523,7 +525,7 @@ export function resolveBlocks(
     }
 
     if (type === "system" && block.fixed === "opt_out_block") {
-      out.push({ kind: "optout", url: vars.opt_out_url });
+      out.push({ kind: "optout", url: vars.opt_out_url, ...(vars.opt_out_short_url ? { shortUrl: vars.opt_out_short_url } : {}) });
       continue;
     }
   }
@@ -576,11 +578,13 @@ export function renderTemplate(
         parts.push(
           [
             block.title ? plain(block.title) : undefined,
-            ...block.rows.map((row) =>
-              block.fromParts
-                ? `  ${plain(row.label)}${row.value ? `  →  ${plain(row.value)}` : ""}`
-                : `${plain(row.label)}: ${plain(row.value)}`,
-            ),
+            // Written cost lines take two lines each: the situation, then the result under an
+            // arrow. One long line wraps mid-arrow on a phone, and columns cannot line up in
+            // the proportional font Gmail uses for plain text. A blank line between rows
+            // keeps Outlook from joining them.
+            block.fromParts
+              ? block.rows.map((row) => `${plain(row.label)}${row.value ? `\n→ ${plain(row.value)}` : ""}`).join("\n\n")
+              : block.rows.map((row) => `${plain(row.label)}: ${plain(row.value)}`).join("\n"),
           ]
             .filter(Boolean)
             .join("\n"),
@@ -602,7 +606,10 @@ export function renderTemplate(
         parts.push(`${block.text}: ${block.url}`);
         break;
       case "optout":
-        parts.push(`\n—\nNot useful? Unsubscribe: ${block.url}`);
+        // An easy sentence first, because replying is the exit a busy reader already knows,
+        // and "remove me" is suppressed on arrival. The link stays for anyone who prefers it,
+        // in its short form: the long signed URL is most of a line of noise in plain text.
+        parts.push(`\n—\nNot useful? Reply "remove me" and we will not write again.\nUnsubscribe: ${block.shortUrl ?? block.url}`);
         break;
     }
   }

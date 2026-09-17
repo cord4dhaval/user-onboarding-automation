@@ -186,3 +186,65 @@ export function unlabelledNumbers(text: string): string[] {
   if (/\b(for example|example|illustrat|typical|suppose|imagine|consider|say a|if a team)\b/i.test(body)) return [];
   return [...new Set(hits)];
 }
+
+/**
+ * Plain-text rules, from what respected senders do and how mail apps show text/plain
+ * (docs/learnings.md, 2026-09-17). Plain text has no bold, no columns and no hidden preview
+ * line, so what a reader's eye catches is digits, short lines, a first sentence that doubles
+ * as the inbox preview, and symbols that stay text.
+ */
+
+/** A cost line's situation stays under this, so Outlook never pulls the arrow line up into it. */
+export const COST_LABEL_MAX_CHARS = 39;
+/** A cost line's result, and each line of what they would see: one phone line, roughly. */
+export const SCAN_LINE_MAX_CHARS = 50;
+/** The opening is what an inbox shows after the subject in a plain-text mail. */
+export const OPENING_MAX_CHARS = 90;
+
+const NUMBER_WORD = "two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred";
+const COUNTED_THING =
+  "minutes?|hours?|days?|weeks?|months?|years?|quarters?|people|persons?|employees?|staff|members?|consultants?|engineers?|managers?|agents?|planners?|leads?|clients?|customers?|buyers?|orders?|deals?|desks?|seats?|calls?|requests?|approvals?|sign-?offs?|offices?|teams?|companies|sites?|shifts?|times|lakh|crore|thousand|tools?|systems?|registers?|sheets?|emails?|messages?|projects?|weddings?|events?|hires?|names?|steps?";
+
+/**
+ * Quantities spelled out where digits would catch the eye: "five days", "nine hours",
+ * "three of nine hours". "One" is left alone — "1 engineer" reads worse than it scans.
+ */
+export function spelledQuantities(text: string): string[] {
+  const re = new RegExp(`\\b(${NUMBER_WORD})(-|\\s+)(of\\s+(${NUMBER_WORD})\\s+)?(${COUNTED_THING})\\b`, "gi");
+  return [...new Set([...String(text ?? "").matchAll(re)].map((m) => m[0]))];
+}
+
+/**
+ * Symbols that turn into colour emoji on phones, and "Unicode bold" letters. The safe set
+ * (→ – × ÷ = ₹ • ✓ ─) never does. Source: Unicode's emoji data, version 18.0.
+ */
+export function emojiProneSymbols(text: string): string[] {
+  const hits = String(text ?? "").match(/[✔☑✖➡↔-↙▶◀▪▫⚠™©®⭐❗❌✅️]|[\u{1D400}-\u{1D7FF}]/gu);
+  return [...new Set(hits ?? [])];
+}
+
+/**
+ * Two layouts on test (docs/learnings.md PT8): options to reply with a number, and a
+ * weekday timeline for an idea told as a story. Each lead sits in one arm of each test for
+ * good, decided by its id, so the comparison is between groups of leads rather than
+ * between whatever a writer felt like on the day.
+ */
+export const LAYOUT_TESTS = ["reply_options", "timeline"] as const;
+export type LayoutTest = (typeof LAYOUT_TESTS)[number];
+export type LayoutArm = "use" | "hold_out";
+
+export function layoutArm(personId: string, test: LayoutTest): LayoutArm {
+  let h = 2166136261;
+  for (const ch of `${test}:${personId}`) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  // FNV's low bit only tracks the parity of the input, which would put every lead in the
+  // same arm of both tests; the finaliser spreads every input bit across the output first.
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) % 2 === 0 ? "use" : "hold_out";
+}

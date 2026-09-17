@@ -2,7 +2,7 @@ import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, themePerformance } from "./outcomes.js";
-import { FRAME_BODY_MAX_WORDS, ROLLING_MAX_STEPS, WATCH_WINDOW_MS, frameKeyOf, groupFor } from "./rolling.js";
+import { FRAME_BODY_MAX_WORDS, LAYOUT_TESTS, ROLLING_MAX_STEPS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -31,6 +31,7 @@ export interface WritingBrief {
   similar_leads: Array<Record<string, unknown>>;
   learning_notes: Array<Record<string, unknown>>;
   exploration: { recent_sends: number; first_tries: number; note: string };
+  layout_tests: Array<{ test: string; arm: string; rule: string }>;
   rules: string[];
 }
 
@@ -149,6 +150,23 @@ export async function writingBriefFor(input: {
             ? "This group has mostly repeated ideas lately. Unless this person clearly calls for a proven one, try a new idea."
             : "This group is trying enough new ideas. Prefer what has worked where it fits this person.",
     },
+    // This lead's fixed arm in each layout test, so the writer follows it and the results
+    // compare groups of leads (docs/learnings.md PT8).
+    layout_tests: LAYOUT_TESTS.map((test) => {
+      const arm = layoutArm(String(person._id), test);
+      return {
+        test,
+        arm,
+        rule:
+          test === "reply_options"
+            ? arm === "use"
+              ? "Every reply ask to this lead carries reply_options: 2 to 4 short answers to the question, shown as \"Reply with one number:\" and numbered lines."
+              : "This lead is in the hold-out group: no reply_options."
+            : arm === "use"
+              ? "Every story idea (hook \"story\") for this lead carries a timeline: 2 to 4 moments in order, a day or time and one short sentence each."
+              : "This lead is in the hold-out group: no timeline; tell the story in the scene.",
+      };
+    }),
     rules: [
       `Plan at most ${ROLLING_MAX_STEPS} touches. The engine watches the result and asks again.`,
       "Invent the idea for this person: a real moment from their week, with its cost in rupees or hours.",
@@ -159,9 +177,13 @@ export async function writingBriefFor(input: {
       "Segment off_icp: one short touch that asks a question a person can answer in a line (what the team mostly does at a computer, for example), no pitch.",
       "Where the fit is partial, say the limit plainly (for example: work away from a computer is not recorded).",
       "Professional register: complete sentences, no contractions, first person plural.",
-      "Choose format with a reason: text for a first written touch to someone who has not clicked or for a reply ask; html when a table, sample or screen carries the idea, or once they have clicked.",
+      "Choose format with a reason. text: a plain note that asks for a reply and carries no link; the default for early touches and anyone who has not clicked. letter: HTML that looks typed, with bold phrases and a link on its own words and no logo, box or button; for a link ask, or where a bolded phrase carries the idea. html: the branded design, for a sample, table or screen, or a lead who engages with designed mail.",
       "One ask: a reply question, or the button. Never both.",
-      "Write in parts, not one block: opening (one sentence), scene (one or two short paragraphs, at most two **bold** phrases), cost_lines (up to 3 label/value lines with the rupee example), shows (up to 3 short lines on what they would see), limit (one line, only where the fit is partial), question (one line). The frame makes the cost lines a tinted box and the list a check list in HTML, and aligned arrow lines and dashes in plain text. No capitals for emphasis, no emoji.",
+      "Write in parts, not one block: opening (one sentence under 90 characters), scene (one or two short paragraphs, at most two **bold** phrases), cost_lines (up to 3: label under 40 characters, value under 50), shows (up to 3 lines under 50 characters), limit (one line, only where the fit is partial), question (one line), plus the timeline or reply_options your layout_tests arm asks for. The frame makes the cost lines a tinted box and the list a check list in HTML, and a label with an arrow line under it and dashes in plain text.",
+      `The whole body, lists and titles included, stays within ${FRAME_BODY_MAX_WORDS} words.`,
+      "Write quantities as digits: 5 days, 9 hours, 3 of 9 hours, 30 people, ₹4 lakh. A skimming eye stops on digits and passes over words.",
+      "In plain text there is no hidden preview line: the inbox shows the opening after the subject. Make the opening add to the subject, never repeat it.",
+      "Only these symbols: → – × ÷ = ₹ • ✓. Never ✔ ☑ ➡ ▶ ⚠ ™ or other symbols phones turn into emoji, never styled Unicode letters, no capitals for emphasis, no emoji.",
     ],
   };
 }

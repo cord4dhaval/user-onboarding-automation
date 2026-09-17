@@ -79,8 +79,8 @@ export const action = z.object({
   theme: z.string().optional(),
   /** How the idea is delivered: story, rupee_math, question, comparison, proof, or another. */
   hook: z.string().optional(),
-  /** Plain text or designed. Read at send and outranks the template's own format. */
-  format: z.enum(["text", "html"]).optional(),
+  /** Plain text, designed, or a letter (HTML that looks typed). Read at send and outranks the template's own format. */
+  format: z.enum(["text", "html", "letter"]).optional(),
   formatWhy: z.string().optional(),
   /** How the touch is laid out: story, cost_box, checklist or cost_and_list. Learned on like format. */
   layout: z.string().optional(),
@@ -139,7 +139,7 @@ export const action = z.object({
       /** The rolling planner's labels, frozen here for the same reason the segment is. */
       theme: z.string().nullable().optional(),
       hook: z.string().nullable().optional(),
-      format: z.enum(["text", "html"]).optional(),
+      format: z.enum(["text", "html", "letter"]).optional(),
       ask: z.enum(["reply", "link"]).optional(),
       /** segment|team size band, the unit results are compared across. */
       group: z.string().optional(),

@@ -13,7 +13,7 @@ export const planStep = z.object({
   /** Under the rolling planner: the idea for this touch in words. `angle` is its slug. */
   theme: z.string().optional(),
   hook: z.string().optional(),
-  format: z.enum(["text", "html"]).optional(),
+  format: z.enum(["text", "html", "letter"]).optional(),
   templateKey: z.string().optional(),
   cta: z.string().optional(),
   assetTier: z.enum(["A", "B", "C", "D"]).optional(),

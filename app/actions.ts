@@ -1676,7 +1676,8 @@ export async function decide(formData: FormData) {
   // writer chose for each message: a plain note approved in bulk would otherwise go out
   // rebuilt as a designed mail.
   const chosen = formData.get("format");
-  const asText = String(chosen ?? "html") === "text";
+  const chosenFormat = String(chosen ?? "html") === "text" ? "text" : String(chosen ?? "html") === "letter" ? "letter" : "html";
+  const asText = chosenFormat === "text";
 
   const result = await db.collection(C.actions).updateMany(
     {
@@ -1695,10 +1696,11 @@ export async function decide(formData: FormData) {
     // for next week keeps that date; approving it early only means it will not stop here
     // again on the way out.
     {
-      $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date(), ...(chosen !== null ? { format: asText ? "text" : "html" } : {}) },
+      $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date(), ...(chosen !== null ? { format: chosenFormat } : {}) },
       // Dropping the rendered HTML is not enough on its own — the sender rebuilds it from
-      // the template when it is missing, so the choice is recorded on the action too.
-      ...(approve && asText ? { $unset: { "content.bodyHtml": "" } } : {}),
+      // the template when it is missing, so the choice is recorded on the action too. A
+      // letter is rebuilt the same way, so a designed version rendered earlier cannot stand in.
+      ...(approve && (asText || chosenFormat === "letter") ? { $unset: { "content.bodyHtml": "" } } : {}),
     },
   );
 
@@ -1901,9 +1903,11 @@ export interface HeldMessage {
   subject?: string;
   /** The idea a written touch was built on, and the writer's format choice with its reason. */
   theme?: string;
-  chosenFormat?: "text" | "html";
+  chosenFormat?: "text" | "html" | "letter";
   formatWhy?: string;
   bodyHtml?: string;
+  /** The same message as a letter: HTML that looks typed, with no logo, box or button. */
+  bodyLetter?: string;
   bodyText?: string;
   rationale?: string;
   /** False when the channel cannot carry HTML, so the designed version is not on offer. */
@@ -1969,10 +1973,21 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   // showed the reviewer a subject over a blank page — nothing to approve on, and no sign
   // anything was missing. Render it the way the sender will instead.
   let rendered: { subject?: string; bodyMd?: string; bodyHtml?: string } | undefined;
+  let renderedLetter: string | undefined;
   let previewError: string | undefined;
+  const storedAsLetter = action.format === "letter";
   if (!content.bodyMd) {
     try {
       rendered = await previewContent(orgId, action);
+      // A writer who chose a format made the choice explicit, so the other two are rendered
+      // beside it and a reviewer can switch before approving. A message with no chosen
+      // format keeps what its template renders, as before.
+      if (action.format && caps.html !== false && String(action.channel) === "email") {
+        const as = async (format: string) => (await previewContent(orgId, { ...action, format })).bodyHtml;
+        const own = rendered.bodyHtml;
+        renderedLetter = storedAsLetter ? own : await as("letter");
+        if (action.format !== "html") rendered = { ...rendered, bodyHtml: await as("html") };
+      }
     } catch (err) {
       previewError = err instanceof Error ? err.message : "this message could not be rendered";
     }
@@ -1982,7 +1997,8 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   return {
     subject: content.subject ?? rendered?.subject,
     // Without the pixel, or the reviewer reading it is recorded as the lead opening it.
-    bodyHtml: stripOpenPixel(content.bodyHtml ?? rendered?.bodyHtml ?? "") || undefined,
+    bodyHtml: stripOpenPixel((storedAsLetter ? undefined : content.bodyHtml) ?? rendered?.bodyHtml ?? "") || undefined,
+    bodyLetter: stripOpenPixel((storedAsLetter ? content.bodyHtml : undefined) ?? renderedLetter ?? "") || undefined,
     bodyText: content.bodyMd || rendered?.bodyMd,
     preview: Boolean(rendered),
     previewError,
@@ -1997,7 +2013,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
       : undefined,
     rationale: action.rationale ? String(action.rationale) : undefined,
     theme: action.theme ? String(action.theme) : undefined,
-    chosenFormat: action.format === "text" || action.format === "html" ? action.format : undefined,
+    chosenFormat: action.format === "text" || action.format === "html" || action.format === "letter" ? action.format : undefined,
     formatWhy: action.formatWhy ? String(action.formatWhy) : undefined,
     canHtml: caps.html !== false,
     status: String(action.status),

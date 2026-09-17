@@ -10,7 +10,7 @@ import {
   type RenderableAsset,
 } from "./compose.js";
 import { addressFor, identityValue } from "./address.js";
-import { renderHtml } from "./html.js";
+import { renderHtml, renderLetter } from "./html.js";
 import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
@@ -371,10 +371,9 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // A reviewer who chose plain text outranks the template's own format.
       const wantsHtml = !isReply && String(action.format ?? template.format ?? "html") !== "text";
       if (!content.bodyHtml && wantsHtml && String(action.channel) === "email" && caps?.html !== false) {
-        content.bodyHtml = renderHtml(
-          resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender),
-          await brandKit(),
-        );
+        const resolvedForHtml = resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender);
+        content.bodyHtml =
+          String(action.format) === "letter" ? renderLetter(resolvedForHtml) : renderHtml(resolvedForHtml, await brandKit());
       }
       // Tracking is wrapped in at send rather than at compose. What a reviewer approved is
       // the words, and a redirect does not change them — but a draft that never goes out
@@ -403,7 +402,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
           actionId: String(action._id),
           origin: appOrigin(),
           choice: trackChoice,
-          neverTrack: [vars.opt_out_url],
+          neverTrack: [vars.opt_out_url, ...(vars.opt_out_short_url ? [vars.opt_out_short_url] : [])],
         });
         content.bodyMd = wrappedText.text;
         if (wrappedText.clicks) trackingApplied = { ...trackingApplied, clicks: true };
@@ -562,7 +561,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
         // A queued message is not a sent message. It waits at "dispatched" until the
         // reconciler confirms it with the provider.
-        const variant = variantOf(person, action, carried, content.bodyHtml ? "html" : "text");
+        const variant = variantOf(person, action, carried, content.bodyHtml ? (String(action.format) === "letter" ? "letter" : "html") : "text");
         const queued = result.disposition === "queued" && !dryRun;
         await db.collection(C.actions).updateOne(
           { _id: action._id },
@@ -670,7 +669,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     person: Record<string, unknown>,
     action: Record<string, unknown>,
     carried: RenderableAsset[] = [],
-    format?: "html" | "text",
+    format?: "html" | "text" | "letter",
   ) {
     const belief = person.belief as { segment?: string; fitKnown?: boolean } | undefined;
     const variant: Record<string, unknown> = {

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
@@ -28,6 +29,35 @@ export interface UnsubscribeResult {
 /** The URL that goes in the mail. Signed, because it has to be trusted with no session. */
 export function unsubscribeUrl(origin: string, personId: string): string {
   return `${origin.replace(/\/$/, "")}/api/u/${personId}?s=${tokenFor("u", personId)}`;
+}
+
+/**
+ * The same link, short enough to print in a plain-text mail.
+ *
+ * The full one is over a hundred characters, most of a line of noise under a note meant to
+ * read as a person's. The short form packs the person id into 16 characters and keeps 72
+ * bits of the same signature, and only ever redirects to the full link, so the page, the
+ * confirm button and the scanner handling all stay in one place. The mail header keeps
+ * the full link for one-click unsubscribe.
+ */
+export function shortUnsubscribeUrl(origin: string, personId: string): string | undefined {
+  if (!/^[0-9a-f]{24}$/i.test(personId)) return undefined;
+  const id = Buffer.from(personId, "hex").toString("base64url");
+  const sig = Buffer.from(tokenFor("u", personId).slice(0, 18), "hex").toString("base64url");
+  return `${origin.replace(/\/$/, "")}/u/${id}.${sig}`;
+}
+
+/** The full unsubscribe path a short code stands for, or null when the code is not one we issued. */
+export function expandShortUnsubscribe(code: string): string | null {
+  const match = /^([A-Za-z0-9_-]{16})\.([A-Za-z0-9_-]{12})$/.exec(String(code ?? ""));
+  if (!match) return null;
+  const personId = Buffer.from(match[1]!, "base64url").toString("hex");
+  if (!/^[0-9a-f]{24}$/.test(personId)) return null;
+  const full = tokenFor("u", personId);
+  const expected = Buffer.from(full.slice(0, 18), "hex");
+  const given = Buffer.from(match[2]!, "base64url");
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+  return `/api/u/${personId}?s=${full}`;
 }
 
 /**

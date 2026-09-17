@@ -2,7 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { renderTemplate, resolveBlocks, type ComposedContent } from "./compose.js";
-import { renderHtml } from "./html.js";
+import { renderHtml, renderLetter } from "./html.js";
 import { loadBrandKit } from "./brand.js";
 import { resolveTemplateFor } from "./templates.js";
 import { rungsSentTo, stepTemplateKey } from "./fireDue.js";
@@ -76,10 +76,9 @@ export async function previewContent(
 
   let bodyHtml: string | undefined;
   if (wantsHtml && String(action.channel) === "email" && caps.html !== false) {
-    bodyHtml = renderHtml(
-      resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender),
-      await loadBrandKit(orgId, productId),
-    );
+    const resolved = resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender);
+    bodyHtml =
+      String(action.format) === "letter" ? renderLetter(resolved) : renderHtml(resolved, await loadBrandKit(orgId, productId));
   }
 
   return { subject: content.subject, bodyMd: content.bodyMd, bodyHtml };

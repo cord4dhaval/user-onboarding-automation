@@ -19,7 +19,7 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
-import { FRAME_BODY_MAX_WORDS, ROLLING_MAX_STEPS, companyTokens, frameKeyOf, groupFor, isRolling, isRollingPlan, themeSlug, unlabelledNumbers, watchWindowMs } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, companyTokens, emojiProneSymbols, frameKeyOf, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -1028,7 +1028,7 @@ export const TOOLS: ToolDef[] = [
                   "Invent it for this lead. The angle is stored as its slug, so results are counted per idea.",
               },
               hook: { type: "string", description: "Optional. How the idea lands: story, rupee_math, question, comparison, proof, or your own word." },
-              format: { type: "string", enum: ["text", "html"], description: "Optional intention; the writer decides at compose time." },
+              format: { type: "string", enum: ["text", "letter", "html"], description: "Optional intention; the writer decides at compose time." },
               why: { type: "string" },
               advance_if: { type: "string" },
             },
@@ -1359,26 +1359,45 @@ export const TOOLS: ToolDef[] = [
               claims_made: { type: "array", items: { type: "string" } },
               format: {
                 type: "string",
-                enum: ["text", "html"],
+                enum: ["text", "html", "letter"],
                 description:
                   "Required where the step renders through the campaign's frame (a rolling campaign). \"text\" sends a " +
-                  "plain note with a text link; \"html\" sends the branded design. Links are click-tracked either way.",
+                  "plain note and only asks for a reply: it carries no link. \"letter\" is HTML that looks typed — no logo, " +
+                  "box or button, bold phrases and a link on its own words — for a link ask or where bold carries the idea. " +
+                  "\"html\" sends the branded design, for a sample, table or screen, or a lead who engages with designed mail.",
               },
               format_why: { type: "string", description: "One sentence: why this format for this person now." },
               opening: {
                 type: "string",
                 description:
-                  "Frame touches, written in parts instead of body: the first line, one sentence, shown bold in HTML and on its own line in plain text.",
+                  "Frame touches, written in parts instead of body: the first line, one sentence under 90 characters, shown bold in HTML. " +
+                  "In plain text it is the inbox preview after the subject, so it must not repeat the subject.",
+              },
+              timeline: {
+                type: "array",
+                items: { type: "object", properties: { when: { type: "string" }, what: { type: "string" } }, required: ["when", "what"] },
+                description:
+                  "Layout test, story ideas only: 2 to 4 moments in order, when is a day or time (\"Monday\", \"8 PM\"), what is " +
+                  "one short sentence. Shown under the opening. Follow the arm in lead_card writing.layout_tests.",
+              },
+              reply_options: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Layout test, reply asks only: 2 to 4 short answers to the question, shown as \"Reply with one number:\" and " +
+                  "\"1 = …\" lines. Follow the arm in lead_card writing.layout_tests.",
               },
               scene: { type: "string", description: "One or two short paragraphs (blank line between) that make the idea their scene. At most two **bold** phrases." },
               cost_intro: { type: "string", description: "Optional heading over the cost lines. Defaults to \"For example:\"." },
               cost_lines: {
                 type: "array",
                 items: { type: "object", properties: { label: { type: "string" }, value: { type: "string" } }, required: ["label"] },
-                description: "Up to 3 short cost lines: label is the situation with its numbers, value is what it costs. A tinted box in HTML, arrow lines in plain text.",
+                description:
+                  "Up to 3 cost lines: label is the situation with its numbers (under 40 characters), value is what it costs " +
+                  "(under 50). A tinted box in HTML; in plain text the label, then \"→ value\" on the line under it.",
               },
               shows_intro: { type: "string", description: "Optional line over the list. Defaults to \"What TeamGrid would show you:\"." },
-              shows: { type: "array", items: { type: "string" }, description: "Up to 3 short lines on what they would see. A check list in HTML, dashes in plain text." },
+              shows: { type: "array", items: { type: "string" }, description: "Up to 3 lines under 50 characters on what they would see. A check list in HTML, dashes in plain text." },
               limit: { type: "string", description: "Optional one line on what is not recorded, where the fit is partial." },
               question: { type: "string", description: "The closing question, one line they can answer; shown bold in HTML." },
               theme: { type: "string", description: "The idea in words. Defaults to the plan step's theme." },
@@ -1428,9 +1447,13 @@ export const TOOLS: ToolDef[] = [
         opening: string; scene: string; question: string; limit: string;
         cost?: { title: string; rows: Array<{ label: string; value: string }> };
         shows?: { title: string; items: string[] };
+        timeline?: Array<{ when: string; what: string }>;
+        options?: string[];
         layout: string;
       }>();
       const CAPS_OK = new Set(["CRM", "HRMS", "MIS", "KPI", "KPIS", "GST", "TDS", "ITR", "HVAC", "OEM", "CTC", "SLA", "ERP", "SAAS", "B2B", "D2C", "HR", "IT", "AI", "CEO", "COO", "CFO", "CA", "USA", "UAE", "NOC", "RERA", "AMC", "MEP", "ICU", "OPD", "BPO", "KPO", "FMCG", "TAT", "PAN", "GSTIN", "EMI", "CAD", "BOQ", "RFQ", "PO", "QA", "QC", "UPI", "NBFC"]);
+      // Which arm of each layout test this lead sits in, for good (docs/learnings.md PT8).
+      const armFor = (test: LayoutTest) => layoutArm(String(instance.personId), test);
       for (const t of touches) {
         const step = String(t.step_id);
         const structured = ["opening", "scene", "question", "cost_lines", "shows"].some((k) => t[k] !== undefined);
@@ -1448,6 +1471,16 @@ export const TOOLS: ToolDef[] = [
         if (/\*\*/.test(opening) || /\*\*/.test(question)) {
           throw new Error(`step ${step}: leave the ** off opening and question; the frame already sets them bold. Nothing was written.`);
         }
+        // In plain text there is no hidden preview line: after the short greeting, the opening
+        // is what the inbox shows beside the subject.
+        if (opening.length > OPENING_MAX_CHARS) {
+          throw new Error(`step ${step} opening is ${opening.length} characters. It is the inbox preview in plain text; keep it under ${OPENING_MAX_CHARS}. Nothing was written.`);
+        }
+        const squash = (x: string) => x.toLowerCase().replace(/[^a-z0-9₹]+/g, " ").trim();
+        const subjectSquashed = squash(String(t.subject ?? ""));
+        if (subjectSquashed && (squash(opening).includes(subjectSquashed) || subjectSquashed.includes(squash(opening)))) {
+          throw new Error(`step ${step} opening repeats the subject. In plain text it is the preview beside the subject, so it has to add something. Nothing was written.`);
+        }
         const boldCount = ((scene + limitLine).match(/\*\*[^*]+\*\*/g) ?? []).length;
         if (boldCount > 2) {
           throw new Error(`step ${step} bolds ${boldCount} phrases in the scene. At most two, or nothing stands out. Nothing was written.`);
@@ -1457,22 +1490,75 @@ export const TOOLS: ToolDef[] = [
         if (rows.length > 3) throw new Error(`step ${step} has ${rows.length} cost lines; keep it to 3 at most. Nothing was written.`);
         const items = (Array.isArray(t.shows) ? (t.shows as unknown[]) : []).map((x) => String(x ?? "").trim()).filter(Boolean);
         if (items.length > 3) throw new Error(`step ${step} lists ${items.length} things they would see; keep it to 3 at most. Nothing was written.`);
-        for (const line of [...rows.map((r) => `${r.label} ${r.value}`), ...items]) {
-          if (line.split(/\s+/).filter(Boolean).length > 16) {
-            throw new Error(`step ${step}: "${line.slice(0, 60)}…" is too long for a line meant to be scanned; keep each under 16 words. Nothing was written.`);
+        // Short enough for one phone line each. A situation line of 40 characters or more with
+        // no full stop is one Outlook joins to the arrow line under it.
+        for (const r of rows) {
+          if (r.label.length > COST_LABEL_MAX_CHARS) {
+            throw new Error(`step ${step} cost line "${r.label}" is ${r.label.length} characters; keep the situation under ${COST_LABEL_MAX_CHARS + 1} and put the rest in its value. Nothing was written.`);
+          }
+          if (r.value.length > SCAN_LINE_MAX_CHARS) {
+            throw new Error(`step ${step} cost value "${r.value}" is ${r.value.length} characters; keep it under ${SCAN_LINE_MAX_CHARS}. Nothing was written.`);
           }
         }
+        for (const item of items) {
+          if (item.length > SCAN_LINE_MAX_CHARS) {
+            throw new Error(`step ${step} list line "${item}" is ${item.length} characters; keep each under ${SCAN_LINE_MAX_CHARS}. Nothing was written.`);
+          }
+        }
+
+        // The two layouts on test. A lead in the hold-out arm never gets one, a lead in the
+        // use arm always does where it applies, so replies compare groups of leads.
+        const ask = String(t.ask ?? "link");
+        const hook = String(t.hook ?? "").trim().toLowerCase();
+        const timeline = (Array.isArray(t.timeline) ? (t.timeline as Array<Record<string, unknown>>) : [])
+          .map((r) => ({ when: String(r?.when ?? "").trim().replace(/:$/, ""), what: String(r?.what ?? "").trim() }))
+          .filter((r) => r.when && r.what)
+          .map((r) => ({ ...r, what: /[.!?]$/.test(r.what) ? r.what : `${r.what}.` }));
+        const options = (Array.isArray(t.reply_options) ? (t.reply_options as unknown[]) : []).map((x) => String(x ?? "").trim()).filter(Boolean);
+        if (timeline.length) {
+          if (armFor("timeline") === "hold_out") {
+            throw new Error(`step ${step} writes a timeline, but this lead is in the hold-out group of the timeline test (lead_card writing.layout_tests). Tell it in the scene instead. Nothing was written.`);
+          }
+          if (hook !== "story") throw new Error(`step ${step}: a timeline is tested on story ideas only; set hook "story" or leave it out. Nothing was written.`);
+          if (timeline.length < 2 || timeline.length > 4) throw new Error(`step ${step} timeline has ${timeline.length} moments; use 2 to 4. Nothing was written.`);
+          for (const r of timeline) {
+            if (r.when.length > 20 || `${r.when}: ${r.what}`.length > 70) {
+              throw new Error(`step ${step} timeline line "${r.when}: ${r.what}" is too long; a short day or time and one short sentence. Nothing was written.`);
+            }
+          }
+        } else if (armFor("timeline") === "use" && hook === "story") {
+          throw new Error(`step ${step} tells a story, and this lead is in the timeline test group (lead_card writing.layout_tests): add timeline, 2 to 4 moments in order. Nothing was written.`);
+        }
+        if (options.length) {
+          if (armFor("reply_options") === "hold_out") {
+            throw new Error(`step ${step} gives reply options, but this lead is in the hold-out group of the reply-options test (lead_card writing.layout_tests). Leave them out. Nothing was written.`);
+          }
+          if (ask !== "reply") throw new Error(`step ${step}: reply options go with ask "reply" only. Nothing was written.`);
+          if (options.length < 2 || options.length > 4) throw new Error(`step ${step} has ${options.length} reply options; use 2 to 4. Nothing was written.`);
+          for (const o of options) {
+            if (o.length > 36) throw new Error(`step ${step} reply option "${o}" is ${o.length} characters; keep each under 37. Nothing was written.`);
+          }
+        } else if (armFor("reply_options") === "use" && ask === "reply") {
+          throw new Error(`step ${step} asks for a reply, and this lead is in the reply-options test group (lead_card writing.layout_tests): add reply_options, 2 to 4 short answers to the question. Nothing was written.`);
+        }
+        if (!/\?$/.test(question) && ask === "reply") {
+          throw new Error(`step ${step} asks for a reply but the question does not end with a question mark. Nothing was written.`);
+        }
+
         const costTitle = String(t.cost_intro ?? "").trim() || "For example:";
         const showsTitle = String(t.shows_intro ?? "").trim() || "What TeamGrid would show you:";
         // The assembled words every other rule reads: word count, links, the form, names, numbers.
         t.body = [
           opening,
+          timeline.map((r) => `${r.when}: ${r.what}`).join("\n"),
           scene,
           rows.length ? [costTitle, ...rows.map((r) => `${r.label} ${r.value}`)].join("\n") : "",
           items.length ? [showsTitle, ...items].join("\n") : "",
           limitLine,
           question,
+          options.length ? ["Reply with one number:", ...options.map((o, i) => `${i + 1} = ${o}`)].join("\n") : "",
         ].filter(Boolean).join("\n\n");
+        const base = rows.length && items.length ? "cost_and_list" : rows.length ? "cost_box" : items.length ? "checklist" : "story";
         structuredParts.set(t, {
           opening,
           scene,
@@ -1480,17 +1566,35 @@ export const TOOLS: ToolDef[] = [
           limit: limitLine,
           ...(rows.length ? { cost: { title: costTitle, rows } } : {}),
           ...(items.length ? { shows: { title: showsTitle, items } } : {}),
-          layout: rows.length && items.length ? "cost_and_list" : rows.length ? "cost_box" : items.length ? "checklist" : "story",
+          ...(timeline.length ? { timeline } : {}),
+          ...(options.length ? { options } : {}),
+          layout: `${base}${timeline.length ? "+timeline" : ""}${options.length ? "+options" : ""}`,
         });
       }
       for (const t of touches) {
         const text = [t.subject, t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n");
         if (/\p{Extended_Pictographic}/u.test(text)) {
-          throw new Error(`step ${String(t.step_id)} carries an emoji. Keep the register professional. Nothing was written.`);
+          const prone = emojiProneSymbols(text);
+          throw new Error(
+            prone.length
+              ? `step ${String(t.step_id)} uses ${prone.join(" ")}, which phones show as colour emoji. Use → – × = ₹ • ✓ instead. Nothing was written.`
+              : `step ${String(t.step_id)} carries an emoji. Keep the register professional. Nothing was written.`,
+          );
+        }
+        const prone = emojiProneSymbols(text);
+        if (prone.length) {
+          throw new Error(`step ${String(t.step_id)} uses ${prone.join(" ")}, which phones show as colour emoji or spam filters distrust. Use → – × = ₹ • ✓ instead. Nothing was written.`);
         }
         const shouting = (text.match(/\b[A-Z]{4,}\b/g) ?? []).filter((w) => !CAPS_OK.has(w));
         if (shouting.length) {
           throw new Error(`step ${String(t.step_id)} writes "${shouting[0]}" in capitals. Use normal case; emphasis comes from layout and at most two bold phrases. Nothing was written.`);
+        }
+        // Digits catch a skimming eye where words do not (Nielsen Norman Group's eye-tracking).
+        if (structuredParts.has(t)) {
+          const spelled = spelledQuantities(text);
+          if (spelled.length) {
+            throw new Error(`step ${String(t.step_id)} spells out ${spelled.map((x) => `"${x}"`).join(", ")}. Write quantities as digits ("5 days", "9 hours", "3 of 9 hours"), which a skimming eye catches. Nothing was written.`);
+          }
         }
       }
 
@@ -1520,8 +1624,13 @@ export const TOOLS: ToolDef[] = [
         }
         if (!isFrameTouch(t)) continue;
         const format = String(t.format ?? "");
-        if (format !== "text" && format !== "html") {
-          throw new Error(`step ${step} renders through the frame and needs format "text" or "html", with format_why. Nothing was written.`);
+        if (format !== "text" && format !== "html" && format !== "letter") {
+          throw new Error(`step ${step} renders through the frame and needs format "text", "letter" or "html", with format_why. Nothing was written.`);
+        }
+        // A link in plain text prints as a long tracked address, and links in early mail cost
+        // inbox placement. Plain text asks for a reply; a click goes out as a letter or HTML.
+        if (format === "text" && String(t.ask ?? "link") !== "reply") {
+          throw new Error(`step ${step} is plain text with a link ask. Plain text asks for a reply and carries no link; use format "letter" for a link ask. Nothing was written.`);
         }
         if (!String(t.format_why ?? "").trim()) {
           throw new Error(`step ${step} needs format_why: one sentence on why ${format} suits this person now. Nothing was written.`);
@@ -1549,11 +1658,21 @@ export const TOOLS: ToolDef[] = [
       // second ask beside the template's one button; the preheader and PS are short or absent.
       const LINK = /https?:\/\/|www\.[a-z0-9]/i;
       const psLine = (text: string) => (/^p\.?\s?s\b/i.test(text) ? text : `P.S. ${text}`);
+      // The frame's named places for a touch written in parts. Timeline moments and reply
+      // options are lines of one block each, their labels bold in HTML and plain in text.
+      const partSlots = (sp: NonNullable<ReturnType<typeof structuredParts.get>>, ps: string): Record<string, string> => ({
+        opening: `**${sp.opening}**`,
+        question: `**${sp.question}**`,
+        ...(sp.limit ? { limit: sp.limit } : {}),
+        ...(sp.timeline ? { timeline: sp.timeline.map((r) => `**${r.when}:** ${r.what}`).join("\n") } : {}),
+        ...(sp.options ? { options: ["Reply with one number:", ...sp.options.map((o, i) => `**${i + 1}** = ${o}`)].join("\n") } : {}),
+        ...(ps ? { ps } : {}),
+      });
       for (const t of touches) {
         const step = String(t.step_id);
         const body = String(t.body ?? "");
         const words = body.split(/\s+/).filter(Boolean).length;
-        const limit = isFrameTouch(t) ? FRAME_BODY_MAX_WORDS + (structuredParts.has(t) ? 15 : 0) : 90;
+        const limit = isFrameTouch(t) ? FRAME_BODY_MAX_WORDS : 90;
         if (words > limit) {
           throw new Error(`step ${step} is ${words} words. Your part is at most ${limit}: one idea in their world and what the product shows about it. Nothing was written.`);
         }
@@ -1564,7 +1683,7 @@ export const TOOLS: ToolDef[] = [
         if (ask !== "link" && ask !== "reply") {
           throw new Error(`step ${step} ask is "${ask}"; it is "reply" or "link". Nothing was written.`);
         }
-        if (ask === "reply" && !/\?\s*$/.test(body.trim())) {
+        if (ask === "reply" && !structuredParts.has(t) && !/\?\s*$/.test(body.trim())) {
           throw new Error(`step ${step} asks for a reply but does not end on a question. A reply ask is a question they can answer in one line. Nothing was written.`);
         }
         const pre = String(t.preheader ?? "").trim();
@@ -1687,17 +1806,18 @@ export const TOOLS: ToolDef[] = [
           if (sp && !blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === "opening")) {
             throw new Error(`step ${String(t.step_id)} is written in parts, but the "${key}" template has no place for them. Write body instead. Nothing was written.`);
           }
+          for (const name of ["timeline", "options"] as const) {
+            const given = name === "timeline" ? sp?.timeline : sp?.options;
+            if (given && !blocks.some((b) => String(b.type) === "slot" && String(b.name ?? "") === name)) {
+              throw new Error(`step ${String(t.step_id)} writes ${name === "options" ? "reply_options" : "timeline"}, but the "${key}" template has no place for it. Leave it out. Nothing was written.`);
+            }
+          }
           const rendered = renderForCount(blocks, varsForCount(reader, productForCount), {
             subject: t.subject ? String(t.subject) : undefined,
             slotText: sp ? sp.scene : String(t.body ?? ""),
             ...(sp
               ? {
-                  slots: {
-                    opening: `**${sp.opening}**`,
-                    question: `**${sp.question}**`,
-                    ...(sp.limit ? { limit: sp.limit } : {}),
-                    ...(ps ? { ps: psLine(ps) } : {}),
-                  },
+                  slots: partSlots(sp, ps ? psLine(ps) : ""),
                   parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}) },
                 }
               : ps ? { slots: { ps: psLine(ps) } } : {}),
@@ -1887,12 +2007,7 @@ export const TOOLS: ToolDef[] = [
                     const sp = structuredParts.get(t)!;
                     return {
                       slotText: sp.scene,
-                      slots: {
-                        opening: `**${sp.opening}**`,
-                        question: `**${sp.question}**`,
-                        ...(sp.limit ? { limit: sp.limit } : {}),
-                        ...(String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : {}),
-                      },
+                      slots: partSlots(sp, String(t.ps ?? "").trim() ? psLine(String(t.ps).trim()) : ""),
                       parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}) },
                     };
                   })()

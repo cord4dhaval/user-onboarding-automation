@@ -36,7 +36,7 @@ export default function PreviewDrawer({
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState<HeldMessage | null>(null);
-  const [format, setFormat] = useState<"html" | "text">("html");
+  const [format, setFormat] = useState<"html" | "text" | "letter">("html");
   const [pending, start] = useTransition();
   /** Which of the three changes is open. Only one at a time — they all act on this message. */
   const [panel, setPanel] = useState<"none" | "edit" | "schedule" | "rewrite">("none");
@@ -48,11 +48,23 @@ export default function PreviewDrawer({
     start(async () => {
       const loaded = await fetchMessage(actionId);
       setMessage(loaded);
-      setFormat(loaded?.canHtml && loaded.bodyHtml ? "html" : "text");
+      // The writer's choice first, where that version could be rendered; otherwise designed
+      // when there is one, as before.
+      const chosen = loaded?.chosenFormat;
+      setFormat(
+        chosen === "text"
+          ? "text"
+          : chosen === "letter" && loaded?.canHtml && loaded.bodyLetter
+            ? "letter"
+            : loaded?.canHtml && loaded.bodyHtml
+              ? "html"
+              : "text",
+      );
     });
   }
 
   const designed = Boolean(message?.canHtml && message.bodyHtml);
+  const letter = Boolean(message?.canHtml && message.bodyLetter);
   // A decision is only on offer while the message is still waiting. Everything else opens
   // read-only: the point of showing it is the record, not a second chance to approve it.
   const waiting = message?.status === "awaiting_approval";
@@ -98,6 +110,15 @@ export default function PreviewDrawer({
                     Designed email
                   </button>
                 )}
+                {letter && (
+                  <button
+                    type="button"
+                    className={`pill ${format === "letter" ? "accent" : ""}`}
+                    onClick={() => setFormat("letter")}
+                  >
+                    Letter
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`pill ${format === "text" ? "accent" : ""}`}
@@ -109,10 +130,12 @@ export default function PreviewDrawer({
               <p className="muted">
                 {!waiting
                   ? outcomeLine(message)
-                  : designed
+                  : designed || letter
                     ? format === "html"
                       ? "Approving sends this designed version."
-                      : "Approving sends the text below instead — this message only."
+                      : format === "letter"
+                        ? "Approving sends this letter: HTML that looks typed, with no logo, box or button."
+                        : "Approving sends the text below instead — this message only."
                     : message.canHtml
                       ? "No designed version was rendered for this message."
                       : "This channel sends plain text only."}
@@ -233,10 +256,10 @@ export default function PreviewDrawer({
                   <span className="k">Subject</span> <strong>{message.subject}</strong>
                 </div>
               )}
-              {format === "html" && message.bodyHtml ? (
+              {(format === "html" && message.bodyHtml) || (format === "letter" && message.bodyLetter) ? (
                 <iframe
                   title={`Message to ${personEmail}`}
-                  srcDoc={message.bodyHtml}
+                  srcDoc={format === "letter" ? message.bodyLetter : message.bodyHtml}
                   className="preview-frame"
                 />
               ) : (
@@ -265,7 +288,7 @@ export default function PreviewDrawer({
             ) : null}
             {message.chosenFormat ? (
               <p className="muted preview-why">
-                Written as {message.chosenFormat === "text" ? "plain text" : "a designed email"}
+                Written as {message.chosenFormat === "text" ? "plain text" : message.chosenFormat === "letter" ? "a letter" : "a designed email"}
                 {message.formatWhy ? `: ${message.formatWhy}` : "."}
               </p>
             ) : null}

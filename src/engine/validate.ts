@@ -42,6 +42,7 @@ export function readableWords(bodyMd: string): number {
   return bodyMd
     .replace(/https?:\/\/\S+/g, "")
     .replace(/Not useful\?\s*Unsubscribe:?/i, "")
+    .replace(/Not useful\? Reply "remove me" and we will not write again\.\s*Unsubscribe:?/i, "")
     .split(/\s+/)
     .filter((word) => /[a-z0-9]/i.test(word)).length;
 }

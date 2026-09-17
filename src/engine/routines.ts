@@ -269,27 +269,42 @@ The step names an idea (its theme) and renders through a frame that adds only th
 greeting, the button, the sign-off and the unsubscribe line. Write it in parts, not
 one block of text, because a wall of paragraphs is skimmed and ignored:
   subject    required; see below.
-  preheader  under 90 characters, adds to the subject.
-  opening    one sentence, the idea's sharpest line in their world. Set bold in HTML.
+  preheader  under 90 characters, adds to the subject (shown in letter and html only).
+  opening    one sentence under 90 characters, the idea's sharpest line in their world.
+             Bold in HTML; in plain text it is the inbox preview beside the subject, so
+             it adds to the subject and never repeats it.
   scene      one or two short paragraphs that make the idea a scene they recognise
              from their own week. At most two **bold** phrases, on the words that
              carry the cost or the pain.
-  cost_lines up to three label/value lines with the rupee example ("₹4 lakh order ×
-             5 days waiting" → "5 days a farmer loses before sowing"). A number that
-             is not a fact is an example; cost_intro defaults to "For example:".
-  shows      up to three short lines on what they would see, only what writing.facts
-             supports and nothing from facts.unverified.
+  cost_lines up to three lines: label is the situation with its numbers, under 40
+             characters ("₹4 lakh order × 5 days waiting"); value is the result, under
+             50 ("5 days a farmer loses before sowing"). A number that is not a fact is
+             an example; cost_intro defaults to "For example:".
+  shows      up to three lines under 50 characters on what they would see, only what
+             writing.facts supports and nothing from facts.unverified.
   limit      one line on what is not recorded, only where the fit is partial.
-  question   one line they can answer. Set bold in HTML.
+  question   one line they can answer. Bold in HTML.
   ps         optional, one line, no link.
+  timeline / reply_options
+             two layouts on test. lead_card writing.layout_tests gives this lead's arm
+             for each, fixed for good; follow it. Timeline (story ideas only): 2 to 4
+             moments, {when: "Monday", what: "the drawing waits for approval."}.
+             Reply options (reply asks only): 2 to 4 short answers to the question,
+             shown as "Reply with one number:" and "1 = ..." lines.
              In HTML the cost lines become a tinted box and shows a check list; in
-             plain text they become aligned arrow lines and dashes. Open on their world
-             (their main problem, what the company does, team size). The examples on
-             the card show the standard; write better than them for this person.
-  format     "text" for a first written touch to someone who has not clicked, or any
-             reply ask: it reads as a note from a person. "html" when a table, a sample
-             or a screen carries the idea, or once they have clicked or signed up.
-             format_why says which, in one sentence. Links are tracked either way.
+             plain text each cost line is the situation with "→ result" under it, and
+             shows are dash lines. Open on their world (their main problem, what the
+             company does, team size). The examples on the card show the standard;
+             write better than them for this person.
+  Plain-text rules, from what respected senders do: quantities as digits ("5 days",
+  "9 hours", "3 of 9 hours"), the whole body within 125 words including lists, and
+  only these symbols: → – × ÷ = ₹ • ✓ (never ✔ ☑ ➡ ▶ ⚠ ™, styled letters or emoji).
+  format     "text": a plain note that asks for a reply and carries no link; the
+             default for early touches and anyone who has not clicked. "letter": HTML
+             that looks typed, bold phrases and a link on its own words, no logo, box
+             or button; for a link ask or where a bold phrase carries the idea. "html":
+             the branded design, for a sample, table or screen, or a lead who engages
+             with designed mail. format_why says which, in one sentence.
   theme      the plan step's idea, reworded only if your writing sharpened it.
   hook       story, rupee_math, question, comparison, proof, or your own word.
 Write about their situation as a fact of their business, never as something they told
@@ -297,8 +312,10 @@ us: no "you named", "you mentioned", "your form"; compose_batch refuses those.
 Before you submit, write three different opening lines and keep the one a busy founder
 would stop scrolling for. Professional register: complete sentences, no contractions.
 compose_batch refuses a missing format, a subject word the product avoids, their
-company's name, or a body over the limit, and warns about numbers that read as facts:
-fix a warning rather than submitting past it.
+company's name, a body over the limit, quantities spelled out, lines over their length,
+an opening that repeats the subject, plain text with a link ask, and a layout that
+ignores the lead's test arm; it warns about numbers that read as facts: fix a warning
+rather than submitting past it.
 A step not written within six hours goes out as a fixed email they have not had.
 
 In a campaign that plans each lead but is not rolling, each step names the email for

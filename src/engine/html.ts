@@ -156,6 +156,95 @@ ${preheaderHtml(preheader)}
 </html>`;
 }
 
+/**
+ * The letter format: HTML that reads like an email a person typed.
+ *
+ * Plain text cannot bold a word or hide a tracked link behind its label; the designed email
+ * can, but it looks like marketing, and plain mail draws more clicks than designed mail
+ * (HubSpot's tests). Superhuman, Buffer and HEY send this middle shape: no logo, no card, no
+ * button, no colours of our own. Only what an ordinary mail client would let a person do —
+ * a bold phrase, a short list, a link on its words — so the reader sees a note and the
+ * engine still gets bold emphasis, a clean link and click tracking.
+ *
+ * Text colour and background are left to the client on purpose, so dark mode treats it the
+ * way it treats a person's mail.
+ */
+export function renderLetter(resolved: ResolvedTemplate): string {
+  const preheader = resolved.blocks.find((b) => b.kind === "preheader");
+  const para = (inner: string, margin = 16) => `<p style="margin:0 0 ${margin}px;">${inner}</p>`;
+  const out: string[] = [];
+
+  for (const block of resolved.blocks) {
+    switch (block.kind) {
+      case "preheader":
+      case "divider":
+        break;
+      case "heading":
+        out.push(para(`<strong>${inline(block.text)}</strong>`));
+        break;
+      case "callout":
+        out.push(para(inline(block.text)));
+        break;
+      case "text":
+        // A title that belongs to the list or lines under it sits directly above them.
+        for (const part of block.text.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean)) {
+          out.push(para(inline(part), block.tight ? 4 : 16));
+        }
+        break;
+      case "list":
+        out.push(
+          `<ul style="margin:0 0 16px;padding:0 0 0 22px;">${block.items
+            .map((item) => `<li style="margin:0 0 4px;">${block.style === "strike" ? `<s>${inline(item)}</s>` : inline(item)}</li>`)
+            .join("")}</ul>`,
+        );
+        break;
+      case "card": {
+        const title = block.title ? para(inline(block.title), 4) : "";
+        const rows = block.rows
+          .map((r) =>
+            block.fromParts
+              ? para(`${inline(r.label)}${r.value ? `<br />&rarr; <strong>${inline(r.value)}</strong>` : ""}`, 10)
+              : para(`${inline(r.label)}: <strong>${inline(r.value)}</strong>`, 6),
+          )
+          .join("");
+        out.push(`<div style="margin:0 0 16px;">${title}${rows}</div>`);
+        break;
+      }
+      case "image": {
+        const img = `<img src="${attr(block.url)}" alt="${attr(block.alt)}" width="${Math.min(block.width ?? 560, 560)}" style="display:block;max-width:100%;height:auto;border:0;" />`;
+        out.push(`<div style="margin:0 0 16px;">${block.href ? `<a href="${attr(block.href)}">${img}</a>` : img}</div>`);
+        break;
+      }
+      case "cta":
+        // A link on its own words, not a button: a button is the first thing that makes a
+        // note look like a campaign.
+        out.push(para(`<a href="${attr(block.url)}">${inline(block.text)}</a>`));
+        break;
+      case "optout":
+        out.push(
+          `<p style="margin:24px 0 0;font-size:12px;opacity:.7;">Not useful? Reply "remove me", or <a href="${attr(block.url)}">unsubscribe</a>.</p>`,
+        );
+        break;
+    }
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>${esc(resolved.subject ?? "")}</title>
+</head>
+<body style="margin:0;padding:0;">
+${preheaderHtml(preheader)}
+<div style="max-width:600px;padding:8px 4px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;">
+${out.join("\n")}
+</div>
+</body>
+</html>`;
+}
+
 // ── pieces ────────────────────────────────────────────────────────────────────
 
 /** One vertical slot in the single-column stack. Spacing lives here, not in the blocks. */
@@ -304,7 +393,7 @@ function footer(optOutUrl: string, brand: ResolvedKit, color: ResolvedKit["color
       <td class="dm-rule" style="border-top:1px solid ${color.border};padding:18px 0 0;">
         ${social}${legal}
         <p class="dm-muted" style="margin:8px 0 0;font-family:${attr(font.bodyStack)};font-size:${small}px;line-height:1.5;color:${color.muted};">
-          Not useful? <a href="${attr(optOutUrl)}" style="color:${color.muted};text-decoration:underline;">Unsubscribe</a>.
+          Not useful? Reply "remove me", or <a href="${attr(optOutUrl)}" style="color:${color.muted};text-decoration:underline;">unsubscribe</a>.
         </p>
       </td>
     </tr></table>
