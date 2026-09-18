@@ -25,6 +25,7 @@ export const WINDOW_LABEL: Record<string, string> = {
   "per-minute": "per minute",
   hourly: "per hour",
   daily: "per 24h",
+  weekly: "per 7 days",
 };
 
 /**

@@ -111,7 +111,10 @@ export async function voyagerFetch(
   // 999 is LinkedIn's own "request denied" bot block; 403 on a call that worked before is the
   // same signal. Both mean the account is being rate-limited or restricted, so back off.
   if (res.status === 999) {
-    throw new SessionError("restricted", "LinkedIn is blocking this account's requests (999)");
+    throw new SessionError(
+      "restricted",
+      "LinkedIn is blocking this account's requests (999) — check the account in a browser, then reconnect",
+    );
   }
   if (res.status === 429) {
     throw new RetryableSendError("LinkedIn is throttling this account (429)", 900);

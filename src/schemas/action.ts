@@ -111,6 +111,11 @@ export const action = z.object({
   dueAt: z.date(),
   sentAt: z.date().optional(),
   providerMessageId: z.string().optional(),
+  /**
+   * What kind of LinkedIn action this went out as: an invite, a message, a comment or a
+   * reply. Written at send, and what the per-action limits count.
+   */
+  op: z.enum(["invite", "message", "comment", "reply"]).optional(),
   cost: z.number().nonnegative().default(0),
 
   /**

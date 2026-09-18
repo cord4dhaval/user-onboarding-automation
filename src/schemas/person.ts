@@ -89,6 +89,12 @@ export const person = z.object({
   orgId: objectIdString,
   productId: objectIdString,
   identities: z.array(identity).min(1),
+  /**
+   * The LinkedIn member behind the profile slug in `identities`, looked up once and kept.
+   * Every lookup is a profile view against the sending account's allowance; `slug` says
+   * which URL the id belongs to, so a corrected URL is looked up again.
+   */
+  linkedin: z.object({ slug: z.string(), providerId: z.string(), checkedAt: z.date() }).optional(),
   primaryEmail: z.string().email().optional(),
   name: z.string().optional(),
   role: z.string().optional(),

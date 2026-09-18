@@ -486,6 +486,10 @@ export default function ChannelDrawer({
             <em>Where you&rsquo;re signed in</em> settings.
           </p>
           <p className="sub tight">
+            Reconnecting works the same way: paste a fresh session for an account already connected here and it
+            replaces the old one, and anything held while the session was down goes back in the queue.
+          </p>
+          <p className="sub tight">
             In that browser: DevTools (F12) → Application → Cookies → <code>https://www.linkedin.com</code>. Copy{" "}
             <code>li_at</code> and <code>JSESSIONID</code> (keep its quotes). Copy the <code>user-agent</code> from any
             request under the Network tab.

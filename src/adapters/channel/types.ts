@@ -46,8 +46,8 @@ export interface OutboundMessage {
    * invite, a direct message, a comment and a reply are different calls with different
    * targets. The adapter reads `op` to pick the call; the fields below carry its target.
    *
-   * `providerId` is the member (urn:li:fs_miniProfile:…), resolved from the person's
-   * LinkedIn URL just before sending. `conversationUrn` threads a DM; `postUrn` /
+   * `providerId` is the member (urn:li:fsd_profile:…), resolved once from the person's
+   * LinkedIn URL and cached on them. `conversationUrn` threads a DM; `postUrn` /
    * `parentCommentUrn` target a comment or a reply. Absent on every non-LinkedIn channel.
    */
   op?: "invite" | "message" | "comment" | "reply";
@@ -93,6 +93,25 @@ export class RetryableSendError extends Error {
   }
 }
 
+/**
+ * The channel itself cannot send until a person fixes it: a LinkedIn session that ended, an
+ * account the provider started blocking. Retryable for the message, because nothing went
+ * out and the touch is not spent, but the send path also takes the channel down, so the
+ * queue stops knocking on a door that will not open and the row says why.
+ *
+ * `sessionEnded` separates "the stored login is dead, paste a new one" from "the login may
+ * be fine but the provider is pushing back"; only the first marks the credential expired.
+ */
+export class ChannelDownError extends RetryableSendError {
+  constructor(
+    message: string,
+    readonly sessionEnded: boolean,
+  ) {
+    super(message, 3600);
+    this.name = "ChannelDownError";
+  }
+}
+
 /** What a voice call came to, read back from the provider. */
 export interface CallResult {
   /** The provider's own word for where the call is: "ringing", "completed", "no-answer". */
@@ -132,4 +151,11 @@ export interface ChannelAdapter {
    * and not. Resolved once and stored on the action.
    */
   resolveMessageId?(providerMessageId: string): Promise<string | undefined>;
+  /**
+   * Present only where the address on the person is not what the provider sends to: a
+   * LinkedIn profile slug has to be looked up to a member id, and every lookup is a profile
+   * view against the account's daily allowance. The send path asks once and caches the
+   * answer on the person, so a lead costs one lookup however many touches follow.
+   */
+  resolveRecipient?(to: string): Promise<string>;
 }

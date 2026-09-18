@@ -2495,7 +2495,7 @@ export async function createLinkedInChannel(formData: FormData) {
       {
         $set: { authType: "cookie", ...sealSecret(JSON.stringify(session)), status: "verified" },
         $unset: { lastError: "", lastErrorAt: "" },
-        $setOnInsert: { _id: new ObjectId(), orgId, connectionId },
+        $setOnInsert: { _id: new ObjectId() },
       },
       { upsert: true },
     );

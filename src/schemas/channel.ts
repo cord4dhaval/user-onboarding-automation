@@ -25,6 +25,8 @@ export const channelCapabilities = z.object({
   /** Hard caps the provider enforces; the validator rejects anything over them. */
   maxSubjectLength: z.number().int().positive().optional(),
   maxBodyLength: z.number().int().positive().optional(),
+  /** A LinkedIn invite note, which is far shorter than a message on the same channel. */
+  maxNoteLength: z.number().int().positive().optional(),
   /** True where the provider queues and the outcome must be polled afterwards. */
   asyncDelivery: z.boolean().default(false),
 });
@@ -34,9 +36,28 @@ export const sendGovernor = z.object({
   dailyCap: z.number().int().nonnegative(),
   perMinute: z.number().int().positive().optional(),
   perHour: z.number().int().positive().optional(),
+  perWeek: z.number().int().positive().optional(),
   warmupDay: z.number().int().nonnegative().default(0),
   sentToday: z.number().int().nonnegative().default(0),
   windowStartedAt: z.date(),
+  /** Caps per action type, counted from `action.op`. See opLimitsFor. */
+  perOp: z
+    .array(
+      z.object({
+        ops: z.array(z.string()).min(1),
+        label: z.string(),
+        startPerDay: z.number().int().positive(),
+        maxPerDay: z.number().int().positive(),
+        perWeek: z.number().int().positive().optional(),
+      }),
+    )
+    .optional(),
+  /** When the per-action day caps started climbing. Not reset by a settings save. */
+  warmupStartedAt: z.date().optional(),
+  /** A random wait between any two sends, drawn after each one lands. */
+  spacing: z.object({ minSec: z.number().int().nonnegative(), maxSec: z.number().int().nonnegative() }).optional(),
+  /** The slot the last draw picked; nothing goes out on this channel before it. */
+  nextSendAt: z.date().optional(),
 });
 
 export const channel = z.object({

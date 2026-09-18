@@ -15,9 +15,10 @@ import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
 import { assetsNeedApproval, assetsForRender, creditAssets, highestTier } from "./assets.js";
-import { RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
+import { ChannelDownError, RetryableSendError, type ChannelAdapter } from "../adapters/channel/types.js";
 import { ConsoleAdapter } from "../adapters/channel/console.js";
-import { limitsFor, rateBlock, rateHeadroom } from "./governor.js";
+import { limitsFor, nextSpacedSlot, opLimitsFor, rateBlock, rateHeadroom, spacedUntil } from "./governor.js";
+import { channelDownHold, takeChannelDown } from "./channelHealth.js";
 import { bandFor, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
@@ -160,12 +161,12 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
   // per action would count only what has landed, which during a batch is not what has been
   // committed to.
   const headroom = new Map<string, number>();
-  const reserve = async (channelId: string): Promise<boolean> => {
+  const reserve = async (channelId: string, governor: Record<string, unknown> | undefined): Promise<boolean> => {
     if (!headroom.has(channelId)) {
-      headroom.set(
-        channelId,
-        await rateHeadroom(opts.orgId, channelId, await limitsFor(opts.orgId, channelId), now),
-      );
+      const room = await rateHeadroom(opts.orgId, channelId, await limitsFor(opts.orgId, channelId), now);
+      // A channel that waits a random interval between sends sends one per run: the next
+      // slot is only drawn once this send lands, so a second one now would skip the wait.
+      headroom.set(channelId, governor?.spacing ? Math.min(room, 1) : room);
     }
     const left = headroom.get(channelId) ?? 0;
     if (left <= 0) return false;
@@ -259,6 +260,29 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         continue;
       }
 
+      // LinkedIn is not one kind of send. The first touch to a lead is a connection invite
+      // carrying the rendered note; every later touch is a direct message. The engine does
+      // not need to poll for acceptance to make this work: a DM sent before the invite is
+      // accepted comes back NOT_FIRST_DEGREE, which the adapter turns into a deferral, so the
+      // message simply waits in the queue and goes out the moment they accept.
+      //
+      // "First touch" is read from what has actually been sent, not a flag: the first
+      // LinkedIn send to this person is the invite, anything after it is a DM. Decided before
+      // the guards, because an invite and a message have different limits and lengths.
+      const op =
+        String(action.channel) === "linkedin"
+          ? (await db.collection(C.actions).countDocuments({
+              orgId: opts.orgId,
+              productId: opts.productId,
+              personId: action.personId,
+              channel: "linkedin",
+              status: "sent",
+              _id: { $ne: action._id },
+            })) > 0
+            ? ("message" as const)
+            : ("invite" as const)
+          : undefined;
+
       const block = await blockedReason({
         orgId: opts.orgId,
         address,
@@ -266,9 +290,19 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         template,
         goalInstance,
         channel,
+        op,
         now,
       });
       if (block) {
+        // A channel a send took down: kept, not skipped, and released on reconnect.
+        if (block.hold) {
+          await db.collection(C.actions).updateOne(
+            { _id: action._id },
+            { $set: { status: "held", heldReason: block.reason }, $unset: { claimedAt: "" } },
+          );
+          summary.deferred++;
+          continue;
+        }
         if (block.retryAt) {
           // Back to the queue at the moment the window frees, exactly like provider
           // back-pressure below. The message keeps its approval and its frozen content, so
@@ -368,7 +402,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const priorClaims = await priorClaimsFor(String(action.goalInstanceId));
       const constraints = template.constraints as { maxWords?: number; noClaims?: string[] } | undefined;
       const caps = channel.capabilities as
-        | { maxSubjectLength?: number; maxBodyLength?: number; html?: boolean }
+        | { maxSubjectLength?: number; maxBodyLength?: number; maxNoteLength?: number; html?: boolean }
         | undefined;
 
       // The HTML part is frozen with the text, for the same reason: a brand refreshed
@@ -424,7 +458,10 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         noClaims: constraints?.noClaims,
         priorClaims,
         maxSubjectLength: caps?.maxSubjectLength,
-        maxBodyLength: caps?.maxBodyLength,
+        // An invite note is held to its own, far shorter limit; a message on the same channel
+        // is not. One number for both either rejected every real message or let an invite
+        // through that LinkedIn would refuse.
+        maxBodyLength: op === "invite" ? (caps?.maxNoteLength ?? caps?.maxBodyLength) : caps?.maxBodyLength,
         isReply,
       });
 
@@ -459,7 +496,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // blockedReason asked whether the window was full, which is the right question when
       // messages leave one at a time and the wrong one when several are in flight: they all
       // read the same count and all pass. Reserving makes the cap hold at any fan-out.
-      if (!dryRun && !(await reserve(String(action.channelId)))) {
+      if (!dryRun && !(await reserve(String(action.channelId), channel.governor as Record<string, unknown> | undefined))) {
         await db.collection(C.actions).updateOne(
           { _id: action._id },
           {
@@ -516,26 +553,13 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         };
       }
 
-      // LinkedIn is not one kind of send. The first touch to a lead is a connection invite
-      // carrying the rendered note; every later touch is a direct message. The engine does
-      // not need to poll for acceptance to make this work: a DM sent before the invite is
-      // accepted comes back NOT_FIRST_DEGREE, which the adapter turns into a deferral, so the
-      // message simply waits in the queue and goes out the moment they accept.
-      //
-      // "First touch" is read from what has actually been sent, not a flag: the first
-      // LinkedIn send to this person is the invite, anything after it is a DM. The slug is
-      // already in `outbound.to`; the adapter resolves it to a member id.
-      if (String(action.channel) === "linkedin") {
-        const priorSent = await db.collection(C.actions).countDocuments({
-          orgId: opts.orgId,
-          productId: opts.productId,
-          personId: action.personId,
-          channel: "linkedin",
-          status: "sent",
-          _id: { $ne: action._id },
-        });
-        outbound.op = priorSent > 0 ? "message" : "invite";
+      // The slug is in `outbound.to`. The member id behind it is cached on the person once
+      // looked up, and only for this slug, so a corrected URL is looked up again.
+      if (op) {
+        outbound.op = op;
         outbound.note = content.bodyMd;
+        const known = person.linkedin as { slug?: string; providerId?: string } | undefined;
+        if (known?.slug === address && known.providerId) outbound.providerId = known.providerId;
       }
 
       // The same address the body's opt-out link points at, promoted to a header so Gmail
@@ -570,6 +594,16 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const dispatch = async () => {
         let result;
         try {
+          // A LinkedIn lead is looked up once, here, and the answer kept on the person before
+          // the send is tried: a DM that waits days for an invite to be accepted is retried
+          // many times, and each retry used to spend another profile view finding the same id.
+          if (!dryRun && outbound.op && !outbound.providerId && adapter.resolveRecipient) {
+            outbound.providerId = await adapter.resolveRecipient(outbound.to);
+            await db.collection(C.people).updateOne(
+              { _id: person._id },
+              { $set: { linkedin: { slug: outbound.to, providerId: outbound.providerId, checkedAt: new Date() } } },
+            );
+          }
           result = dryRun
             ? await new ConsoleAdapter().send(outbound)
             : await adapter.send(outbound);
@@ -579,12 +613,30 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
           if (err instanceof RetryableSendError) {
             await db.collection(C.actions).updateOne(
               { _id: action._id },
-              { $set: { status: "queued", dueAt: new Date(now.getTime() + err.retryAfterSec * 1000), content } },
+              {
+                $set: {
+                  status: "queued",
+                  dueAt: new Date(now.getTime() + err.retryAfterSec * 1000),
+                  content,
+                  deferReason: err.message,
+                },
+              },
             );
             summary.deferred++;
             // A deferred message also hands its rate slot back: it never reached the
             // provider, so nothing was spent and the next action in this batch may have it.
             headroom.set(String(action.channelId), (headroom.get(String(action.channelId)) ?? 0) + 1);
+            // The channel is the problem, not this message: stop it, say why on the row, and
+            // hold its queue until someone reconnects it. This message is held by name, since
+            // a send still in flight beside it can requeue after the sweep has run.
+            if (err instanceof ChannelDownError) {
+              await takeChannelDown(opts.orgId, String(action.channelId), err.message, err.sessionEnded);
+              await db.collection(C.actions).updateOne(
+                { _id: action._id },
+                { $set: { status: "held", heldReason: channelDownHold(err.message) } },
+              );
+              headroom.set(String(action.channelId), 0);
+            }
             return;
           }
           throw err;
@@ -606,6 +658,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
               templateId: String(template._id),
               sentAt: new Date(),
               providerMessageId: result.providerMessageId,
+              ...(op ? { op } : {}),
               dryRun,
               // Copied rather than joined later: segment and fit both move as we learn more,
               // and a rollup keyed on today's values would rewrite what past sends meant.
@@ -654,9 +707,15 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             $set: { lastContactedAt: new Date() },
           },
         );
+        // A channel that paces at random draws its next slot now, from the moment this one
+        // actually went, and nothing else leaves it before then.
+        const nextSlot = dryRun ? null : nextSpacedSlot(channel.governor as Record<string, unknown> | undefined);
         await db
           .collection(C.channels)
-          .updateOne({ _id: channel._id }, { $inc: { "governor.sentToday": 1 } });
+          .updateOne(
+            { _id: channel._id },
+            { $inc: { "governor.sentToday": 1 }, ...(nextSlot ? { $set: { "governor.nextSendAt": nextSlot } } : {}) },
+          );
 
         // The shared prior: which step, which hour, which channel. Nothing identifying goes
         // in, so a product that has never sent anything can still start on real mechanics.
@@ -758,6 +817,8 @@ interface Blocked {
   reason: string;
   /** Set only for a temporary block: when to try this message again. */
   retryAt?: Date;
+  /** Neither a verdict nor a clock: keep the message until a person brings the channel back. */
+  hold?: boolean;
 }
 
 async function blockedReason(args: {
@@ -768,6 +829,8 @@ async function blockedReason(args: {
   template: Record<string, unknown>;
   goalInstance: Record<string, unknown>;
   channel: Record<string, unknown>;
+  /** The LinkedIn action this send will be, which has limits of its own. */
+  op?: string;
   now: Date;
 }): Promise<Blocked | null> {
   if (await isSuppressed(args.orgId, [args.address])) return { reason: "on the suppression list" };
@@ -783,6 +846,11 @@ async function blockedReason(args: {
 
   // A channel someone paused is a decision; one the engine marked degraded is a fault that
   // may clear. Neither is a clock, so both wait for a human rather than a timer.
+  // Except one a send took down (a LinkedIn session that ended): its queue is held for the
+  // reconnect that releases it, and a message reaching it now joins that queue.
+  if (args.channel.status !== "healthy" && args.channel.downReason) {
+    return { reason: channelDownHold(String(args.channel.downReason)), hold: true };
+  }
   if (args.channel.status !== "healthy") return { reason: `channel is ${String(args.channel.status)}` };
 
   const outsideWindow = windowBlock(args.channel, args.person, args.template, args.now);
@@ -793,6 +861,19 @@ async function blockedReason(args: {
   const limits = await limitsFor(args.orgId, channelId);
   const rate = await rateBlock(args.orgId, channelId, limits, args.now);
   if (rate) return { reason: rate.reason, retryAt: rate.retryAt };
+
+  // Then the limit for this kind of action, where the channel has one: invites are held to
+  // far fewer a day than messages, and a weekly ceiling on top.
+  const governor = args.channel.governor as Record<string, unknown> | undefined;
+  const perOp = args.op ? opLimitsFor(governor, args.op, args.now) : null;
+  if (perOp) {
+    const opRate = await rateBlock(args.orgId, channelId, perOp.limits, args.now, perOp.scope);
+    if (opRate) return { reason: opRate.reason, retryAt: opRate.retryAt };
+  }
+
+  // A clock like the rest: the channel drew a random wait after its last send.
+  const spaced = spacedUntil(governor, args.now);
+  if (spaced) return { reason: "waiting for the channel's next randomly spaced send slot", retryAt: spaced };
 
   return null;
 }
@@ -932,7 +1013,9 @@ async function conversationFor(
     .next();
   if (!lastSent) return undefined;
 
-  const thread = lastSent.thread as { id?: string; messageId?: string; references?: string[] };
+  // Absent where the provider handed back only its own id: a LinkedIn invite has an
+  // invitation urn and no thread, and reading through it made every DM after an invite fail.
+  const thread = (lastSent.thread ?? {}) as { id?: string; messageId?: string; references?: string[] };
 
   // The parent's RFC Message-ID, fetched the first time anything needs to point at it and
   // written back so no later touch in this conversation asks again. A provider that cannot

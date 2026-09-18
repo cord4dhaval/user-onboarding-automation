@@ -96,7 +96,11 @@ export async function evaluateChannel(orgId: string, channelId: string): Promise
     const cred = await db
       .collection(C.credentials)
       .findOne({ orgId, connectionId: String(connection._id) });
-    if (!cred || ["expired", "revoked", "pending"].includes(String(cred.status))) {
+    // LinkedIn's own words first, where a send recorded them: "wants a security check" and
+    // "is blocking this account" are different fixes from a session that simply ran out.
+    if (connection.status === "degraded" && connection.lastError) {
+      reasons.push(String(connection.lastError));
+    } else if (!cred || ["expired", "revoked", "pending"].includes(String(cred.status))) {
       reasons.push("the LinkedIn session has ended — reconnect the account");
     }
   }
@@ -130,4 +134,74 @@ export async function refreshChannelHealth(orgId: string, channelId: string): Pr
   );
 
   return health;
+}
+
+/** The heldReason prefix for a queue the engine held because its channel went down. */
+const CHANNEL_DOWN = "channel down";
+
+/** The heldReason for a message held because its channel went down, in the provider's words. */
+export function channelDownHold(reason: string): string {
+  return `${CHANNEL_DOWN} — ${reason}`;
+}
+
+/**
+ * Stops a channel that the provider has stopped accepting, from inside a send.
+ *
+ * Without this a dead LinkedIn session looked healthy forever: every send bounced, went
+ * back in the queue for a few minutes and bounced again, the channel row stayed green, and
+ * nobody was asked to reconnect. Now the first bounce records LinkedIn's reason on the
+ * connection, turns the row red with it, and holds everything queued on the channel. Held
+ * rather than skipped, because every one of those messages is still worth sending once the
+ * account is back; reconnecting releases them (releaseChannelHolds).
+ *
+ * `sessionEnded` also marks the stored credential expired. A 999 does not: the session may
+ * be fine, and it is the account's standing that needs a person to look at it.
+ */
+export async function takeChannelDown(
+  orgId: string,
+  channelId: string,
+  reason: string,
+  sessionEnded: boolean,
+): Promise<void> {
+  const db = await getDb();
+  const channel = await db.collection(C.channels).findOne({ _id: new ObjectId(channelId), orgId });
+  if (!channel) return;
+  const connectionId = String(channel.connectionId);
+  const at = new Date();
+
+  if (sessionEnded) {
+    await db
+      .collection(C.credentials)
+      .updateOne({ orgId, connectionId }, { $set: { status: "expired", lastError: reason, lastErrorAt: at } });
+  }
+  await db
+    .collection(C.connections)
+    .updateOne({ _id: new ObjectId(connectionId) }, { $set: { status: "degraded", lastError: reason, lastErrorAt: at } });
+  await refreshChannelHealth(orgId, channelId);
+  // Marks the channel as down by a send rather than by setup, so anything that reaches it
+  // later is held too (fireDue's blockedReason) instead of being skipped for good.
+  await db.collection(C.channels).updateOne({ _id: new ObjectId(channelId), orgId }, { $set: { downReason: reason } });
+
+  await db
+    .collection(C.actions)
+    .updateMany(
+      { orgId, channelId, status: "queued" },
+      { $set: { status: "held", heldReason: channelDownHold(reason) }, $unset: { claimedAt: "" } },
+    );
+}
+
+/**
+ * Puts back what takeChannelDown held, once the channel is healthy again. Only those: a
+ * paused campaign's queue on the same channel stays paused.
+ */
+export async function releaseChannelHolds(orgId: string, channelId: string): Promise<number> {
+  const db = await getDb();
+  await db.collection(C.channels).updateOne({ _id: new ObjectId(channelId), orgId }, { $unset: { downReason: "" } });
+  const res = await db
+    .collection(C.actions)
+    .updateMany(
+      { orgId, channelId, status: "held", heldReason: { $regex: `^${CHANNEL_DOWN} — ` } },
+      { $set: { status: "queued" }, $unset: { heldReason: "" } },
+    );
+  return res.modifiedCount;
 }

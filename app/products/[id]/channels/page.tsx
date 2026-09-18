@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { channelUsage, limitsFor } from "@/engine/governor.js";
+import { channelUsage, limitsFor, opLimitsFor, spacedUntil, type OpLimit } from "@/engine/governor.js";
 import { channelTypeLabel, providerLabel, transportLabel } from "@/channels/catalog.js";
 import type { McpTool } from "@/mcp/client.js";
 import {
@@ -196,6 +196,34 @@ export default async function Channels({
     ),
   );
 
+  // Per action type, where the channel limits them separately (LinkedIn: invites, messages,
+  // comments). One overall "sent today" would hide the limit that is actually stopping it.
+  const opUsageByChannel = new Map<string, Array<{ label: string; daily?: UsageWindow; weekly?: UsageWindow }>>(
+    await Promise.all(
+      channels.map(async (c) => {
+        const governor = c.governor as Record<string, unknown> | undefined;
+        const perOp = (governor?.perOp ?? []) as OpLimit[];
+        const rows = await Promise.all(
+          perOp.map(async (limit) => {
+            const scoped = opLimitsFor(governor, limit.ops[0] ?? "");
+            const windows = scoped
+              ? (await channelUsage(orgId, String(c._id), scoped.limits, new Date(), scoped.scope)).map((w) => ({
+                  ...w,
+                  freesAt: w.freesAt?.toISOString(),
+                }))
+              : [];
+            return {
+              label: limit.label,
+              daily: windows.find((w) => w.label === "daily"),
+              weekly: windows.find((w) => w.label === "weekly"),
+            };
+          }),
+        );
+        return [String(c._id), rows] as [string, Array<{ label: string; daily?: UsageWindow; weekly?: UsageWindow }>];
+      }),
+    ),
+  );
+
   /** One connected sender, as a full-width row: what it sends as, how it was connected,
    * what it has spent, what it reports back, and every way of changing it. */
   function senderRow(c: Record<string, unknown>): ReactNode {
@@ -214,6 +242,8 @@ export default async function Channels({
     // the planner skips but the send path would still use is not a state anyone wants.
     const live = c.status === "healthy" && c.enabled !== false;
     const daily = usage.find((w) => w.label === "daily");
+    const opUsage = opUsageByChannel.get(String(c._id)) ?? [];
+    const nextSlot = spacedUntil(c.governor as Record<string, unknown> | undefined);
     // The first limit with nothing left is the one currently stopping sends.
     const blocked = usage.find((w) => w.free === 0);
     // Who it goes through and how it was connected, as two separate facts on one line.
@@ -335,7 +365,32 @@ export default async function Channels({
           <div>
             <dt>Sent today</dt>
             <dd>
-              {daily ? (
+              {opUsage.length > 0 ? (
+                <div className="sender-cap">
+                  {opUsage.map((o) => {
+                    // The first window with nothing left is the one holding this action back.
+                    const full = [o.daily, o.weekly].find((w) => w && w.free === 0);
+                    return (
+                      <span className="cap-line" key={o.label}>
+                        <span className={`pill ${full ? "bad" : "ok"}`}>
+                          {o.label} {o.daily?.used ?? 0}/{o.daily?.limit ?? 0}
+                        </span>
+                        <span className="muted">
+                          {full
+                            ? `${WINDOW_LABEL[full.label] ?? full.label} full${
+                                full.freesAt ? ` · frees ${windowTime(full.freesAt)}` : ""
+                              }`
+                            : o.weekly
+                              ? `${o.weekly.used}/${o.weekly.limit} ${WINDOW_LABEL.weekly}`
+                              : `${o.daily?.free ?? 0} can send now`}
+                        </span>
+                      </span>
+                    );
+                  })}
+                  {/* Sends on this channel are spaced at random; when the next may go. */}
+                  {nextSlot && <span className="muted">next send slot {windowTime(nextSlot.toISOString())}</span>}
+                </div>
+              ) : daily ? (
                 <div className="sender-cap">
                   <span className="cap-line">
                     <span className={`pill ${blocked ? "bad" : "ok"}`}>
