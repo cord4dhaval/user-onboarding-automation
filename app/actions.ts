@@ -1,6 +1,6 @@
 "use server";
 
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import { requiredArgs } from "@/mcp/argcheck.js";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -41,6 +41,7 @@ import { assetFileUrl, deleteAssetFile, kindForMime, storeAssetFile } from "@/en
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
+import { addressFor } from "@/engine/address.js";
 import { timezoneFor } from "@/engine/time.js";
 import { stripOpenPixel } from "@/engine/tracking.js";
 import { ideasOf, inventedOf } from "@/engine/ideas.js";
@@ -2003,6 +2004,25 @@ export interface HeldMessage {
   rewriteRequestedAt?: string;
   /** Who it goes to, why this message, and what it is meant to lead to. */
   brief?: MessageBrief;
+  /** The address it goes to on its channel: the phone number on WhatsApp. */
+  to?: string;
+  /** What a WhatsApp message is sent as, for the chat preview. */
+  whatsapp?: WhatsAppFacts;
+}
+
+/**
+ * A WhatsApp message as the recipient's phone shows it, beyond the words: whose chat it
+ * lands in, and whether it goes as an approved template (anywhere, any time) or as free text
+ * (only inside the 24-hour reply window).
+ */
+export interface WhatsAppFacts {
+  /** The business name the chat is headed with. */
+  businessName: string;
+  /** The approved provider template it is sent as. Absent means free text. */
+  template?: string;
+  /** The template's footer line and buttons, where the template row records them. */
+  footer?: string;
+  buttons?: { kind: "url" | "reply" | "phone"; text: string }[];
 }
 
 /**
@@ -2238,6 +2258,34 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     sentAt: action.sentAt ? new Date(String(action.sentAt)).toISOString() : undefined,
     reviewedAt: action.reviewedAt ? new Date(String(action.reviewedAt)).toISOString() : undefined,
     brief: await briefFor(orgId, action),
+    ...(String(action.channel) === "email" ? {} : await channelFacts(action, channel)),
+  };
+}
+
+/** Where a message on a channel other than email goes, and for WhatsApp what it is sent as. */
+async function channelFacts(action: Document, channel: Document | null): Promise<Pick<HeldMessage, "to" | "whatsapp">> {
+  const db = await getDb();
+  const [person, template, product] = await Promise.all([
+    action.personId ? db.collection(C.people).findOne({ _id: new ObjectId(String(action.personId)) }) : null,
+    action.templateId ? db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) }) : null,
+    action.productId ? db.collection(C.products).findOne({ _id: new ObjectId(String(action.productId)) }, { projection: { name: 1 } }) : null,
+  ]);
+  const to = person ? addressFor(person, String(action.channel)) || undefined : undefined;
+  if (String(action.channel) !== "whatsapp") return { to };
+
+  const approved = template?.providerTemplate as
+    | { name?: string; footer?: string; buttons?: { kind?: string; text?: string }[] }
+    | undefined;
+  return {
+    to,
+    whatsapp: {
+      businessName: String(channel?.from ?? product?.name ?? "Business"),
+      template: approved?.name || undefined,
+      footer: approved?.footer || undefined,
+      buttons: (approved?.buttons ?? [])
+        .filter((b) => b.text)
+        .map((b) => ({ kind: b.kind === "url" || b.kind === "phone" ? b.kind : "reply", text: String(b.text) })),
+    },
   };
 }
 

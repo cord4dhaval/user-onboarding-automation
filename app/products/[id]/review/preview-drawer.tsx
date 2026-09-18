@@ -16,6 +16,7 @@ import {
 import { ist, istInputValue, istTime, istWeekday } from "../../../ui/time";
 import { isReplacedPlan } from "@/engine/replaced.js";
 import InboxPreview from "./inbox-preview";
+import WhatsAppPreview from "./whatsapp-preview";
 
 /** Where the Fit choice is remembered, per browser. */
 const FIT_KEY = "review.preview.fit";
@@ -119,6 +120,10 @@ export default function PreviewDrawer({
     (message?.status === "skipped" && Boolean(message.skipReason) && !isReplacedPlan(message.skipReason));
   const html = format === "letter" ? message?.bodyLetter : format === "html" ? message?.bodyHtml : undefined;
   const email = message?.channel === "email";
+  const whatsapp = message?.channel === "whatsapp" ? message.whatsapp : undefined;
+  // A template goes by name with only its variables filled in, so its words are the ones
+  // Meta approved: editing or rewriting them here would change the preview and not the send.
+  const fixedWords = Boolean(whatsapp?.template);
   // When Approve actually puts it in front of someone, said on the button that does it.
   const dueLater = message?.dueAt ? new Date(message.dueAt).getTime() > Date.now() : false;
 
@@ -131,7 +136,7 @@ export default function PreviewDrawer({
       <Drawer
         open={open}
         title={personName}
-        description={personEmail || undefined}
+        description={message?.to || personEmail || undefined}
         onClose={() => setOpen(false)}
         width={1200}
         bodyClassName="pv-body"
@@ -174,6 +179,7 @@ export default function PreviewDrawer({
               {message.editable && (
                 <div className="pv-tools">
                   <div className="row">
+                    {!fixedWords && (
                     <Button
                       variant="quiet"
                       size="sm"
@@ -183,6 +189,7 @@ export default function PreviewDrawer({
                     >
                       Edit copy
                     </Button>
+                    )}
                     <Button
                       variant="quiet"
                       size="sm"
@@ -192,6 +199,7 @@ export default function PreviewDrawer({
                     >
                       Reschedule
                     </Button>
+                    {!fixedWords && (
                     <Button
                       variant="quiet"
                       size="sm"
@@ -201,7 +209,14 @@ export default function PreviewDrawer({
                     >
                       Rewrite
                     </Button>
+                    )}
                   </div>
+                  {fixedWords ? (
+                    <p className="muted pv-note">
+                      The words are the approved WhatsApp template&rsquo;s. Change them in WATI and
+                      submit the new version for approval.
+                    </p>
+                  ) : null}
                   {message.rewriteRequestedAt ? (
                     <span className="pill">rewrite asked for {ist(message.rewriteRequestedAt)}</span>
                   ) : null}
@@ -315,7 +330,7 @@ export default function PreviewDrawer({
                   </div>
                 ) : null}
                 <span className="spacer" />
-                {email && (
+                {(email || whatsapp) && (
                   <div className="seg" role="tablist" aria-label="Device">
                     <button
                       type="button"
@@ -363,9 +378,18 @@ export default function PreviewDrawer({
                 )}
               </div>
 
-              {/* Email is shown the way the recipient meets it — its line in the inbox, then
-                  opened. Other channels have no inbox to imitate, so they keep the body. */}
-              {email ? (
+              {/* Email and WhatsApp are shown the way the recipient meets them — the line in the
+                  inbox or chat list, then opened. Other channels keep the body. */}
+              {whatsapp ? (
+                <WhatsAppPreview
+                  device={device}
+                  businessName={whatsapp.businessName}
+                  text={message.bodyText || message.previewError || "This message has no body."}
+                  when={message.sentAt ?? message.dueAt}
+                  footer={whatsapp.footer}
+                  buttons={whatsapp.buttons}
+                />
+              ) : email ? (
                 <InboxPreview
                   compact
                   fit={fit}
@@ -428,6 +452,10 @@ export default function PreviewDrawer({
               <p className="pv-says">
                 {!waiting
                   ? outcomeLine(message)
+                  : whatsapp
+                    ? whatsapp.template
+                      ? `Approving sends the approved WhatsApp template ${whatsapp.template}, with their name filled in. It can go whether or not they have written to us.`
+                      : "Approving sends this as free text. WhatsApp only delivers that within 24 hours of their last message to us."
                   : designed || letter
                     ? format === "html"
                       ? "Approving sends this designed version."

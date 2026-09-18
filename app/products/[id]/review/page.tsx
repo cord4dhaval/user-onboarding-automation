@@ -476,7 +476,7 @@ export default async function Review({
 
   /** One message as one line: who, what, how warm they are, when it goes, and the decision. */
   const renderRow = ({ action, person, run }: Row) => {
-    const content = (action.content ?? {}) as { subject?: string; slotText?: string };
+    const content = (action.content ?? {}) as { subject?: string; slotText?: string; bodyMd?: string };
     const name = String(person?.name ?? person?.primaryEmail ?? "Unknown");
     const email = String(person?.primaryEmail ?? "");
     const goalKey = String(run?.goalKey ?? "—");
@@ -514,7 +514,13 @@ export default async function Review({
         <div className="q-who" title={email}>
           {name}
         </div>
-        <MessageLine subject={content.subject} slotText={content.slotText} campaign={campaignLabel} />
+        <MessageLine
+          subject={content.subject}
+          slotText={content.slotText}
+          body={String(action.channel) === "email" ? undefined : content.bodyMd}
+          channel={String(action.channel)}
+          campaign={campaignLabel}
+        />
         <div>
           <Signal temp={temp} engagement={engagement} />
         </div>
@@ -945,8 +951,36 @@ function Signal({
  * The subject, then the campaign it belongs to, on one line that ends in an ellipsis rather
  * than wrapping — the whole message is one click away in the preview.
  */
-function MessageLine({ subject, slotText, campaign }: { subject?: string; slotText?: string; campaign: string }) {
+function MessageLine({
+  subject,
+  slotText,
+  body,
+  channel,
+  campaign,
+}: {
+  subject?: string;
+  slotText?: string;
+  /** The rendered words, for a channel with no subject line (WhatsApp, SMS). */
+  body?: string;
+  channel?: string;
+  campaign: string;
+}) {
   const tail = <span className="q-tail"> — {campaign}</span>;
+  // No subject on WhatsApp: its first line is what the chat list shows, so it stands in for
+  // one here. The fixed template it came from is already written, not "not written yet".
+  const firstLine = body
+    ?.split("\n")
+    .find((line) => line.trim())
+    ?.replace(/(^|\s)[*_~]+|[*_~]+(?=\s|$)/g, "$1")
+    .trim();
+  if (!subject && firstLine) {
+    return (
+      <div className="q-msg" title={`${firstLine} — ${campaign}`}>
+        <span className="pill">{channel}</span> <span className="q-subject">{firstLine}</span>
+        {tail}
+      </div>
+    );
+  }
   if (subject) {
     return (
       <div className="q-msg" title={`${subject} — ${campaign}`}>

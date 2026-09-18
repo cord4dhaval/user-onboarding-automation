@@ -1149,6 +1149,153 @@ details.asset-more > summary .reason { max-width: none; margin-top: 0; font-weig
 .m-sender-tools { display: inline-flex; gap: 18px; padding-top: 6px; }
 .m-content .inbox-text { padding: 0 16px 24px; }
 
+/* ── whatsapp preview ──────────────────────────────────────────────────────── */
+/* WhatsApp's own light palette, kept in both console themes for the same reason as the
+   inbox: it shows what the lead's phone shows. The phone bezel and status bar are shared
+   with the inbox preview (.phone, .phone-status). */
+.wa {
+  --wa-bg: #FFFFFF;
+  --wa-panel: #F0F2F5;
+  --wa-wall: #EFEAE2;
+  --wa-ink: #111B21;
+  --wa-ink-2: #667781;
+  --wa-rule: #E9EDEF;
+  --wa-green: #25D366;
+  --wa-teal: #008069;
+  --wa-link: #027EB5;
+  --wa-chip: #FFFFFF;
+  --wa-notice: #FFEECD;
+  --wa-avatar: #DFE5E7;
+  --mail-bezel: #1B1B1F;
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  font-family: "Segoe UI", "Helvetica Neue", Helvetica, "Lucida Grande", Arial, sans-serif;
+  color: var(--wa-ink);
+}
+.wa-soft { color: var(--wa-ink-2); }
+.wa-avatar {
+  flex: none; width: 40px; height: 40px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--wa-avatar); color: var(--wa-ink-2); font-size: 17px; font-weight: 600;
+}
+
+/* WhatsApp Web: the chat list on the left, the open chat on the right. */
+.wa-web {
+  flex: 1; min-height: 420px; display: grid; grid-template-columns: minmax(220px, 30%) minmax(0, 1fr);
+  background: var(--wa-bg); border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; box-shadow: var(--e1);
+}
+.wa-list { display: flex; flex-direction: column; border-right: 1px solid var(--wa-rule); min-width: 0; }
+.wa-list-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; font-size: 19px; }
+.wa-list-head .wa-soft { display: inline-flex; gap: 16px; }
+.wa-search {
+  display: flex; align-items: center; gap: 10px; margin: 0 12px 8px; padding: 7px 12px;
+  border-radius: 8px; background: var(--wa-panel); color: var(--wa-ink-2); font-size: 13px;
+}
+.wa-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--wa-bg); }
+.wa-row.on { background: var(--wa-panel); }
+.wa-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wa-row-top, .wa-row-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wa-row-top strong { font-weight: 400; font-size: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wa-row-time { flex: none; font-size: 12px; color: var(--wa-green); }
+.wa-row-snippet { font-size: 14px; color: var(--wa-ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wa-unread {
+  flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--wa-green); color: #FFFFFF; font-size: 12px; font-weight: 600;
+}
+
+.wa-chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.wa-head {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  background: var(--wa-panel); border-bottom: 1px solid var(--wa-rule);
+}
+.wa-head-who { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.wa-head-who strong { font-weight: 400; font-size: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wa-head-who .wa-soft { font-size: 13px; }
+.wa-head-tools { display: inline-flex; align-items: center; gap: 20px; }
+
+/* The conversation: WhatsApp's beige wall, the day and the Meta notice centred, then the
+   message on the left, as the lead sees one that came in. */
+.wa-wall {
+  flex: 1; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding: 14px 7% 18px; background: var(--wa-wall);
+}
+.wa-chip {
+  align-self: center; max-width: 85%; padding: 5px 12px; border-radius: 8px;
+  font-size: 12.5px; line-height: 1.4; text-align: center; color: var(--wa-ink-2);
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, .13);
+}
+.wa-day { background: var(--wa-chip); text-transform: uppercase; font-size: 12px; }
+.wa-notice { background: var(--wa-notice); display: inline-flex; align-items: center; gap: 6px; }
+.wa-msg { max-width: min(560px, 85%); display: flex; flex-direction: column; gap: 2px; }
+.wa-bubble {
+  position: relative; padding: 6px 9px 8px; background: var(--wa-bg);
+  border-radius: 0 8px 8px 8px; box-shadow: 0 1px 0.5px rgba(11, 20, 26, .13);
+}
+/* The tail on the first message of a run, pointing at the sender's side. */
+.wa-bubble::before {
+  content: ""; position: absolute; top: 0; left: -8px;
+  border-top: 10px solid var(--wa-bg); border-left: 8px solid transparent;
+}
+.wa-text {
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.2px; line-height: 19px;
+}
+/* Room at the end of the last line for the time, the way WhatsApp floats it there. */
+.wa-text::after { content: ""; display: inline-block; width: 52px; }
+.wa-text strong { font-weight: 700; }
+.wa-mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+.wa-link { color: var(--wa-link); text-decoration: underline; word-break: break-all; }
+.wa-footer { margin-top: 4px; font-size: 13px; color: var(--wa-ink-2); }
+.wa-time { position: absolute; right: 8px; bottom: 4px; font-size: 11px; color: var(--wa-ink-2); }
+.wa-buttons { display: flex; flex-direction: column; gap: 2px; }
+.wa-button {
+  display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 12px;
+  background: var(--wa-bg); border-radius: 8px; color: var(--wa-link); font-size: 14px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, .13);
+}
+
+.wa-compose {
+  display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+  background: var(--wa-panel); color: var(--wa-ink-2);
+}
+.wa-input {
+  flex: 1; display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border-radius: 8px; background: var(--wa-bg); color: var(--wa-ink-2); font-size: 14px;
+}
+
+/* Phone: the same frame as the inbox preview, holding WhatsApp's list and chat. */
+.wa .phone { height: 100%; display: flex; flex-direction: column; padding: 10px; border-radius: 40px; }
+.wa .phone-screen { flex: 1; height: auto; min-height: 0; border-radius: 30px; background: var(--wa-bg); color: var(--wa-ink); }
+.wa .phone-status { background: var(--wa-bg); }
+.wa-cap {
+  margin: 0; padding: 5px 14px; background: var(--wa-panel);
+  border-top: 1px solid var(--wa-rule); border-bottom: 1px solid var(--wa-rule);
+  font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--wa-ink-2);
+}
+.wa-screen { display: flex; flex-direction: column; }
+.wa-m-chat { flex: 1 0 auto; display: flex; flex-direction: column; min-height: 560px; }
+.wa-m-chat .wa-wall { flex: 1 0 auto; }
+.wa-m-head { background: var(--wa-bg); padding: 8px 12px; gap: 10px; }
+.wa-m-head .wa-avatar { width: 36px; height: 36px; font-size: 15px; }
+.wa-m-head .wa-head-tools { gap: 18px; color: var(--wa-ink); }
+.wa-m-chat .wa-wall { padding: 12px 10px 16px; }
+.wa-m-chat .wa-msg { max-width: 88%; }
+.wa-m-compose { background: transparent; padding: 6px 8px 14px; gap: 6px; }
+.wa-m-compose .wa-input { border-radius: 24px; padding: 10px 14px; }
+.wa-input-tools { margin-left: auto; display: inline-flex; gap: 16px; }
+.wa-mic {
+  flex: none; width: 44px; height: 44px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--wa-teal); color: #FFFFFF;
+}
+
+/* A narrow drawer keeps the open chat and drops the list, as WhatsApp Web does. */
+@media (max-width: 1100px) {
+  .wa-web { grid-template-columns: minmax(0, 1fr); }
+  .wa-list { display: none; }
+}
+
 /* ── brand ─────────────────────────────────────────────────────────────────── */
 
 .swatches { margin: 6px 0 14px; }
@@ -1983,6 +2130,7 @@ button.q-toggle:hover { background: var(--surface-2); }
 .pv-tools { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
 .pv-tools .msg-form { margin-top: 0; }
 .pv-tools button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); }
+.pv-note { margin: 0; font-size: 12.5px; line-height: 1.5; }
 /* Who they are / why this mail / what we expect / this message: four short sections, each
    headed by the question it answers. */
 .pv-sec { display: flex; flex-direction: column; gap: 8px; }
