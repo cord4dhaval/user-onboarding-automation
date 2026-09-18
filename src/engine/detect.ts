@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { MAIN_ONLY } from "./alongside.js";
+import { activeInstanceFor } from "./instances.js";
 import { PRIORITY, enqueue, enqueueMany } from "./queue.js";
 
 /**
@@ -265,13 +265,7 @@ export async function detectMovement(
   const db = await getDb();
   const goalInstanceId =
     input.goalInstanceId ??
-    String(
-      (
-        await db
-          .collection(C.goalInstances)
-          .findOne({ orgId, productId, personId: input.personId, status: "active", ...MAIN_ONLY }, { projection: { _id: 1, goalKey: 1 } })
-      )?._id ?? "",
-    );
+    String((await activeInstanceFor({ orgId, productId, personId: input.personId }))?._id ?? "");
   if (!goalInstanceId) return;
 
   const campaignKey =

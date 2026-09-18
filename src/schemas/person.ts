@@ -141,6 +141,8 @@ export const person = z.object({
   objections: z.array(z.object({ text: z.string(), at: z.date(), source: z.string() })).default([]),
   investment: investment.default({}),
   lastContactedAt: z.date().optional(),
+  /** The same, per channel ("email", "whatsapp"). Campaign gaps are counted per channel. */
+  contactedOn: z.record(z.string(), z.date()).optional(),
   lastSignalAt: z.date().optional(),
   /** Set by the inbound poller when they answer. Absent means they never have. */
   lastReplyAt: z.date().optional(),

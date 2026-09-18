@@ -3,13 +3,12 @@ import { ObjectId, type AnyBulkWriteOperation, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
-import { loadChannels, pickChannelFrom, persistAssignments, persistInstanceMailboxes } from "./channels.js";
+import { channelKinds, loadChannels, pickChannelFrom, persistAssignments, persistInstanceMailboxes } from "./channels.js";
 import { leadTypeOf } from "./rolling.js";
 import { HOME_TIMEZONE, nextSendableAt, timezoneFor } from "./time.js";
 import { mailboxFields } from "./mailbox.js";
 import { linkedinSlug } from "./address.js";
 import { stampPlaybook } from "./playbooks.js";
-import { blockedPeople } from "./alongside.js";
 import { chooseVariant } from "./templates.js";
 import { readSitesFor } from "./enrich.js";
 import type { ChannelKey } from "../schemas/common.js";
@@ -57,9 +56,6 @@ interface GoalDoc {
   /** The mailboxes this campaign may send from. Empty means every healthy one. */
   channelIds?: string[];
   schedule: { tickEverySec: number; quietHours?: [number, number] };
-  allowedChannels?: ChannelKey[];
-  /** Runs beside the lead's main campaign. See src/engine/alongside.ts. */
-  alongside?: boolean;
 }
 
 /**
@@ -264,13 +260,12 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
       // rows we have not already recorded. A cursorless poll returns its whole result set
       // every run, and counting each pass as an arrival buries the real ones.
       //
-      // A campaign running alongside reads the same rows another source already recorded.
-      // The form was filled in once, so a row any source has seen is not a new arrival:
-      // counting it again would restart the "just filled in the form" warmth on a lead
-      // who did that a week ago.
+      // Any poll's record counts, not only this source's: two campaigns can read the same
+      // lead tool, and the form was still filled in once. Counting the second campaign's
+      // read as an arrival would restart "just filled in the form" on a week-old lead.
       const seen = new Set(
-        ((found.arrivals ?? []) as Array<{ sourceId?: unknown; fingerprint?: unknown }>)
-          .filter((a) => (goal.alongside || String(a.sourceId ?? "") === String(source._id)) && a.fingerprint)
+        ((found.arrivals ?? []) as Array<{ sourceId?: unknown; kind?: unknown; fingerprint?: unknown }>)
+          .filter((a) => (String(a.sourceId ?? "") === String(source._id) || (isPoll && a.kind !== "excel_upload")) && a.fingerprint)
           .map((a) => String(a.fingerprint)),
       );
       const fresh = rows
@@ -404,23 +399,17 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
   if (newPeople.length > 0) await db.collection(C.people).insertMany(newPeople, { ordered: false });
   if (attachments.length > 0) await db.collection(C.people).bulkWrite(attachments, { ordered: false });
 
-  // One active goal instance per person, per product. A second one means two agents
-  // messaging the same human with different plans — incoherence a customer will notice.
-  // The one exception is a campaign running alongside on channels the main one never uses.
+  // One active instance per person per campaign. A lead can be in several campaigns at
+  // once — the email campaign and the WhatsApp one fed by the same lead tool — and each
+  // decides for itself whether to take them; being in another campaign is not a reason to
+  // skip. Which of them a reply or a visit belongs to is decided in src/engine/instances.ts.
   const personIds = entries.map((e) => String(e.personId));
   const openGoals = await db
     .collection(C.goalInstances)
-    .find({ orgId: source.orgId, productId: source.productId, personId: { $in: personIds }, status: "active" })
-    .project({ personId: 1, goalKey: 1, alongside: 1 })
+    .find({ orgId: source.orgId, productId: source.productId, personId: { $in: personIds }, goalKey: goal.key, status: "active" })
+    .project({ personId: 1 })
     .toArray();
-  const openGoalDocs = goal.alongside
-    ? await db
-        .collection(C.goals)
-        .find({ orgId: source.orgId, productId: source.productId, key: { $in: [...new Set(openGoals.map((g) => String(g.goalKey)))] } })
-        .project({ key: 1, allowedChannels: 1 })
-        .toArray()
-    : [];
-  const alreadyOpen = blockedPeople(goal, openGoals, new Map(openGoalDocs.map((g) => [String(g.key), g])));
+  const alreadyOpen = new Set(openGoals.map((g) => String(g.personId)));
 
   // People who already reached this goal once. Re-running it on them would send a message
   // whose success conditions are true before it lands: the checks ask what the person has
@@ -491,7 +480,6 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
     // Checked an hour in: long enough for a fast signup to have happened, short enough
     // that we stop chasing them almost immediately when it has.
     nextVerifyAt: new Date(now.getTime() + 60 * 60_000),
-    ...(goal.alongside ? { alongside: true } : {}),
     startedAt: now,
   }));
   await db.collection(C.goalInstances).insertMany(instances, { ordered: false });
@@ -566,6 +554,7 @@ export async function queueFirstTouches(args: {
   const { source, goal, now, summary } = args;
 
   const channels = await loadChannels(source.orgId, source.productId, goal.firstTouch.channels, goal.channelIds ?? []);
+  const kinds = await channelKinds(source.orgId, source.productId);
   // A campaign names a template key, not one document: the same key exists once per
   // channel and again per segment, and the channel is only known per person. findOne over
   // that set returned whichever document Mongo reached first, so a lead could be sent a
@@ -590,13 +579,13 @@ export async function queueFirstTouches(args: {
   // second campaign with a different sender cannot move this conversation later.
   const instanceMailboxes: Array<{ goalInstanceId: string; channelId: string }> = [];
   for (const { person, goalInstanceId } of args.starting) {
-    // Alongside, the person's own mailbox belongs to their main campaign: it is neither the
-    // sender to reuse here nor a slot this campaign may write its own sender into. Left in,
-    // a lead who had replied by email was refused a WhatsApp channel as "moving senders".
-    const candidate = goal.alongside ? { ...person, assignedChannelId: undefined } : person;
-    const pick = pickChannelFrom(channels, goal.firstTouch.channels, { ...candidate, leadType: leadTypeOf(goal as never) } as never);
+    const pick = pickChannelFrom(
+      channels,
+      goal.firstTouch.channels,
+      { ...person, assignedChannelKey: kinds.get(String(person.assignedChannelId ?? "")), leadType: leadTypeOf(goal as never) } as never,
+    );
     if (!pick) continue;
-    if (pick.assigned && !goal.alongside) assignments.push({ personId: String(person._id), channelId: pick.channelId });
+    if (pick.assigned) assignments.push({ personId: String(person._id), channelId: pick.channelId });
     instanceMailboxes.push({ goalInstanceId, channelId: pick.channelId });
 
     // A lead who has just arrived has no segment yet — they are classified later — so the

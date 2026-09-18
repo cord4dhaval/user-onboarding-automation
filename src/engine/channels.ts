@@ -30,6 +30,11 @@ interface Candidate {
   consent: { state: string };
   stage?: string;
   assignedChannelId?: string;
+  /**
+   * The kind of that channel ("email", "whatsapp"). A lead can be in an email campaign and a
+   * WhatsApp one at once, and the person's own sender is only theirs on its own kind.
+   */
+  assignedChannelKey?: string;
   lastReplyAt?: Date;
   /** The campaign's lead type, where the caller has the campaign in hand. */
   leadType?: string | null;
@@ -102,6 +107,13 @@ export async function loadChannels(
   ) as PooledChannel[];
 }
 
+/** Every channel's kind by id, so a pick can tell a sender of another kind from one that went away. */
+export async function channelKinds(orgId: string, productId: string): Promise<Map<string, string>> {
+  const db = await getDb();
+  const rows = await db.collection(C.channels).find({ orgId, productId }).project({ key: 1 }).toArray();
+  return new Map(rows.map((r) => [String(r._id), String(r.key)]));
+}
+
 /** The mailbox ids a campaign is held to, or an empty list when it may use any of them. */
 export function allowedMailboxIds(channelIds: unknown): string[] {
   return Array.isArray(channelIds) ? channelIds.map(String).filter(Boolean) : [];
@@ -170,13 +182,21 @@ export function pickChannelFrom(
     };
   }
 
+  // Their sender is of another kind: the mailbox their email goes from, when this touch is
+  // a WhatsApp one. Going by WhatsApp is not moving them off that mailbox, so neither the
+  // rule below nor the write-back applies — the pick is recorded on the campaign alone and
+  // their email keeps its sender.
+  const otherKind = Boolean(
+    person.assignedChannelId && !held && person.assignedChannelKey && !chain.includes(person.assignedChannelKey as ChannelKey),
+  );
+
   // Their mailbox has gone — disabled, unhealthy, or no longer serving this audience.
   //
   // Someone who has answered stays with it and waits for it to come back. Their reply
   // lives in a thread only that mailbox can see, and moving them would both orphan the
   // answer and reply to a conversation from an address they have never heard from.
   // Someone who never answered has nothing to lose by being moved on.
-  if (person.assignedChannelId && person.lastReplyAt) return null;
+  if (person.assignedChannelId && person.lastReplyAt && !otherKind) return null;
 
   for (const key of chain) {
     const candidates = channels.filter((c) => eligible(c, key, person));
@@ -205,7 +225,7 @@ export function pickChannelFrom(
         candidates.length > 1
           ? `fewest leads of ${candidates.length} healthy ${key} channels`
           : `only healthy ${key} channel`,
-      assigned: true,
+      assigned: !otherKind,
     };
   }
   return null;

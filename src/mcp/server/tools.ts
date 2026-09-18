@@ -15,7 +15,7 @@ import { dueAtFor, type CadenceBand } from "../../engine/cadence.js";
 import { suppress } from "../../engine/suppression.js";
 import { addressFor } from "../../engine/address.js";
 import { allowedMailboxIds, mailboxFilter } from "../../engine/channels.js";
-import { MAIN_ONLY } from "../../engine/alongside.js";
+import { activeInstanceFor } from "../../engine/instances.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
@@ -455,12 +455,16 @@ export const TOOLS: ToolDef[] = [
         // unplanned ones, so a product whose first two hundred rows were already planned
         // reported "nothing to do" while thousands waited behind them. There was no error
         // and no log line: the backlog was invisible precisely because it was large.
-        // Alongside instances are left out here and below: Claude plans and reviews the lead's
-        // main campaign, and a channel campaign beside it runs its own first touch.
+        // A campaign that sends one message has nothing left to plan once that message is
+        // queued — a WhatsApp intro beside the email campaign, say — so its leads are not
+        // offered for planning. The email campaign they are also in is.
+        const oneMessage = wants("plan")
+          ? (await db.collection(C.goals).find({ ...s, "budget.touches": { $lte: 1 } }).project({ key: 1 }).toArray()).map((g) => String(g.key))
+          : [];
         const needPlan = wants("plan")
           ? await db
               .collection(C.goalInstances)
-              .find({ ...s, status: "active", currentPlanId: { $exists: false }, ...MAIN_ONLY })
+              .find({ ...s, status: "active", currentPlanId: { $exists: false }, goalKey: { $nin: oneMessage } })
               .sort({ startedAt: 1 })
               .limit(limit)
               .toArray()
@@ -468,7 +472,7 @@ export const TOOLS: ToolDef[] = [
 
         const activeGoals = await db
           .collection(C.goalInstances)
-          .find({ ...s, status: "active", ...MAIN_ONLY })
+          .find({ ...s, status: "active" })
           .sort({ lastReviewedAt: 1, startedAt: 1 })
           .limit(200)
           .toArray();
@@ -678,7 +682,15 @@ export const TOOLS: ToolDef[] = [
       "Everything about one person in a single call: identity, enrichment, belief, temperature, their goal, every touch sent, and what came back — opens, clicks and the link they followed, with mail-gateway scans reported separately so they are never mistaken for interest. Also lists the assets that may be shown to this person right now, already filtered by their segment, temperature and what they have been sent. The list is what you are allowed to use, not what you have to use — most touches are words alone, and an asset is worth carrying only when it answers something this person actually raised. Never name one that is not on the list.",
     inputSchema: {
       type: "object",
-      properties: { product_id: { type: "string" }, person_id: { type: "string" } },
+      properties: {
+        product_id: { type: "string" },
+        person_id: { type: "string" },
+        goal_instance_id: {
+          type: "string",
+          description:
+            "The campaign to show, when the work item names one. A lead can be in several campaigns; without this the card shows the one being planned, and lists the others under other_campaigns.",
+        },
+      },
       required: ["product_id", "person_id"],
     },
     async handler(args, ctx) {
@@ -690,8 +702,11 @@ export const TOOLS: ToolDef[] = [
         .findOne({ _id: new ObjectId(String(args.person_id)), orgId, productId });
       if (!person) throw new Error("person not found");
 
-      const [goal, actions, events, product] = await Promise.all([
-        db.collection(C.goalInstances).findOne({ orgId, productId, personId: String(person._id), status: "active", ...MAIN_ONLY }),
+      const named = args.goal_instance_id
+        ? await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(args.goal_instance_id)), orgId, productId, personId: String(person._id) })
+        : null;
+      const [goal, actions, events, product, openCampaigns] = await Promise.all([
+        named ?? activeInstanceFor({ orgId, productId, personId: String(person._id) }),
         db
           .collection(C.actions)
           .find({ orgId, productId, personId: String(person._id) })
@@ -699,6 +714,11 @@ export const TOOLS: ToolDef[] = [
           .toArray(),
         db.collection(C.events).find({ orgId, personId: String(person._id) }).sort({ ts: -1 }).limit(50).toArray(),
         db.collection(C.products).findOne({ _id: new ObjectId(productId) }),
+        db
+          .collection(C.goalInstances)
+          .find({ orgId, productId, personId: String(person._id), status: "active" })
+          .project({ goalKey: 1, spent: 1, startedAt: 1 })
+          .toArray(),
       ]);
 
       const goalDef = goal
@@ -738,6 +758,12 @@ export const TOOLS: ToolDef[] = [
         },
         belief: person.belief ?? null,
         temperature: person.temp ?? null,
+        // The other campaigns this lead is in right now, so a plan here can see that a
+        // WhatsApp intro, say, has already gone from another one. Their touches are in
+        // `touches` with the rest.
+        other_campaigns: openCampaigns
+          .filter((c) => String(c._id) !== String(goal?._id ?? ""))
+          .map((c) => ({ goal_instance_id: String(c._id), goal_key: c.goalKey, touches_sent: (c.spent as { touches?: number } | undefined)?.touches ?? 0 })),
         goal: goal
           ? {
               goal_instance_id: String(goal._id),
@@ -977,13 +1003,13 @@ export const TOOLS: ToolDef[] = [
         // a rewrite would contradict what they have already read.
         const wasSegment = (before?.belief as { segment?: string } | undefined)?.segment;
         if (wasSegment !== String(r.segment)) {
-          const instance = await db
+          // Every campaign they are in: each has its own playbook for the segment.
+          const instances = await db
             .collection(C.goalInstances)
-            .findOne(
-              { orgId: ctx.orgId, productId, personId, status: "active", ...MAIN_ONLY },
-              { projection: { _id: 1, goalKey: 1 } },
-            );
-          if (instance) {
+            .find({ orgId: ctx.orgId, productId, personId, status: "active" })
+            .project({ _id: 1, goalKey: 1 })
+            .toArray();
+          for (const instance of instances) {
             const stamp = await stampPlaybook({
               orgId: ctx.orgId,
               productId,
@@ -2517,9 +2543,7 @@ TOOLS.push({
     const orgId = await assertProduct(productId, ctx);
     const personId = String(args.person_id);
 
-    const instance = await db
-      .collection(C.goalInstances)
-      .findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY });
+    const instance = await activeInstanceFor({ orgId, productId, personId });
     if (!instance) return { active_campaign: null, note: "No campaign is running for this person." };
 
     const goal = await db.collection(C.goals).findOne({ orgId, productId, key: instance.goalKey });
@@ -4011,7 +4035,7 @@ async function queueAnswer(
   const instance =
     (lastSend?.goalInstanceId &&
       (await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(lastSend.goalInstanceId)) }))) ||
-    (await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY }));
+    (await activeInstanceFor({ orgId, productId, personId, channel: lastSend?.channel ? String(lastSend.channel) : undefined }));
   if (!instance) return null;
 
   // Their own thread first. With no send to answer, the campaign's mailboxes decide: an

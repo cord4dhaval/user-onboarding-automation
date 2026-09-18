@@ -89,3 +89,20 @@ export function dueAtFor(input: DueAtInput): Date {
   // message now, not fire three of them at once to catch up.
   return due < now ? now : due;
 }
+
+/**
+ * When this person last heard from us on one channel.
+ *
+ * The campaign's gap is counted per channel, because a lead can be in an email campaign and
+ * a WhatsApp one at once: counted across both, the WhatsApp message waits out every email's
+ * gap and never goes to a lead whose email campaign writes daily. Sends from before the
+ * per-channel record existed were all email, so email with no record of its own reads the
+ * old single field.
+ */
+export function lastOnChannel(person: Record<string, unknown> | null | undefined, channel: string): Date | undefined {
+  const byChannel = person?.contactedOn as Record<string, unknown> | undefined;
+  const value = byChannel?.[channel] ?? (channel === "email" ? person?.lastContactedAt : undefined);
+  if (!value) return undefined;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}

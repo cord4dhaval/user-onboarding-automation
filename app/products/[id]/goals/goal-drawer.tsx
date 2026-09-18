@@ -59,7 +59,6 @@ export default function GoalDrawer({
     approvalMode: string;
     /** Empty means this campaign uses every healthy mailbox. */
     channelIds?: string[];
-    alongside?: boolean;
   };
   label?: string;
 }) {
@@ -234,21 +233,6 @@ export default function GoalDrawer({
               </span>
             </fieldset>
           )}
-
-          {/* A lead is in one campaign at a time, so a WhatsApp campaign reading the same lead
-              tool as the email one would otherwise enrol nobody the email one already holds. */}
-          <fieldset className="fieldset">
-            <legend>Other campaigns</legend>
-            <label className="check">
-              <input type="checkbox" name="alongside" value="yes" defaultChecked={existing?.alongside ?? false} />
-              Runs alongside other campaigns
-            </label>
-            <span className="reason">
-              For a campaign on its own channel, such as WhatsApp beside an email campaign. Its leads can
-              also be in another campaign that does not use this channel; that campaign keeps planning,
-              answering replies and showing on the lead.
-            </span>
-          </fieldset>
 
           <div className="grid">
             <label>Stop after<input name="touches" type="number" min={1} defaultValue={existing?.touches ?? 9} /></label>

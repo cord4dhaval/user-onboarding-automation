@@ -210,11 +210,6 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                           lead type not set
                         </span>
                       )}
-                      {goal.alongside === true && (
-                        <span className="pill" title="Its leads can also be in a campaign on other channels.">
-                          alongside
-                        </span>
-                      )}
                       <div className="muted" style={{ fontSize: 12.5 }}>
                         <code>{ft.templateKey}</code> via {ft.channels.join(" → ") || "no channel"}
                       </div>
@@ -367,7 +362,6 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                             days: budget.days,
                             approvalMode: sch.approvalMode,
                             channelIds: ((goal.channelIds ?? []) as string[]).map(String),
-                            alongside: goal.alongside === true,
                           }}
                         />
                         <ActionButton

@@ -1,11 +1,11 @@
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { dueAtFor, type CadenceBand } from "./cadence.js";
+import { dueAtFor, lastOnChannel, type CadenceBand } from "./cadence.js";
 import { detectMovement } from "./detect.js";
 import { accessAssetFor, assetContextFor } from "./assets.js";
 import { mailboxFilter } from "./channels.js";
-import { MAIN_ONLY } from "./alongside.js";
+import { primaryByPerson } from "./instances.js";
 import { ACCESS_RUNG, resolveTemplateFor } from "./templates.js";
 import { notify } from "./notify.js";
 import { effectiveBand, leadTypeOf } from "./rolling.js";
@@ -159,7 +159,7 @@ export async function recomputeTemps(
 
   const instances = await db
     .collection(C.goalInstances)
-    .find({ orgId, productId, status: "active", ...MAIN_ONLY }, { projection: { personId: 1, goalKey: 1 } })
+    .find({ orgId, productId, status: "active" }, { projection: { personId: 1, goalKey: 1, currentPlanId: 1, lastContactedAt: 1, startedAt: 1 } })
     .limit(limit * 4)
     .toArray();
   if (instances.length === 0) return summary;
@@ -219,12 +219,11 @@ export async function recomputeTemps(
     });
   }
 
-  const goalByPerson = new Map<string, string>(
-    instances.map((i) => [String(i.personId), String(i.goalKey)]),
-  );
-  const instanceByPerson = new Map<string, string>(
-    instances.map((i) => [String(i.personId), String(i._id)]),
-  );
+  // One campaign per person here, chosen the way every other "which campaign" is: a lead in
+  // two of them would otherwise take whichever row happened to come last.
+  const primary = primaryByPerson(instances);
+  const goalByPerson = new Map<string, string>([...primary].map(([personId, i]) => [personId, String(i.goalKey)]));
+  const instanceByPerson = new Map<string, string>([...primary].map(([personId, i]) => [personId, String(i._id)]));
 
   for (const person of people) {
     const personId = String(person._id);
@@ -318,26 +317,38 @@ async function rescheduleFor(
     .toArray();
   if (queued.length === 0) return 0;
 
-  const instance = await db
-    .collection(C.goalInstances)
-    .findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY }, { projection: { goalKey: 1 } });
-  const goal = instance
-    ? await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) })
-    : null;
   const person = await db
     .collection(C.people)
-    .findOne({ _id: new ObjectId(personId) }, { projection: { lastContactedAt: 1, "enrichment.form.timeline": 1 } });
-  // A hot campaign keeps its pace when a person's own reading is cooler.
-  const pace = effectiveBand(band, leadTypeOf(goal), (person?.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline) ?? band;
+    .findOne({ _id: new ObjectId(personId) }, { projection: { lastContactedAt: 1, contactedOn: 1, "enrichment.form.timeline": 1 } });
+  const timeline = (person?.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline;
+
+  // Each message at its own campaign's pace and from its own channel's last contact: a lead
+  // in an email campaign and a WhatsApp one has two clocks, not one.
+  const instanceIds = [...new Set(queued.map((a) => String(a.goalInstanceId ?? "")).filter(Boolean))];
+  const instances = await db
+    .collection(C.goalInstances)
+    .find({ _id: { $in: instanceIds.map((id) => new ObjectId(id)) } })
+    .project({ goalKey: 1 })
+    .toArray();
+  const goalKeyOf = new Map(instances.map((i) => [String(i._id), String(i.goalKey)]));
+  const goals = await db
+    .collection(C.goals)
+    .find({ orgId, productId, key: { $in: [...new Set(goalKeyOf.values())] } })
+    .toArray();
+  const goalByKey = new Map(goals.map((g) => [String(g.key), g]));
 
   let moved = 0;
   for (const action of queued) {
+    const goal = goalByKey.get(goalKeyOf.get(String(action.goalInstanceId ?? "")) ?? "") ?? null;
+    // A hot campaign keeps its pace when a person's own reading is cooler.
+    const pace = effectiveBand(band, leadTypeOf(goal), timeline) ?? band;
+    const last = lastOnChannel(person, String(action.channel ?? "email"));
     const wanted = dueAtFor({
       // What remains of the gap the plan asked for, measured from the last contact rather
       // than from when the plan was written.
-      offsetDays: gapDaysOf(action, person?.lastContactedAt as Date | undefined),
+      offsetDays: gapDaysOf(action, last),
       band: pace,
-      lastContactedAt: person?.lastContactedAt as Date | undefined,
+      lastContactedAt: last,
       configured: goal?.cadenceByTemp as Record<string, CadenceBand> | undefined,
       now,
     });

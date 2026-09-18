@@ -576,7 +576,6 @@ export async function createGoal(formData: FormData) {
         key,
         name,
         leadType,
-        alongside: formData.get("alongside") === "yes",
         brief: String(formData.get("brief") ?? "").trim() || undefined,
         entry: { expression: "lead_created", minIcpFit: Number(formData.get("minIcpFit") ?? 0) },
         success: {
@@ -795,8 +794,8 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
     }
 
     // Rows from the same tool have the same shape, so a map left at the form's default is
-    // the other input's map. It also keeps the two inputs' records of one form fill identical,
-    // which is how a campaign running alongside recognises a lead it has already seen.
+    // the other input's map — which also carries the phone, the one field a WhatsApp
+    // campaign cannot do without.
     const untouched = !rawMap || JSON.stringify(fieldMap) === JSON.stringify({ email: "email", name: "name" });
     const map = sibling && untouched ? (sibling.fieldMap as Record<string, string | string[]>) : fieldMap;
 
@@ -2851,7 +2850,6 @@ export async function updateGoal(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Give the campaign a name.");
   const leadType = leadTypeFrom(formData);
-  const alongside = formData.get("alongside") === "yes";
 
   const allowedChannels = formData.getAll("allowedChannels").map(String).filter(Boolean);
   const channels = [String(formData.get("primaryChannel") ?? "email"), String(formData.get("fallbackChannel") ?? "")]
@@ -2874,7 +2872,6 @@ export async function updateGoal(formData: FormData) {
       $set: {
         name,
         leadType,
-        alongside,
         brief: String(formData.get("brief") ?? existing?.brief ?? "").trim() || undefined,
         success: {
           expression: String(formData.get("successExpression") ?? existing?.success?.expression ?? "account_created"),
@@ -2898,18 +2895,6 @@ export async function updateGoal(formData: FormData) {
       },
     },
   );
-
-  // The mark lives on each running instance too, because that is what every "which campaign
-  // is this lead in" lookup reads. Changed on the campaign alone, leads already in it would
-  // keep answering the old way.
-  if (alongside !== Boolean(existing?.alongside)) {
-    await db
-      .collection(C.goalInstances)
-      .updateMany(
-        { orgId, productId, goalKey: key, status: "active" },
-        alongside ? { $set: { alongside: true } } : { $unset: { alongside: "" } },
-      );
-  }
 
   revalidatePath(`/products/${productId}/goals`);
 }

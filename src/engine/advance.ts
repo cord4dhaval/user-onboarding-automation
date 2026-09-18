@@ -4,7 +4,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
-import { pickChannelFrom, loadChannels, persistAssignments, persistInstanceMailboxes, skipReason, type PooledChannel } from "./channels.js";
+import { channelKinds, pickChannelFrom, loadChannels, persistAssignments, persistInstanceMailboxes, skipReason, type PooledChannel } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
 import { checkpoint, effectiveBand, frameKeyOf, isRolling, isRollingPlan, leadTypeOf, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
 
@@ -260,6 +260,7 @@ export async function advance(
   const familyKeys = await engineRenderedKeysFor(orgId, productId);
 
   const channelsByGoal = new Map<string, PooledChannel[]>();
+  const kinds = await channelKinds(orgId, productId);
   for (const goal of goals) {
     channelsByGoal.set(
       String(goal.key),
@@ -492,12 +493,12 @@ export async function advance(
     const channels = channelsByGoal.get(String(goal.key)) ?? [];
     // This campaign's own mailbox for them first, and only then the one they hold from
     // wherever else they have been written to. An instance from before campaigns had their
-    // own sender has none, which is why the person's is still read — except alongside, where
-    // the person's mailbox belongs to their main campaign.
-    const alongside = instance.alongside === true;
+    // own sender has none, which is why the person's is still read.
+    const heldId = String(instance.channelId ?? person.assignedChannelId ?? "");
     const talker = {
       ...(person as Record<string, unknown>),
-      assignedChannelId: alongside ? instance.channelId : instance.channelId ?? person.assignedChannelId,
+      assignedChannelId: instance.channelId ?? person.assignedChannelId,
+      assignedChannelKey: kinds.get(heldId),
       leadType: leadTypeOf(goal),
     };
     const pick =
@@ -507,7 +508,7 @@ export async function advance(
       summary.skipped.push({ goalInstanceId, reason: skipReason(talker as never, channels) });
       continue;
     }
-    if (pick.assigned && !alongside) assignments.push({ personId: String(person._id), channelId: pick.channelId });
+    if (pick.assigned) assignments.push({ personId: String(person._id), channelId: pick.channelId });
     if (String(instance.channelId ?? "") !== pick.channelId) {
       instanceMailboxes.push({ goalInstanceId, channelId: pick.channelId });
     }
