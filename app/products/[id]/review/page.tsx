@@ -7,14 +7,15 @@ import { peopleEngagement } from "@/engine/engagement.js";
 import { isReplacedPlan, REPLACED_PLAN } from "@/engine/replaced.js";
 import { requireSession, scope } from "../../../tenant";
 import { decide, heldMessage, returnToReview } from "../../../actions";
-import { Check, CheckCheck, Flame, MessageSquare, MousePointerClick, RotateCcw, X } from "lucide-react";
+import { Check, CheckCheck, MessageSquare, MousePointerClick, RotateCcw, X } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { BusyArea, BusyLink, BusyProvider, BusySelect } from "../../../ui/busy";
-import { ist, istLong } from "../../../ui/time";
+import { ist, istLong, istTime, istWeekday } from "../../../ui/time";
 import CampaignFilter, { type CampaignOption } from "./campaign-filter";
 import SearchBox from "./search-box";
 import DecisionToast from "./decision-toast";
 import PreviewDrawer from "./preview-drawer";
+import QueueGroup from "./queue-group";
 
 export const dynamic = "force-dynamic";
 
@@ -412,7 +413,26 @@ export default async function Review({
   // an hour ago is a different decision from approving one to someone who has never
   // responded, and the queue was showing both as the same row.
   const responded = await peopleEngagement(orgId, id, rows.map((r) => String(r.action.personId)));
-  const liftedHere = rows.filter((r) => lifted.includes(String(r.action.personId))).length;
+
+  // The queue in the three bands a reviewer works it in: people who have just responded,
+  // mail that goes the minute it is approved, and mail dated for later. The page is already
+  // sorted in that order, so each band is a run of this page's rows — and its size across
+  // the whole queue is counted, so a band cut off by the page still says how big it is.
+  const now = Date.now();
+  const isDue = (a: Document) => new Date(String(a.dueAt)).getTime() <= now;
+  const liftedSet = new Set(lifted);
+  const bands =
+    view === "waiting"
+      ? await (async () => {
+          const [hot, due] = await Promise.all([
+            lifted.length ? db.collection(C.actions).countDocuments({ ...query, personId: { $in: lifted } }) : 0,
+            db
+              .collection(C.actions)
+              .countDocuments({ ...query, personId: { $nin: lifted }, dueAt: { $lte: new Date(now) } }),
+          ]);
+          return { hot, due, later: Math.max(0, matching - hot - due) };
+        })()
+      : undefined;
 
   const options: CampaignOption[] = totals.map((t) => ({
     ...t,
@@ -448,9 +468,165 @@ export default async function Review({
   const decidable = waiting;
   // Which half of that queue goes out on this send run, and which is dated for later. The
   // bulk button has to say both, or "approve this page" reads as "send all of these now".
-  const now = Date.now();
-  const dueNow = held.filter((a) => new Date(String(a.dueAt)).getTime() <= now).length;
+  const dueNow = held.filter(isDue).length;
   const later = held.length - dueNow;
+  const campaignName = (goalKey: string) => totals.find((t) => t.key === goalKey)?.name ?? goalKey;
+
+  type Row = (typeof rows)[number];
+
+  /** One message as one line: who, what, how warm they are, when it goes, and the decision. */
+  const renderRow = ({ action, person, run }: Row) => {
+    const content = (action.content ?? {}) as { subject?: string; slotText?: string };
+    const name = String(person?.name ?? person?.primaryEmail ?? "Unknown");
+    const email = String(person?.primaryEmail ?? "");
+    const goalKey = String(run?.goalKey ?? "—");
+    const campaignLabel = campaignName(goalKey);
+    const sender = senderById.get(String(action.channelId)) ?? String(action.channel);
+    const state = statusOf(action);
+    // What happened, not merely when it was due: a sent message is dated by its send, a
+    // decided one by its decision.
+    const when = action.sentAt ?? action.reviewedAt ?? action.dueAt;
+    const engagement = responded.get(String(action.personId));
+    const temp = person?.temp as { band?: string } | undefined;
+    const due = isDue(action);
+
+    const preview = (
+      <PreviewDrawer
+        productId={id}
+        actionId={String(action._id)}
+        personName={name}
+        personEmail={email}
+        from={fromById.get(String(action.channelId))}
+        signal={<Signal temp={temp} engagement={engagement} long />}
+        facts={[
+          { label: "Campaign", value: campaignLabel },
+          { label: "Channel", value: `${String(action.channel)} · ${sender}` },
+          decidable
+            ? { label: "Sends", value: due ? "Now, once approved" : (istLong(action.dueAt as string) ?? "—") }
+            : { label: "Updated", value: istLong(when as string) ?? "—" },
+        ]}
+        fetchMessage={heldMessage}
+      />
+    );
+
+    return (
+      <div className="q-row" key={String(action._id)}>
+        <div className="q-who" title={email}>
+          {name}
+        </div>
+        <MessageLine subject={content.subject} slotText={content.slotText} campaign={campaignLabel} />
+        <div>
+          <Signal temp={temp} engagement={engagement} />
+        </div>
+
+        {decidable ? (
+          <>
+            {/* "Due now" is the distinction the Scheduled tab used to carry: approving it
+                puts mail in front of someone within the minute, approving a dated one
+                does not. */}
+            <div className="q-when" title={istLong(action.dueAt as string)}>
+              {due ? (
+                <span className="pill hot">Due now</span>
+              ) : (
+                `${istWeekday(action.dueAt as string)}, ${istTime(action.dueAt as string)}`
+              )}
+            </div>
+            <div className="row-actions">
+              {preview}
+              <form action={decide}>
+                <input type="hidden" name="back" value={back} />
+                <input type="hidden" name="productId" value={id} />
+                <input type="hidden" name="ids" value={String(action._id)} />
+                <SubmitButton
+                  name="decision"
+                  value="approve"
+                  size="sm"
+                  icon={<Check />}
+                  aria-label={`Approve the message to ${name}`}
+                  title={due ? "Approve — sends now" : "Approve — sends on its date"}
+                />
+                <SubmitButton
+                  name="decision"
+                  value="reject"
+                  variant="quiet"
+                  size="sm"
+                  icon={<X />}
+                  aria-label={`Reject the message to ${name}`}
+                  title="Reject"
+                />
+              </form>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="q-state">
+              <div className="state-pills">
+                <span className={`pill ${state.tone}`}>{state.label}</span>
+                {/* Which side stopped it. The two used to be two tabs; now the row carries
+                    the difference the tabs did. */}
+                {state.origin ? <span className="pill">{ORIGIN_LABEL[state.origin]}</span> : null}
+              </div>
+              {/* A provider error is a line of JSON, so it is clamped and the whole thing is
+                  in the tooltip. */}
+              {state.detail ? (
+                <div className="state-why" title={state.detail}>
+                  {state.detail}
+                </div>
+              ) : null}
+            </div>
+            <div className="q-when" title={istLong(when as string)}>
+              {ist(when as string)}
+            </div>
+            <div className="row-actions">
+              {preview}
+              {recoverable(action) ? (
+                <form action={returnToReview}>
+                  <input type="hidden" name="productId" value={id} />
+                  <input type="hidden" name="ids" value={String(action._id)} />
+                  <SubmitButton variant="quiet" size="sm" icon={<RotateCcw />} pendingLabel="Returning…">
+                    Return to review
+                  </SubmitButton>
+                </form>
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  /**
+   * A band's own Approve. It names how many it releases and when they go, the same way the
+   * page's button does — "approve these 6" must never read as "send all 6 now" when two of
+   * them are dated for next week.
+   */
+  const bandApprove = (band: Row[]) => {
+    if (band.length < 2) return undefined;
+    const soon = band.filter((r) => isDue(r.action)).length;
+    const dated = band.length - soon;
+    return (
+      <form action={decide}>
+        <input type="hidden" name="productId" value={id} />
+        <input type="hidden" name="decision" value="approve" />
+        <input type="hidden" name="back" value={back} />
+        {band.map((r) => (
+          <input key={String(r.action._id)} type="hidden" name="ids" value={String(r.action._id)} />
+        ))}
+        <SubmitButton variant="quiet" size="sm" icon={<CheckCheck />} pendingLabel="Approving…">
+          {dated === 0
+            ? `Approve ${band.length} — send now`
+            : soon === 0
+              ? `Approve ${band.length} — on their dates`
+              : `Approve ${band.length} — ${soon} now, ${dated} on their dates`}
+        </SubmitButton>
+      </form>
+    );
+  };
+
+  const hotRows = rows.filter((r) => liftedSet.has(String(r.action.personId)));
+  const coldRows = rows.filter((r) => !liftedSet.has(String(r.action.personId)));
+  const dueRows = coldRows.filter((r) => isDue(r.action));
+  const laterRows = coldRows.filter((r) => !isDue(r.action));
 
   return (
     <BusyProvider>
@@ -576,17 +752,6 @@ export default async function Review({
         )}
       </div>
 
-      {decidable && liftedHere > 0 && (
-        <div className="note">
-          <p style={{ margin: 0 }}>
-            <Flame size={14} /> <strong>{liftedHere}</strong>{" "}
-            {liftedHere === 1 ? "message on this page is" : "messages on this page are"} going to someone who has
-            just clicked or written back. They are at the top of the queue — their interest is the
-            thing on this page with a shelf life.
-          </p>
-        </div>
-      )}
-
       <BusyArea>
         {held.length === 0 ? (
           <div className="empty">
@@ -605,188 +770,66 @@ export default async function Review({
           </div>
         ) : (
           <>
-            <div className="tw scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Recipient</th>
-                    <th>Engagement</th>
-                    <th>Campaign</th>
-                    <th>Subject</th>
-                    <th>Sending from</th>
-                    <th>{decidable ? "Scheduled (IST)" : "Status"}</th>
-                    <th>{decidable ? "Actions" : "Updated (IST)"}</th>
-                    {!decidable && <th />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(({ action, person, run }) => {
-                    const content = (action.content ?? {}) as { subject?: string; slotText?: string };
-                    const name = String(person?.name ?? person?.primaryEmail ?? "Unknown");
-                    const email = String(person?.primaryEmail ?? "");
-                    const goalKey = String(run?.goalKey ?? "—");
-                    const sender = senderById.get(String(action.channelId)) ?? String(action.channel);
-                    const meta = `${goalKey} · ${sender} · angle ${String(action.angle)}`;
-                    const state = statusOf(action);
-                    // What happened, not merely when it was due: a sent message is dated by
-                    // its send, a decided one by its decision.
-                    const when = action.sentAt ?? action.reviewedAt ?? action.dueAt;
-                    return (
-                      <tr key={String(action._id)}>
-                        <td>
-                          <strong>{name}</strong>
-                          <div className="muted" style={{ fontSize: 12.5 }}>{email}</div>
-                        </td>
-                        {/* The column that turns a queue into a set of decisions. Everything
-                            else on this row describes the message; this one describes the
-                            person it is going to. */}
-                        <td>
-                          <Signal
-                            temp={person?.temp as { band?: string } | undefined}
-                            engagement={responded.get(String(action.personId))}
-                          />
-                        </td>
-                        <td>
-                          {totals.find((t) => t.key === goalKey)?.name ?? goalKey}
-                          <div className="muted" style={{ fontSize: 12.5 }}>angle {String(action.angle)}</div>
-                        </td>
-                        {/* "no subject" read as a broken row, and it is not one.
-                            A tier-2 touch is queued with no copy on purpose: which rung of
-                            the ladder it lands on is decided at send time from how far
-                            through the sequence this person actually is, so the subject
-                            genuinely does not exist yet and will when it goes. Saying that
-                            is the difference between a queue somebody approves and one
-                            they stop trusting. */}
-                        <td className="cell-wide">
-                          {content.subject ? (
-                            content.subject
-                          ) : content.slotText ? (
-                            // Claude wrote the opening and kept the template's subject. That
-                            // row is written; calling it "not written yet" hid the words a
-                            // reviewer is here to approve.
-                            <>
-                              <span className="pill">opening by Claude</span>
-                              <div className="muted cell-note">“{content.slotText}”</div>
-                              <div className="muted cell-note">subject from the template — Preview shows the whole email</div>
-                            </>
-                          ) : (
-                            <>
-                              <span className="pill">not written yet</span>
-                              <div className="muted" style={{ fontSize: 12.5 }}>
-                                sends the template rung for their touch — Preview shows which
-                              </div>
-                            </>
-                          )}
-                        </td>
-                        {/* The mailbox, not the kind of channel. "email" was true of every
-                            row on the page; which address it leaves from is the thing that
-                            differs, and once cold outreach and the product's own sender are
-                            both connected it is the difference somebody is approving. */}
-                        <td>
-                          <span className="pill">{String(action.channel)}</span>
-                          <div className="muted" style={{ fontSize: 12.5 }}>{sender}</div>
-                        </td>
-
-                        {decidable ? (
-                          <td className="num" title={istLong(action.dueAt as string)}>
-                            <div className="muted">{ist(action.dueAt as string)}</div>
-                            {/* The distinction the Scheduled tab used to carry. Approving a
-                                row marked "due now" puts mail in front of someone within the
-                                minute; approving one dated next week does not. */}
-                            <span className={`pill ${new Date(String(action.dueAt)).getTime() <= now ? "hot" : ""}`}>
-                              {new Date(String(action.dueAt)).getTime() <= now ? "Due now" : "Scheduled"}
-                            </span>
-                          </td>
-                        ) : (
-                          <td>
-                            <div className="state-pills">
-                              <span className={`pill ${state.tone}`}>{state.label}</span>
-                              {/* Which side stopped it. The two used to be two tabs; now the
-                                  row carries the difference the tabs did. */}
-                              {state.origin ? (
-                                <span className="pill">{ORIGIN_LABEL[state.origin]}</span>
-                              ) : null}
-                            </div>
-                            {/* A provider error is a line of JSON. Fifty of them printed in
-                                full turned the list into a wall nobody could read down, so
-                                it is clamped and the whole thing is in the tooltip. */}
-                            {state.detail ? (
-                              <div className="state-why" title={state.detail}>{state.detail}</div>
-                            ) : null}
-                          </td>
-                        )}
-
-                        {decidable ? (
-                          <td>
-                            <div className="row-actions">
-                              <PreviewDrawer
-                                productId={id}
-                                actionId={String(action._id)}
-                                personName={name}
-                                personEmail={email}
-                                from={fromById.get(String(action.channelId))}
-                                meta={meta}
-                                fetchMessage={heldMessage}
-                              />
-                              <form action={decide}>
-                                <input type="hidden" name="back" value={back} />
-                                <input type="hidden" name="productId" value={id} />
-                                <input type="hidden" name="ids" value={String(action._id)} />
-                                <SubmitButton
-                                  name="decision"
-                                  value="approve"
-                                  size="sm"
-                                  icon={<Check />}
-                                  pendingLabel="Sending…"
-                                >
-                                  Approve
-                                </SubmitButton>
-                                <SubmitButton name="decision" value="reject" variant="quiet" size="sm" icon={<X />}>
-                                  Reject
-                                </SubmitButton>
-                              </form>
-                            </div>
-                          </td>
-                        ) : (
-                          <>
-                            <td className="muted num" title={istLong(when as string)}>
-                              {ist(when as string)}
-                            </td>
-                            <td>
-                              <div className="row-actions">
-                                <PreviewDrawer
-                                  productId={id}
-                                  actionId={String(action._id)}
-                                  personName={name}
-                                  personEmail={email}
-                                  from={fromById.get(String(action.channelId))}
-                                  meta={meta}
-                                  fetchMessage={heldMessage}
-                                />
-                                {recoverable(action) ? (
-                                  <form action={returnToReview}>
-                                    <input type="hidden" name="productId" value={id} />
-                                    <input type="hidden" name="ids" value={String(action._id)} />
-                                    <SubmitButton
-                                      variant="quiet"
-                                      size="sm"
-                                      icon={<RotateCcw />}
-                                      pendingLabel="Returning…"
-                                    >
-                                      Return to review
-                                    </SubmitButton>
-                                  </form>
-                                ) : null}
-                              </div>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {decidable ? (
+              <div className="queue">
+                <div className="queue-head" aria-hidden="true">
+                  <span>Recipient</span>
+                  <span>Message</span>
+                  <span>Signal</span>
+                  <span>Due (IST)</span>
+                  <span />
+                </div>
+                {hotRows.length > 0 && (
+                  <QueueGroup
+                    title="Clicked or replied"
+                    tone="hot"
+                    total={bands?.hot ?? hotRows.length}
+                    shown={hotRows.length}
+                    why="their interest has a shelf life"
+                    action={bandApprove(hotRows)}
+                  >
+                    {hotRows.map(renderRow)}
+                  </QueueGroup>
+                )}
+                {dueRows.length > 0 && (
+                  <QueueGroup
+                    title="Due now"
+                    total={bands?.due ?? dueRows.length}
+                    shown={dueRows.length}
+                    why="no response yet · goes within the minute once approved"
+                    action={bandApprove(dueRows)}
+                  >
+                    {dueRows.map(renderRow)}
+                  </QueueGroup>
+                )}
+                {laterRows.length > 0 && (
+                  <QueueGroup
+                    title="Scheduled later"
+                    total={bands?.later ?? laterRows.length}
+                    shown={laterRows.length}
+                    why="sends on its date once approved"
+                    // Out of the way while there is something more urgent on the page, and
+                    // open when it is all there is.
+                    defaultOpen={hotRows.length + dueRows.length === 0}
+                    action={bandApprove(laterRows)}
+                  >
+                    {laterRows.map(renderRow)}
+                  </QueueGroup>
+                )}
+              </div>
+            ) : (
+              <div className="queue history">
+                <div className="queue-head" aria-hidden="true">
+                  <span>Recipient</span>
+                  <span>Message</span>
+                  <span>Signal</span>
+                  <span>Status</span>
+                  <span>Updated (IST)</span>
+                  <span />
+                </div>
+                <div className="q-group-body">{rows.map(renderRow)}</div>
+              </div>
+            )}
 
             <div className="pager">
               <label className="pager-per">
@@ -834,44 +877,101 @@ export default async function Review({
  * What the person on this row has already done about us.
  *
  * A reviewer approving fifty messages needs one thing the queue never told them: which of
- * these people are already interested. The temperature is the engine's own reading, and the
- * line under it is the evidence for that reading, because "hot" without a reason is a colour
- * rather than a fact.
+ * these people are already interested. On the row it is one pill — the stronger of reply and
+ * click, with both in the tooltip; in the preview it is spelled out, since that is where the
+ * decision is actually made.
  */
 function Signal({
   temp,
   engagement,
+  long = false,
 }: {
   temp?: { band?: string };
   engagement?: { clicked: number; replied: number; lastClickedAt?: Date; lastRepliedAt?: Date };
+  long?: boolean;
 }) {
   const band = temp?.band ? String(temp.band) : undefined;
   const clicked = engagement?.clicked ?? 0;
   const replied = engagement?.replied ?? 0;
 
   if (!clicked && !replied) {
+    const warmth = band && band !== "cold" ? <span className={`pill ${band}`}>{band}</span> : null;
+    if (long) {
+      return (
+        <div className="signal-line">
+          {warmth}
+          <span className="muted">no response yet</span>
+        </div>
+      );
+    }
+    return warmth ?? <span className="q-quiet">no response</span>;
+  }
+
+  const repliedAt = engagement?.lastRepliedAt;
+  const clickedAt = engagement?.lastClickedAt;
+  if (long) {
     return (
-      <>
-        {band && band !== "cold" ? <span className={`pill ${band}`}>{band}</span> : null}
-        <div className="muted" style={{ fontSize: 12.5 }}>no response yet</div>
-      </>
+      <div className="signal-line">
+        {replied > 0 && (
+          <span className="pill ok">
+            <MessageSquare /> replied {ago(repliedAt)}
+          </span>
+        )}
+        {clicked > 0 && (
+          <span className="pill hot">
+            <MousePointerClick /> clicked {ago(clickedAt)}
+          </span>
+        )}
+      </div>
     );
   }
 
+  const both = [replied ? `replied ${ago(repliedAt)}` : "", clicked ? `clicked ${ago(clickedAt)}` : ""]
+    .filter(Boolean)
+    .join(" · ");
+  const short = (at?: Date) => (agoShort(at) ? ` · ${agoShort(at)}` : "");
+  return replied > 0 ? (
+    <span className="pill ok" title={both}>
+      <MessageSquare /> replied{short(repliedAt)}
+    </span>
+  ) : (
+    <span className="pill hot" title={both}>
+      <MousePointerClick /> clicked{short(clickedAt)}
+    </span>
+  );
+}
+
+/**
+ * The subject, then the campaign it belongs to, on one line that ends in an ellipsis rather
+ * than wrapping — the whole message is one click away in the preview.
+ */
+function MessageLine({ subject, slotText, campaign }: { subject?: string; slotText?: string; campaign: string }) {
+  const tail = <span className="q-tail"> — {campaign}</span>;
+  if (subject) {
+    return (
+      <div className="q-msg" title={`${subject} — ${campaign}`}>
+        <span className="q-subject">{subject}</span>
+        {tail}
+      </div>
+    );
+  }
+  // Claude wrote the opening and kept the template's subject. That row is written; calling
+  // it "not written yet" hid the words a reviewer is here to approve.
+  if (slotText) {
+    return (
+      <div className="q-msg" title={`Opening by Claude: “${slotText}” — the subject comes from the template`}>
+        <span className="pill accent">opening by Claude</span> “{slotText}”{tail}
+      </div>
+    );
+  }
+  // A tier-2 touch is queued with no copy on purpose: which rung of the ladder it lands on is
+  // decided at send time, so the subject genuinely does not exist yet. Saying that is the
+  // difference between a queue somebody approves and one they stop trusting.
   return (
-    <>
-      <div className="responded">
-        {replied > 0 && (
-          <span className="pill ok"><MessageSquare /> replied</span>
-        )}
-        {clicked > 0 && (
-          <span className="pill hot"><MousePointerClick /> clicked</span>
-        )}
-      </div>
-      <div className="muted" style={{ fontSize: 12.5 }}>
-        {ago(engagement?.lastRepliedAt ?? engagement?.lastClickedAt)}
-      </div>
-    </>
+    <div className="q-msg" title="Sends the template rung for their touch — Preview shows which">
+      <span className="pill">not written yet</span> <span className="q-tail">template rung for their touch</span>
+      {tail}
+    </div>
   );
 }
 
@@ -889,4 +989,15 @@ function ago(at?: Date): string {
   if (hours < 36) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
   const days = Math.round(hours / 24);
   return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+/** The same, in a row's width: `now`, `40m`, `5h`, `2d`. */
+function agoShort(at?: Date): string {
+  if (!at) return "";
+  const minutes = Math.round((Date.now() - at.getTime()) / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }

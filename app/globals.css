@@ -1887,3 +1887,142 @@ textarea.payload { min-height: 130px; }
 .timeline .t-mark.m-later::before { background: transparent; border: 1.5px solid var(--ink-3); }
 .timeline .skipped strong { color: var(--ink-3); text-decoration: line-through; }
 .timeline .t-when .t-time { display: block; }
+
+/* ── review queue ─────────────────────────────────────────────────────────────
+   One line per message. The queue was a seven-column table whose Actions column sat past
+   the right edge, and a subject that wrapped to four lines left room for four rows a
+   screen. Each row is now who, what, how warm, when, and the decision — the subject ends
+   in an ellipsis because the whole message is one click away. */
+.queue { display: flex; flex-direction: column; gap: 2px; margin-bottom: 18px; }
+.queue-head, .q-row {
+  display: grid; align-items: center; gap: 14px;
+  /* Every column a fixed track — header and rows are separate grids, so an `auto` column
+     would size to the buttons in one and to nothing in the other and the labels drift. */
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) 132px 150px 160px;
+}
+.queue.history .queue-head, .queue.history .q-row {
+  grid-template-columns: minmax(110px, 160px) minmax(0, 1fr) 120px minmax(140px, 200px) 150px 230px;
+}
+.queue-head {
+  padding: 0 12px 8px; border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3); font-weight: 500; white-space: nowrap;
+}
+.q-row { padding: 7px 12px; min-height: 48px; border-radius: var(--r-sm); font-size: 14px; }
+.q-row:hover { background: var(--surface-2); }
+.q-who, .q-msg { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.q-who { font-weight: 600; }
+.q-subject { font-weight: 500; }
+.q-tail { color: var(--ink-3); }
+.q-quiet { color: var(--ink-3); font-size: 12.5px; white-space: nowrap; }
+.q-when { font-family: var(--font-mono), monospace; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.q-state { min-width: 0; }
+.q-state .state-why { margin-top: 2px; -webkit-line-clamp: 1; }
+
+/* A band: its name, its size across the whole queue, why it is where it is, and its own
+   Approve for the rows under it. */
+.q-group { display: flex; flex-direction: column; }
+.q-group + .q-group { margin-top: 8px; }
+.q-group-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 12px 8px 4px; border-bottom: 1px solid var(--rule-soft);
+}
+button.q-toggle { color: var(--ink); border-color: transparent; font-size: 14.5px; font-weight: 700; letter-spacing: -.01em; padding: 3px 6px; }
+button.q-toggle:hover { background: var(--surface-2); }
+.q-group-why { color: var(--ink-3); font-size: 13px; }
+.q-group-act { margin-left: auto; }
+.q-group-act form { display: contents; }
+.q-group-body { display: flex; flex-direction: column; gap: 2px; padding-top: 4px; }
+.q-more { margin: 2px 0 0; padding: 4px 12px; font-size: 12.5px; color: var(--ink-3); }
+
+/* Narrow screens: the row stacks into who + when, then the message, then the decision. */
+@media (max-width: 860px) {
+  .queue-head { display: none; }
+  .q-row, .queue.history .q-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px; padding: 10px 12px;
+  }
+  .q-row .q-msg { grid-column: 1 / -1; }
+  .q-row .row-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+/* ── message preview drawer ───────────────────────────────────────────────────
+   Laid out to the window rather than scrolled through: facts in a column on the left, the
+   email filling the rest and zoomed to fit it, the decision pinned under both. */
+.drawer-body.pv-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.pv-state { display: flex; align-items: center; gap: 8px; padding: 20px; margin: 0; }
+.pv {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+}
+.pv-side {
+  min-height: 0; overflow-y: auto; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 16px;
+  border-right: 1px solid var(--rule); background: var(--surface);
+}
+.signal-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.pv-facts {
+  margin: 0; display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 12px;
+  font-size: 13px; line-height: 1.45;
+}
+.pv-facts dt, .pv-k {
+  font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-3); padding-top: 2px;
+}
+.pv-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.pv-meta { margin: 0; font-size: 13px; color: var(--ink-2); }
+.pv-tools { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.pv-tools .msg-form { margin-top: 0; }
+.pv-tools button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); }
+/* Who they are / why this mail / what we expect / this message: four short sections, each
+   headed by the question it answers. */
+.pv-sec { display: flex; flex-direction: column; gap: 8px; }
+.pv-sec + .pv-sec { padding-top: 14px; border-top: 1px solid var(--rule-soft); }
+.pv-h {
+  margin: 0; font-family: var(--font-mono), monospace; font-size: 10.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--accent);
+}
+.pv-sec p { margin: 0; }
+.pv-lead { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.pv-read { font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.pv-body-text { font-size: 13.5px; line-height: 1.55; color: var(--ink); }
+.pv-idea { font-size: 14px; font-weight: 600; line-height: 1.45; color: var(--ink); }
+.pv-line { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.pv-line .pv-k { padding-top: 0; margin-right: 2px; }
+.pv-goal { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; font-weight: 600; }
+.pv-list { margin: 4px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+
+.pv-stage {
+  min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 18px 14px; background: var(--surface-2);
+}
+.pv-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pv-bar .spacer { margin-left: auto; }
+.pv-bar .seg { background: var(--surface-3); }
+.pv-plain { flex: 1; min-height: 0; overflow: auto; }
+
+.pv-foot {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 14px;
+  padding: 12px 18px; border-top: 1px solid var(--rule); background: var(--surface);
+}
+.pv-decide { display: flex; gap: 8px; flex: none; }
+.pv-says { margin: 0; font-size: 12.5px; color: var(--ink-3); min-width: 0; }
+
+/* The inbox imitation, trimmed for the drawer: its line in the list, then the message in
+   whatever height is left. Fit zooms the message into that height; 100% lets it scroll. */
+.inbox-compact { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.inbox-compact .inbox-web { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.inbox-compact .inbox-row { box-shadow: none; border-bottom: 1px solid var(--mail-rule); }
+.inbox-fit { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; }
+.inbox-fit .inbox-text { max-width: 68ch; }
+.inbox-compact .phone { height: 100%; display: flex; flex-direction: column; padding: 10px; border-radius: 40px; }
+.inbox-compact .phone-screen { flex: 1; height: auto; min-height: 0; border-radius: 30px; }
+
+/* Below a laptop width the two columns stack and the drawer scrolls as one page. */
+@media (max-width: 900px) {
+  .drawer-body.pv-body { overflow-y: auto; }
+  .pv { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
+  .pv-side { border-right: 0; border-bottom: 1px solid var(--rule); overflow: visible; }
+  .pv-stage { min-height: 80vh; }
+  .pv-foot { position: sticky; bottom: 0; flex-wrap: wrap; }
+}

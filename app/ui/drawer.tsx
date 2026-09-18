@@ -26,6 +26,7 @@ export default function Drawer({
   onClose,
   children,
   width = 520,
+  bodyClassName,
 }: {
   open: boolean;
   title: string;
@@ -33,6 +34,8 @@ export default function Drawer({
   onClose: () => void;
   children: ReactNode;
   width?: number;
+  /** For a panel that lays itself out to the drawer's height rather than scrolling in it. */
+  bodyClassName?: string;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
@@ -71,7 +74,7 @@ export default function Drawer({
               <Button variant="quiet" size="sm" icon={<X />} aria-label="Close" />
             </Dialog.Close>
           </header>
-          <div className="drawer-body">{children}</div>
+          <div className={bodyClassName ? `drawer-body ${bodyClassName}` : "drawer-body"}>{children}</div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

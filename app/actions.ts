@@ -43,6 +43,7 @@ import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
 import { timezoneFor } from "@/engine/time.js";
 import { stripOpenPixel } from "@/engine/tracking.js";
+import { ideasOf, inventedOf } from "@/engine/ideas.js";
 import { enqueue, PRIORITY } from "@/engine/queue.js";
 import { fromIstInput } from "./ui/time";
 import { setRoutineEnabled } from "@/engine/routines.js";
@@ -2001,6 +2002,162 @@ export interface HeldMessage {
   editable: boolean;
   /** Set while a rewrite has been asked for and the writing routine has not run yet. */
   rewriteRequestedAt?: string;
+  /** Who it goes to, why this message, and what it is meant to lead to. */
+  brief?: MessageBrief;
+}
+
+/**
+ * The three things a reviewer weighs before approving, read off the lead, the plan step and
+ * the campaign. The drawer used to show the writer's notes as they were stored — "Idea #22
+ * (…): hidden_bill" — which answered none of them in words a reviewer uses.
+ */
+export interface MessageBrief {
+  who: {
+    role?: string;
+    /** What they told us on the form, as label and value. */
+    said: { label: string; value: string }[];
+    /** How they came in, and when. */
+    arrived?: { how: string; at: string };
+    /** The engine's one-line reading of what they need. */
+    read?: string;
+    warmth?: { band: string; score?: number };
+    /** Messages that already reached them, across every campaign. */
+    sentBefore: number;
+  };
+  /**
+   * The one idea from the bank the message is built on, and the reason it suits this lead.
+   * Said once: the plan's own note, the rationale and the one-line theme all restate the
+   * same idea, and printing them side by side read as two ideas.
+   */
+  why: { idea?: { n: number; title: string }; reason?: string; formatWhy?: string };
+  expect: {
+    /** The campaign's success condition, and whether this lead has met it yet. */
+    goal?: string;
+    goalMet?: boolean;
+    /** What they are likely to push back on. */
+    objections: string[];
+    /** The plan's next step after this one. */
+    next?: { afterDays?: number; idea?: string };
+    /** When the campaign stops working this lead. */
+    endsAt?: string;
+    /** Whether the plan is rewritten from how they respond, rather than fixed. */
+    rolling: boolean;
+  };
+}
+
+/** `founder_/_ceo_/_owner` → `founder / ceo / owner`: a stored key, read as words. */
+function words(value: unknown): string {
+  return String(value ?? "")
+    .replace(/_\/_/g, " / ")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function capital(value: string): string {
+  const cased = value.replace(/\b(ceo|cto|cfo|coo|cmo|vp|hr|it)\b/gi, (m) => m.toUpperCase());
+  return cased ? cased[0]!.toUpperCase() + cased.slice(1) : cased;
+}
+
+function oid(value: unknown): ObjectId | undefined {
+  return value && ObjectId.isValid(String(value)) ? new ObjectId(String(value)) : undefined;
+}
+
+/** How a lead arrived, in the words a reviewer would use for it. */
+const ARRIVED: Record<string, string> = {
+  form: "Filled the lead form",
+  file_upload: "Came in on an uploaded list",
+  manual: "Added by hand",
+};
+
+async function briefFor(orgId: string, action: Record<string, unknown>): Promise<MessageBrief> {
+  const db = await getDb();
+  const personId = oid(action.personId);
+  const runId = oid(action.goalInstanceId);
+  const [person, run, sentBefore] = await Promise.all([
+    personId ? db.collection(C.people).findOne({ _id: personId, orgId }) : null,
+    runId ? db.collection(C.goalInstances).findOne({ _id: runId, orgId }) : null,
+    action.personId
+      ? db.collection(C.actions).countDocuments({ orgId, personId: String(action.personId), status: "sent" })
+      : 0,
+  ]);
+  const planId = oid(run?.currentPlanId);
+  const productId = oid(action.productId);
+  const [plan, goal, product] = await Promise.all([
+    planId ? db.collection(C.plans).findOne({ _id: planId, orgId }) : null,
+    run?.goalKey ? db.collection(C.goals).findOne({ orgId, productId: action.productId, key: run.goalKey }) : null,
+    productId ? db.collection(C.products).findOne({ _id: productId, orgId }) : null,
+  ]);
+
+  type Step = { id?: number; why?: string; theme?: string; angle?: string; after_days?: number };
+  const steps = ((plan?.steps ?? []) as Step[]).slice().sort((a, b) => Number(a.id) - Number(b.id));
+  const at = steps.findIndex((s) => s.id === action.planStepId);
+  // Only a step of the plan in force: a message written for a plan since replaced has no
+  // step to speak for it there, and borrowing a neighbour's reason would be a wrong one.
+  const step = at >= 0 ? steps[at] : undefined;
+  const next = at >= 0 ? steps[at + 1] : undefined;
+
+  const form = ((person?.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const arrival = ((person?.arrivals ?? []) as { intent?: string; kind?: string; at?: unknown }[])[0];
+  const belief = (person?.belief ?? {}) as { painHypothesis?: string; useCase?: string; objectionsLikely?: unknown[] };
+  const temp = person?.temp as { band?: string; score?: number } | undefined;
+  const success = goal?.success as { expression?: string; describedAs?: string } | undefined;
+  // Met or not is only knowable when the condition is one named check, not an expression.
+  const met =
+    success?.expression && /^\w+$/.test(success.expression)
+      ? (run?.checkResults as Record<string, unknown> | undefined)?.[success.expression]
+      : undefined;
+
+  // The rationale is stored as `Idea #22 (Before you approve two new hires): hidden_bill.
+  // A founder of …` — the idea's number and title, its hook's key, then the actual reason.
+  const rationale = action.rationale ? String(action.rationale) : "";
+  const tagged = rationale.match(/^Idea #(\d+)\s*\(([^)]*)\)\s*:\s*/);
+  const ref = Number(((action.ideaRefs ?? []) as unknown[])[0] ?? tagged?.[1]);
+  const banked = Number.isFinite(ref)
+    ? [...ideasOf(product), ...inventedOf(product)].find((i) => Number(i.n) === ref)
+    : undefined;
+  const title = banked?.title ?? tagged?.[2];
+  const reason =
+    rationale
+      .replace(/^Idea #\d+\s*(\([^)]*\))?\s*:\s*/, "")
+      .replace(/^[a-z]+(_[a-z]+)*\.\s*/, "")
+      .trim() ||
+    (step?.why ? String(step.why) : "") ||
+    (action.theme ? String(action.theme) : "");
+
+  return {
+    who: {
+      role: person?.role ? capital(words(person.role)) : undefined,
+      said: Object.entries(form)
+        .filter(([key, value]) => key !== "submitted_at" && value !== null && value !== "")
+        .map(([key, value]) => ({ label: capital(words(key)), value: words(value) })),
+      arrived: arrival?.at
+        ? {
+            how: ARRIVED[String(arrival.intent ?? arrival.kind)] ?? capital(words(arrival.intent ?? arrival.kind)),
+            at: new Date(String(arrival.at)).toISOString(),
+          }
+        : undefined,
+      read: belief.painHypothesis || belief.useCase || undefined,
+      warmth: temp?.band ? { band: temp.band, score: temp.score } : undefined,
+      sentBefore,
+    },
+    why: {
+      idea: Number.isFinite(ref) && title ? { n: ref, title: String(title) } : undefined,
+      reason: reason ? words(reason) : undefined,
+      formatWhy: action.formatWhy ? String(action.formatWhy) : undefined,
+    },
+    expect: {
+      goal: success?.describedAs ? String(success.describedAs) : undefined,
+      goalMet: typeof met === "boolean" ? met : undefined,
+      objections: (belief.objectionsLikely ?? []).map(String).filter(Boolean),
+      next: next ? { afterDays: next.after_days, idea: next.theme ?? words(next.angle) } : undefined,
+      endsAt: run?.deadline ? new Date(String(run.deadline)).toISOString() : undefined,
+      rolling: Boolean(plan?.rolling),
+    },
+  };
 }
 
 /**
@@ -2081,6 +2238,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     skipReason: action.skipReason ? String(action.skipReason) : action.error ? String(action.error) : undefined,
     sentAt: action.sentAt ? new Date(String(action.sentAt)).toISOString() : undefined,
     reviewedAt: action.reviewedAt ? new Date(String(action.reviewedAt)).toISOString() : undefined,
+    brief: await briefFor(orgId, action),
   };
 }
 

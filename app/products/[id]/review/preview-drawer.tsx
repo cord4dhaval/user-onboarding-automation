@@ -1,24 +1,37 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { CalendarClock, Check, Eye, Pencil, RotateCcw, Sparkles, X } from "lucide-react";
+import { Fragment, useState, useTransition, type ReactNode } from "react";
+import { CalendarClock, Check, Eye, Monitor, Pencil, RotateCcw, Smartphone, Sparkles, X } from "lucide-react";
 import Drawer from "../../../ui/drawer";
 import { Button, Spinner, SubmitButton } from "../../../ui/kit";
-import { decide, editMessage, regenerateMessage, rescheduleMessage, returnToReview, type HeldMessage } from "../../../actions";
-import { ist, istInputValue } from "../../../ui/time";
+import {
+  decide,
+  editMessage,
+  regenerateMessage,
+  rescheduleMessage,
+  returnToReview,
+  type HeldMessage,
+  type MessageBrief,
+} from "../../../actions";
+import { ist, istInputValue, istTime, istWeekday } from "../../../ui/time";
 import { isReplacedPlan } from "@/engine/replaced.js";
 import InboxPreview from "./inbox-preview";
+
+/** Where the Fit choice is remembered, per browser. */
+const FIT_KEY = "review.preview.fit";
 
 /**
  * One held message, previewed as it will actually arrive.
  *
- * The list is a table, so the body lives here rather than inline under every row: a page of
- * 500 rendered emails is megabytes to show six columns of metadata. It is fetched on open
- * and kept, so reopening the same message is free.
+ * The body lives here rather than inline under every row: a page of 500 rendered emails is
+ * megabytes to show one line of metadata each. It is fetched on open and kept, so reopening
+ * the same message is free.
  *
- * The format control sits beside Approve because it decides what Approve sends — picking
- * one switches the preview with it, so the reader is always looking at the version they
- * are about to release.
+ * Laid out to the window, not scrolled through. The facts about the message sit in a column
+ * beside it, the email is zoomed to fit the space left, and the decision is pinned under
+ * both — so the whole message, what it is for, and Approve are on screen at once. It used to
+ * be one tall column: header, format pills, tools, an imitation browser, a second subject
+ * and sender block, then the message, with Approve somewhere below it.
  */
 export default function PreviewDrawer({
   productId,
@@ -27,6 +40,8 @@ export default function PreviewDrawer({
   personEmail,
   from,
   meta,
+  facts,
+  signal,
   fetchMessage,
 }: {
   productId: string;
@@ -35,12 +50,25 @@ export default function PreviewDrawer({
   personEmail: string;
   /** The channel's From header, for the inbox preview. */
   from?: string;
-  meta: string;
+  /** One line of context, for callers that do not pass `facts`. */
+  meta?: string;
+  /** What this message is, as label and value — campaign, angle, sender, when it goes. */
+  facts?: { label: string; value: string }[];
+  /** What the recipient has already done, rendered by the page. */
+  signal?: ReactNode;
   fetchMessage: (actionId: string) => Promise<HeldMessage | null>;
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState<HeldMessage | null>(null);
   const [format, setFormat] = useState<"html" | "text" | "letter">("html");
+  const [device, setDevice] = useState<"web" | "mobile">("web");
+  const [fit, setFit] = useState(() => {
+    try {
+      return localStorage.getItem(FIT_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
   const [pending, start] = useTransition();
   /** Which of the three changes is open. Only one at a time — they all act on this message. */
   const [panel, setPanel] = useState<"none" | "edit" | "schedule" | "rewrite">("none");
@@ -67,17 +95,32 @@ export default function PreviewDrawer({
     });
   }
 
+  function chooseFit(on: boolean) {
+    setFit(on);
+    try {
+      localStorage.setItem(FIT_KEY, on ? "on" : "off");
+    } catch {
+      // A blocked store only means the choice is not remembered.
+    }
+  }
+
   const designed = Boolean(message?.canHtml && message.bodyHtml);
   const letter = Boolean(message?.canHtml && message.bodyLetter);
-  // A decision is only on offer while the message is still waiting. Everything else opens
-  // read-only: the point of showing it is the record, not a second chance to approve it.
-  const waiting = message?.status === "awaiting_approval";
+  // A decision is only on offer while the message is still waiting — at the gate, or dated
+  // for later with nobody having decided — the same two the queue lists and `decide` takes.
+  // Everything else opens read-only: the point of showing it is the record.
+  const waiting =
+    message?.status === "awaiting_approval" || (message?.status === "queued" && !message.reviewedAt);
   // A message nobody received is not finished with — whatever stopped it may be gone by
   // now. The way back belongs here, next to the reason it stopped, and not only on the row.
   // A replaced plan's message is the exception: its new step already took its place.
   const recoverable =
     message?.status === "failed" ||
     (message?.status === "skipped" && Boolean(message.skipReason) && !isReplacedPlan(message.skipReason));
+  const html = format === "letter" ? message?.bodyLetter : format === "html" ? message?.bodyHtml : undefined;
+  const email = message?.channel === "email";
+  // When Approve actually puts it in front of someone, said on the button that does it.
+  const dueLater = message?.dueAt ? new Date(message.dueAt).getTime() > Date.now() : false;
 
   return (
     <>
@@ -88,264 +131,415 @@ export default function PreviewDrawer({
       <Drawer
         open={open}
         title={personName}
-        description={`${personEmail} · ${meta}`}
+        description={personEmail || undefined}
         onClose={() => setOpen(false)}
-        width={760}
+        width={1200}
+        bodyClassName="pv-body"
       >
         {pending && !message ? (
-          <p className="muted row"><Spinner /> Loading the message…</p>
+          <p className="pv-state muted">
+            <Spinner /> Loading the message…
+          </p>
         ) : !message ? (
-          <div className="empty">
-            <strong>Message not found</strong>
-            It was deleted while the list was open.
+          <div className="pv-state">
+            <div className="empty">
+              <strong>Message not found</strong>
+              It was deleted while the list was open.
+            </div>
           </div>
         ) : (
-          <>
-            {/* The format choice belongs with the preview it changes, not with the button
-                that acts on it — they used to share one line and read as one control. */}
-            <div className="preview-format">
-              <div className="row">
-                {designed && (
-                  <button
-                    type="button"
-                    className={`pill ${format === "html" ? "accent" : ""}`}
-                    onClick={() => setFormat("html")}
-                  >
-                    Designed email
-                  </button>
+          <div className="pv">
+            <aside className="pv-side">
+              <Brief brief={message.brief} signal={signal} />
+
+              <section className="pv-sec" aria-label="This message">
+                <h3 className="pv-h">This message</h3>
+              {facts?.length ? (
+                <dl className="pv-facts">
+                  {facts.map((f) => (
+                    <Fragment key={f.label}>
+                      <dt>{f.label}</dt>
+                      <dd title={f.value}>{f.value}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              ) : meta ? (
+                <p className="pv-meta">{meta}</p>
+              ) : null}
+              </section>
+
+              {/* Changing the message, rather than only deciding on it: fix a line, move the
+                  date, or ask for it to be written again. Beside the message rather than
+                  above it, so an edit is made with the email it changes still in view. */}
+              {message.editable && (
+                <div className="pv-tools">
+                  <div className="row">
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      icon={<Pencil />}
+                      aria-pressed={panel === "edit"}
+                      onClick={() => setPanel(panel === "edit" ? "none" : "edit")}
+                    >
+                      Edit copy
+                    </Button>
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      icon={<CalendarClock />}
+                      aria-pressed={panel === "schedule"}
+                      onClick={() => setPanel(panel === "schedule" ? "none" : "schedule")}
+                    >
+                      Reschedule
+                    </Button>
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      icon={<Sparkles />}
+                      aria-pressed={panel === "rewrite"}
+                      onClick={() => setPanel(panel === "rewrite" ? "none" : "rewrite")}
+                    >
+                      Rewrite
+                    </Button>
+                  </div>
+                  {message.rewriteRequestedAt ? (
+                    <span className="pill">rewrite asked for {ist(message.rewriteRequestedAt)}</span>
+                  ) : null}
+
+                  {panel === "edit" && (
+                    <form action={editMessage} className="msg-form">
+                      <input type="hidden" name="productId" value={productId} />
+                      <input type="hidden" name="actionId" value={actionId} />
+                      <label>
+                        Subject
+                        <input name="subject" defaultValue={message.subject ?? ""} />
+                      </label>
+                      <label>
+                        Message
+                        <textarea name="body" rows={10} defaultValue={message.editableBody ?? ""} />
+                      </label>
+                      {/* Says what the reviewer is not responsible for writing, because the
+                          preview shows those parts and the box does not. */}
+                      <p className="muted">
+                        Write the message only — the greeting, the button and the opt-out line
+                        are added from the template when it sends.
+                      </p>
+                      <SubmitButton icon={<Check />} pendingLabel="Saving…">
+                        Save copy
+                      </SubmitButton>
+                    </form>
+                  )}
+
+                  {panel === "schedule" && (
+                    <form action={rescheduleMessage} className="msg-form">
+                      <input type="hidden" name="productId" value={productId} />
+                      <input type="hidden" name="actionId" value={actionId} />
+                      <label>
+                        Send at (IST)
+                        <input type="datetime-local" name="dueAt" defaultValue={istInputValue(message.dueAt)} />
+                      </label>
+                      <p className="muted">
+                        The engine sends on this date under every guardrail. A message that
+                        failed or was stopped returns to the queue for the new date.
+                      </p>
+                      <SubmitButton icon={<CalendarClock />} pendingLabel="Moving…">
+                        Save date
+                      </SubmitButton>
+                    </form>
+                  )}
+
+                  {panel === "rewrite" && (
+                    <form action={regenerateMessage} className="msg-form">
+                      <input type="hidden" name="productId" value={productId} />
+                      <input type="hidden" name="actionId" value={actionId} />
+                      <label>
+                        What should change? (optional)
+                        <textarea
+                          name="instruction"
+                          rows={3}
+                          placeholder="e.g. he clicked the welcome — open on what he looked at, and ask something smaller"
+                        />
+                      </label>
+                      <p className="muted">
+                        Clears the copy and puts this person at the front of the writing queue.
+                        The next Advance run writes it with their history in front of it; the
+                        message comes back here for approval rather than sending itself.
+                      </p>
+                      <SubmitButton icon={<Sparkles />} pendingLabel="Asking…">
+                        Ask for a rewrite
+                      </SubmitButton>
+                    </form>
+                  )}
+                </div>
+              )}
+
+            </aside>
+
+            <section className="pv-stage" aria-label="Message">
+              <div className="pv-bar">
+                {/* The format decides what Approve sends, so switching it switches the
+                    preview with it: the reader always sees the version they release. */}
+                {designed || letter ? (
+                  <div className="seg" role="tablist" aria-label="Format">
+                    {designed && (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={format === "html"}
+                        className={format === "html" ? "on" : undefined}
+                        onClick={() => setFormat("html")}
+                      >
+                        Designed
+                      </button>
+                    )}
+                    {letter && (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={format === "letter"}
+                        className={format === "letter" ? "on" : undefined}
+                        onClick={() => setFormat("letter")}
+                      >
+                        Letter
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={format === "text"}
+                      className={format === "text" ? "on" : undefined}
+                      onClick={() => setFormat("text")}
+                    >
+                      Plain text
+                    </button>
+                  </div>
+                ) : null}
+                <span className="spacer" />
+                {email && (
+                  <div className="seg" role="tablist" aria-label="Device">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={device === "web"}
+                      className={device === "web" ? "on" : undefined}
+                      onClick={() => setDevice("web")}
+                    >
+                      <Monitor size={14} /> Web
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={device === "mobile"}
+                      className={device === "mobile" ? "on" : undefined}
+                      onClick={() => setDevice("mobile")}
+                    >
+                      <Smartphone size={14} /> Mobile
+                    </button>
+                  </div>
                 )}
-                {letter && (
-                  <button
-                    type="button"
-                    className={`pill ${format === "letter" ? "accent" : ""}`}
-                    onClick={() => setFormat("letter")}
-                  >
-                    Letter
-                  </button>
+                {/* Fit shrinks the whole message into view; 100% is the size it lands at,
+                    for checking small print. */}
+                {email && html && device === "web" && (
+                  <div className="seg" role="tablist" aria-label="Zoom">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={fit}
+                      className={fit ? "on" : undefined}
+                      onClick={() => chooseFit(true)}
+                    >
+                      Fit
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={!fit}
+                      className={!fit ? "on" : undefined}
+                      onClick={() => chooseFit(false)}
+                    >
+                      100%
+                    </button>
+                  </div>
                 )}
-                <button
-                  type="button"
-                  className={`pill ${format === "text" ? "accent" : ""}`}
-                  onClick={() => setFormat("text")}
-                >
-                  Plain text
-                </button>
               </div>
-              <p className="muted">
+
+              {/* Email is shown the way the recipient meets it — its line in the inbox, then
+                  opened. Other channels have no inbox to imitate, so they keep the body. */}
+              {email ? (
+                <InboxPreview
+                  compact
+                  fit={fit}
+                  device={device}
+                  from={from}
+                  subject={message.subject}
+                  html={html}
+                  text={message.bodyText || message.previewError || "This message has no body."}
+                  when={message.sentAt ?? message.dueAt}
+                />
+              ) : (
+                <div className="preview pv-plain">
+                  {message.subject && (
+                    <div className="preview-head">
+                      <span className="k">Subject</span> <strong>{message.subject}</strong>
+                    </div>
+                  )}
+                  {html ? (
+                    <iframe title={`Message to ${personEmail}`} srcDoc={html} className="preview-frame" />
+                  ) : (
+                    <div className="preview-body">
+                      {message.bodyText || message.previewError || "This message has no body."}
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <footer className="pv-foot">
+              {waiting ? (
+                <form action={decide} className="pv-decide">
+                  <input type="hidden" name="productId" value={productId} />
+                  <input type="hidden" name="ids" value={actionId} />
+                  <input type="hidden" name="format" value={format} />
+                  <SubmitButton
+                    name="decision"
+                    value="approve"
+                    icon={<Check />}
+                    pendingLabel={dueLater ? "Approving…" : "Sending…"}
+                  >
+                    {dueLater && message.dueAt
+                      ? `Approve — sends ${istWeekday(message.dueAt)}, ${istTime(message.dueAt)}`
+                      : "Approve — sends now"}
+                  </SubmitButton>
+                  <SubmitButton name="decision" value="reject" variant="quiet" icon={<X />} pendingLabel="Rejecting…">
+                    Reject
+                  </SubmitButton>
+                </form>
+              ) : recoverable ? (
+                // Returned to the queue rather than resent: the thing that stopped it may
+                // still be in force, so a human looks at it again before it goes out.
+                <form action={returnToReview} className="pv-decide">
+                  <input type="hidden" name="productId" value={productId} />
+                  <input type="hidden" name="ids" value={actionId} />
+                  <SubmitButton variant="quiet" icon={<RotateCcw />} pendingLabel="Returning…">
+                    Return to review
+                  </SubmitButton>
+                </form>
+              ) : null}
+              <p className="pv-says">
                 {!waiting
                   ? outcomeLine(message)
                   : designed || letter
                     ? format === "html"
                       ? "Approving sends this designed version."
                       : format === "letter"
-                        ? "Approving sends this letter: HTML that looks typed, with no logo, box or button."
-                        : "Approving sends the text below instead — this message only."
+                        ? "Approving sends this letter version."
+                        : "Approving sends the plain text instead — this message only."
                     : message.canHtml
                       ? "No designed version was rendered for this message."
                       : "This channel sends plain text only."}
+                {/* A body rendered on open, not read off the action: the words are the ones
+                    that go, but a template edit before then would change them. */}
+                {waiting && message.preview && !message.previewError
+                  ? " Greeting, button and opt-out line are added at send, as shown."
+                  : ""}
               </p>
-            </div>
-
-            {/* Changing the message, rather than only deciding on it.
-                Three separate things a reviewer wants at this point and could not do at
-                all: fix a line, move the date, or ask for it to be written again. They open
-                one at a time — all three act on this same message, and two of them open
-                would leave it unclear which one Save applies to.
-
-                Above the preview, not below it. A rendered email is a full screen tall, so
-                controls underneath it are controls nobody knows are there — the reader has
-                to scroll past the whole message to find out they could have edited it. */}
-            {message.editable && (
-              <div className="msg-tools">
-                <div className="row">
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    icon={<Pencil />}
-                    onClick={() => setPanel(panel === "edit" ? "none" : "edit")}
-                  >
-                    Edit copy
-                  </Button>
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    icon={<CalendarClock />}
-                    onClick={() => setPanel(panel === "schedule" ? "none" : "schedule")}
-                  >
-                    Reschedule
-                  </Button>
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    icon={<Sparkles />}
-                    onClick={() => setPanel(panel === "rewrite" ? "none" : "rewrite")}
-                  >
-                    Rewrite
-                  </Button>
-                  {message.rewriteRequestedAt ? (
-                    <span className="pill">rewrite asked for {ist(message.rewriteRequestedAt)}</span>
-                  ) : null}
-                </div>
-
-                {panel === "edit" && (
-                  <form action={editMessage} className="msg-form">
-                    <input type="hidden" name="productId" value={productId} />
-                    <input type="hidden" name="actionId" value={actionId} />
-                    <label>
-                      Subject
-                      <input name="subject" defaultValue={message.subject ?? ""} />
-                    </label>
-                    <label>
-                      Message
-                      <textarea name="body" rows={10} defaultValue={message.editableBody ?? ""} />
-                    </label>
-                    {/* Says what the reviewer is not responsible for writing, because the
-                        preview above shows those parts and the box below does not. */}
-                    <p className="muted">
-                      Write the message only — the greeting, the button and the opt-out line
-                      are added from the template when it sends.
-                    </p>
-                    <SubmitButton icon={<Check />} pendingLabel="Saving…">
-                      Save copy
-                    </SubmitButton>
-                  </form>
-                )}
-
-                {panel === "schedule" && (
-                  <form action={rescheduleMessage} className="msg-form">
-                    <input type="hidden" name="productId" value={productId} />
-                    <input type="hidden" name="actionId" value={actionId} />
-                    <label>
-                      Send at (IST)
-                      <input type="datetime-local" name="dueAt" defaultValue={istInputValue(message.dueAt)} />
-                    </label>
-                    <p className="muted">
-                      The engine sends on this date under every guardrail. A message that
-                      failed or was stopped returns to the queue for the new date.
-                    </p>
-                    <SubmitButton icon={<CalendarClock />} pendingLabel="Moving…">
-                      Save date
-                    </SubmitButton>
-                  </form>
-                )}
-
-                {panel === "rewrite" && (
-                  <form action={regenerateMessage} className="msg-form">
-                    <input type="hidden" name="productId" value={productId} />
-                    <input type="hidden" name="actionId" value={actionId} />
-                    <label>
-                      What should change? (optional)
-                      <textarea
-                        name="instruction"
-                        rows={3}
-                        placeholder="e.g. he clicked the welcome — open on what he looked at, and ask something smaller"
-                      />
-                    </label>
-                    <p className="muted">
-                      Clears the copy and puts this person at the front of the writing queue.
-                      The next Advance run writes it with their history in front of it; the
-                      message comes back here for approval rather than sending itself.
-                    </p>
-                    <SubmitButton icon={<Sparkles />} pendingLabel="Asking…">
-                      Ask for a rewrite
-                    </SubmitButton>
-                  </form>
-                )}
-              </div>
-            )}
-
-            {/* Email is shown the way the recipient meets it — sender line, subject, the
-                words beside it, then the message opened. Other channels have no inbox to
-                imitate, so they keep the plain body. */}
-            {message.channel === "email" ? (
-              <InboxPreview
-                from={from}
-                subject={message.subject}
-                html={
-                  format === "letter"
-                    ? message.bodyLetter
-                    : format === "html"
-                      ? message.bodyHtml
-                      : undefined
-                }
-                text={message.bodyText || message.previewError || "This message has no body."}
-                when={message.sentAt ?? message.dueAt}
-              />
-            ) : (
-              <div className="preview">
-                {message.subject && (
-                  <div className="preview-head">
-                    <span className="k">Subject</span> <strong>{message.subject}</strong>
-                  </div>
-                )}
-                {(format === "html" && message.bodyHtml) || (format === "letter" && message.bodyLetter) ? (
-                  <iframe
-                    title={`Message to ${personEmail}`}
-                    srcDoc={format === "letter" ? message.bodyLetter : message.bodyHtml}
-                    className="preview-frame"
-                  />
-                ) : (
-                  <div className="preview-body">
-                    {message.bodyText || message.previewError || "This message has no body."}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* A body rendered on open, not read off the action. Saying so is the difference
-                between "this is the message" and "this is the message as long as nobody
-                edits the template before it goes". */}
-            {message.preview && !message.previewError ? (
-              <p className="muted preview-why">
-                Rendered from the template now — the greeting, button and opt-out line are
-                added at send, exactly as shown.
-              </p>
-            ) : null}
-
-            {message.rationale ? (
-              <p className="muted preview-why">Why this: {message.rationale}</p>
-            ) : null}
-
-            {message.theme ? (
-              <p className="muted preview-why">Idea: {message.theme}</p>
-            ) : null}
-            {message.chosenFormat ? (
-              <p className="muted preview-why">
-                Written as {message.chosenFormat === "text" ? "plain text" : message.chosenFormat === "letter" ? "a letter" : "a designed email"}
-                {message.formatWhy ? `: ${message.formatWhy}` : "."}
-              </p>
-            ) : null}
-
-            {/* Sticky, because the decision must stay reachable without scrolling back up
-                past a full-height rendered email. */}
-            {waiting && (
-              <form action={decide} className="drawer-foot">
-                <input type="hidden" name="productId" value={productId} />
-                <input type="hidden" name="ids" value={actionId} />
-                <input type="hidden" name="format" value={format} />
-                <SubmitButton name="decision" value="approve" icon={<Check />} pendingLabel="Sending…">
-                  Approve
-                </SubmitButton>
-                <SubmitButton name="decision" value="reject" variant="quiet" icon={<X />}>
-                  Reject
-                </SubmitButton>
-              </form>
-            )}
-
-            {/* Returned to the queue rather than resent: the thing that stopped it may
-                still be in force, so a human looks at it again before it goes out. */}
-            {!waiting && recoverable && (
-              <form action={returnToReview} className="drawer-foot">
-                <input type="hidden" name="productId" value={productId} />
-                <input type="hidden" name="ids" value={actionId} />
-                <SubmitButton variant="quiet" icon={<RotateCcw />} pendingLabel="Returning…">
-                  Return to review
-                </SubmitButton>
-              </form>
-            )}
-          </>
+            </footer>
+          </div>
         )}
       </Drawer>
+    </>
+  );
+}
+
+/**
+ * Who it goes to, why this message, and what it should lead to — in that order, because
+ * that is the order a reviewer asks them in. Each part says only what is known: a lead with
+ * no form answers shows no form answers, rather than a row of dashes.
+ */
+function Brief({ brief, signal }: { brief?: MessageBrief; signal?: ReactNode }) {
+  if (!brief) return signal ? <div>{signal}</div> : null;
+  const { who, why, expect } = brief;
+  const day = (iso: string) => istWeekday(iso);
+
+  return (
+    <>
+      <section className="pv-sec" aria-label="Who they are">
+        <h3 className="pv-h">Who they are</h3>
+        {who.role ? <p className="pv-lead">{who.role}</p> : null}
+        {who.said.length ? (
+          <dl className="pv-facts">
+            {who.said.map((s) => (
+              <Fragment key={s.label}>
+                <dt>{s.label}</dt>
+                <dd>{s.value}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        ) : null}
+        {who.read ? <p className="pv-read">{who.read}</p> : null}
+        {signal}
+        <p className="pv-line">
+          {[
+            who.arrived ? `${who.arrived.how} ${day(who.arrived.at)}` : null,
+            who.warmth ? `${who.warmth.band}${who.warmth.score !== undefined ? ` · ${who.warmth.score}` : ""}` : null,
+            who.sentBefore === 0
+              ? "nothing sent to them yet"
+              : `${who.sentBefore} message${who.sentBefore === 1 ? "" : "s"} sent before this`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      </section>
+
+      {/* The idea alone, in its own words. A message with no idea from the bank — a
+          template step — falls back to the reason it was written. */}
+      {why.idea || why.reason ? (
+        <section className="pv-sec" aria-label="Why this mail">
+          <h3 className="pv-h">Why this mail</h3>
+          <p className="pv-idea">{why.idea?.title ?? why.reason}</p>
+        </section>
+      ) : null}
+
+      {expect.goal || expect.objections.length || expect.next || expect.endsAt ? (
+        <section className="pv-sec" aria-label="What we expect">
+          <h3 className="pv-h">What we expect</h3>
+          {expect.goal ? (
+            <p className="pv-goal">
+              <span>{expect.goal}</span>
+              {expect.goalMet === true ? (
+                <span className="pill ok">done</span>
+              ) : expect.goalMet === false ? (
+                <span className="pill warm">not yet</span>
+              ) : null}
+            </p>
+          ) : null}
+          {expect.objections.length ? (
+            <div>
+              <span className="pv-k">May push back on</span>
+              <ul className="pv-list">
+                {expect.objections.map((o) => (
+                  <li key={o}>{o}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {expect.next ? (
+            <p className="pv-line">
+              <span className="pv-k">Next</span>{" "}
+              {expect.next.afterDays !== undefined
+                ? `${expect.next.afterDays} day${expect.next.afterDays === 1 ? "" : "s"} later: `
+                : ""}
+              {expect.next.idea}
+              {expect.rolling ? " — may change with how they respond" : ""}
+            </p>
+          ) : null}
+          {expect.endsAt ? (
+            <p className="pv-line">
+              <span className="pv-k">Campaign ends</span> {day(expect.endsAt)} for them
+            </p>
+          ) : null}
+        </section>
+      ) : null}
     </>
   );
 }
