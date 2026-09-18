@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { FileText, Inbox, LayoutDashboard, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
+import { FileText, Inbox, LayoutDashboard, Lightbulb, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
 import type { ReactNode } from "react";
 
 export interface NavCounts {
@@ -25,6 +25,8 @@ const WORK = [
 
 const SETUP = [
   { href: "/templates", label: "Templates", icon: <FileText /> },
+  // The ideas loop runs in development only until it has been watched working (2026-09-18).
+  ...(process.env.NODE_ENV === "development" ? [{ href: "/ideas", label: "Ideas", icon: <Lightbulb /> }] : []),
   { href: "/brand", label: "Brand", icon: <Palette /> },
   { href: "/channels", label: "Channels", icon: <Send /> },
   { href: "/connections", label: "Connections", icon: <Plug /> },

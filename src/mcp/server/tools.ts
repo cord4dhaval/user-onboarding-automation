@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
-import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, evidenceStatus, explorationBlock, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors, themePerformance } from "../../engine/outcomes.js";
+import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, evidenceStatus, explorationBlock, ideaPerformance, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors, themePerformance } from "../../engine/outcomes.js";
 import { greetingName } from "../../engine/names.js";
 import { computeTemp, lastFormArrival } from "../../engine/temp.js";
 import { planViewFor } from "../../engine/planView.js";
@@ -19,7 +19,7 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
-import { ideaLimitsFor, ideaUsage, ideasHadBy, ideasOf } from "../../engine/ideas.js";
+import { TRIAL_LEADS, TRIAL_OPEN_MAX, ideaLeadCount, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, type InventedIdea } from "../../engine/ideas.js";
 import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, unsampledFigures, effectiveBand, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
@@ -1108,8 +1108,8 @@ export const TOOLS: ToolDef[] = [
         // Every step names the ideas it is built on, when the product's idea bank is tagged, and a
         // step whose ideas the campaign has already given to many leads this week is refused, so
         // the bank is used rather than the same few scenes.
-        const productDocForIdeas = await db.collection(C.products).findOne({ _id: new ObjectId(String(instance.productId)) }, { projection: { "config.writing.ideas": 1 } });
-        const bank = ideasOf(productDocForIdeas);
+        const productDocForIdeas = await db.collection(C.products).findOne({ _id: new ObjectId(String(instance.productId)) }, { projection: { "config.writing.ideas": 1, "config.writing.invented": 1 } });
+        const bank = ideasFor(productDocForIdeas);
         if (bank.length) {
           const known = new Map(bank.map((idea) => [idea.n, idea]));
           const usage = await ideaUsage({ orgId: ctx.orgId, productId: String(instance.productId), goalKey: String(instance.goalKey), excludeInstanceId: String(instance._id) });
@@ -1126,6 +1126,13 @@ export const TOOLS: ToolDef[] = [
             }
             if (refs.every((n) => had.has(n))) {
               throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, which this lead has already been sent. Pick an idea they have not had. Nothing was written.`);
+            }
+            // A trial idea reaches a few leads, then waits for what they did before it goes wider.
+            for (const n of refs.filter((r) => known.get(r)?.status === "trial")) {
+              const leads = await ideaLeadCount({ orgId: ctx.orgId, productId: String(instance.productId), n, excludeInstanceId: String(instance._id) });
+              if (leads >= TRIAL_LEADS) {
+                throw new Error(`step ${String(st.id)} uses #${n}, a trial idea already planned for ${leads} leads. It waits for their results before anyone else gets it. Pick another idea. Nothing was written.`);
+              }
             }
             if (refs.every((n) => (usage.get(n) ?? 0) >= cap)) {
               throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, already planned for ${cap} or more other leads in this campaign this week. Pick another idea that fits this lead. Nothing was written.`);
@@ -3621,6 +3628,46 @@ TOOLS.push({
     const totalSent = angles.reduce((n, a) => n + a.sent, 0);
     const totalTrackable = angles.reduce((n, a) => n + a.trackable, 0);
 
+    // The learning loop (development only for now): invented ideas are moved on from their
+    // first sends, and every idea's record is reported by number.
+    let ideaTable: Array<Record<string, unknown>> | undefined;
+    let ideaMoves: Awaited<ReturnType<typeof reviewInventedIdeas>> | undefined;
+    if (ideasLoopOn()) {
+      ideaMoves = await reviewInventedIdeas(orgId, productId);
+      const db = await getDb();
+      const productDoc = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { "config.writing.ideas": 1, "config.writing.invented": 1 } });
+      const byN = new Map([...ideasOf(productDoc), ...inventedOf(productDoc)].map((i) => [i.n, i]));
+      const rows = await ideaPerformance(orgId, productId);
+      const totals = new Map<number, { sent: number; clicked: number; replied: number; won: number; groups: Array<{ group: string; sent: number; responses: number }> }>();
+      for (const r of rows) {
+        const t = totals.get(r.n) ?? { sent: 0, clicked: 0, replied: 0, won: 0, groups: [] };
+        t.sent += r.sent;
+        t.clicked += r.clicked;
+        t.replied += r.replied;
+        t.won += r.won;
+        t.groups.push({ group: r.group, sent: r.sent, responses: r.clicked + r.replied + r.won });
+        totals.set(r.n, t);
+      }
+      ideaTable = [...totals.entries()]
+        .map(([n, t]) => {
+          const idea = byN.get(n);
+          return {
+            n,
+            title: idea?.title ?? null,
+            hook: idea?.hook ?? null,
+            source: idea?.source ?? "bank",
+            status: idea?.status ?? (idea?.usable === false ? "unusable" : "bank"),
+            sent: t.sent,
+            clicked: t.clicked,
+            replied: t.replied,
+            won: t.won,
+            evidence: evidenceStatus(t),
+            groups: t.groups.sort((a, b) => b.sent - a.sent).slice(0, 5),
+          };
+        })
+        .sort((a, b) => b.sent - a.sent);
+    }
+
     return {
       angles: angles.map((a) => ({
         ...a,
@@ -3664,6 +3711,12 @@ TOOLS.push({
       })),
       /** What has been concluded so far, newest first. save_learning writes these. */
       learning_notes: notes,
+      /**
+       * Every idea that has been sent, by number: the bank's and Claude's own, with the groups
+       * it went to. Present only where the learning loop is on. idea_moves lists invented ideas
+       * this call moved from trial to active, or retired, and why.
+       */
+      ...(ideaTable ? { ideas: ideaTable, idea_moves: ideaMoves } : {}),
       // Shared across products and carrying nothing that identifies one: hours and step
       // positions only. It is what a product with no history of its own starts from.
       timing_priors: priors,
@@ -4858,5 +4911,120 @@ TOOLS.push({
           ? "Everybody who arrives in this segment from now on runs this within seconds, with no model in the path."
           : "People early in their sequence move to this version on the next tick; anyone further in keeps the sequence they have already been reading.",
     };
+  },
+});
+
+/**
+ * A new idea, written by the planner when nothing in the bank fits a lead.
+ *
+ * Dhaval, 2026-09-18: the 88 approved ideas are a start, not a ceiling. Claude may add to them,
+ * but an invented idea is a trial: it reaches TRIAL_LEADS leads, every email still waits in
+ * Review, and the first sends decide whether it stays. Its capability must be one the product
+ * really has, word for word from writing.facts.canDo, so a new idea can never be a new claim.
+ * Switched on in development only until he has watched it work.
+ */
+TOOLS.push({
+  name: "propose_idea",
+  description:
+    "Add a new idea to the product's idea bank when nothing on lead_card writing.ideas fits the lead in front of you. The idea is a scene from an Indian office week that TeamGrid makes visible. proof must be copied word for word from one writing.facts.canDo entry: that is what makes it true. It starts as a trial: plan_goal lets it reach 5 leads, then their results move it to active (ranked like the bank) or retire it. Refused: a title another idea already has, a proof that is not in canDo, testimonial or verdict words, and more than 10 trial ideas open at once. Returns the idea's number for plan_goal idea_refs. Development only for now.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      title: { type: "string", description: "The scene in a few words, the way a founder would say it: \"The dispatch that waited for one signature\"." },
+      detail: { type: "string", description: "One sentence: who lives this and what it costs or hides." },
+      hook: { type: "string", enum: ["daily_question", "hidden_bill", "office_habit", "just_ask", "found_out_late", "no_watching", "closing"] },
+      proof: { type: "string", description: "One writing.facts.canDo text, word for word." },
+      card: { type: "string", enum: ["summary", "apps", "day", "none"], description: "The sample card that can show it, or none." },
+      segments: { type: "array", items: { type: "string" }, description: "Segments it suits, e.g. founder, hr_ops, agency_owner." },
+      keywords: { type: "array", items: { type: "string" }, description: "Words in a lead's answers or website that should bring this idea up." },
+      from_refs: { type: "array", items: { type: "number" }, description: "Bank ideas it grew from, if any." },
+      reason: { type: "string", description: "Why no bank idea fitted, in one sentence." },
+      goal_instance_id: { type: "string", description: "The lead it was written for." },
+    },
+    required: ["product_id", "title", "detail", "hook", "proof", "card", "reason"],
+  },
+  async handler(args, ctx) {
+    if (!ideasLoopOn()) {
+      throw new Error("Inventing ideas is switched on in development only for now. Plan from writing.ideas, or blend two of its ideas. Nothing was written.");
+    }
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const db = await getDb();
+    const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId }, { projection: { "config.writing": 1 } });
+    const writing = ((product?.config as { writing?: Record<string, unknown> } | undefined)?.writing ?? {}) as { facts?: { canDo?: Array<{ text?: string; plan?: string }> } };
+
+    const title = String(args.title ?? "").trim();
+    const detail = String(args.detail ?? "").trim();
+    const reason = String(args.reason ?? "").trim();
+    const hook = String(args.hook ?? "").trim();
+    const card = String(args.card ?? "none").trim() as "summary" | "apps" | "day" | "none";
+    if (title.length < 8 || title.length > 90) throw new Error(`title is ${title.length} characters; write the scene in 8 to 90. Nothing was written.`);
+    if (!detail || detail.length > 240) throw new Error("detail is one sentence, under 240 characters. Nothing was written.");
+    if (!reason) throw new Error("Say in reason why no bank idea fitted. Nothing was written.");
+    const hooks = (LEAD_TYPE_PROFILES.hot.sequence ?? []).map((s) => s.hook);
+    if (!hooks.includes(hook)) throw new Error(`hook must be one of ${hooks.join(", ")}. Nothing was written.`);
+    if (!["summary", "apps", "day", "none"].includes(card)) throw new Error("card must be summary, apps, day or none. Nothing was written.");
+
+    const norm = (text: string) => text.toLowerCase().replace(/[^a-z0-9₹]+/g, " ").trim();
+    const fact = (writing.facts?.canDo ?? []).find((f) => norm(String(f.text ?? "")) === norm(String(args.proof ?? "")));
+    if (!fact) {
+      throw new Error("proof must be one writing.facts.canDo text, copied word for word, so the idea claims only what the product does. Nothing was written.");
+    }
+    const loud = [...unprovenClaims(`${title}\n${detail}`), ...screenWords(`${title}\n${detail}`)];
+    if (loud.length) throw new Error(`"${loud[0]}" cannot go in an idea: no customer results, verdict words or screen words. Nothing was written.`);
+
+    const bank = ideasOf(product);
+    const invented = inventedOf(product);
+    const same = [...bank, ...invented].find((i) => norm(i.title) === norm(title));
+    if (same) throw new Error(`#${same.n} already has this title. Plan with it, or write a different scene. Nothing was written.`);
+    const open = invented.filter((i) => i.status === "trial").length;
+    if (open >= TRIAL_OPEN_MAX) {
+      throw new Error(`${open} invented ideas are still on trial. Use the bank or one of those until their results are in. Nothing was written.`);
+    }
+    const known = new Set([...bank, ...invented].map((i) => i.n));
+    const fromRefs = (Array.isArray(args.from_refs) ? args.from_refs : []).map(Number).filter((n) => known.has(n));
+
+    let bornFor: InventedIdea["bornFor"];
+    if (args.goal_instance_id && ObjectId.isValid(String(args.goal_instance_id))) {
+      const inst = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(args.goal_instance_id)), orgId }, { projection: { goalKey: 1 } });
+      if (inst) bornFor = { goalInstanceId: String(inst._id), goalKey: String(inst.goalKey) };
+    }
+
+    const list = (value: unknown) => (Array.isArray(value) ? value.map((v) => String(v).trim().toLowerCase()).filter(Boolean).slice(0, 12) : []);
+    // Two planners can propose at the same moment; the number is taken only if it is still free.
+    let n = nextInventedN(invented);
+    for (let attempt = 0; attempt < 5; attempt++, n++) {
+      const idea: InventedIdea = {
+        n,
+        title,
+        detail,
+        hook,
+        proof: String(fact.text),
+        plan: fact.plan ?? "Standard",
+        card,
+        segments: list(args.segments),
+        keywords: list(args.keywords),
+        usable: true,
+        source: "claude",
+        status: "trial",
+        reason,
+        ...(fromRefs.length ? { fromRefs } : {}),
+        ...(bornFor ? { bornFor } : {}),
+        createdAt: new Date(),
+      };
+      const res = await db
+        .collection(C.products)
+        .updateOne({ _id: new ObjectId(productId), orgId, "config.writing.invented.n": { $ne: n } }, { $push: { "config.writing.invented": idea } } as never);
+      if (res.modifiedCount === 1) {
+        return {
+          n,
+          status: "trial",
+          plan: idea.plan,
+          note: `Plan with idea_refs [${n}]. It reaches at most ${TRIAL_LEADS} leads; once those are sent, what_works moves it to active or retires it, with the reason.`,
+        };
+      }
+    }
+    throw new Error("Could not find a free idea number after 5 tries. Try again. Nothing was written.");
   },
 });

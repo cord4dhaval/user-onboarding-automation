@@ -1,8 +1,8 @@
 import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { evidenceStatus, themePerformance } from "./outcomes.js";
-import { ideaLimitsFor, ideaUsage, ideasHadBy, ideasOf, rankIdeas } from "./ideas.js";
+import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
+import { TRIAL_LEADS, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, rankIdeas } from "./ideas.js";
 import { FRAME_BODY_MAX_WORDS, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
 
 /**
@@ -30,7 +30,7 @@ export interface WritingBrief {
   examples_note: string;
   ideas: {
     note: string;
-    best_fit: Array<{ n: number; title: string; detail?: string; hook: string; proof: string; plan?: string; card?: string; used_this_week: number }>;
+    best_fit: Array<{ n: number; title: string; detail?: string; hook: string; proof: string; plan?: string; card?: string; used_this_week: number; record?: string; source?: string; status?: string }>;
     others: string[];
     used_a_lot_this_week: number[];
     already_had: number[];
@@ -113,24 +113,35 @@ export async function writingBriefFor(input: {
 
   // The idea bank, ranked for this lead, when the product's ideas are tagged. Ten random
   // examples are only the fallback for a product whose ideas are not.
-  const bank = ideasOf(product);
+  const loop = ideasLoopOn();
+  let bank = ideasFor(product, loop);
   let ideas: WritingBrief["ideas"] = null;
   if (bank.length && input.goalInstanceId && input.goalKey) {
-    const [usage, had, limits] = await Promise.all([
+    const [usage, had, limits, results] = await Promise.all([
       ideaUsage({ orgId, productId, goalKey: input.goalKey, excludeInstanceId: input.goalInstanceId }),
       ideasHadBy({ orgId, goalInstanceId: input.goalInstanceId }),
       ideaLimitsFor({ orgId, productId, goalKey: input.goalKey, bank }),
+      loop ? ideaPerformance(orgId, productId) : Promise.resolve(null),
     ]);
+    // A trial idea that has reached its few leads waits for their results before anyone else gets it.
+    for (const idea of bank.filter((i) => i.status === "trial")) {
+      if ((await ideaLeadCount({ orgId, productId, n: idea.n, excludeInstanceId: input.goalInstanceId })) >= TRIAL_LEADS) bank = bank.filter((i) => i.n !== idea.n);
+    }
     const leadText = [form.main_problem, form.role, person.role, form.team_size, (person.enrichment as { siteText?: unknown } | undefined)?.siteText]
       .map((v) => String(v ?? ""))
       .join(" ")
       .slice(0, 2000);
-    const ranked = rankIdeas(bank, { text: leadText, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had, limits);
+    const ranked = rankIdeas(bank, { text: leadText, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had, limits, results ? ideaRecords(results, group) : undefined);
     const fresh = ranked.filter((i) => !i.already_had);
     ideas = {
-      note:
-        "Plan from these. best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. Every plan step names idea_refs. You may blend two ideas or invent a new one from them; still name the ideas it came from.",
-      best_fit: fresh.slice(0, 8).map((i) => ({ n: i.n, title: i.title, detail: i.detail, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week })),
+      note: loop
+        ? "Plan from these. best_fit is ranked for this lead from their words and segment, from what each idea has earned (record: sends, clicks and replies, from leads like this one once there are a few), with ideas the campaign leaned on this week pushed down and untested ones given a small push. Your own reading of the lead matters more than the rank. Every plan step names idea_refs. You may blend two ideas. If no idea fits this lead, call propose_idea with a new one built on a verified fact, then plan with the number it returns: a new idea reaches 5 leads, and their results decide whether it stays."
+        : "Plan from these. best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. Every plan step names idea_refs. You may blend two ideas or invent a new one from them; still name the ideas it came from.",
+      best_fit: fresh.slice(0, 8).map((i) => ({
+        n: i.n, title: i.title, detail: i.detail, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week,
+        ...(i.record ? { record: i.record } : {}),
+        ...(i.source ? { source: i.source, status: i.status } : {}),
+      })),
       others: fresh.slice(8).map((i) => `#${i.n} ${i.title} (${i.hook}${i.used_this_week ? `, used by ${i.used_this_week} this week` : ""})`),
       used_a_lot_this_week: [...usage.entries()].filter(([, count]) => count >= limits.busyAt).map(([n]) => n).sort((a, b) => a - b),
       already_had: [...had].sort((a, b) => a - b),

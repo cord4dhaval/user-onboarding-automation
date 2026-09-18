@@ -2,6 +2,7 @@ import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { ROLLING_MAX_STEPS } from "./rolling.js";
+import { ideaPerformance, type IdeaRow } from "./outcomes.js";
 
 /**
  * The product's idea bank, used on every plan.
@@ -26,6 +27,54 @@ export interface Idea {
   keywords?: string[];
   usable?: boolean;
   note?: string;
+  /** Absent on the approved bank; "claude" on an idea a planner invented. */
+  source?: "claude";
+  /** Invented ideas only: trial (a few leads), active (used like the bank), retired. */
+  status?: "trial" | "active" | "retired";
+}
+
+/**
+ * The learning loop: results in the ranking, and ideas Claude invents. Dhaval, 2026-09-18:
+ * build it, but run it only in development until he has watched it work. IDEAS_LOOP=on
+ * turns it on anywhere else.
+ */
+export function ideasLoopOn(): boolean {
+  return process.env.NODE_ENV === "development" || process.env.IDEAS_LOOP === "on";
+}
+
+/** An idea a planner wrote because nothing in the bank fitted, with why and where it came from. */
+export interface InventedIdea extends Idea {
+  source: "claude";
+  status: "trial" | "active" | "retired";
+  reason: string;
+  fromRefs?: number[];
+  bornFor?: { goalInstanceId: string; goalKey: string };
+  createdAt: Date;
+  statusReason?: string;
+  statusAt?: Date;
+}
+
+/** Invented ideas are numbered from here, clear of the bank's 1 to 88. */
+export const INVENTED_FROM = 1001;
+/** How many leads a trial idea may reach before its first sends are judged. */
+export const TRIAL_LEADS = 5;
+/** Trial ideas open at once, so a planner cannot flood the bank with untested scenes. */
+export const TRIAL_OPEN_MAX = 10;
+/** Sends an idea needs in a group before its record moves it. Click rates are about 2%. */
+export const RECORD_MIN_SENDS = 10;
+/** The fewest sends with nothing back that can call an idea a loser. */
+export const RECORD_LOSER_SENDS = 30;
+
+/**
+ * Sends with nothing back before an idea is called a loser, at this product's response rate.
+ *
+ * At about 2% clicks an ordinary idea gets no click in 30 sends more than half the time, so a
+ * fixed 30 would sink good ideas by bad luck. This is the count at which an idea as good as
+ * the average would have a 1 in 10 chance of showing nothing: about 114 sends at 2%.
+ */
+export function loserSends(average: number): number {
+  if (!(average > 0 && average < 1)) return RECORD_LOSER_SENDS;
+  return Math.max(RECORD_LOSER_SENDS, Math.ceil(Math.log(0.1) / Math.log(1 - average)));
 }
 
 /** An idea used by this many leads in a campaign this week is not offered as a first pick (small campaigns; see ideaLimits). */
@@ -67,6 +116,90 @@ export function ideasOf(product: Document | null | undefined): Idea[] {
   return Array.isArray(raw) ? (raw as Idea[]).filter((i) => i && Number.isFinite(Number(i.n))) : [];
 }
 
+/**
+ * Invented ideas live beside the bank, not in it (`config.writing.invented`), so code that
+ * knows nothing of the loop keeps reading the approved 88 only.
+ */
+export function inventedOf(product: Document | null | undefined): InventedIdea[] {
+  const raw = (product?.config as { writing?: { invented?: unknown } } | undefined)?.writing?.invented;
+  return Array.isArray(raw) ? (raw as InventedIdea[]).filter((i) => i && Number.isFinite(Number(i.n))) : [];
+}
+
+/** The ideas a plan may use: the bank, plus invented ones still in play when the loop is on. */
+export function ideasFor(product: Document | null | undefined, loop = ideasLoopOn()): Idea[] {
+  const bank = ideasOf(product);
+  if (!loop) return bank;
+  return [...bank, ...inventedOf(product).filter((i) => i.status !== "retired")];
+}
+
+export interface IdeaRecord {
+  sent: number;
+  clicked: number;
+  replied: number;
+  won: number;
+}
+
+export interface IdeaRecords {
+  group: Map<number, IdeaRecord>;
+  all: Map<number, IdeaRecord>;
+  /** Responses per send across every idea: the bar an idea is measured against. */
+  average: number;
+}
+
+/** The results table folded for one lead's group, and for every group together. */
+export function ideaRecords(rows: IdeaRow[], group: string | null | undefined): IdeaRecords {
+  const add = (map: Map<number, IdeaRecord>, r: IdeaRow) => {
+    const cur = map.get(r.n) ?? { sent: 0, clicked: 0, replied: 0, won: 0 };
+    map.set(r.n, { sent: cur.sent + r.sent, clicked: cur.clicked + r.clicked, replied: cur.replied + r.replied, won: cur.won + r.won });
+  };
+  const records: IdeaRecords = { group: new Map(), all: new Map(), average: 0 };
+  let sent = 0;
+  let responses = 0;
+  for (const r of rows) {
+    add(records.all, r);
+    if (group && r.group === group) add(records.group, r);
+    sent += r.sent;
+    responses += r.clicked + r.replied + 3 * r.won;
+  }
+  records.average = sent ? responses / sent : 0;
+  return records;
+}
+
+/** The record that speaks for an idea: its own group once that has a few sends, else everyone. */
+export function recordFor(n: number, records: IdeaRecords): (IdeaRecord & { scope: "group" | "all" }) | null {
+  const own = records.group.get(n);
+  if (own && own.sent >= 5) return { ...own, scope: "group" };
+  const all = records.all.get(n);
+  return all ? { ...all, scope: "all" } : null;
+}
+
+/**
+ * How far an idea's results move it in the ranking.
+ *
+ * Below RECORD_MIN_SENDS it is untested and gets a small push, so new and rarely used ideas
+ * earn the sends that would prove them. After that its response rate is pulled towards the
+ * product's average by ten sends' worth of it, so one lucky click does not crown an idea,
+ * and compared: up to three points either way. At loserSends with nothing back it sinks for
+ * that group, below any keyword fit.
+ */
+export function recordScore(n: number, records: IdeaRecords): number {
+  const rec = recordFor(n, records);
+  if (!rec || rec.sent < RECORD_MIN_SENDS) return 1;
+  const responses = rec.clicked + rec.replied + 3 * rec.won;
+  if (rec.sent >= loserSends(records.average) && responses === 0) return -20;
+  const bar = Math.max(records.average, 0.005);
+  const rate = (responses + bar * 10) / (rec.sent + 10);
+  return Math.max(-3, Math.min(3, Math.round((rate / bar - 1) * 3)));
+}
+
+/** Plain words for a record, as the lead card and the Ideas page show it. */
+export function recordText(rec: (IdeaRecord & { scope: "group" | "all" }) | null): string {
+  if (!rec || rec.sent === 0) return "not sent yet";
+  const parts = [`${rec.sent} sent`, `${rec.clicked} clicked`, `${rec.replied} replied`];
+  if (rec.won) parts.push(`${rec.won} signed up`);
+  return `${parts.join(" · ")}${rec.scope === "group" ? " (leads like this one)" : " (all leads)"}`;
+}
+
 const words = (text: string) => new Set(String(text ?? "").toLowerCase().match(/[a-z₹]{3,}/g) ?? []);
 
 /**
@@ -80,7 +213,8 @@ export function rankIdeas(
   usage: Map<number, number>,
   had: Set<number>,
   limits: IdeaLimits = { busyAt: IDEA_BUSY_AT, cap: IDEA_CAP },
-): Array<Idea & { score: number; used_this_week: number; already_had: boolean }> {
+  records?: IdeaRecords,
+): Array<Idea & { score: number; used_this_week: number; already_had: boolean; record?: string }> {
   const leadWords = words(lead.text);
   return ideas
     .filter((idea) => idea.usable !== false)
@@ -95,7 +229,9 @@ export function rankIdeas(
       if (used >= limits.cap) score -= 50;
       const alreadyHad = had.has(idea.n);
       if (alreadyHad) score -= 100;
-      return { ...idea, score, used_this_week: used, already_had: alreadyHad };
+      if (!records) return { ...idea, score, used_this_week: used, already_had: alreadyHad };
+      score += recordScore(idea.n, records);
+      return { ...idea, score, used_this_week: used, already_had: alreadyHad, record: recordText(recordFor(idea.n, records)) };
     })
     .sort((a, b) => b.score - a.score || a.n - b.n);
 }
@@ -150,4 +286,89 @@ export async function ideasHadBy(input: { orgId: string; goalInstanceId: string 
     }
   }
   return had;
+}
+
+/** How many leads have ever had this idea in a plan, in any campaign of the product. */
+export async function ideaLeadCount(input: { orgId: string; productId: string; n: number; excludeInstanceId?: string }): Promise<number> {
+  const db = await getDb();
+  const ids = await db
+    .collection(C.plans)
+    .distinct("goalInstanceId", { orgId: input.orgId, productId: input.productId, rolling: true, "steps.idea_refs": input.n });
+  return ids.map(String).filter((id) => id !== input.excludeInstanceId).length;
+}
+
+/** The next free number for an invented idea. */
+export function nextInventedN(invented: InventedIdea[]): number {
+  return Math.max(INVENTED_FROM - 1, ...invented.map((i) => Number(i.n))) + 1;
+}
+
+async function setInventedStatus(productId: string, n: number, status: InventedIdea["status"], reason: string): Promise<void> {
+  const db = await getDb();
+  const { ObjectId } = await import("mongodb");
+  await db.collection(C.products).updateOne(
+    { _id: new ObjectId(productId) },
+    { $set: { "config.writing.invented.$[i].status": status, "config.writing.invented.$[i].statusReason": reason, "config.writing.invented.$[i].statusAt": new Date() } },
+    { arrayFilters: [{ "i.n": n }] },
+  );
+}
+
+/** A person moves an invented idea by hand, from the Ideas page. */
+export async function setInventedIdeaStatus(input: { orgId: string; productId: string; n: number; status: InventedIdea["status"]; reason: string }): Promise<void> {
+  const db = await getDb();
+  const { ObjectId } = await import("mongodb");
+  const product = await db.collection(C.products).findOne({ _id: new ObjectId(input.productId), orgId: input.orgId }, { projection: { "config.writing.invented": 1 } });
+  if (!inventedOf(product).some((i) => i.n === input.n)) throw new Error(`No invented idea #${input.n} on this product.`);
+  await setInventedStatus(input.productId, input.n, input.status, input.reason);
+}
+
+/**
+ * Moves invented ideas on from what their sends did.
+ *
+ * A trial idea reached its TRIAL_LEADS and they were sent: an unsubscribe from any of those
+ * readers retires it, otherwise it becomes active and is ranked like the bank. An active one
+ * with loserSends sends and nothing back retires. Every move keeps its reason.
+ */
+export async function reviewInventedIdeas(orgId: string, productId: string): Promise<Array<{ n: number; title: string; from: string; to: string; reason: string }>> {
+  const db = await getDb();
+  const { ObjectId } = await import("mongodb");
+  const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId }, { projection: { "config.writing.invented": 1 } });
+  const moves: Array<{ n: number; title: string; from: string; to: string; reason: string }> = [];
+  const lossAt = loserSends(ideaRecords(await ideaPerformance(orgId, productId), null).average);
+  for (const idea of inventedOf(product).filter((i) => i.status !== "retired")) {
+    const sent = await db
+      .collection(C.actions)
+      .find({ orgId, productId, ideaRefs: idea.n, status: { $in: ["sent", "dispatched"] }, dryRun: { $ne: true } }, { projection: { personId: 1, sentAt: 1, firstClickedAt: 1, firstRepliedAt: 1, goalOutcome: 1 } })
+      .toArray();
+    const responses = sent.filter((a) => a.firstClickedAt || a.firstRepliedAt || a.goalOutcome === "won").length;
+    let to: InventedIdea["status"] | null = null;
+    let reason = "";
+    if (idea.status === "trial" && sent.length >= TRIAL_LEADS) {
+      const people = await db
+        .collection(C.people)
+        .find({ _id: { $in: sent.map((a) => new ObjectId(String(a.personId))) } }, { projection: { primaryEmail: 1 } })
+        .toArray();
+      const firstSent = new Date(Math.min(...sent.map((a) => new Date(String(a.sentAt)).getTime())));
+      const optedOut = await db.collection(C.suppressions).countDocuments({
+        orgId,
+        identityValue: { $in: people.flatMap((p) => [String(p.primaryEmail ?? ""), String(p.primaryEmail ?? "").toLowerCase()]).filter(Boolean) },
+        // Any opt-out counts (link, "remove me" reply, spam complaint); a bounce is the address, not the idea.
+        reason: { $not: /bounce/i },
+        at: { $gte: firstSent },
+      });
+      if (optedOut) {
+        to = "retired";
+        reason = `${optedOut} of its first ${sent.length} readers unsubscribed or complained`;
+      } else {
+        to = "active";
+        reason = `sent to ${sent.length} leads with no unsubscribe (${responses} clicked or replied); now ranked like the bank`;
+      }
+    } else if (idea.status === "active" && sent.length >= lossAt && responses === 0) {
+      to = "retired";
+      reason = `${sent.length} sends and nobody clicked or replied`;
+    }
+    if (!to) continue;
+    await setInventedStatus(productId, idea.n, to, reason);
+    moves.push({ n: idea.n, title: idea.title, from: idea.status, to, reason });
+  }
+  return moves;
 }

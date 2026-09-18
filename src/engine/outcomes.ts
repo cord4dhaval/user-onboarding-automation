@@ -181,6 +181,59 @@ export async function themePerformance(orgId: string, productId: string, group?:
   }));
 }
 
+export interface IdeaRow {
+  n: number;
+  group: string;
+  sent: number;
+  trackable: number;
+  opened: number;
+  clicked: number;
+  replied: number;
+  won: number;
+  lastSentAt: Date | null;
+}
+
+/**
+ * What each idea has earned, per group of similar leads.
+ *
+ * The theme table reads the words a planner put on a touch, and two leads given the same idea
+ * get two different themes, so the idea itself never had a record. Every written touch now
+ * carries the numbers of the ideas it was built on; this counts the sends behind each number.
+ */
+export async function ideaPerformance(orgId: string, productId: string): Promise<IdeaRow[]> {
+  const db = await getDb();
+  const rows = await db
+    .collection(C.actions)
+    .aggregate([
+      { $match: { orgId, productId, status: { $in: ["sent", "dispatched"] }, dryRun: { $ne: true }, "ideaRefs.0": { $exists: true } } },
+      { $unwind: "$ideaRefs" },
+      {
+        $group: {
+          _id: { n: "$ideaRefs", group: { $ifNull: ["$variant.group", "unknown"] } },
+          sent: { $sum: 1 },
+          trackable: { $sum: { $cond: [{ $eq: ["$tracking.clicks", true] }, 1, 0] } },
+          opened: { $sum: { $cond: [{ $ifNull: ["$firstOpenedAt", false] }, 1, 0] } },
+          clicked: { $sum: { $cond: [{ $ifNull: ["$firstClickedAt", false] }, 1, 0] } },
+          replied: { $sum: { $cond: [{ $ifNull: ["$firstRepliedAt", false] }, 1, 0] } },
+          won: { $sum: { $cond: [{ $eq: ["$goalOutcome", "won"] }, 1, 0] } },
+          lastSentAt: { $max: "$sentAt" },
+        },
+      },
+    ])
+    .toArray();
+  return rows.map((r) => ({
+    n: Number(r._id.n),
+    group: String(r._id.group),
+    sent: r.sent,
+    trackable: r.trackable,
+    opened: r.opened,
+    clicked: r.clicked,
+    replied: r.replied,
+    won: r.won,
+    lastSentAt: r.lastSentAt ?? null,
+  }));
+}
+
 /** How much a row can be trusted, in the words the learning notes use. */
 export function evidenceStatus(row: { sent: number; clicked: number; replied: number }): "guess" | "promising" | "confirmed" | "retire" {
   const responses = row.clicked + row.replied;

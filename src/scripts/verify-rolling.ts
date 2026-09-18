@@ -273,6 +273,21 @@ console.log("idea bank");
   check("a campaign of 332 on 50 ideas can plan every lead", big.cap * 50 >= 332 * 2 && big.busyAt < big.cap);
   const roomy = rankIdeas(bank, { text: "Attendance and payroll disputes, biometric punch", segment: "hr_ops" }, new Map([[71, 6]]), new Set(), big);
   check("in a big campaign 6 uses is not yet busy", roomy[0]?.n === 71);
+
+  const { ideaRecords, recordScore, ideasFor, nextInventedN, loserSends, RECORD_LOSER_SENDS } = await import("../engine/ideas");
+  const row = (n: number, group: string, sent: number, clicked: number, replied = 0) => ({ n, group, sent, trackable: sent, opened: 0, clicked, replied, won: 0, lastSentAt: null });
+  const recs = ideaRecords([row(7, "founder|11-50", 20, 4), row(71, "founder|11-50", 20, 0), row(71, "hr_ops|51-200", 20, 0), row(5, "founder|11-50", 3, 1)], "founder|11-50");
+  check("an idea that earns clicks in the lead's group rises", recordScore(7, recs) > 0);
+  check("an idea with few sends gets the untested push", recordScore(5, recs) === 1 && recordScore(99, recs) === 1);
+  check("an idea with nothing back after the loser mark sinks", recordScore(71, ideaRecords([row(71, "g", RECORD_LOSER_SENDS, 0), row(7, "g", 20, 4)], "g")) === -20);
+  check("at a 2% response rate the loser mark waits for about 114 sends", loserSends(0.02) === 114 && loserSends(0) === RECORD_LOSER_SENDS);
+  check("30 silent sends at 2% are bad luck, not a loser", recordScore(71, ideaRecords([row(71, "g", 30, 0), row(7, "g", 170, 4)], "g")) > -20);
+  const ranked = rankIdeas(bank, { text: "Attendance and payroll disputes every month, biometric punch misses", segment: "hr_ops" }, new Map(), new Set(), undefined, ideaRecords([row(71, "hr_ops|51-200", RECORD_LOSER_SENDS, 0), row(7, "hr_ops|51-200", 20, 4)], "hr_ops|51-200"));
+  check("results can outrank keyword fit", ranked[0]?.n === 7 && Boolean(ranked[0]?.record));
+  const productWithInvented = { config: { writing: { ideas: bank, invented: [{ n: 1001, title: "Invented", hook: "office_habit", proof: "x", status: "trial", source: "claude" }, { n: 1002, title: "Gone", hook: "office_habit", proof: "x", status: "retired", source: "claude" }] } } };
+  check("invented ideas stay out when the loop is off", !ideasFor(productWithInvented, false).some((i) => i.n >= 1001));
+  check("the loop adds invented ideas still in play", ideasFor(productWithInvented, true).some((i) => i.n === 1001) && !ideasFor(productWithInvented, true).some((i) => i.n === 1002));
+  check("invented ideas are numbered from 1001", nextInventedN([]) === 1001 && nextInventedN([{ n: 1004 } as never]) === 1005);
   const withCard = renderLetter(
     resolveBlocks(frame as never, mv, {
       slotText: "Scene.",
