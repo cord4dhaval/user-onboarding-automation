@@ -2,7 +2,7 @@ import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, themePerformance } from "./outcomes.js";
-import { IDEA_BUSY_AT, ideaUsage, ideasHadBy, ideasOf, rankIdeas } from "./ideas.js";
+import { ideaLimitsFor, ideaUsage, ideasHadBy, ideasOf, rankIdeas } from "./ideas.js";
 import { FRAME_BODY_MAX_WORDS, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
 
 /**
@@ -116,22 +116,23 @@ export async function writingBriefFor(input: {
   const bank = ideasOf(product);
   let ideas: WritingBrief["ideas"] = null;
   if (bank.length && input.goalInstanceId && input.goalKey) {
-    const [usage, had] = await Promise.all([
+    const [usage, had, limits] = await Promise.all([
       ideaUsage({ orgId, productId, goalKey: input.goalKey, excludeInstanceId: input.goalInstanceId }),
       ideasHadBy({ orgId, goalInstanceId: input.goalInstanceId }),
+      ideaLimitsFor({ orgId, productId, goalKey: input.goalKey, bank }),
     ]);
     const leadText = [form.main_problem, form.role, person.role, form.team_size, (person.enrichment as { siteText?: unknown } | undefined)?.siteText]
       .map((v) => String(v ?? ""))
       .join(" ")
       .slice(0, 2000);
-    const ranked = rankIdeas(bank, { text: leadText, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had);
+    const ranked = rankIdeas(bank, { text: leadText, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had, limits);
     const fresh = ranked.filter((i) => !i.already_had);
     ideas = {
       note:
         "Plan from these. best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. Every plan step names idea_refs. You may blend two ideas or invent a new one from them; still name the ideas it came from.",
       best_fit: fresh.slice(0, 8).map((i) => ({ n: i.n, title: i.title, detail: i.detail, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week })),
       others: fresh.slice(8).map((i) => `#${i.n} ${i.title} (${i.hook}${i.used_this_week ? `, used by ${i.used_this_week} this week` : ""})`),
-      used_a_lot_this_week: [...usage.entries()].filter(([, count]) => count >= IDEA_BUSY_AT).map(([n]) => n).sort((a, b) => a - b),
+      used_a_lot_this_week: [...usage.entries()].filter(([, count]) => count >= limits.busyAt).map(([n]) => n).sort((a, b) => a - b),
       already_had: [...had].sort((a, b) => a - b),
     };
   }

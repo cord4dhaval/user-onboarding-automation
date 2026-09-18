@@ -1,6 +1,7 @@
 import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { ROLLING_MAX_STEPS } from "./rolling.js";
 
 /**
  * The product's idea bank, used on every plan.
@@ -27,11 +28,39 @@ export interface Idea {
   note?: string;
 }
 
-/** An idea used by this many leads in a campaign this week is not offered as a first pick. */
+/** An idea used by this many leads in a campaign this week is not offered as a first pick (small campaigns; see ideaLimits). */
 export const IDEA_BUSY_AT = 3;
 /** A plan step whose ideas are all used by this many other leads this week is refused. */
 export const IDEA_CAP = 5;
 const WEEK_MS = 7 * 86_400_000;
+
+export interface IdeaLimits {
+  busyAt: number;
+  cap: number;
+}
+
+/**
+ * The busy mark and the cap for a campaign of this size.
+ *
+ * Five leads per idea suits a campaign of fifty. The July–August list has 332 active leads and
+ * the bank 50 usable ideas: 250 slots for 332 first plans, so the last 80 leads could not be
+ * planned at all. The cap grows to what an even spread of every lead's next plan needs, and
+ * never drops below the fixed one, so small campaigns keep spreading as hard as before.
+ */
+export function ideaLimits(activeLeads: number, usableIdeas: number): IdeaLimits {
+  const even = usableIdeas > 0 ? Math.ceil((activeLeads * ROLLING_MAX_STEPS) / usableIdeas) : 0;
+  const cap = Math.max(IDEA_CAP, even);
+  return { cap, busyAt: Math.max(IDEA_BUSY_AT, Math.ceil(cap * 0.6)) };
+}
+
+/** ideaLimits for one campaign, counting the leads it is still writing to. */
+export async function ideaLimitsFor(input: { orgId: string; productId: string; goalKey: string; bank: Idea[] }): Promise<IdeaLimits> {
+  const db = await getDb();
+  const active = await db
+    .collection(C.goalInstances)
+    .countDocuments({ orgId: input.orgId, productId: input.productId, goalKey: input.goalKey, status: "active" });
+  return ideaLimits(active, input.bank.filter((idea) => idea.usable !== false).length);
+}
 
 export function ideasOf(product: Document | null | undefined): Idea[] {
   const raw = (product?.config as { writing?: { ideas?: unknown } } | undefined)?.writing?.ideas;
@@ -50,6 +79,7 @@ export function rankIdeas(
   lead: { text: string; segment?: string | null },
   usage: Map<number, number>,
   had: Set<number>,
+  limits: IdeaLimits = { busyAt: IDEA_BUSY_AT, cap: IDEA_CAP },
 ): Array<Idea & { score: number; used_this_week: number; already_had: boolean }> {
   const leadWords = words(lead.text);
   return ideas
@@ -60,9 +90,9 @@ export function rankIdeas(
       for (const w of words(`${idea.title} ${idea.detail ?? ""}`)) if (leadWords.has(w)) score += 1;
       if (lead.segment && (idea.segments ?? []).includes(lead.segment)) score += 2;
       const used = usage.get(idea.n) ?? 0;
-      if (used >= IDEA_BUSY_AT) score -= 2 * (used - IDEA_BUSY_AT + 1);
+      if (used >= limits.busyAt) score -= 2 * (used - limits.busyAt + 1);
       // plan_goal refuses a step whose ideas are all at the cap, so the card never leads with one.
-      if (used >= IDEA_CAP) score -= 50;
+      if (used >= limits.cap) score -= 50;
       const alreadyHad = had.has(idea.n);
       if (alreadyHad) score -= 100;
       return { ...idea, score, used_this_week: used, already_had: alreadyHad };

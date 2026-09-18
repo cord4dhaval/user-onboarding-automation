@@ -60,6 +60,8 @@ check("a cold campaign does not cool a hot person", effectiveBand("hot", "cold")
 check("hot email watched 24 h: 30 h after send asks", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39), leadType: "hot" }).kind === "ask");
 check("the same without a lead type still watches (48 h)", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39) }).kind === "watch");
 check("hot asks for the link, closing hook may ask for a reply", LEAD_TYPE_PROFILES.hot.ask === "link" && LEAD_TYPE_PROFILES.hot.replyHooks.includes("closing"));
+check("warm follows up with the same no-way email, paced warm", LEAD_TYPE_PROFILES.warm.reveal === true && LEAD_TYPE_PROFILES.warm.band === "warm" && LEAD_TYPE_PROFILES.warm.sequence === LEAD_TYPE_PROFILES.hot.sequence && LEAD_TYPE_PROFILES.warm.maxWords === 110);
+check("warm keeps a reply ask for a short question", LEAD_TYPE_PROFILES.warm.replyHooks.includes("question"));
 
 console.log("mode");
 check("rolling campaign", isRolling({ perLeadPlan: { family: "feature_followup", mode: "rolling" } }));
@@ -265,6 +267,12 @@ console.log("idea bank");
   check("an idea many leads got this week drops down", busy[0]?.n === 7);
   const had = rankIdeas(bank, { text: "Attendance punch biometric payroll", segment: "hr_ops" }, new Map(), new Set([71]));
   check("an idea the lead already had goes last", had.at(-1)?.n === 71 && had.at(-1)?.already_had === true);
+  const { ideaLimits } = await import("../engine/ideas");
+  check("a campaign of 56 keeps the cap of 5", ideaLimits(56, 50).cap === 5 && ideaLimits(56, 50).busyAt === 3);
+  const big = ideaLimits(332, 50);
+  check("a campaign of 332 on 50 ideas can plan every lead", big.cap * 50 >= 332 * 2 && big.busyAt < big.cap);
+  const roomy = rankIdeas(bank, { text: "Attendance and payroll disputes, biometric punch", segment: "hr_ops" }, new Map([[71, 6]]), new Set(), big);
+  check("in a big campaign 6 uses is not yet busy", roomy[0]?.n === 71);
   const withCard = renderLetter(
     resolveBlocks(frame as never, mv, {
       slotText: "Scene.",

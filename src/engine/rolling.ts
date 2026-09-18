@@ -307,6 +307,36 @@ export interface LeadTypeProfile {
   rules: string[];
 }
 
+/**
+ * The "no way, it can do that?" email, shared by every type that writes to people who once
+ * asked about the product. Hot leads get it at hot pace with two emails planned; warm leads
+ * (Dhaval, 2026-09-18: the July–August form leads showed interest once, so they are followed
+ * up, not pushed) get the same shape one email at a time.
+ */
+const NO_WAY_SEQUENCE: Array<{ hook: string; job: string }> = [
+  { hook: "daily_question", job: "The question they ask every day (\"any update?\", \"what happened today?\") and the answer TeamGrid already writes by 6pm." },
+  { hook: "hidden_bill", job: "The money nobody counted: paid hours with no owner, in rupees for a team their size, and TeamGrid showing those hours from day 1." },
+  { hook: "office_habit", job: "An office habit everyone lives with (the quick call that takes an hour, the Monday Excel report, the punch machine, the green dot on WhatsApp) and the feature that makes it unnecessary." },
+  { hook: "just_ask", job: "The thing that sounds impossible: ask \"why was this week slow?\" in plain English (Advanced), the team's best hour, or the Monday report that writes itself (Advanced)." },
+  { hook: "found_out_late", job: "What they find out too late (the deadline that slipped on Monday, heard on Friday; the few people carrying everything) and seeing it the same day." },
+  { hook: "no_watching", job: "The fear of the team's reaction: no screenshots, no keystrokes, breaks pause on their own, everyone sees their own day." },
+  { hook: "closing", job: "The last note: should we close the request, or reply call for a walk-through." },
+];
+
+const NO_WAY_RULES: string[] = [
+  "Five small blocks, a blank line between each: 1 their moment, a line from their own day (opening, then scene); 2 the hidden truth, what it costs or hides (scene, or one cost line for money); 3 the no-way part in reveal: what TeamGrid already knows or does, said plainly and true; 4 the safety line in limit: no screenshots, nothing people type is recorded; 5 question: one short closing line. Then the button.",
+  "60 to 110 words. Short lines, one thing per line. If it needs more words, add a line; never make a line longer. The reader must understand it in one quick read.",
+  "Start from the idea, then the hook: plan from writing.ideas (best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got), and use the idea's hook and proof. Every plan step names idea_refs. Two leads should rarely get the same idea. Their business can colour a line or two; the email stays simple enough for any founder.",
+  "Show, do not describe. When the reveal is about the 6pm summary, time per app or the hours of a day, add receipt: a small sample card right after it, titled as a sample (\"A sample 6pm summary:\", \"A sample day's apps:\", \"A sample day:\"), 2 to 4 lines using only the figures in writing.facts.samples. The nouns may fit their business (\"dealer order lines\"); the figures stay as the sample shows them. The idea's card tag says which card fits.",
+  "Humor is an add-on, not a style. Use one light line only where it fits this lead and this idea naturally (the quick call that took 47 minutes, MIS_final_FINAL_v3.xlsx, the punch machine). Most emails have none. Joke about habits, never about people.",
+  "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, appraisal, resignation, CTC, ₹ and lakh. Simple English, respectful to the team.",
+  "Never colours or screen words (teal, blue, grey, dashboard, widget). Never spy or verdict words (monitor, catch, spy, lazy, unproductive employee). Never a customer quote or a result nobody measured.",
+  "Numbers: an example about their team says so; a survey figure names its source (writing.facts.external). Features only from writing.facts; say \"on the Advanced plan\" where it applies.",
+  "ask \"link\", format \"letter\". cta_text names what they will see (\"See tomorrow's 6pm summary\", \"See where the hours go\"), from the allowed list.",
+  "Subject: their own words or a surprising truth, 20 to 60 characters (\"The 8pm 'any update?' calls can stop tomorrow\", \"Nobody forgets to work. Everybody forgets to punch.\").",
+  "ps is optional: \"P.S. Prefer a 15-minute walk-through first? Reply call.\"",
+];
+
 export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
   hot: {
     label: "Hot",
@@ -319,41 +349,27 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     reveal: true,
     // Dhaval, 2026-09-17: short, simple, and "no way, it can do that?". Each email picks the
     // hook that fits this lead best, not a fixed order; the planner takes two not yet sent.
-    sequence: [
-      { hook: "daily_question", job: "The question they ask every day (\"any update?\", \"what happened today?\") and the answer TeamGrid already writes by 6pm." },
-      { hook: "hidden_bill", job: "The money nobody counted: paid hours with no owner, in rupees for a team their size, and TeamGrid showing those hours from day 1." },
-      { hook: "office_habit", job: "An office habit everyone lives with (the quick call that takes an hour, the Monday Excel report, the punch machine, the green dot on WhatsApp) and the feature that makes it unnecessary." },
-      { hook: "just_ask", job: "The thing that sounds impossible: ask \"why was this week slow?\" in plain English (Advanced), the team's best hour, or the Monday report that writes itself (Advanced)." },
-      { hook: "found_out_late", job: "What they find out too late (the deadline that slipped on Monday, heard on Friday; the few people carrying everything) and seeing it the same day." },
-      { hook: "no_watching", job: "The fear of the team's reaction: no screenshots, no keystrokes, breaks pause on their own, everyone sees their own day." },
-      { hook: "closing", job: "The last note: should we close the request, or reply call for a walk-through." },
-    ],
+    sequence: NO_WAY_SEQUENCE,
     rules: [
       "These people asked about the product. Each email makes them think: no way, it can do that? It explains one thing simply, never a list of features.",
-      "Five small blocks, a blank line between each: 1 their moment, a line from their own day (opening, then scene); 2 the hidden truth, what it costs or hides (scene, or one cost line for money); 3 the no-way part in reveal: what TeamGrid already knows or does, said plainly and true; 4 the safety line in limit: no screenshots, nothing people type is recorded; 5 question: one short closing line. Then the button.",
-      "60 to 110 words. Short lines, one thing per line. If it needs more words, add a line; never make a line longer. The reader must understand it in one quick read.",
-      "Start from the idea, then the hook: plan from writing.ideas (best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got), and use the idea's hook and proof. Every plan step names idea_refs. Two leads should rarely get the same idea. Their business can colour a line or two; the email stays simple enough for any founder.",
-      "Show, do not describe. When the reveal is about the 6pm summary, time per app or the hours of a day, add receipt: a small sample card right after it, titled as a sample (\"A sample 6pm summary:\", \"A sample day's apps:\", \"A sample day:\"), 2 to 4 lines using only the figures in writing.facts.samples. The nouns may fit their business (\"dealer order lines\"); the figures stay as the sample shows them. The idea's card tag says which card fits.",
-      "Humor is an add-on, not a style. Use one light line only where it fits this lead and this idea naturally (the quick call that took 47 minutes, MIS_final_FINAL_v3.xlsx, the punch machine). Most emails have none. Joke about habits, never about people.",
-      "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, appraisal, resignation, CTC, ₹ and lakh. Simple English, respectful to the team.",
-      "Never colours or screen words (teal, blue, grey, dashboard, widget). Never spy or verdict words (monitor, catch, spy, lazy, unproductive employee). Never a customer quote or a result nobody measured.",
-      "Numbers: an example about their team says so; a survey figure names its source (writing.facts.external). Features only from writing.facts; say \"on the Advanced plan\" where it applies.",
-      "ask \"link\", format \"letter\". cta_text names what they will see (\"See tomorrow's 6pm summary\", \"See where the hours go\"), from the allowed list.",
-      "Subject: their own words or a surprising truth, 20 to 60 characters (\"The 8pm 'any update?' calls can stop tomorrow\", \"Nobody forgets to work. Everybody forgets to punch.\").",
-      "ps is optional: \"P.S. Prefer a 15-minute walk-through first? Reply call.\"",
+      ...NO_WAY_RULES,
       "The closing email (hook \"closing\") may ask for a reply instead.",
     ],
   },
   warm: {
     label: "Warm",
-    who: "showed interest without asking: clicked an ad, downloaded a guide, or said they are just exploring",
+    who: "showed interest once and did not sign up: filled in our form weeks ago and went quiet, clicked an ad, downloaded a guide, or said they are just exploring",
     band: "warm",
     watchHours: 48,
     ask: "link",
     replyHooks: ["question", "closing"],
-    maxWords: 125,
+    maxWords: 110,
+    reveal: true,
+    sequence: NO_WAY_SEQUENCE,
     rules: [
-      "One idea from their world, then the trial link or a short reply question when a link has already been ignored.",
+      "These people showed interest once and did not sign up. This is a follow-up, not a first pitch: calm and friendly, one thing per email, and each email makes them think: no way, it can do that? Never mention a form, an ad, a signup or any earlier email, and never open with \"following up\" or \"just checking in\".",
+      ...NO_WAY_RULES,
+      "Plan one email at a time; the next is planned after seeing what they did with this one. After two links with no click, hook \"question\" asks one short question they can answer in a line (format \"text\", ask \"reply\", no link). The closing email (hook \"closing\") may ask for a reply instead.",
     ],
   },
   cold: {
@@ -370,7 +386,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
   },
   reengage: {
     label: "Re-engage",
-    who: "old leads who went quiet, or trials that expired without paying",
+    who: "went quiet after a real conversation, a demo or a call, or trials that expired without paying",
     band: "warm",
     watchHours: 72,
     ask: "reply",
