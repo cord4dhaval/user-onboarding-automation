@@ -366,6 +366,20 @@ Dhaval asked to move every v2 lead into v3, give them v3's idea-bank emails, and
 - **Deleted.** The v2 goal and its 6 playbooks were deleted. No source pointed at v2. Its 45 finished queue jobs stay as history. Everything is backed up in the session scratchpad (`v2-backup-before-move.json`).
 - **Result.** v3 now holds 54 active leads, each with 2 idea-bank emails waiting for review. Idea #13 (leave that lands before deadlines) reached 5 leads in this batch, the cap, so watch it.
 
+## Warm leads and the July–August rewrite, 2026-09-18
+
+Dhaval: the July–August form leads are warm, not hot. They showed interest once and did not sign up, so they are followed up rather than pushed. Built in 5a53594 and 6811a8d:
+
+- **Lead type is required.** The campaign drawer asks who the leads are straight after the name. `createGoal` and `updateGoal` refuse a save without one. The campaign list shows the type on each row, or a red "lead type not set" pill. The edit drawer now opens with the campaign's brief filled in; before, it opened empty and saving erased the brief.
+- **Warm uses the no-way email.** The warm profile shares the hot rules and hook sequence (`NO_WAY_RULES`, `NO_WAY_SEQUENCE`): five blocks, reveal and safety line enforced, 110 words, letter with one button. It stays paced warm with a 48 h watch, and plans one email at a time. A reply-only touch is allowed on hook `question` or `closing`.
+- **The idea cap grows with the campaign.** 5 leads per idea per week on 50 usable ideas plans only 250 leads. `ideaLimits(activeLeads, usableIdeas)` sets the cap to an even spread of 2 steps per active lead, never below 5, with the busy mark at 60% of it. v3 (56 leads) keeps 5 and 3; July–August (332) gets 14 and 9.
+- **teamgrid_july_aug_leads.** Set to warm. The 332 waiting emails (old style, no ideas) were replaced by one idea-bank email per lead, written through the real plan_goal and compose_batch checks. `plan_goal` skipped each old email itself.
+  - 43 ideas used, none by more than 14 leads, and 172 emails carry a sample card.
+  - The 9 off_icp leads got a short plain-text question.
+  - Every email built on an Advanced idea says so.
+  - All 332 wait in Review. The old emails are backed up in that session's scratchpad (`ja-pending-backup.json`).
+- **v3 check.** 53 of 56 leads were on the flow. Urmil Shah (moved from v2) clicked the idea #25 email. The Acquire run that followed planned hooks outside the bank's. The routines were then down for about 15 hours after the account switch, so a fixed fallback email went out. He was replanned by hand on ideas #49 and #40. The two leads who arrived on 18 September were waiting to be classified.
+
 ## Follow-ups
 
 
