@@ -1,6 +1,23 @@
 import type { OutboundMessage } from "./types.js";
 
 /**
+ * A phone number as digits with its country code.
+ *
+ * Forms take numbers the way people type them, and people in India type ten digits: 11 of
+ * TeamGrid's leads were stored as "98xxxxxxxx", which a WhatsApp provider reads as a number
+ * in some other country, or not at all. Only an unambiguous shape is completed: ten digits
+ * starting 6 to 9 is an Indian mobile, and so is the same number written with a leading 0.
+ * A number written with "+" already says its country and is left exactly as given.
+ */
+export function phoneDigits(value: string): string {
+  const digits = value.replace(/[^0-9]/g, "");
+  if (value.trim().startsWith("+")) return digits;
+  if (/^[6-9]\d{9}$/.test(digits)) return `91${digits}`;
+  if (/^0[6-9]\d{9}$/.test(digits)) return `91${digits.slice(1)}`;
+  return digits;
+}
+
+/**
  * Every value a channel's argument mapping may reference, in one place.
  *
  * Both the HTTP adapter's payload template and the MCP binding's argument map are
@@ -26,7 +43,7 @@ export function sendContext(message: OutboundMessage): Record<string, unknown> {
       email: vars.email ?? message.to,
       phone,
       /** Digits with country code and nothing else, which is what most providers accept. */
-      phoneDigits: phone.replace(/[^0-9]/g, ""),
+      phoneDigits: phoneDigits(phone),
     },
     content: { subject: message.subject, body: message.bodyText, bodyHtml: message.bodyHtml },
     channel: { from: message.from, replyTo: message.replyTo },
