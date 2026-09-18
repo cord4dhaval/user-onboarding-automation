@@ -380,9 +380,9 @@ Dhaval: the July–August form leads are warm, not hot. They showed interest onc
   - All 332 wait in Review. The old emails are backed up in that session's scratchpad (`ja-pending-backup.json`).
 - **v3 check.** 53 of 56 leads were on the flow. Urmil Shah (moved from v2) clicked the idea #25 email. The Acquire run that followed planned hooks outside the bank's. The routines were then down for about 15 hours after the account switch, so a fixed fallback email went out. He was replanned by hand on ideas #49 and #40. The two leads who arrived on 18 September were waiting to be classified.
 
-## Idea learning loop, development only, 2026-09-18
+## Idea learning loop, 2026-09-18
 
-Dhaval asked for ideas to be targeted rather than fixed: Claude may invent ideas, and the catalog should learn which work. He approved invented ideas going live as trials, but for now only in development. Built in 0f0e81e. Everything below runs only when `ideasLoopOn()` is true (`NODE_ENV` is development, or `IDEAS_LOOP=on`); production is unchanged.
+Dhaval asked for ideas to be targeted rather than fixed: Claude may invent ideas, and the catalog should learn which work. He approved invented ideas going live as trials. The first build ran in development only (0f0e81e). The same day he asked for it on the live site by default (5f7e281). `ideasLoopOn()` is true unless `IDEAS_LOOP=off`, which switches the whole loop off, the menu link included.
 
 ```
  send ──▶ ideaPerformance: sends, clicks, replies, signups per idea × lead group
@@ -399,8 +399,8 @@ Dhaval asked for ideas to be targeted rather than fixed: Claude may invent ideas
 
 - **Why the loser mark moves.** At about 2% clicks, an ordinary idea gets no click in 30 sends more than half the time. `loserSends(average)` is the count at which an average idea would show nothing only 1 time in 10: about 114 sends at 2%, and never fewer than 30.
 - **Where invented ideas live.** `config.writing.invented`, apart from the approved 88, so code with the loop off never reads them.
-- **Ideas page** (`/products/<id>/ideas`, development only). It shows the bank and invented ideas with sends, clicks, replies, leads planned this week and a verdict. Each invented idea shows the reason it was written and the reason for its last move. It can be retired or put back on trial by hand.
-- **To go live:** set `IDEAS_LOOP=on` in production. Then add propose_idea to the Acquire, React and Maintain prompts and push them to the triggers.
+- **Ideas page** (`/products/<id>/ideas`). It shows the bank and invented ideas with sends, clicks, replies, leads planned this week and a verdict. Each invented idea shows the reason it was written and the reason for its last move. It can be retired or put back on trial by hand.
+- **No prompt change was needed.** Whenever the loop is on, lead_card's idea note tells the planner about propose_idea.
 - **Known gap:** Maintain's learning-note thresholds (retire at 10 silent sends) have the same small-sample problem and were not changed.
 
 ## Ideas teach patterns, not copy, 2026-09-18
@@ -415,7 +415,7 @@ Dhaval: the idea bank is for Claude to learn from. It is not a set of examples t
 
   The rule it gives: learn the pattern, then write the moment that fits this lead. That can be the idea as told, one of its other shapes, or a new shape from their business. The shape can change; the proof cannot. `idea_refs` names the ideas it learned from.
 - **Matching reads the other shapes too.** "WhatsApp", "GST" or "dispatch" in a lead's answers now finds the idea whose other shape mentions it.
-- **propose_idea** (development only) now asks for a pattern and other shapes, so an invented idea teaches the next planner the same way.
+- **propose_idea** now asks for a pattern and other shapes, so an invented idea teaches the next planner the same way.
 - **Triggers.** The Acquire and Advance prompts were pushed to the live triggers the same day. React, Close and Maintain did not change.
 
 ## Follow-ups
