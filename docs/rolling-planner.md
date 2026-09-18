@@ -403,6 +403,21 @@ Dhaval asked for ideas to be targeted rather than fixed: Claude may invent ideas
 - **To go live:** set `IDEAS_LOOP=on` in production. Then add propose_idea to the Acquire, React and Maintain prompts and push them to the triggers.
 - **Known gap:** Maintain's learning-note thresholds (retire at 10 silent sends) have the same small-sample problem and were not changed.
 
+## Ideas teach patterns, not copy, 2026-09-18
+
+Dhaval: the idea bank is for Claude to learn from. It is not a set of examples to retell ("this can also be this or that"). Built in 888dd2d:
+
+- **Each usable idea carries its pattern and other shapes** in the database: `pattern` (why it lands, one sentence) and `also` (2 or 3 other shapes of the same moment). For example, #7 "The 8 PM status calls" could also be the Saturday WhatsApp round-up, the 7pm sheet every team fills, or the manager who forwards 5 status mails every evening.
+- **One wording everywhere Claude reads it** (`IDEAS_ARE_TEACHING` in rolling.ts):
+  - the lead card's `writing.ideas.note`
+  - the hot and warm rules
+  - the Acquire planner and the Advance writer ("the pattern in the shape that fits them, never the bank's wording retold")
+
+  The rule it gives: learn the pattern, then write the moment that fits this lead. That can be the idea as told, one of its other shapes, or a new shape from their business. The shape can change; the proof cannot. `idea_refs` names the ideas it learned from.
+- **Matching reads the other shapes too.** "WhatsApp", "GST" or "dispatch" in a lead's answers now finds the idea whose other shape mentions it.
+- **propose_idea** (development only) now asks for a pattern and other shapes, so an invented idea teaches the next planner the same way.
+- **Triggers.** The Acquire and Advance prompts were pushed to the live triggers the same day. React, Close and Maintain did not change.
+
 ## Follow-ups
 
 
