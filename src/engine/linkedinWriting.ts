@@ -1,5 +1,5 @@
 import type { Document } from "mongodb";
-import type { ChannelRules } from "../channels/rules.js";
+import { rulesFor, type ChannelRules } from "../channels/rules.js";
 import { companyTokens } from "./rolling.js";
 
 /**
@@ -77,9 +77,18 @@ export function linkedinTextProblems(text: string, ctx: LinkedInTextContext): st
   if (/\*\*|__|^\s*[-•*]\s/m.test(body)) problems.push("it uses bold or a list; a LinkedIn message is plain sentences");
   if (SIGN_OFF.test(body)) problems.push("it signs off; the product speaks, and no person signs the message");
 
+  // The channel's own list is the tells of automated outreach; anything a product added is
+  // its voice (TeamGrid's "no contractions"), and the refusal says which.
+  const channelDefaults = new Set(rulesFor("linkedin").banned ?? []);
   for (const pattern of ctx.rules.banned ?? []) {
     const hit = body.match(new RegExp(pattern, "i"));
-    if (hit) problems.push(`it says "${hit[0]}", which reads as automated outreach`);
+    if (hit) {
+      problems.push(
+        channelDefaults.has(pattern)
+          ? `it says "${hit[0]}", which reads as automated outreach`
+          : `it says "${hit[0]}", which the product's voice does not use`,
+      );
+    }
   }
 
   const lower = body.toLowerCase();
