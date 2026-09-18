@@ -31,7 +31,7 @@ const READ: Record<ReturnType<typeof evidenceStatus>, string> = {
  *
  * The approved bank and the ideas Claude invented when none fitted a lead, side by side, so a
  * person can see which scenes earn clicks and replies, and stop an invented one that should
- * not go further. Development only until Dhaval has watched the loop work.
+ * not go further. Hidden when the loop is switched off (IDEAS_LOOP=off).
  */
 export default async function Ideas({ params }: { params: Promise<{ id: string }> }) {
   if (!ideasLoopOn()) notFound();
@@ -74,7 +74,6 @@ export default async function Ideas({ params }: { params: Promise<{ id: string }
             other shapes it can take, never copy to retell. The approved bank, and ideas Claude writes when no pattern
             fits a lead. A new idea starts on trial. It reaches {TRIAL_LEADS} leads, and once those are sent it either stays
             (ranked like the bank) or retires, with the reason on its row. Results feed the ranking on every lead card.
-            Running in development only.
           </p>
         </div>
         <div className="row">

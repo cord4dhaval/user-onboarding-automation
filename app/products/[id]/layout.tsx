@@ -7,6 +7,7 @@ import AccountMenu from "../../ui/account-menu";
 import Notifications from "../../ui/notifications";
 import { ToastProvider } from "../../ui/toast";
 import Nav from "./nav";
+import { ideasLoopOn } from "@/engine/ideas.js";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ export default async function ProductLayout({
         <a className="brand" href="/products" style={{ padding: "4px 10px 14px", gap: 8 }}>
           <Zap size={17} strokeWidth={2.5} /> Engine
         </a>
-        <Nav productId={id} counts={{ review }} />
+        <Nav productId={id} counts={{ review }} ideas={ideasLoopOn()} />
         <div className="foot">
           <a href={`/products/${id}/settings`}>
             <Settings size={16} /> Settings

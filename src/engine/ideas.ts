@@ -38,12 +38,12 @@ export interface Idea {
 }
 
 /**
- * The learning loop: results in the ranking, and ideas Claude invents. Dhaval, 2026-09-18:
- * build it, but run it only in development until he has watched it work. IDEAS_LOOP=on
- * turns it on anywhere else.
+ * The learning loop: results in the ranking, and ideas Claude invents. On everywhere by
+ * default (Dhaval, 2026-09-18, after first asking for development only). IDEAS_LOOP=off is
+ * the kill switch: the bank goes back to fit alone and invented ideas are ignored.
  */
 export function ideasLoopOn(): boolean {
-  return process.env.NODE_ENV === "development" || process.env.IDEAS_LOOP === "on";
+  return process.env.IDEAS_LOOP !== "off";
 }
 
 /** An idea a planner wrote because nothing in the bank fitted, with why and where it came from. */

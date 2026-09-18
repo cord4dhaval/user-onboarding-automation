@@ -3628,7 +3628,7 @@ TOOLS.push({
     const totalSent = angles.reduce((n, a) => n + a.sent, 0);
     const totalTrackable = angles.reduce((n, a) => n + a.trackable, 0);
 
-    // The learning loop (development only for now): invented ideas are moved on from their
+    // The learning loop (off only where IDEAS_LOOP=off): invented ideas are moved on from their
     // first sends, and every idea's record is reported by number.
     let ideaTable: Array<Record<string, unknown>> | undefined;
     let ideaMoves: Awaited<ReturnType<typeof reviewInventedIdeas>> | undefined;
@@ -4921,12 +4921,12 @@ TOOLS.push({
  * but an invented idea is a trial: it reaches TRIAL_LEADS leads, every email still waits in
  * Review, and the first sends decide whether it stays. Its capability must be one the product
  * really has, word for word from writing.facts.canDo, so a new idea can never be a new claim.
- * Switched on in development only until he has watched it work.
+ * IDEAS_LOOP=off switches it off.
  */
 TOOLS.push({
   name: "propose_idea",
   description:
-    "Add a new idea to the product's idea bank when no pattern on lead_card writing.ideas fits the lead in front of you (a new shape of an existing pattern needs no new idea: plan it from that idea). The idea is a scene from an Indian office week that TeamGrid makes visible, with its pattern (why it lands) and other shapes it can take, so the next planner learns from it. proof must be copied word for word from one writing.facts.canDo entry: that is what makes it true. It starts as a trial: plan_goal lets it reach 5 leads, then their results move it to active (ranked like the bank) or retire it. Refused: a title another idea already has, a proof that is not in canDo, testimonial or verdict words, and more than 10 trial ideas open at once. Returns the idea's number for plan_goal idea_refs. Development only for now.",
+    "Add a new idea to the product's idea bank when no pattern on lead_card writing.ideas fits the lead in front of you (a new shape of an existing pattern needs no new idea: plan it from that idea). The idea is a scene from an Indian office week that TeamGrid makes visible, with its pattern (why it lands) and other shapes it can take, so the next planner learns from it. proof must be copied word for word from one writing.facts.canDo entry: that is what makes it true. It starts as a trial: plan_goal lets it reach 5 leads, then their results move it to active (ranked like the bank) or retire it. Refused: a title another idea already has, a proof that is not in canDo, testimonial or verdict words, and more than 10 trial ideas open at once. Returns the idea's number for plan_goal idea_refs.",
   inputSchema: {
     type: "object",
     properties: {
@@ -4948,7 +4948,7 @@ TOOLS.push({
   },
   async handler(args, ctx) {
     if (!ideasLoopOn()) {
-      throw new Error("Inventing ideas is switched on in development only for now. Plan from writing.ideas, or blend two of its ideas. Nothing was written.");
+      throw new Error("Inventing ideas is switched off here (IDEAS_LOOP=off). Plan from writing.ideas, or blend two of its ideas. Nothing was written.");
     }
     const productId = String(args.product_id);
     const orgId = await assertProduct(productId, ctx);

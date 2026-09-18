@@ -25,15 +25,13 @@ const WORK = [
 
 const SETUP = [
   { href: "/templates", label: "Templates", icon: <FileText /> },
-  // The ideas loop runs in development only until it has been watched working (2026-09-18).
-  ...(process.env.NODE_ENV === "development" ? [{ href: "/ideas", label: "Ideas", icon: <Lightbulb /> }] : []),
   { href: "/brand", label: "Brand", icon: <Palette /> },
   { href: "/channels", label: "Channels", icon: <Send /> },
   { href: "/connections", label: "Connections", icon: <Plug /> },
   { href: "/claude", label: "Claude", icon: <Sparkles /> },
 ];
 
-export default function Nav({ productId, counts }: { productId: string; counts: NavCounts }) {
+export default function Nav({ productId, counts, ideas }: { productId: string; counts: NavCounts; ideas: boolean }) {
   const pathname = usePathname();
   const base = `/products/${productId}`;
 
@@ -56,7 +54,8 @@ export default function Nav({ productId, counts }: { productId: string; counts: 
     <>
       {WORK.map(item)}
       <div className="group">Configure</div>
-      {SETUP.map(item)}
+      {/* The ideas loop has a kill switch (IDEAS_LOOP=off); the server says whether it is on. */}
+      {(ideas ? [SETUP[0]!, { href: "/ideas", label: "Ideas", icon: <Lightbulb /> }, ...SETUP.slice(1)] : SETUP).map(item)}
     </>
   );
 }
