@@ -13,6 +13,17 @@ export interface HttpChannelConfig {
   payloadTemplate: Record<string, unknown>;
   /** Where in the response their identifier lives, e.g. "$.data.id". */
   messageIdPath?: string;
+  /**
+   * Where the provider says whether it took the message, for one that answers 200 either
+   * way — WATI's "$.success". False there is a failed send, not a sent one.
+   */
+  acceptedPath?: string;
+  /**
+   * Where the provider puts its reason, tried in order: "$.error", "$.recipients.0.errors".
+   * Only these fields are ever read into the row, never the whole body, because error
+   * bodies can echo the token back. On a 200, a non-empty one means this recipient failed.
+   */
+  errorPaths?: string[];
   /** Where a bearer token goes, if not the Authorization header. */
   authHeader?: string;
 }
@@ -50,21 +61,39 @@ export class HttpChannelAdapter implements ChannelAdapter {
       // whereas marking it failed spends a message from the campaign's budget.
       throw new RetryableSendError(`provider is throttling (HTTP ${res.status})`);
     }
-    if (!res.ok) {
-      // Error bodies routinely echo the token back, so only the status is reported.
-      throw new Error(`send failed: HTTP ${res.status}`);
-    }
-
-    let id: string | undefined;
+    let payload: unknown;
     try {
-      const payload = (await res.json()) as unknown;
-      const found = this.config.messageIdPath ? pluck(payload, this.config.messageIdPath) : undefined;
-      if (typeof found === "string") id = found;
+      payload = (await res.json()) as unknown;
     } catch {
-      // A provider that returns no body still accepted the message.
+      // A provider that returns no body still accepted the message, when the status says so.
+    }
+    const reason = this.reasonIn(payload);
+
+    if (!res.ok) {
+      // Error bodies routinely echo the token back, so only the status and the declared
+      // reason fields are reported.
+      throw new Error(`send failed: HTTP ${res.status}${reason ? ` — ${reason}` : ""}`);
+    }
+    // "OK" to the request is not the provider taking the message. WATI answers 200 for a
+    // template that is not approved or a number that is not on WhatsApp, and says so inside.
+    const refused = this.config.acceptedPath ? pluck(payload, this.config.acceptedPath) === false : false;
+    if (refused || (this.config.errorPaths?.length && reason)) {
+      throw new Error(`provider refused the message${reason ? `: ${reason}` : ""}`);
     }
 
+    const found = this.config.messageIdPath ? pluck(payload, this.config.messageIdPath) : undefined;
+    const id = typeof found === "string" && found ? found : undefined;
     return { accepted: true, providerMessageId: id, disposition: "sent" };
+  }
+
+  /** The provider's own reason, from the declared fields only, cut to a readable length. */
+  private reasonIn(payload: unknown): string {
+    for (const path of this.config.errorPaths ?? []) {
+      const value = pluck(payload, path);
+      const text = Array.isArray(value) ? value.filter(Boolean).map(String).join("; ") : value ? String(value) : "";
+      if (text.trim()) return text.trim().slice(0, 300);
+    }
+    return "";
   }
 }
 

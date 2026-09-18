@@ -42,6 +42,11 @@ export interface OutboundMessage {
    */
   providerTemplate?: { name: string; params: Record<string, string> };
   /**
+   * Our own id for this message. A provider that takes one (WATI's local_message_id) echoes
+   * it back on every delivery event, which is how a status arriving later finds its message.
+   */
+  ref?: string;
+  /**
    * What a LinkedIn touch actually is. Unlike email, "send" is not one shape on LinkedIn: an
    * invite, a direct message, a comment and a reply are different calls with different
    * targets. The adapter reads `op` to pick the call; the fields below carry its target.

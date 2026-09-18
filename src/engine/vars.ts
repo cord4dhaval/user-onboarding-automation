@@ -58,7 +58,7 @@ export function companyNameFrom(person: Document): string {
  * say which campaign and which mail brought a signup. A link already tagged is left alone,
  * and anything that does not parse as a URL is returned as it was.
  */
-export function withUtm(url: string, campaign: string, content: string): string {
+export function withUtm(url: string, campaign: string, content: string, channel = "email"): string {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -66,8 +66,9 @@ export function withUtm(url: string, campaign: string, content: string): string 
     return url;
   }
   if (parsed.searchParams.has("utm_source")) return url;
-  parsed.searchParams.set("utm_source", "email");
-  parsed.searchParams.set("utm_medium", "email");
+  // The channel it went on, so a signup from a WhatsApp button is not counted as email's.
+  parsed.searchParams.set("utm_source", channel);
+  parsed.searchParams.set("utm_medium", channel);
   parsed.searchParams.set("utm_campaign", campaign);
   parsed.searchParams.set("utm_content", content);
   return parsed.toString();

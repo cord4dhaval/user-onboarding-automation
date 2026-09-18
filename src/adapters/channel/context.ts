@@ -45,6 +45,14 @@ export function sendContext(message: OutboundMessage): Record<string, unknown> {
       ...(message.providerTemplate?.params ?? {}),
       name: message.providerTemplate?.name ?? "",
       params: message.providerTemplate?.params ?? {},
+      /**
+       * Every parameter as { name, value }, the list shape WATI's custom_params takes. A
+       * payload that listed its parameters by hand sent only those, so a template with a
+       * second variable went out with it blank.
+       */
+      paramList: Object.entries(message.providerTemplate?.params ?? {}).map(([name, value]) => ({ name, value })),
     },
+    /** Our id for this message, for a provider that echoes one back on its status events. */
+    message: { id: message.ref ?? "" },
   };
 }

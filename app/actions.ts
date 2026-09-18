@@ -2542,6 +2542,11 @@ export async function createHttpChannel(formData: FormData) {
       method: String(formData.get("method") ?? "POST"),
       payloadTemplate,
       messageIdPath: String(formData.get("messageIdPath") ?? "").trim() || undefined,
+      acceptedPath: String(formData.get("acceptedPath") ?? "").trim() || undefined,
+      errorPaths: String(formData.get("errorPaths") ?? "")
+        .split(",")
+        .map((path) => path.trim())
+        .filter(Boolean),
       authHeader: String(formData.get("authHeader") ?? "").trim() || undefined,
     },
     scopes: [],

@@ -40,7 +40,10 @@ const EXAMPLE_PAYLOADS: Record<string, unknown> = {
     recipients: [
       {
         phone_number: "$person.phoneDigits",
-        custom_params: [{ name: "first_name", value: "$person.first_name" }],
+        // Our id, which Wati echoes on every delivery event for this message.
+        local_message_id: "$message.id",
+        // Every variable of whichever template this touch sends, filled from its row.
+        custom_params: "$template.paramList",
       },
     ],
   },
@@ -427,11 +430,35 @@ export default function ChannelDrawer({
           <div className="grid">
             <label>
               Where their id lives <span className="muted">(optional)</span>
-              <input name="messageIdPath" placeholder="$.id" />
+              <input
+                name="messageIdPath"
+                placeholder="$.id"
+                defaultValue={option?.channelKey === "whatsapp" ? "$.recipients.0.local_message_id" : undefined}
+              />
             </label>
             <label>
               Auth header <span className="muted">(if not Authorization)</span>
               <input name="authHeader" placeholder="x-api-key" />
+            </label>
+          </div>
+          {/* A provider that answers 200 to a message it did not take (Wati does, for a
+              template that is not approved) is only trustworthy with these two filled in. */}
+          <div className="grid">
+            <label>
+              Where it says it took the message <span className="muted">(optional)</span>
+              <input
+                name="acceptedPath"
+                placeholder="$.success"
+                defaultValue={option?.channelKey === "whatsapp" ? "$.success" : undefined}
+              />
+            </label>
+            <label>
+              Where it gives a reason <span className="muted">(optional, comma-separated)</span>
+              <input
+                name="errorPaths"
+                placeholder="$.error"
+                defaultValue={option?.channelKey === "whatsapp" ? "$.error, $.recipients.0.errors, $.message" : undefined}
+              />
             </label>
           </div>
           <label>From<input name="from" placeholder="TeamGrid <hi@yourdomain.com>" /></label>

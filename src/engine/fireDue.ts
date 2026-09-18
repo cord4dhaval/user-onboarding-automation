@@ -27,6 +27,7 @@ import { effectiveBand, groupFor, leadTypeOf } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
 import { HOME_TIMEZONE, localHour, nextSendableAt } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
+import { pathAndQuery, providerParams } from "./providerParams.js";
 
 export interface FireSummary {
   claimed: number;
@@ -398,7 +399,12 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // Tagged with the campaign and the mail, so the product's own analytics can say what
       // brought a signup. Only the trial link: the booking page and the opt-out are this
       // app's own pages, and tagging them would count our traffic as theirs.
-      vars.trial_link = withUtm(vars.trial_link, String(goalInstance.goalKey ?? "campaign"), String(template.key ?? rungKey ?? "mail"));
+      vars.trial_link = withUtm(
+        vars.trial_link,
+        String(goalInstance.goalKey ?? "campaign"),
+        String(template.key ?? rungKey ?? "mail"),
+        String(action.channel),
+      );
 
       // What this message carries, resolved at send rather than at compose: an asset that
       // was archived or corrected in the days a message sat in the queue should go out as
@@ -567,17 +573,24 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         ...(vars as unknown as Record<string, string>),
         email: String(person.primaryEmail ?? ""),
         phone: identityValue(person, "phone"),
+        // This lead's own trial link after the host, for a template button whose address is
+        // fixed up to the host: the signup it leads to is then theirs, as an email's is.
+        trial_path: pathAndQuery(vars.trial_link),
+        // What the writer put in the template's open places ("message", "question"), by name.
+        // Read off the stored action, not the render, which knows nothing about them.
+        ...((prior as { templateParams?: Record<string, string> } | undefined)?.templateParams ?? {}),
       };
+      outbound.ref = String(action._id);
       const approved = template.providerTemplate as { name: string; params?: Record<string, string> } | undefined;
       if (approved?.name) {
-        outbound.providerTemplate = {
-          name: approved.name,
-          // A parameter naming a merge variable takes its value; one that names nothing
-          // known is a constant the template author typed, and is passed through as written.
-          params: Object.fromEntries(
-            Object.entries(approved.params ?? {}).map(([param, ref]) => [param, outbound.vars?.[ref] ?? ref]),
-          ),
-        };
+        const filled = providerParams(approved.params ?? {}, outbound.vars);
+        if ("problem" in filled) {
+          const reason = `${approved.name}: ${filled.problem}`;
+          await release(action._id, "skipped", { skipReason: reason });
+          summary.blocked.push({ person: name || label, reason });
+          continue;
+        }
+        outbound.providerTemplate = { name: approved.name, params: filled.params };
       }
 
       // The slug is in `outbound.to`. The member id behind it is cached on the person once
