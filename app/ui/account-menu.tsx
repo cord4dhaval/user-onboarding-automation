@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LayoutGrid, LogOut } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LayoutGrid, Lightbulb, LogOut, Settings } from "lucide-react";
 import { logOut } from "../auth-actions";
 import { ThemeChoice } from "../theme";
 import { SubmitButton } from "./kit";
@@ -9,20 +10,31 @@ import { SubmitButton } from "./kit";
 /**
  * Everything about "you" in one place: who is signed in, how the console is themed, and the
  * way out. These used to sit loose in the top bar, which spent three controls and an email
- * address on something read once a session. Product settings stay in the sidebar — they
- * belong to the product, not the account, and listing them twice made them look like two
- * different pages.
+ * address on something read once a session. Inside a product the menu also holds Ideas and
+ * Settings — pages visited now and then, which cost a nav slot each for no daily use.
  */
 export default function AccountMenu({
   name,
   email,
   orgName,
+  product,
 }: {
   name: string;
   email: string;
   orgName?: string;
+  /** Set inside a product; `ideas` is false when the loop is switched off (IDEAS_LOOP=off). */
+  product?: { id: string; ideas: boolean };
 }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const base = product ? `/products/${product.id}` : "";
+  const links = product
+    ? [
+        ...(product.ideas ? [{ href: `${base}/ideas`, label: "Ideas", icon: <Lightbulb size={15} /> }] : []),
+        { href: `${base}/settings`, label: "Settings", icon: <Settings size={15} /> },
+      ]
+    : [];
+  const current = links.some((l) => pathname.startsWith(l.href));
   const wrap = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,6 +61,7 @@ export default function AccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Account: ${name}`}
+        data-current={current || undefined}
         onClick={() => setOpen((v) => !v)}
       >
         {initials(name)}
@@ -69,6 +82,17 @@ export default function AccountMenu({
             <a href="/products" role="menuitem" onClick={() => setOpen(false)}>
               <LayoutGrid size={15} /> Products
             </a>
+            {links.map((l) => (
+              <a
+                key={l.href}
+                href={l.href}
+                role="menuitem"
+                aria-current={pathname.startsWith(l.href) ? "page" : undefined}
+                onClick={() => setOpen(false)}
+              >
+                {l.icon} {l.label}
+              </a>
+            ))}
           </nav>
 
           <div className="acct-theme">

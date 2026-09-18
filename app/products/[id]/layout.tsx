@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Settings, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { getAccount, getProduct, requireSession } from "../../tenant";
@@ -44,17 +44,22 @@ export default async function ProductLayout({
   return (
     <ToastProvider>
     <div className="app">
-      <aside className="side">
-        <a className="brand" href="/products" style={{ padding: "4px 10px 14px", gap: 8 }}>
-          <Zap size={17} strokeWidth={2.5} /> Engine
-        </a>
-        <Nav productId={id} counts={{ review }} ideas={ideasLoopOn()} />
-        <div className="foot">
-          <a href={`/products/${id}/settings`}>
-            <Settings size={16} /> Settings
+      <div className="strip">
+        <aside className="side">
+          <a className="brand" href="/products" style={{ padding: "4px 10px 14px", gap: 8 }}>
+            <Zap size={17} strokeWidth={2.5} /> Engine
           </a>
-        </div>
-      </aside>
+          <Nav productId={id} counts={{ review }} />
+        </aside>
+        <Notifications productId={id} />
+        {/* The ideas loop has a kill switch (IDEAS_LOOP=off); the server says whether it is on. */}
+        <AccountMenu
+          name={account.name}
+          email={account.email}
+          orgName={account.orgName}
+          product={{ id, ideas: ideasLoopOn() }}
+        />
+      </div>
 
       <div>
         <header className="topbar">
@@ -70,10 +75,6 @@ export default async function ProductLayout({
           ) : (
             <strong>{String(product.name)}</strong>
           )}
-
-          <span className="spacer" />
-          <Notifications productId={id} />
-          <AccountMenu name={account.name} email={account.email} orgName={account.orgName} />
         </header>
 
         <main className="page">{children}</main>

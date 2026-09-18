@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { FileText, Inbox, LayoutDashboard, Lightbulb, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
+import { FileText, Inbox, LayoutDashboard, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
 import type { ReactNode } from "react";
 
 export interface NavCounts {
@@ -14,7 +14,7 @@ export interface NavCounts {
  *
  * Library and Audiences are one destination, and so are Claude, Routines and Logs, and so
  * are Brand and Assets: those were never separate places, only separate scrolls of the
- * same subject.
+ * same subject. Ideas and Settings are visited rarely enough to live in the account menu.
  */
 const WORK = [
   { href: "", label: "Dashboard", icon: <LayoutDashboard /> },
@@ -31,7 +31,7 @@ const SETUP = [
   { href: "/claude", label: "Claude", icon: <Sparkles /> },
 ];
 
-export default function Nav({ productId, counts, ideas }: { productId: string; counts: NavCounts; ideas: boolean }) {
+export default function Nav({ productId, counts }: { productId: string; counts: NavCounts }) {
   const pathname = usePathname();
   const base = `/products/${productId}`;
 
@@ -54,8 +54,7 @@ export default function Nav({ productId, counts, ideas }: { productId: string; c
     <>
       {WORK.map(item)}
       <div className="group">Configure</div>
-      {/* The ideas loop has a kill switch (IDEAS_LOOP=off); the server says whether it is on. */}
-      {(ideas ? [SETUP[0]!, { href: "/ideas", label: "Ideas", icon: <Lightbulb /> }, ...SETUP.slice(1)] : SETUP).map(item)}
+      {SETUP.map(item)}
     </>
   );
 }

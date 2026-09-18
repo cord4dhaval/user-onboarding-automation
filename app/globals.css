@@ -238,21 +238,27 @@ code {
 /* The same items the rail held, in one scrolling row. Section groups are dropped
    because a horizontal strip has no room to label them and the order already says
    which is daily work and which is setup. */
-.side {
+.strip {
+  display: flex; align-items: center;
   background: var(--ground);
-  display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 2px;
-  padding: 9px var(--gutter);
   position: sticky; top: 0; z-index: 21;
-  overflow-x: auto; overflow-y: hidden;
   border-bottom: 1px solid var(--rule-soft);
+}
+/* The bell and account menu sit outside the scrolling row: a popover inside an overflow
+   box is clipped, and both belong at the far end whatever the nav scrolls to. */
+.strip > .bell-wrap { margin-left: 10px; }
+.strip > .acct { margin: 0 var(--gutter) 0 8px; }
+.side {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 2px;
+  padding: 9px 0 9px var(--gutter);
+  overflow-x: auto; overflow-y: hidden;
   scrollbar-width: none;
 }
 .side::-webkit-scrollbar { display: none; }
 .side .group { display: none; }
 .side a { white-space: nowrap; padding: 7px 11px; }
 .side .brand { padding: 0 16px 0 0 !important; }
-/* Settings is the one item that belongs at the far end rather than in reading order. */
-.side .foot { margin-left: auto; display: flex; padding-left: 10px; }
 
 .side .group {
   font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .12em;
@@ -569,6 +575,9 @@ button.destructive { background: var(--bad); border-color: var(--bad); color: #f
   cursor: pointer;
 }
 .avatar:hover { border-color: var(--accent); filter: none; }
+/* Settings and Ideas live in the menu, so the avatar is where "you are here" shows for them. */
+.avatar[data-current] { border-color: var(--accent); }
+.acct-links a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .avatar.lg { width: 36px; height: 36px; font-size: 12.5px; cursor: default; }
 
 .acct-menu {
