@@ -19,7 +19,7 @@ import { ChannelDownError, RetryableSendError, type ChannelAdapter } from "../ad
 import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, nextSpacedSlot, opLimitsFor, rateBlock, rateHeadroom, spacedUntil } from "./governor.js";
 import { channelDownHold, takeChannelDown } from "./channelHealth.js";
-import { WAITING_FOR_ACCEPT } from "./linkedin.js";
+import { WAITING_FOR_ACCEPT, claudePlansLinkedIn } from "./linkedin.js";
 import { bandFor, lastOnChannel, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
@@ -357,8 +357,11 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         );
         const channelKey = String(action.channel);
         const last = latestOf([contactedThisRun.get(`${String(person._id)}|${channelKey}`), lastOnChannel(person, channelKey)]);
+        // LinkedIn touches Claude planned were dated by the channel's own gaps (a first
+        // message 0 to 2 days after the accept), which the campaign's email gap would undo.
+        const planPaced = channelKey === "linkedin" && claudePlansLinkedIn(goal);
         const gapEnds =
-          last && band.minGapDays < 999 ? new Date(last.getTime() + band.minGapDays * DAY_MS) : null;
+          !planPaced && last && band.minGapDays < 999 ? new Date(last.getTime() + band.minGapDays * DAY_MS) : null;
         const lastAny = latestOf([contactedThisRun.get(String(person._id)), person.lastContactedAt]);
         const spacingEnds = lastAny ? new Date(lastAny.getTime() + CROSS_CHANNEL_GAP_MS) : null;
         const earliest = latestOf([gapEnds, spacingEnds]);
@@ -883,6 +886,14 @@ async function blockedReason(args: {
   const goal = await db.collection(C.goals).findOne({ orgId: args.orgId, key: gi.goalKey });
   const budget = goal?.budget as { touches: number } | undefined;
   if (budget && gi.spent.touches >= budget.touches) return { reason: "touch budget exhausted" };
+
+  // Where Claude plans a campaign's LinkedIn touches, it first decides whether to invite each
+  // lead at all (routine 6). The invite waits for that, and a "no" is a verdict.
+  if (args.op === "invite" && claudePlansLinkedIn(goal)) {
+    const pick = (args.goalInstance.linkedin as { pick?: string; pickWhy?: string } | undefined) ?? {};
+    if (pick.pick === "skip") return { reason: `Claude chose not to invite them: ${pick.pickWhy ?? "no reason given"}` };
+    if (pick.pick !== "invite") return { reason: "waiting for Claude to decide whether to invite", retryAt: new Date(args.now.getTime() + 3_600_000) };
+  }
 
   // A channel someone paused is a decision; one the engine marked degraded is a fault that
   // may clear. Neither is a clock, so both wait for a human rather than a timer.

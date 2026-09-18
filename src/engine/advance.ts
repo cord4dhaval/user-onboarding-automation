@@ -7,6 +7,7 @@ import { PRIORITY, enqueueMany } from "./queue.js";
 import { channelKinds, pickChannelFrom, loadChannels, persistAssignments, persistInstanceMailboxes, skipReason, type PooledChannel } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
 import { checkpoint, effectiveBand, frameKeyOf, isRolling, isRollingPlan, leadTypeOf, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
+import { claudePlansLinkedIn } from "./linkedin.js";
 
 /**
  * Turning a plan into messages, on the clock, for everybody.
@@ -298,6 +299,12 @@ export async function advance(
     const goal = goalByKey.get(String(instance.goalKey));
     if (!goal) {
       summary.skipped.push({ goalInstanceId, reason: "campaign definition missing" });
+      continue;
+    }
+    // A campaign whose LinkedIn touches Claude plans and writes runs on the LinkedIn routine
+    // (engine/linkedin.ts), not on the email plan and compose machinery.
+    if (claudePlansLinkedIn(goal)) {
+      summary.skipped.push({ goalInstanceId, reason: "planned by the LinkedIn routine" });
       continue;
     }
 

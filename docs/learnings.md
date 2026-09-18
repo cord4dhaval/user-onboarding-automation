@@ -1065,7 +1065,7 @@ towards "automation works"; LinkedIn's own help pages are the only independent s
 | LI5 | Every signal says its channel and the touch that drew it | Replies had neither | `channel` and `actionId` on reply events; channel shown on the lead timeline | done 2026-09-18 (email); LinkedIn signals in L1 |
 | LI6 | See accepts and replies | Neither | Accept check against the newest connections every 3–5 hours at random; messages wait for it; reply handler built. The inbox read waits on a live capture of the messaging requests | accepts done 2026-09-18; replies todo (L1b) |
 | LI7 | Withdraw after 21 days, pause below 25% accepted | Neither | 21 days unaccepted stops the lead's LinkedIn messages; invites pause below 25% of the last 50 and lift on their own; the withdraw call itself needs a live capture | done 2026-09-18 except the withdraw call |
-| LI8 | Claude plans and writes LinkedIn messages | Email-shaped tools only | Routine 6, `plan_linkedin` and `compose_linkedin` with the rule set's writing rules; email routines untouched | todo (L2) |
+| LI8 | Claude plans and writes LinkedIn messages | Email-shaped tools only | Routine 6 with `linkedin_card`, `pick_linkedin`, `plan_linkedin`, `answer_linkedin`; refusals for length, one question, link timing, profile compliments, sign-offs, company names, reused sentences, repeated ideas; email routines untouched | built 2026-09-18 |
 | LI9 | Real comment before the invite, approved by a person | None | Comment step drafted by Claude, held in Review | todo (L3) |
 | LI10 | LinkedIn and email in one sequence | One channel per campaign | One campaign across channels, Claude picks the channel per step from the lead's history | todo (L4) |
 | LI11 | Founder posts, commenters as warm leads | None | Content routine; engagers become a source | todo (L3) |
@@ -1179,6 +1179,6 @@ towards "automation works"; LinkedIn's own help pages are the only independent s
 | 95 | Plain-looking HTML as a third format (`letter`) | PT9 | done 2026-09-17 |
 | 96 | LinkedIn: blank invites on free accounts, morning window, 20 invites a day, profile-keyed lists, channel on every signal | LI1–LI5 | done 2026-09-18 |
 | 97 | LinkedIn: see accepts and replies; withdraw after 21 days; pause below 25% accepted | LI6, LI7 | accepts, expiry and pause done 2026-09-18; inbox read and withdraw wait on a live capture |
-| 98 | LinkedIn: routine 6 plans and writes per lead from the channel's rule set | LI8 | todo |
+| 98 | LinkedIn: routine 6 plans and writes per lead from the channel's rule set | LI8 | built 2026-09-18; its remote trigger waits on approval |
 | 99 | LinkedIn: approved comments before invites; founder posts and their engagers | LI9, LI11 | todo |
 | 100 | One campaign across channels; Claude picks the channel per step | LI10 | todo |

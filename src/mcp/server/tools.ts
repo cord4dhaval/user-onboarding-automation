@@ -36,6 +36,7 @@ import {
   assetRefusals,
   loadAssets,
 } from "../../engine/assets.js";
+import { LINKEDIN_TOOLS } from "./linkedinTools.js";
 
 /**
  * The surface a Claude routine drives.
@@ -2895,7 +2896,8 @@ TOOLS.push({
     const problems = routines
       // Maintain is the one main a product can run without: it finishes setup and learns,
       // and a product whose setup is already done loses nothing by never scheduling it.
-      .filter((r) => r.state === "late" || r.state === "never" || (!r.registered && r.routine !== "maintain"))
+      // LinkedIn likewise: only a product with a campaign handing LinkedIn to Claude needs it.
+      .filter((r) => r.state === "late" || r.state === "never" || (!r.registered && r.routine !== "maintain" && r.routine !== "linkedin"))
       .map((r) =>
         r.registered
           ? `${r.routine} is ${r.state} — last run ${r.last_run_at ?? "never"}`
@@ -5063,3 +5065,6 @@ TOOLS.push({
     throw new Error("Could not find a free idea number after 5 tries. Try again. Nothing was written.");
   },
 });
+
+// LinkedIn (routine 6) lives in its own module so the email tools above stay as they are.
+TOOLS.push(...LINKEDIN_TOOLS);

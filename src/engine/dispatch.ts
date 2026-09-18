@@ -40,6 +40,9 @@ const QUANTUM: Record<ThinkingKind, number> = {
   escalate: 10,
   monitor: 25,
   groom: 2,
+  // LinkedIn is paced by the account's own day caps (10 to 20 invites), so a lane wider
+  // than a day's worth of decisions would only age in the queue.
+  linkedin: 25,
 };
 
 /**
@@ -57,6 +60,7 @@ const READY_CEILING: Record<ThinkingKind, number> = {
   escalate: 100,
   monitor: 200,
   groom: 10,
+  linkedin: 100,
 };
 
 export interface LaneReport {

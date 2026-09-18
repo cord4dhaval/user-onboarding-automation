@@ -17,7 +17,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
  */
 
 /** The scopes a routine sweeps with. Anything else is a person poking at the tools by hand. */
-export const ROUTINE_KEYS = ["acquire", "advance", "react", "close", "maintain"] as const;
+export const ROUTINE_KEYS = ["acquire", "advance", "react", "close", "maintain", "linkedin"] as const;
 
 /**
  * The four product-scoped routines this system started with, kept so run history written
@@ -341,6 +341,10 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   close: [...ALWAYS_ALLOWED, "mark_state", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
   // Maintain finishes setup, and raises the one notification for what only a human can give.
   maintain: [...ALWAYS_ALLOWED, "propose_idea", "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works", "save_learning", "verifiers", "set_checks"],
+  // LinkedIn decides, in campaigns that hand it their LinkedIn touches, who to invite, what
+  // to write after an accept, and how to answer. Its own tools only: the email planner and
+  // writer are not its to call.
+  linkedin: [...ALWAYS_ALLOWED, "linkedin_card", "pick_linkedin", "plan_linkedin", "answer_linkedin"],
 };
 
 /** Which routine, if any, this session is currently running as. Ad-hoc sessions return null. */

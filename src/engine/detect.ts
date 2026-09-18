@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { activeInstanceFor } from "./instances.js";
 import { PRIORITY, enqueue, enqueueMany } from "./queue.js";
+import { claudePlansLinkedIn } from "./linkedin.js";
 
 /**
  * Noticing what needs a session's attention, on the minute clock, without a model.
@@ -215,6 +216,8 @@ export async function detectWork(
   const wanted: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
   for (const goal of campaigns) {
     const goalKey = String(goal.key);
+    // Claude plans each lead's LinkedIn touches there; a segment sequence would never run.
+    if (claudePlansLinkedIn(goal)) continue;
     if (!written.has(`${goalKey}:default`)) {
       wanted.push({
         subjectId: `${goalKey}:default`,

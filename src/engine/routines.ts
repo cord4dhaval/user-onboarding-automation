@@ -44,6 +44,7 @@ export const DEFAULT_CRONS: Record<RoutineKey, string> = {
   react: "30 * * * *",
   close: "45 * * * *",
   maintain: "50 7 * * *",
+  linkedin: "40 * * * *",
 };
 
 /**
@@ -596,6 +597,80 @@ actually happened, and asks for what only a person can give — once, not daily.
   size — call notify_owner once, with all of it in one message. It is deduped for
   seven days, so repeating yourself costs you nothing and gains them nothing.
   Then say plainly what you drafted and what you are waiting on.`,
+    },
+    {
+      key: "linkedin",
+      name: "6 — LinkedIn",
+      cron: DEFAULT_CRONS.linkedin,
+      human: "every hour, at :40",
+      // Only products with a campaign that hands its LinkedIn touches to Claude need it.
+      essential: false,
+      job: "In campaigns that hand LinkedIn to Claude: who to invite, what to write once they accept, and how to answer when they write back.",
+      example: [
+        "A list of forty profiles arrives: thirty-six are founders and managers and are invited; four are company pages and recruiters and are skipped, each with its reason.",
+        "Meera accepted this morning: her first message names the evening update calls a twelve-person agency makes, and asks how she hears what got finished.",
+        "Arjun wrote back asking how hours are counted: the answer comes from the product's facts and waits in Review.",
+      ],
+      prompt: `${scope}
+
+${registration("linkedin")}
+
+${contract}
+
+Your work is LinkedIn, in campaigns that hand their LinkedIn touches to you. The engine
+does everything that runs on a clock: it sends invites and messages inside each
+account's limits and sending hours, sees who accepted, and gives up on invites nobody
+accepts. What it cannot do is judge a person, and that is what each item asks of you.
+
+You speak as the product, never as the person whose account sends: "we", in the voice
+linkedin_card gives as product.voice, with no sign-off, no person's name, never the
+lead's company name and never how they arrived. Every fact comes from product.facts;
+never invent a capability, a customer or a number.
+
+6.1 leads
+  next_work("linkedin") with limit 25. One sub-agent per lead, in parallel waves of up
+  to twenty-five, until the slice is done. Each one reads linkedin_card for the item's
+  goal_instance_id and acts on needs.kind, not on the item's reason, which can be older
+  than the card:
+
+  pick    Decide whether to invite them at all, with pick_linkedin. Invite anyone who
+          plausibly runs or manages a team the product serves (lead.role, lead.segment,
+          what their site says). Skip a company page, a student, a recruiter, a
+          competitor, or someone plainly outside the product's segments, and say why in
+          one sentence. The invite goes without a note unless the account allows one;
+          then the note names their situation in a line, never their profile.
+
+  plan    They accepted, or the last message had its days without an answer. Write the
+          next one or two messages with plan_linkedin, each built on one idea from
+          linkedin_card ideas (the ones they have not had, closest fit first;
+          linkedin_results_by_idea shows what got answers on LinkedIn). Each message:
+            - the first after an accept is 150 to 200 characters: one line on a moment
+              from their week the idea describes, then one question they can answer in
+              a line;
+            - no link and no pitch until they have answered; ask "link" with
+              {{trial_link}} only after they answered, or on the last message allowed;
+            - one question, plain sentences, no list, bold, emoji or sign-off;
+            - a different idea and different words from every earlier message, and no
+              sentence another lead got this week.
+          after_days is 0 to 2 for a first message and 3 to 5 for each later one. The
+          why says, in one sentence a person reading the lead page understands, what
+          about this lead put that idea there. Write three openings before you choose
+          one; keep the one a busy owner would answer. plan_linkedin refuses anything
+          outside the rules with every reason at once: fix them and call it again.
+
+  answer  They wrote back. Read their words in linkedin.open_replies and the history,
+          and answer what they asked with answer_linkedin, plainly and from
+          product.facts. Where they ask to try it, ask "link". Where they say not now,
+          thank them and ask nothing. Where the facts cannot answer them, say we will
+          find out rather than guess.
+
+  wait or end   Nothing is needed; finish the item.
+
+  finish_work each item once its lead is done.
+
+6.2 notes
+  One line of run notes: how many were invited and skipped, how many messages planned,
+  how many answers written, and any refusal you could not fix, with its reason.`,
     },
   ];
 }

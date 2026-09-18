@@ -10,6 +10,7 @@ import { notify } from "./notify.js";
 import { mailOwner } from "./ownerMail.js";
 import { looksLikeOptOut } from "./inbound.js";
 import { unsubscribePerson } from "./unsubscribe.js";
+import { PRIORITY, enqueueMany } from "./queue.js";
 
 /**
  * What LinkedIn will not push to us, read on a clock: who accepted an invite, whose invite
@@ -321,4 +322,132 @@ export async function recordLinkedInReply(input: {
     href: `/products/${productId}/library/${personId}`,
   });
   return "recorded";
+}
+
+/**
+ * Whether Claude plans and writes this campaign's LinkedIn touches (routine 6). Set on the
+ * campaign as `linkedin.planner: "claude"`; without it a LinkedIn campaign runs fixed
+ * templates through the ordinary playbook, as the first test did.
+ */
+export function claudePlansLinkedIn(goal: Document | null | undefined): boolean {
+  return (goal?.linkedin as { planner?: string } | undefined)?.planner === "claude";
+}
+
+// ── what Claude is asked to do (routine 6) ─────────────────────────────────────
+
+export type LinkedInNeed =
+  | { kind: "pick" }
+  | { kind: "answer"; eventId: string }
+  | { kind: "plan"; reason: "accepted" | "no_reply" }
+  | { kind: "wait"; why: string }
+  | { kind: "end"; why: string };
+
+/**
+ * What one lead needs from Claude right now, read from their record and their history. The
+ * detector asks with it and the lead card shows it, so the question a session is handed and
+ * the answer it reads can never disagree.
+ */
+export function linkedinNeed(input: {
+  instance: Document;
+  person: Document;
+  /** This campaign's LinkedIn actions for the lead, any status. */
+  actions: Document[];
+  /** Their LinkedIn replies nobody has answered yet. */
+  openReplies: Document[];
+  rules: ChannelRules;
+  now: Date;
+}): LinkedInNeed {
+  const { instance, person, actions, openReplies, rules, now } = input;
+  const li = (person.linkedin ?? {}) as { connectedAt?: Date; inviteExpiredAt?: Date };
+  const mine = (instance.linkedin ?? {}) as { pick?: string };
+  const waitingSend = actions.some((a) => ["queued", "awaiting_approval", "sending"].includes(String(a.status)));
+
+  if (openReplies[0]) return { kind: "answer", eventId: String(openReplies[0]._id) };
+  if (!mine.pick) {
+    return actions.some((a) => a.status === "sent") ? { kind: "wait", why: "invited before Claude picked" } : { kind: "pick" };
+  }
+  if (mine.pick === "skip") return { kind: "end", why: "Claude chose not to invite them" };
+  if (li.inviteExpiredAt && !li.connectedAt) return { kind: "end", why: "the invite was not accepted" };
+  if (!li.connectedAt) return { kind: "wait", why: "waiting for the invite to be accepted" };
+  if (waitingSend) return { kind: "wait", why: "a message is already on its way" };
+
+  const lastReply = person.lastReplyAt ? new Date(String(person.lastReplyAt)) : null;
+  const messages = actions.filter((a) => a.op === "message" && a.status === "sent" && a.angle !== "reply");
+  const unanswered = messages.filter((a) => !lastReply || new Date(String(a.sentAt)) > lastReply);
+
+  // A plan queues its messages the moment it is written, so "a message is on its way" above
+  // is what stops a lead being asked about twice.
+  if (messages.length === 0) return { kind: "plan", reason: "accepted" };
+  if (unanswered.length >= (rules.maxUnanswered ?? 3)) return { kind: "end", why: `${unanswered.length} messages with no answer` };
+
+  const lastSent = new Date(Math.max(...messages.map((a) => new Date(String(a.sentAt)).getTime())));
+  const watchUntil = new Date(lastSent.getTime() + (rules.watchWindowHours ?? 96) * 3_600_000);
+  if (now < watchUntil) return { kind: "wait", why: `giving the last message until ${watchUntil.toISOString()}` };
+  return { kind: "plan", reason: "no_reply" };
+}
+
+/**
+ * Hands routine 6 the leads that need it, one job per lead, a reply first. Leads whose
+ * sequence is over are closed here with the reason, so nobody is left open forever.
+ */
+export async function detectLinkedInWork(orgId: string, productId: string, now = new Date()): Promise<{ asked: number; ended: number }> {
+  const db = await getDb();
+  const goals = (await db.collection(C.goals).find({ orgId, productId, enabled: true }).toArray()).filter(claudePlansLinkedIn);
+  if (goals.length === 0) return { asked: 0, ended: 0 };
+  const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId) });
+  const rules = rulesFor("linkedin", product);
+
+  const instances = await db
+    .collection(C.goalInstances)
+    .find({ orgId, productId, goalKey: { $in: goals.map((g) => String(g.key)) }, status: "active" })
+    .limit(1000)
+    .toArray();
+  if (instances.length === 0) return { asked: 0, ended: 0 };
+  const ids = instances.map((i) => String(i._id));
+  const personIds = instances.map((i) => String(i.personId));
+
+  const [people, actions, replies] = await Promise.all([
+    db.collection(C.people).find({ _id: { $in: personIds.map((id) => new ObjectId(id)) } }).toArray(),
+    db.collection(C.actions).find({ orgId, goalInstanceId: { $in: ids }, channel: "linkedin" }).project({ goalInstanceId: 1, op: 1, status: 1, sentAt: 1, angle: 1 }).toArray(),
+    db.collection(C.events).find({ orgId, productId, personId: { $in: personIds }, type: "reply_received", channel: "linkedin", handled: false }).sort({ ts: 1 }).toArray(),
+  ]);
+  const personById = new Map(people.map((p) => [String(p._id), p]));
+
+  const asks: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
+  let ended = 0;
+  for (const instance of instances) {
+    const person = personById.get(String(instance.personId));
+    if (!person) continue;
+    const need = linkedinNeed({
+      instance,
+      person,
+      actions: actions.filter((a) => String(a.goalInstanceId) === String(instance._id)),
+      openReplies: replies.filter((e) => String(e.personId) === String(instance.personId)),
+      rules,
+      now,
+    });
+    if (need.kind === "end") {
+      await db.collection(C.goalInstances).updateOne(
+        { _id: instance._id, status: "active" },
+        { $set: { status: "failed", outcome: need.why, endedAt: now } },
+      );
+      ended++;
+      continue;
+    }
+    if (need.kind === "wait") continue;
+    asks.push({
+      subjectId: String(instance._id),
+      payload: {
+        goalInstanceId: String(instance._id),
+        personId: String(instance.personId),
+        reason: need.kind === "plan" ? need.reason : need.kind,
+        ...(need.kind === "answer" ? { eventId: need.eventId } : {}),
+      },
+      productId,
+      campaignKey: String(instance.goalKey),
+      priority: need.kind === "answer" ? PRIORITY.urgent : PRIORITY.normal,
+    });
+  }
+  const asked = asks.length ? await enqueueMany(orgId, "linkedin", asks, now) : 0;
+  return { asked, ended };
 }

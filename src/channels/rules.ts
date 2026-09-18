@@ -42,6 +42,17 @@ export interface ChannelRules {
   pollEvery?: { acceptsHours: [number, number]; inboxMinutes: [number, number] };
   /** Rules a session writing for this channel follows, in plain sentences. */
   writing?: string[];
+  /**
+   * What the engine refuses, so the writing rules hold whatever a session does. Characters
+   * per message: the first after an accept, a later one, and an answer to their reply.
+   */
+  targetChars?: { first: [number, number]; later: [number, number]; answer: [number, number] };
+  /** Days before a message: the first after an accept, and each one after that. */
+  gapDays?: { first: [number, number]; later: [number, number] };
+  /** Messages to someone who has not answered, in total. */
+  maxUnanswered?: number;
+  /** Phrases refused in any message, as case-insensitive patterns: the tells of automated outreach. */
+  banned?: string[];
 }
 
 /**
@@ -66,6 +77,21 @@ const LINKEDIN: ChannelRules = {
   withdrawAfterDays: 21,
   acceptRate: { min: 0.25, window: 50, minSample: 20, afterDays: 7 },
   pollEvery: { acceptsHours: [3, 5], inboxMinutes: [20, 40] },
+  targetChars: { first: [120, 220], later: [60, 300], answer: [20, 450] },
+  gapDays: { first: [0, 2], later: [3, 5] },
+  maxUnanswered: 3,
+  banned: [
+    "(came across|saw|looked at|viewed|checked out) your profile",
+    "impressive (background|profile|journey|experience)",
+    "hope (this|my) (message )?finds you",
+    "hope you are (doing )?well",
+    "i wanted to reach out",
+    "quick question",
+    "touch base",
+    "pick your brain",
+    "\\b(you|your team) (clicked|filled|signed up|asked)",
+    "your form",
+  ],
   writing: [
     "A message after an accept is 150 to 200 characters: their situation in one line and one question they can answer in a line.",
     "No link and no pitch in the first message. The ask grows only after they answer.",

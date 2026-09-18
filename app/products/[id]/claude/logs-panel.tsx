@@ -20,6 +20,7 @@ const FILTERS: Array<{ key: string; label: string }> = [
   { key: "react", label: "React" },
   { key: "close", label: "Close" },
   { key: "maintain", label: "Maintain" },
+  { key: "linkedin", label: "LinkedIn" },
   { key: "engine", label: "Engine" },
   { key: "ad-hoc", label: "By hand" },
 ];
@@ -30,6 +31,7 @@ const KIND_LABELS: Record<RunKind, string> = {
   react: "React",
   close: "Close",
   maintain: "Maintain",
+  linkedin: "LinkedIn",
   engine: "Engine",
   "ad-hoc": "By hand",
 };
