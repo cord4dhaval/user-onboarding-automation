@@ -12,6 +12,7 @@ import ClaudeBadge from "../../../ui/claude-badge";
 import AutoRefresh from "../../../ui/auto-refresh";
 import { ActionButton } from "../../../ui/kit";
 import GoalDrawer from "./goal-drawer";
+import { LEAD_TYPES, LEAD_TYPE_PROFILES, leadTypeOf } from "@/engine/rolling.js";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
 
   const templateKeys = [...new Set(templates.map((t) => String(t.key)))];
   const channelKeys = [...new Set(channels.map((c) => String(c.key)))];
+  const leadTypes = LEAD_TYPES.map((t) => ({ value: t, label: LEAD_TYPE_PROFILES[t].label, who: LEAD_TYPE_PROFILES[t].who }));
   // Named by their from address rather than their id: picking a sender is a decision about
   // which address the reader sees, and an ObjectId says nothing about that.
   const mailboxes = channels.map((c) => ({
@@ -151,6 +153,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
           toolChoices={toolChoices}
           audiences={audiences}
           verifiers={verifiers}
+          leadTypes={leadTypes}
           action={createGoal}
         />
       </div>
@@ -197,7 +200,16 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                 return (
                   <tr key={String(goal._id)}>
                     <td>
-                      <strong>{String(goal.name)}</strong>
+                      <strong>{String(goal.name)}</strong>{" "}
+                      {/* Who the campaign is for, on the row, so a campaign paced as a stranger
+                          because nobody said otherwise is visible without opening it. */}
+                      {leadTypeOf(goal) ? (
+                        <span className="pill">{LEAD_TYPE_PROFILES[leadTypeOf(goal)!].label}</span>
+                      ) : (
+                        <span className="pill bad" title="Edit the campaign and choose who these leads are.">
+                          lead type not set
+                        </span>
+                      )}
                       <div className="muted" style={{ fontSize: 12.5 }}>
                         <code>{ft.templateKey}</code> via {ft.channels.join(" → ") || "no channel"}
                       </div>
@@ -333,12 +345,16 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                           toolChoices={toolChoices}
                           audiences={audiences}
                           verifiers={verifiers}
+                          leadTypes={leadTypes}
                           action={updateGoal}
                           label="Edit"
                           existing={{
                             key: String(goal.key),
                             name: String(goal.name),
                             successDescribed: String((goal.success as { describedAs: string }).describedAs),
+                            leadType: leadTypeOf(goal) ?? undefined,
+                            // Without it the box opens empty and saving erases the brief.
+                            brief: goal.brief ? String(goal.brief) : undefined,
                             verifyConnectionId: goal.verifyConnectionId ? String(goal.verifyConnectionId) : undefined,
                             firstTouchTemplate: ft.templateKey,
                             primaryChannel: ft.channels[0] ?? "email",

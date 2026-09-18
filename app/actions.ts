@@ -20,9 +20,11 @@ import {
   recreateIdentity,
   tenantArnFor,
 } from "@/engine/sesIdentity.js";
-import { refreshChannelHealth } from "@/engine/channelHealth.js";
+import { refreshChannelHealth, releaseChannelHolds } from "@/engine/channelHealth.js";
+import { LEAD_TYPES, type LeadType } from "@/engine/rolling.js";
 import { LinkedInClient } from "@/adapters/channel/linkedin/client.js";
 import { SessionError, type LinkedInSession } from "@/adapters/channel/linkedin/session.js";
+import { INVITE_NOTE_MAX_CHARS, MESSAGE_MAX_CHARS, linkedinGovernor } from "@/adapters/channel/linkedin/limits.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import {
   buildGoogleAuthorizeUrl,
@@ -520,12 +522,26 @@ export async function runSourceNow(productId: string, sourceId: string) {
 
 // ── goals ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Who a campaign's leads are. Required on create and on every save: it decides how hard each
+ * message pushes, how long the engine watches before planning again, and which senders may
+ * carry them. A campaign without one was paced as though everyone in it were a stranger.
+ */
+function leadTypeFrom(formData: FormData): LeadType {
+  const value = String(formData.get("leadType") ?? "");
+  if (!(LEAD_TYPES as readonly string[]).includes(value)) {
+    throw new Error("Choose who the leads in this campaign are: hot, warm, cold, re-engage or trial user.");
+  }
+  return value as LeadType;
+}
+
 export async function createGoal(formData: FormData) {
   const db = await getDb();
   const productId = String(formData.get("productId"));
   const name = String(formData.get("name") ?? "").trim();
   const key = slugify(name);
   if (!key) throw new Error("Give the campaign a name.");
+  const leadType = leadTypeFrom(formData);
 
   // An input is genuinely required: without one the campaign never starts at all.
   if (String(formData.get("inputType") ?? "none") === "none") {
@@ -557,6 +573,7 @@ export async function createGoal(formData: FormData) {
         productId,
         key,
         name,
+        leadType,
         brief: String(formData.get("brief") ?? "").trim() || undefined,
         entry: { expression: "lead_created", minIcpFit: Number(formData.get("minIcpFit") ?? 0) },
         success: {
@@ -2433,6 +2450,11 @@ export async function createBolnaChannel(formData: FormData) {
  * Automating a personal LinkedIn account is against LinkedIn's User Agreement and the risk
  * sits with the connected account, so the drawer carries that warning and a consent tick,
  * checked here.
+ *
+ * Connecting an account that is already connected is the reconnect: the fresh session
+ * replaces the stored one on the same connection, the channel comes back, and whatever the
+ * engine held when the old session died is released. A second channel for the same account
+ * would have orphaned every lead assigned to the first.
  */
 export async function createLinkedInChannel(formData: FormData) {
   const db = await getDb();
@@ -2462,6 +2484,33 @@ export async function createLinkedInChannel(formData: FormData) {
     throw new Error(`Could not reach LinkedIn: ${err instanceof Error ? err.message : String(err)}`);
   }
   const memberName = `${me.firstName} ${me.lastName}`.trim() || me.publicIdentifier;
+
+  const existing = await db
+    .collection(C.connections)
+    .findOne({ orgId, productId, provider: "linkedin", "linkedin.providerId": me.providerId });
+  if (existing) {
+    const connectionId = String(existing._id);
+    await db.collection(C.credentials).updateOne(
+      { orgId, connectionId },
+      {
+        $set: { authType: "cookie", ...sealSecret(JSON.stringify(session)), status: "verified" },
+        $unset: { lastError: "", lastErrorAt: "" },
+        $setOnInsert: { _id: new ObjectId(), orgId, connectionId },
+      },
+      { upsert: true },
+    );
+    await db.collection(C.connections).updateOne(
+      { _id: existing._id },
+      { $set: { status: "healthy", "linkedin.memberName": memberName }, $unset: { lastError: "", lastErrorAt: "" } },
+    );
+    const channels = await db.collection(C.channels).find({ orgId, connectionId }).project({ _id: 1 }).toArray();
+    for (const c of channels) {
+      const health = await refreshChannelHealth(orgId, String(c._id));
+      if (health.healthy) await releaseChannelHolds(orgId, String(c._id));
+    }
+    revalidatePath(`/products/${productId}/channels`);
+    return;
+  }
 
   const connectionId = new ObjectId();
   await db.collection(C.connections).insertOne({
@@ -2511,16 +2560,16 @@ export async function createLinkedInChannel(formData: FormData) {
       // Cold lists arrive without an opt-in; the invite itself is the permission ask.
       consentRequired: false,
       fromDomain: "controlled_by_provider",
-      // A LinkedIn note is 300 characters on a paid account, 200 on a free one. The tighter
-      // limit is the safe default until the account's plan is known.
-      maxBodyLength: 200,
+      // A message may run long; an invite note may not. Both are enforced at send, the note
+      // only on the invite (fireDue picks which by the action).
+      maxBodyLength: MESSAGE_MAX_CHARS,
+      maxNoteLength: INVITE_NOTE_MAX_CHARS,
       costPerMsg: 0,
       // An invite is accepted later or never, so a send is queued and reconciled.
       asyncDelivery: true,
     },
-    // LinkedIn's caps are far tighter than email. Conservative starting numbers; the weekly
-    // ceiling and per-op limits (invite vs message vs comment) are tuned in P2.
-    governor: { dailyCap: 25, perMinute: 1, perHour: 6, warmupDay: 1, sentToday: 0, windowStartedAt: new Date() },
+    // LinkedIn's caps are far tighter than email, and differ by action: see linkedin/limits.ts.
+    governor: linkedinGovernor(new Date()),
     policy: { audience: ["cold", "warm_lead", "existing_user"] },
     status: "healthy",
     enabled: true,
@@ -2597,6 +2646,7 @@ export async function updateGoal(formData: FormData) {
   const key = String(formData.get("goalKey"));
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Give the campaign a name.");
+  const leadType = leadTypeFrom(formData);
 
   const allowedChannels = formData.getAll("allowedChannels").map(String).filter(Boolean);
   const channels = [String(formData.get("primaryChannel") ?? "email"), String(formData.get("fallbackChannel") ?? "")]
@@ -2618,6 +2668,7 @@ export async function updateGoal(formData: FormData) {
     {
       $set: {
         name,
+        leadType,
         brief: String(formData.get("brief") ?? existing?.brief ?? "").trim() || undefined,
         success: {
           expression: String(formData.get("successExpression") ?? existing?.success?.expression ?? "account_created"),

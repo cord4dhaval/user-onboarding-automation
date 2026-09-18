@@ -4,6 +4,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { RawRecord, SourceAdapter } from "../adapters/source/types.js";
 import { loadChannels, pickChannelFrom, persistAssignments, persistInstanceMailboxes } from "./channels.js";
+import { leadTypeOf } from "./rolling.js";
 import { HOME_TIMEZONE, nextSendableAt, timezoneFor } from "./time.js";
 import { mailboxFields } from "./mailbox.js";
 import { linkedinSlug } from "./address.js";
@@ -546,7 +547,7 @@ export async function queueFirstTouches(args: {
   // second campaign with a different sender cannot move this conversation later.
   const instanceMailboxes: Array<{ goalInstanceId: string; channelId: string }> = [];
   for (const { person, goalInstanceId } of args.starting) {
-    const pick = pickChannelFrom(channels, goal.firstTouch.channels, person as never);
+    const pick = pickChannelFrom(channels, goal.firstTouch.channels, { ...person, leadType: leadTypeOf(goal as never) } as never);
     if (!pick) continue;
     if (pick.assigned) assignments.push({ personId: String(person._id), channelId: pick.channelId });
     instanceMailboxes.push({ goalInstanceId, channelId: pick.channelId });

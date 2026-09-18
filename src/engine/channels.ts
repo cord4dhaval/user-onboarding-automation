@@ -31,6 +31,32 @@ interface Candidate {
   stage?: string;
   assignedChannelId?: string;
   lastReplyAt?: Date;
+  /** The campaign's lead type, where the caller has the campaign in hand. */
+  leadType?: string | null;
+}
+
+/**
+ * Which of a channel's audiences this person falls in.
+ *
+ * Stage alone could only ever say "existing user" or "cold": every lead is at stage "lead"
+ * until they sign up, so "warm lead" was a value channels could allow and nobody could ever
+ * be. That kept a WhatsApp channel written for opted-in, interested people from reaching
+ * anyone at all. The campaign's lead type is what says someone asked for us: people who
+ * filled in our form, went quiet after asking, or showed interest are warm leads, and a
+ * trial user already uses the product.
+ */
+function audienceOf(person: Candidate): "cold" | "warm_lead" | "existing_user" {
+  if (person.stage && person.stage !== "lead") return "existing_user";
+  switch (person.leadType) {
+    case "trial":
+      return "existing_user";
+    case "hot":
+    case "warm":
+    case "reengage":
+      return "warm_lead";
+    default:
+      return "cold";
+  }
 }
 
 /**
@@ -99,7 +125,7 @@ function eligible(channel: Record<string, unknown>, key: ChannelKey, person: Can
   const caps = channel.capabilities as { consentRequired?: boolean } | undefined;
   if (caps?.consentRequired && person.consent.state !== "opt_in") return false;
 
-  const audience = person.stage && person.stage !== "lead" ? "existing_user" : "cold";
+  const audience = audienceOf(person);
   const policy = channel.policy as { audience?: string[] } | undefined;
   if (policy?.audience && !policy.audience.includes(audience)) return false;
 
@@ -193,6 +219,26 @@ export function pickChannelFrom(
  * already running, and only the second is fixed by switching it back on.
  */
 export function skipReason(person: Candidate, channels: PooledChannel[]): string {
+  // A healthy channel that turned this person away is a different answer from no channel
+  // at all. Both used to read "no healthy channel", which sent people looking at a channel
+  // that was fine instead of at the lead's consent or at who the channel serves.
+  const refusal = channels
+    .filter((c) => c.status === "healthy")
+    .map((c) => {
+      const caps = c.capabilities as { consentRequired?: boolean } | undefined;
+      if (caps?.consentRequired && person.consent.state !== "opt_in") {
+        return `${String(c.key)} needs opt-in consent and this lead has ${person.consent.state}`;
+      }
+      const audience = audienceOf(person);
+      const serves = (c.policy as { audience?: string[] } | undefined)?.audience;
+      if (serves && !serves.includes(audience)) {
+        return `${String(c.key)} serves ${serves.join(", ")} and this lead counts as ${audience}`;
+      }
+      return null;
+    })
+    .find(Boolean);
+  if (refusal) return refusal;
+
   if (!person.assignedChannelId) return "no healthy channel";
   const held = channels.find((c) => String(c._id) === String(person.assignedChannelId));
   if (person.lastReplyAt) {

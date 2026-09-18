@@ -26,6 +26,7 @@ export default function GoalDrawer({
   toolChoices,
   audiences,
   verifiers,
+  leadTypes,
   action,
   existing,
   label,
@@ -38,6 +39,8 @@ export default function GoalDrawer({
   toolChoices: ToolChoice[];
   audiences: AudienceChoice[];
   verifiers: VerifierChoice[];
+  /** Who a campaign's leads can be, with the line that says who belongs in each. */
+  leadTypes: Array<{ value: string; label: string; who: string }>;
   action: (formData: FormData) => void | Promise<void>;
   /** Present when editing. Inputs and checks are left alone — saving a form should not
       re-ingest a spreadsheet or discard a plan Claude has already written. */
@@ -45,6 +48,8 @@ export default function GoalDrawer({
     key: string;
     name: string;
     successDescribed: string;
+    /** Absent on campaigns created before the question was asked; saving then requires it. */
+    leadType?: string;
     brief?: string;
     verifyConnectionId?: string;
     firstTouchTemplate: string;
@@ -65,6 +70,8 @@ export default function GoalDrawer({
   // line is an invitation to pick a sender that could never carry its messages.
   const [channelKey, setChannelKey] = useState(existing?.primaryChannel ?? channelKeys[0] ?? "email");
   const senders = mailboxes.filter((box) => box.key === channelKey);
+  const [leadType, setLeadType] = useState(existing?.leadType ?? "");
+  const chosenType = leadTypes.find((t) => t.value === leadType);
 
   return (
     <>
@@ -96,6 +103,27 @@ export default function GoalDrawer({
           <label>
             Name
             <input name="name" defaultValue={existing?.name} placeholder="New user onboarding" required />
+          </label>
+
+          {/* Asked straight after the name, before anything about channels or templates. Who
+              these people are decides how hard every message pushes, how long the engine
+              watches before planning again and which senders may carry them; a campaign
+              without it was paced as though everyone in it were a stranger. */}
+          <label>
+            Who are these leads
+            <Select
+              name="leadType"
+              value={leadType}
+              onValueChange={setLeadType}
+              placeholder="Choose one"
+              ariaLabel="Who the leads in this campaign are"
+              options={leadTypes.map((t) => ({ value: t.value, label: t.label, hint: t.who }))}
+            />
+            <span className="hint">
+              {chosenType
+                ? chosenType.who
+                : "Required. It sets how hard each message pushes and how long the engine waits between them."}
+            </span>
           </label>
 
           <label>
@@ -224,7 +252,7 @@ export default function GoalDrawer({
             />
           </label>
 
-          <SubmitButton pendingLabel={isEdit ? "Saving…" : "Creating…"}>
+          <SubmitButton pendingLabel={isEdit ? "Saving…" : "Creating…"} disabled={!leadType}>
             {isEdit ? "Save changes" : "Create campaign"}
           </SubmitButton>
         </form>

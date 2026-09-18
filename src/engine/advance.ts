@@ -496,6 +496,7 @@ export async function advance(
     const talker = {
       ...(person as Record<string, unknown>),
       assignedChannelId: instance.channelId ?? person.assignedChannelId,
+      leadType: leadTypeOf(goal),
     };
     const pick =
       pickChannelFrom(channels, allowed.filter((key) => key === String(step.channel)), talker as never) ??
