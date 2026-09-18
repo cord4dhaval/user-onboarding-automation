@@ -33,8 +33,13 @@ export interface ChannelRules {
   watchWindowHours?: number;
   /** An invite nobody accepted in this many days is withdrawn. */
   withdrawAfterDays?: number;
-  /** Below this share of invites accepted (over the last 50), the account is paused. */
-  minAcceptRate?: number;
+  /**
+   * Invites stop when too few are accepted: below `min` of the last `window` invites that
+   * are at least `afterDays` old, once `minSample` of them exist. Messages carry on.
+   */
+  acceptRate?: { min: number; window: number; minSample: number; afterDays: number };
+  /** How often each account is checked for accepts and for new messages, at random within. */
+  pollEvery?: { acceptsHours: [number, number]; inboxMinutes: [number, number] };
   /** Rules a session writing for this channel follows, in plain sentences. */
   writing?: string[];
 }
@@ -59,7 +64,8 @@ const LINKEDIN: ChannelRules = {
   maxLength: { note: 200, message: 8000 },
   watchWindowHours: 96,
   withdrawAfterDays: 21,
-  minAcceptRate: 0.25,
+  acceptRate: { min: 0.25, window: 50, minSample: 20, afterDays: 7 },
+  pollEvery: { acceptsHours: [3, 5], inboxMinutes: [20, 40] },
   writing: [
     "A message after an accept is 150 to 200 characters: their situation in one line and one question they can answer in a line.",
     "No link and no pitch in the first message. The ask grows only after they answer.",

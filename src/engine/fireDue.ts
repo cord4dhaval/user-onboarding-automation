@@ -19,6 +19,7 @@ import { ChannelDownError, RetryableSendError, type ChannelAdapter } from "../ad
 import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, nextSpacedSlot, opLimitsFor, rateBlock, rateHeadroom, spacedUntil } from "./governor.js";
 import { channelDownHold, takeChannelDown } from "./channelHealth.js";
+import { WAITING_FOR_ACCEPT } from "./linkedin.js";
 import { bandFor, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
@@ -704,6 +705,19 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             $set: { lastContactedAt: new Date(), nextVerifyAt: new Date(Date.now() + 60 * 60_000) },
           },
         );
+        // Where the LinkedIn relationship now stands, on the lead: invited, and connected when
+        // LinkedIn said they already were. The accept check fills in the rest.
+        if (op === "invite" && !dryRun) {
+          await db.collection(C.people).updateOne(
+            { _id: person._id },
+            {
+              $set: {
+                "linkedin.invitedAt": new Date(),
+                ...(result.relationship === "connected" ? { "linkedin.connectedAt": new Date() } : {}),
+              },
+            },
+          );
+        }
         // The same spend is recorded against the person, so the cost of pursuing one human
         // across every campaign they have ever been in is answerable.
         await db.collection(C.people).updateOne(
@@ -885,6 +899,20 @@ async function blockedReason(args: {
   if (perOp) {
     const opRate = await rateBlock(args.orgId, channelId, perOp.limits, args.now, perOp.scope);
     if (opRate) return { reason: opRate.reason, retryAt: opRate.retryAt };
+  }
+
+  // Invites stop while too few of them are accepted; the accept check lifts it.
+  const invitesPaused = (governor as { invitesPausedReason?: string } | undefined)?.invitesPausedReason;
+  if (args.op === "invite" && invitesPaused) {
+    return { reason: invitesPaused, retryAt: new Date(args.now.getTime() + 24 * 3_600_000) };
+  }
+  // A LinkedIn message goes to a connection only. Asking LinkedIn to find out costs a call
+  // and an error per retry, so the lead's record decides: expired is a verdict, not yet
+  // connected is a wait that the accept check ends early.
+  if (args.op === "message") {
+    const li = args.person.linkedin as { connectedAt?: Date; inviteExpiredAt?: Date } | undefined;
+    if (li?.inviteExpiredAt && !li.connectedAt) return { reason: "the LinkedIn invite was not accepted" };
+    if (!li?.connectedAt) return { reason: WAITING_FOR_ACCEPT, retryAt: new Date(args.now.getTime() + 6 * 3_600_000) };
   }
 
   // A clock like the rest: the channel drew a random wait after its last send.

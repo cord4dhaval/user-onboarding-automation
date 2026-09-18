@@ -300,6 +300,32 @@ export default async function PersonPage({
       continue;
     }
 
+    // LinkedIn has no inbox signal for an invite: the accept check reads who became a
+    // connection, and gives up on an invite after the channel's limit.
+    if (type === "linkedin_accepted") {
+      past.push({
+        at,
+        mark: "signal",
+        node: <strong className="hit"><UserPlus size={13} /> They accepted the LinkedIn invite</strong>,
+      });
+      continue;
+    }
+    if (type === "linkedin_invite_expired") {
+      past.push({
+        at,
+        mark: "bad",
+        node: (
+          <>
+            <strong><UserPlus size={13} /> The LinkedIn invite was not accepted</strong>
+            <div className="muted t-detail">
+              No answer in {String(payload.days ?? 21)} days, so no LinkedIn messages will follow.
+            </div>
+          </>
+        ),
+      });
+      continue;
+    }
+
     if (type === "unsubscribed") {
       past.push({
         at,

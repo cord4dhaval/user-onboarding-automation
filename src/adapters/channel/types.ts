@@ -80,6 +80,12 @@ export interface SendResult {
    * resolveMessageId. Both paths end at the same stored value.
    */
   messageId?: string;
+  /**
+   * Where the send left the relationship, on channels that have one (LinkedIn). "connected"
+   * means a message can follow straight away; absent means nothing changed that the send
+   * could see.
+   */
+  relationship?: "connected" | "pending";
 }
 
 /**

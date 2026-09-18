@@ -94,7 +94,18 @@ export const person = z.object({
    * Every lookup is a profile view against the sending account's allowance; `slug` says
    * which URL the id belongs to, so a corrected URL is looked up again.
    */
-  linkedin: z.object({ slug: z.string(), providerId: z.string(), checkedAt: z.date() }).optional(),
+  linkedin: z
+    .object({
+      slug: z.string(),
+      providerId: z.string(),
+      checkedAt: z.date(),
+      invitedAt: z.date().optional(),
+      /** When they became a connection: the accept check, or LinkedIn saying they already were. */
+      connectedAt: z.date().optional(),
+      /** Set when the invite waited past the channel's limit unaccepted; their LinkedIn messages stop. */
+      inviteExpiredAt: z.date().optional(),
+    })
+    .optional(),
   primaryEmail: z.string().email().optional(),
   name: z.string().optional(),
   role: z.string().optional(),

@@ -1063,8 +1063,8 @@ towards "automation works"; LinkedIn's own help pages are the only independent s
 | LI3 | Under 20 invites a day, 100 a week | 30 a day | Invite cap 10 rising to 20, 100 a week | done 2026-09-18 |
 | LI4 | Lists of profiles with no email | Rows dropped (keyed on email) | A sheet with a LinkedIn column and no email column is keyed on the profile slug | done 2026-09-18 |
 | LI5 | Every signal says its channel and the touch that drew it | Replies had neither | `channel` and `actionId` on reply events; channel shown on the lead timeline | done 2026-09-18 (email); LinkedIn signals in L1 |
-| LI6 | See accepts and replies | Neither | Accept check against connections and an inbox check, a few times a day at random; reply stops the sequence | todo (L1) |
-| LI7 | Withdraw after 21 days, pause below 25% accepted | Neither | From the rule set | todo (L1) |
+| LI6 | See accepts and replies | Neither | Accept check against the newest connections every 3–5 hours at random; messages wait for it; reply handler built. The inbox read waits on a live capture of the messaging requests | accepts done 2026-09-18; replies todo (L1b) |
+| LI7 | Withdraw after 21 days, pause below 25% accepted | Neither | 21 days unaccepted stops the lead's LinkedIn messages; invites pause below 25% of the last 50 and lift on their own; the withdraw call itself needs a live capture | done 2026-09-18 except the withdraw call |
 | LI8 | Claude plans and writes LinkedIn messages | Email-shaped tools only | Routine 6, `plan_linkedin` and `compose_linkedin` with the rule set's writing rules; email routines untouched | todo (L2) |
 | LI9 | Real comment before the invite, approved by a person | None | Comment step drafted by Claude, held in Review | todo (L3) |
 | LI10 | LinkedIn and email in one sequence | One channel per campaign | One campaign across channels, Claude picks the channel per step from the lead's history | todo (L4) |
@@ -1178,7 +1178,7 @@ towards "automation works"; LinkedIn's own help pages are the only independent s
 | 94 | Layout tests: reply-with-a-number, weekday timeline | PT8 | running since 2026-09-17 |
 | 95 | Plain-looking HTML as a third format (`letter`) | PT9 | done 2026-09-17 |
 | 96 | LinkedIn: blank invites on free accounts, morning window, 20 invites a day, profile-keyed lists, channel on every signal | LI1–LI5 | done 2026-09-18 |
-| 97 | LinkedIn: see accepts and replies; withdraw after 21 days; pause below 25% accepted | LI6, LI7 | todo |
+| 97 | LinkedIn: see accepts and replies; withdraw after 21 days; pause below 25% accepted | LI6, LI7 | accepts, expiry and pause done 2026-09-18; inbox read and withdraw wait on a live capture |
 | 98 | LinkedIn: routine 6 plans and writes per lead from the channel's rule set | LI8 | todo |
 | 99 | LinkedIn: approved comments before invites; founder posts and their engagers | LI9, LI11 | todo |
 | 100 | One campaign across channels; Claude picks the channel per step | LI10 | todo |

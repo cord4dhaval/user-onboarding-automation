@@ -54,8 +54,14 @@ export const INVITATION_SENT = `${BASE}/relationships/sentInvitationViewsV2`;
 export const INVITATION_WITHDRAW = (invitationUrnId: string) =>
   `${BASE}/voyagerRelationshipsDashMemberRelationships/${encodeURIComponent(invitationUrnId)}`;
 
-/** First-degree connections, recent first — used to detect an accepted invite. MED. */
+/**
+ * First-degree connections. CONFIRMED (2026-09-18): the REST path still answers, with a
+ * `Connection` per member carrying `createdAt` (when they connected, epoch ms) and an
+ * `fs_relConnection:<id>` urn whose id is the member id. Newest first with
+ * `sortType=RECENTLY_ADDED`; the accept check reads the first page of that.
+ */
 export const RELATIONS = `${BASE}/relationships/connections`;
+export const RECENT_CONNECTIONS = (count: number) => `${RELATIONS}?count=${count}&start=0&sortType=RECENTLY_ADDED`;
 
 /**
  * Messaging moved to GraphQL around 2023. The query ids below are the thing that rotates

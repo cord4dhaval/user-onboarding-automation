@@ -8,6 +8,7 @@ import { reconcileDispatched } from "@/engine/reconcile.js";
 import { verifyDue } from "@/engine/verify.js";
 import { recomputeTemps } from "@/engine/temp.js";
 import { pollReplies } from "@/engine/inbound.js";
+import { pollLinkedIn } from "@/engine/linkedin.js";
 import { resolveChannelAdapter } from "@/engine/adapters.js";
 import { closeIdleRuns, recordEngineRun } from "@/engine/runlog.js";
 import { checkRoutineHealth } from "@/engine/routines.js";
@@ -153,6 +154,11 @@ export async function GET(request: NextRequest) {
     // someone who wrote "stop" is suppressed here, and anything queued for them in this
     // same tick has already been claimed and will find them suppressed before it sends.
     const replies = await pollReplies(orgId, productId, 40);
+    // LinkedIn pushes nothing, so accepts and expired invites are read on each account's own
+    // random clock. A failure here is one account's problem and must not cost the tick.
+    const linkedin = await pollLinkedIn(orgId, productId, now).catch((err) => ({
+      accounts: 0, checked: 0, accepted: 0, expired: 0, invitesPaused: 0, errors: [String(err)],
+    }));
 
     // Everything above reacts to what already exists. These four decide what happens next,
     // and all four are deterministic: turn plans into messages, notice what needs a
@@ -192,11 +198,14 @@ export async function GET(request: NextRequest) {
       advanced.handedToClaude ||
       late.overdue ||
       replies.recorded ||
+      linkedin.accepted ||
+      linkedin.expired ||
+      linkedin.invitesPaused ||
       // A tick that found only a dead address still did something worth a row: it is the
       // reason a campaign stopped, and a run log that omits it makes that look unexplained.
       replies.bounced
     ) {
-      const work = { product: String(product.name), sent, reconciled, verified, temps, replies, advanced, detected, late };
+      const work = { product: String(product.name), sent, reconciled, verified, temps, replies, linkedin, advanced, detected, late };
       report.push(work);
       // Only ticks that did something are kept. A row a minute, mostly empty, would bury
       // the ones worth reading under 1,400 that say nothing.

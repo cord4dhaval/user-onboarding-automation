@@ -283,7 +283,8 @@ so results can be compared across channels later.
 | Phase | What | Status |
 |---|---|---|
 | L0 | Rule set; blank invites on a free account (the connected one is free); 07:00–11:00 in the lead's zone; invites 10 rising to 20 a day, 100 a week; profile-keyed lists; LinkedIn templates in the editor; channel on reply events and the timeline | done 2026-09-18 |
-| L1 | Accept check and inbox check (the conversation and message query ids must be copied from a live session); reply stops the sequence; withdraw after 21 days; pause below 25% accepted | todo |
+| L1 | Accept check (connections list, confirmed live 2026-09-18), messages wait for the accept without calling LinkedIn, invite result tells pending from already connected, 21-day expiry stops a lead's messages, invites pause below 25% accepted, reply handler (history, stop, owner told, "stop" honoured) | done 2026-09-18 |
+| L1b | Inbox check feeding the reply handler, and withdrawing expired invites on LinkedIn: both need the messaging and sent-invitation requests copied from a live session | todo |
 | L2 | Routine 6: `plan_linkedin`, `compose_linkedin`, LinkedIn block on `lead_card`, 96-hour watch window | todo |
 | L3 | Profile and recent posts on the lead; approved comments before invites; email fallback; more accounts; content routine | todo |
 | L4 | One campaign across channels; the planner picks the channel per step | todo |

@@ -130,7 +130,10 @@ export class LinkedInClient {
    * `customMessage`, capped at 300 characters (LinkedIn rejects longer; free accounts are
    * held to 200 — the channel's maxBodyLength enforces the tighter one upstream).
    */
-  async sendInvite(providerId: string, note?: string): Promise<{ invitationUrn: string; already: boolean }> {
+  async sendInvite(
+    providerId: string,
+    note?: string,
+  ): Promise<{ invitationUrn: string; already: boolean; connected?: boolean }> {
     const body: Record<string, unknown> = {
       invitee: { inviteeUnion: { memberProfile: fsdProfileUrn(providerId) } },
     };
@@ -152,9 +155,10 @@ export class LinkedInClient {
       if (/CONNECTION_LIMIT|FUSE_LIMIT|WEEKLY_LIMIT/.test(code + text)) {
         throw new RetryableSendError("LinkedIn's invitation limit for this account is reached", 24 * 3600);
       }
-      if (/CANT_RESEND_YET|ALREADY_INVITED|ALREADY_CONNECTED/.test(code + text)) {
-        return { invitationUrn: "", already: true };
-      }
+      // Already connected is a different answer from already invited: the first can be
+      // messaged now, the second is still waiting on them.
+      if (/ALREADY_CONNECTED/.test(code + text)) return { invitationUrn: "", already: true, connected: true };
+      if (/CANT_RESEND_YET|ALREADY_INVITED/.test(code + text)) return { invitationUrn: "", already: true };
       throw new Error(`LinkedIn invite answered HTTP ${res.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
     }
     // The created invitation's urn, best-effort: the decorated response carries it, but the
@@ -168,9 +172,31 @@ export class LinkedInClient {
     throw new Error("withdrawInvite: confirm against a live session before enabling");
   }
 
-  /** First-degree connections, recent first — poll this to detect an accepted invite. MED. */
-  async relations(_start = 0, _count = 40): Promise<Array<{ providerId: string; connectedAt?: number }>> {
-    throw new Error("relations: confirm RELATIONS shape against a live session before enabling");
+  /**
+   * The account's newest first-degree connections: who, and when they connected. The accept
+   * check matches these against the leads it invited.
+   *
+   * Only the member id and the time are read. The response also carries names, emails and
+   * phone numbers of every connection, and none of that is ours to keep.
+   */
+  async recentConnections(count = 40): Promise<Array<{ memberId: string; connectedAt: Date }>> {
+    const res = await voyagerFetch(this.session, E.RECENT_CONNECTIONS(count));
+    const body = await voyagerJson<{ included?: Array<{ $type?: string; entityUrn?: string; createdAt?: number }> }>(
+      res,
+      "connections",
+    );
+    return (body.included ?? [])
+      .filter((x) => String(x.$type ?? "").endsWith(".Connection") && x.entityUrn && typeof x.createdAt === "number")
+      .map((x) => ({ memberId: memberIdOf(String(x.entityUrn)), connectedAt: new Date(Number(x.createdAt)) }));
+  }
+
+  /**
+   * New messages in the account's inbox. Not wired yet: messaging reads only through
+   * GraphQL query ids that must be copied from a live session (QUERY_IDS in endpoints.ts),
+   * and until they are, this says so rather than guessing.
+   */
+  async inbox(): Promise<never> {
+    throw new NotConfiguredError("reading LinkedIn messages needs the messaging query ids from a live session");
   }
 
   /**
@@ -244,8 +270,20 @@ export class LinkedInClient {
  * fsd_profile form.
  */
 export function fsdProfileUrn(providerId: string): string {
-  const id = providerId.includes(":") ? providerId.slice(providerId.lastIndexOf(":") + 1) : providerId;
-  return `urn:li:fsd_profile:${id}`;
+  return `urn:li:fsd_profile:${memberIdOf(providerId)}`;
+}
+
+/** The opaque member id (`ACoAA…`) inside any of LinkedIn's urns for one member, or the id itself. */
+export function memberIdOf(urnOrId: string): string {
+  return urnOrId.includes(":") ? urnOrId.slice(urnOrId.lastIndexOf(":") + 1) : urnOrId;
+}
+
+/** A capability whose LinkedIn endpoint has not been captured from a live session yet. */
+export class NotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NotConfiguredError";
+  }
 }
 
 interface MiniProfile {
