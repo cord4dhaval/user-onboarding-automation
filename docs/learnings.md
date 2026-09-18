@@ -1016,6 +1016,62 @@ Not verified as common usage: "sir, update?", "EOD report", "Monday review", "ch
 
 ---
 
+## 2026-09-18 — Research: what works on LinkedIn for B2B outreach (web; Reddit second-hand)
+
+Asked while planning the LinkedIn channel: what actually works for a B2B SaaS on LinkedIn in 2025–2026, and what gets
+an account restricted. Reddit blocked every tool, so its views here come through blogs that quote it and through Indie
+Hackers posts. Most numbers are vendor-reported (Expandi, Belkins, SmartReach, Waalaxy, La Growth Machine) and lean
+towards "automation works"; LinkedIn's own help pages are the only independent source on limits.
+
+### What the evidence says
+
+- A free account can add a note to only 3 invites a month (LinkedIn help). Blank invites are accepted slightly more
+  often (27.6% vs 25.3%, Belkins, 15M touches) but a note lifts replies after the accept (8.2% vs 5.3%).
+- A note naming a real tie is accepted far more: "thanks for the follow" 81% against a 30% baseline (Expandi); one
+  founder saw 61% citing the person's post against 18% for "I'd love to connect".
+- The first message after an accept does best at 151–200 characters (8.5% replies; 201–300 fell to 5.9%). Three
+  messages beat one (9.8% vs 6.3%) and five or more do worse (5.0%). Gaps of 3–5 days.
+- No pitch and no link in the first message; one soft question. Pitching straight after the accept is the complaint
+  practitioners repeat most.
+- Automated warm-up (profile view, like, follow) adds about 1.5 points. A real comment on the person's post before
+  inviting lifted one founder from 24% to 58% accepted.
+- LinkedIn and email together: about 3× the meetings of LinkedIn alone (SmartReach, 500k invites). Sequence used by
+  lemlist: email day 1 and 4, invite day 7 to non-openers, message the day after an accept, back to email if no accept.
+- Limits: about 100 invites a week and under 20–25 a day (LinkedIn help; hitting it restricts for about a week).
+  Acceptance under about 25% is what gets accounts limited. Mornings (07:00–11:00) in the lead's zone are accepted
+  more (32–37% vs 23% in the evening). Withdraw invites pending over 3 weeks.
+- AI-written invites were accepted 12% less often than human ones; profile compliments, several questions and reused
+  wording read as automated. LinkedIn may hide comments made through automation tools (since August 2025).
+- Posting 2–5 times a week is where reach steps up; people who engaged with a post reply at 15–25% against 5–10% cold.
+- India: about 150M members; buyers check with people they trust, and read WhatsApp before LinkedIn. UK accounting:
+  73% of firms turn work away for lack of staff; Making Tax Digital for Income Tax went live in April 2026.
+
+### What the engine does today (after 2026-09-18)
+
+- Invite, message, comment and reply calls confirmed against a live session; per-action limits rising weekly; random
+  2–9 minute gaps; a dead session holds the queue and turns the channel red; a lead is looked up once.
+- The channel's rules live in `src/channels/rules.ts` (engine defaults) with per-product overrides in
+  `product.config.channelRules`, so a second product needs settings, not code.
+- Not yet: seeing an accept or a reply, Claude planning and writing for LinkedIn, warm-up comments, email fallback.
+
+### Gaps and what to build
+
+| # | Idea | Engine today | Build | Status |
+|---|---|---|---|---|
+| LI1 | Blank invites on a free account | Every invite carried the note | `capabilities.inviteNote` set from the account's plan at connect; blank invites clear the words | done 2026-09-18 |
+| LI2 | Mornings in the lead's zone | No hours on LinkedIn | Channel `policy.quietHours` [11, 7] from the rule set, enforced at send; replies exempt | done 2026-09-18 |
+| LI3 | Under 20 invites a day, 100 a week | 30 a day | Invite cap 10 rising to 20, 100 a week | done 2026-09-18 |
+| LI4 | Lists of profiles with no email | Rows dropped (keyed on email) | A sheet with a LinkedIn column and no email column is keyed on the profile slug | done 2026-09-18 |
+| LI5 | Every signal says its channel and the touch that drew it | Replies had neither | `channel` and `actionId` on reply events; channel shown on the lead timeline | done 2026-09-18 (email); LinkedIn signals in L1 |
+| LI6 | See accepts and replies | Neither | Accept check against connections and an inbox check, a few times a day at random; reply stops the sequence | todo (L1) |
+| LI7 | Withdraw after 21 days, pause below 25% accepted | Neither | From the rule set | todo (L1) |
+| LI8 | Claude plans and writes LinkedIn messages | Email-shaped tools only | Routine 6, `plan_linkedin` and `compose_linkedin` with the rule set's writing rules; email routines untouched | todo (L2) |
+| LI9 | Real comment before the invite, approved by a person | None | Comment step drafted by Claude, held in Review | todo (L3) |
+| LI10 | LinkedIn and email in one sequence | One channel per campaign | One campaign across channels, Claude picks the channel per step from the lead's history | todo (L4) |
+| LI11 | Founder posts, commenters as warm leads | None | Content routine; engagers become a source | todo (L3) |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -1121,3 +1177,8 @@ Not verified as common usage: "sir, update?", "EOD report", "Monday review", "ch
 | 93 | Plain text carries no link; short opt-out sentence and link on the sending domain | PT4, PT5 | done 2026-09-17; link domain on teamgrid.ai needs DNS |
 | 94 | Layout tests: reply-with-a-number, weekday timeline | PT8 | running since 2026-09-17 |
 | 95 | Plain-looking HTML as a third format (`letter`) | PT9 | done 2026-09-17 |
+| 96 | LinkedIn: blank invites on free accounts, morning window, 20 invites a day, profile-keyed lists, channel on every signal | LI1–LI5 | done 2026-09-18 |
+| 97 | LinkedIn: see accepts and replies; withdraw after 21 days; pause below 25% accepted | LI6, LI7 | todo |
+| 98 | LinkedIn: routine 6 plans and writes per lead from the channel's rule set | LI8 | todo |
+| 99 | LinkedIn: approved comments before invites; founder posts and their engagers | LI9, LI11 | todo |
+| 100 | One campaign across channels; Claude picks the channel per step | LI10 | todo |

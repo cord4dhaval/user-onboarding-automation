@@ -66,14 +66,17 @@ export function digitsOnly(value: string): string {
  * Accepts a full URL, a bare `/in/slug`, or an already-bare slug, and tolerates a trailing
  * slash, query string or locale prefix. Returns "" for anything that isn't a personal
  * profile (a company URL, a post link), so those never masquerade as a member.
+ *
+ * Lower-cased: LinkedIn treats "Dhaval-Panchal" and "dhaval-panchal" as one profile, and a
+ * list keyed on the profile must too, or the same person arrives twice.
  */
 export function linkedinSlug(value: string): string {
   const s = value.trim();
   if (!s) return "";
   const m = s.match(/\/in\/([^/?#]+)/i);
-  if (m?.[1]) return decodeURIComponent(m[1]);
+  if (m?.[1]) return decodeURIComponent(m[1]).toLowerCase();
   // A bare token with no slashes or protocol is taken as the slug itself.
-  if (!/[/:]/.test(s)) return s;
+  if (!/[/:]/.test(s)) return s.toLowerCase();
   return "";
 }
 

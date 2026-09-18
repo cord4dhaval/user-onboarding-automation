@@ -13,12 +13,15 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import * as E from "./endpoints.js";
 import { voyagerFetch, voyagerJson, type LinkedInSession } from "./session.js";
+import { RetryableSendError } from "../types.js";
 
 export interface Me {
   providerId: string; // urn:li:fs_miniProfile:ACoAAB... — the person's stable id
   publicIdentifier: string;
   firstName: string;
   lastName: string;
+  /** Premium can add a note to every invite; a free account to three a month. */
+  premium: boolean;
 }
 
 export type Distance = "SELF" | "DISTANCE_1" | "DISTANCE_2" | "DISTANCE_3" | "OUT_OF_NETWORK";
@@ -61,6 +64,7 @@ export class LinkedInClient {
       publicIdentifier: mini.publicIdentifier ?? "",
       firstName: mini.firstName ?? "",
       lastName: mini.lastName ?? "",
+      premium: body.premiumSubscriber === true || body.data?.premiumSubscriber === true,
     };
   }
 
@@ -143,7 +147,12 @@ export class LinkedInClient {
     // wasted. The engine reads `already` to keep the lead moving rather than retrying.
     if (!res.ok) {
       const code = text.match(/"code":"([A-Z_]+)"/)?.[1] ?? "";
-      if (/CANT_RESEND_YET|ALREADY_INVITED|ALREADY_CONNECTED|CONNECTION_LIMIT/.test(code + text)) {
+      // The account's own invite limit is back-pressure, not a done invite: counting it as
+      // sent would mark a whole day's invites spent that never left.
+      if (/CONNECTION_LIMIT|FUSE_LIMIT|WEEKLY_LIMIT/.test(code + text)) {
+        throw new RetryableSendError("LinkedIn's invitation limit for this account is reached", 24 * 3600);
+      }
+      if (/CANT_RESEND_YET|ALREADY_INVITED|ALREADY_CONNECTED/.test(code + text)) {
         return { invitationUrn: "", already: true };
       }
       throw new Error(`LinkedIn invite answered HTTP ${res.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
@@ -250,6 +259,8 @@ interface MiniProfile {
 interface MeBody {
   miniProfile?: MiniProfile;
   included?: MiniProfile[];
+  premiumSubscriber?: boolean;
+  data?: { premiumSubscriber?: boolean };
 }
 
 interface GraphqlProfileNode {

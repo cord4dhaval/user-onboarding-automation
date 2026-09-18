@@ -24,7 +24,8 @@ import { refreshChannelHealth, releaseChannelHolds } from "@/engine/channelHealt
 import { LEAD_TYPES, type LeadType } from "@/engine/rolling.js";
 import { LinkedInClient } from "@/adapters/channel/linkedin/client.js";
 import { SessionError, type LinkedInSession } from "@/adapters/channel/linkedin/session.js";
-import { INVITE_NOTE_MAX_CHARS, MESSAGE_MAX_CHARS, linkedinGovernor } from "@/adapters/channel/linkedin/limits.js";
+import { linkedinCapabilities, linkedinGovernor } from "@/adapters/channel/linkedin/limits.js";
+import { rulesFor } from "@/channels/rules.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import {
   buildGoogleAuthorizeUrl,
@@ -838,6 +839,9 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       // few — the form arrives pre-filled with email and name — so every other column the
       // headers identify, the phone above all, is kept rather than silently dropped.
       fieldMap: rawMap ? { ...guessed, ...fieldMap } : { ...fieldMap, ...guessed },
+      // A list of LinkedIn profiles with no email column is keyed on the profile. Keyed on
+      // email, every row was dropped as having no key.
+      ...(guessed.linkedin && !guessed.email && !rawMap ? { dedupeKey: "linkedin" } : {}),
       uploadedRows: rows.length,
       uploadedFile: file.name,
       // Read by the goals list while the import is still running, so an upload that takes
@@ -2484,6 +2488,8 @@ export async function createLinkedInChannel(formData: FormData) {
     throw new Error(`Could not reach LinkedIn: ${err instanceof Error ? err.message : String(err)}`);
   }
   const memberName = `${me.firstName} ${me.lastName}`.trim() || me.publicIdentifier;
+  // The product's own overrides of the channel's rules (limits, hours, lengths).
+  const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId), orgId });
 
   const existing = await db
     .collection(C.connections)
@@ -2503,6 +2509,11 @@ export async function createLinkedInChannel(formData: FormData) {
       { _id: existing._id },
       { $set: { status: "healthy", "linkedin.memberName": memberName }, $unset: { lastError: "", lastErrorAt: "" } },
     );
+    // The plan can change between connections: an account that went Premium may now write a
+    // note on every invite.
+    await db
+      .collection(C.channels)
+      .updateMany({ orgId, connectionId }, { $set: { "capabilities.inviteNote": linkedinCapabilities(me.premium, product).inviteNote } });
     const channels = await db.collection(C.channels).find({ orgId, connectionId }).project({ _id: 1 }).toArray();
     for (const c of channels) {
       const health = await refreshChannelHealth(orgId, String(c._id));
@@ -2560,17 +2571,17 @@ export async function createLinkedInChannel(formData: FormData) {
       // Cold lists arrive without an opt-in; the invite itself is the permission ask.
       consentRequired: false,
       fromDomain: "controlled_by_provider",
-      // A message may run long; an invite note may not. Both are enforced at send, the note
-      // only on the invite (fireDue picks which by the action).
-      maxBodyLength: MESSAGE_MAX_CHARS,
-      maxNoteLength: INVITE_NOTE_MAX_CHARS,
+      // A message may run long; an invite note may not, and a free account sends invites
+      // without one. Enforced at send, by the action (fireDue).
+      ...linkedinCapabilities(me.premium, product),
       costPerMsg: 0,
       // An invite is accepted later or never, so a send is queued and reconciled.
       asyncDelivery: true,
     },
     // LinkedIn's caps are far tighter than email, and differ by action: see linkedin/limits.ts.
-    governor: linkedinGovernor(new Date()),
-    policy: { audience: ["cold", "warm_lead", "existing_user"] },
+    governor: linkedinGovernor(new Date(), product),
+    // Sent only inside the channel's hours in the lead's own timezone (mornings, on LinkedIn).
+    policy: { audience: ["cold", "warm_lead", "existing_user"], quietHours: rulesFor("linkedin", product).quietHours },
     status: "healthy",
     enabled: true,
   });
@@ -2806,8 +2817,9 @@ export async function createTemplate(formData: FormData) {
         blankBlock("system"),
       ]
     : // A call's template is the brief the agent speaks from. There is no button to press
-      // on a phone call, so there is no call-to-action block to fill.
-      isCall
+      // on a phone call, so there is no call-to-action block to fill. A LinkedIn note or
+      // message is words alone: no button, and no link until they have answered.
+      isCall || channel === "linkedin"
       ? [blankBlock("slot")]
       : [blankBlock("slot"), blankBlock("cta")];
 

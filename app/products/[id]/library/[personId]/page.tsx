@@ -171,7 +171,7 @@ export default async function PersonPage({
               actionId={String(action._id)}
               personName={name}
               personEmail={email}
-              meta={`${String(action.channel)} · sent ${ist(action.sentAt ?? action.dueAt)}`}
+              meta={`${String(action.channel)}${action.op ? ` ${String(action.op)}` : ""} · sent ${ist(action.sentAt ?? action.dueAt)}`}
               from={fromById.get(String(action.channelId))}
               fetchMessage={heldMessage}
             />
@@ -289,7 +289,7 @@ export default async function PersonPage({
         mark: "signal",
         node: (
           <>
-            <strong className="hit"><MessageSquare size={13} /> They replied</strong>
+            <strong className="hit"><MessageSquare size={13} /> They replied{event.channel ? ` · ${String(event.channel)}` : ""}</strong>
             <div className="muted t-detail">{payload.subject ? `Subject: “${String(payload.subject)}”` : "No subject."}</div>
             {/* Their own words, kept whole. A reply summarised into "replied" is the one
                 piece of writing in this system that nobody should have to go and find. */}

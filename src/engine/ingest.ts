@@ -193,7 +193,12 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
   const groups = new Map<string, Record<string, unknown>[]>();
   for (const raw of records) {
     const mapped = mapRecord(raw, source.fieldMap);
-    const value = String(mapped[source.dedupeKey] ?? "").trim().toLowerCase();
+    // A list of LinkedIn profiles is keyed on the profile: the same person's URL is written a
+    // dozen ways (trailing slash, locale prefix, query string), and only the slug is them.
+    const value =
+      source.dedupeKey === "linkedin"
+        ? linkedinSlug(String(mapped.linkedin ?? ""))
+        : String(mapped[source.dedupeKey] ?? "").trim().toLowerCase();
     if (!value) {
       summary.filteredOut++;
       continue;
@@ -304,6 +309,17 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
           },
         });
       }
+      // And an email, on a list keyed on LinkedIn profiles.
+      const addedEmail =
+        source.dedupeKey === "linkedin" ? rows.map((r) => String(r.email ?? "").trim().toLowerCase()).find(Boolean) : "";
+      if (addedEmail) {
+        attachments.push({
+          updateOne: {
+            filter: { _id: found._id, "identities.kind": { $ne: "email" } },
+            update: { $push: { identities: { kind: "email", value: addedEmail, verified: false } }, $set: { primaryEmail: addedEmail } } as never,
+          },
+        });
+      }
       // Same for a LinkedIn profile: a later list can carry the URL an earlier one lacked.
       const linkedin = rows.map(linkedinOf).find(Boolean);
       if (linkedin) {
@@ -322,25 +338,34 @@ export async function ingest(source: SourceDoc, adapter: SourceAdapter): Promise
 
     const mapped = rows[0] ?? {};
     const personId = new ObjectId();
+    // Keyed on a LinkedIn profile, the email is whatever the row carries, if anything.
+    const byLinkedin = source.dedupeKey === "linkedin";
+    const email = byLinkedin ? String(mapped.email ?? "").trim().toLowerCase() : value;
     const person: Document = {
       _id: personId,
       orgId: source.orgId,
       productId: source.productId,
       // The phone travels with the person so a call campaign can reach them. It is not a
       // dedupe key: one office number is often shared by everyone who works there.
-      identities: [
-        { kind: "email", value, verified: false },
-        ...(phoneOf(mapped) ? [{ kind: "phone", value: phoneOf(mapped), verified: false }] : []),
-        ...(linkedinOf(mapped) ? [{ kind: "linkedin", value: linkedinOf(mapped), verified: false }] : []),
-      ],
-      primaryEmail: mapped.email ?? value,
+      identities: byLinkedin
+        ? [
+            { kind: "linkedin", value, verified: false },
+            ...(email ? [{ kind: "email", value: email, verified: false }] : []),
+            ...(phoneOf(mapped) ? [{ kind: "phone", value: phoneOf(mapped), verified: false }] : []),
+          ]
+        : [
+            { kind: "email", value, verified: false },
+            ...(phoneOf(mapped) ? [{ kind: "phone", value: phoneOf(mapped), verified: false }] : []),
+            ...(linkedinOf(mapped) ? [{ kind: "linkedin", value: linkedinOf(mapped), verified: false }] : []),
+          ],
+      ...(byLinkedin ? (email ? { primaryEmail: email } : {}) : { primaryEmail: mapped.email ?? value }),
       name: mapped.name,
       role: mapped.role,
       // A free mailbox has no company in it. mailboxFields leaves companyDomain off rather
       // than naming the mail host as the employer.
-      ...mailboxFields(value, typeof mapped.company_domain === "string" ? mapped.company_domain : undefined),
+      ...mailboxFields(email, typeof mapped.company_domain === "string" ? mapped.company_domain : undefined),
       ...formAnswersOf(mapped),
-      timezone: timezoneFor({ timezone: mapped.timezone, phone: phoneOf(mapped), email: String(mapped.email ?? value) }),
+      timezone: timezoneFor({ timezone: mapped.timezone, phone: phoneOf(mapped), email: byLinkedin ? email : String(mapped.email ?? value) }),
       language: "en",
       stage: "lead",
       consent: {

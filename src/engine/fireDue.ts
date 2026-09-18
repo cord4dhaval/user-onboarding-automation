@@ -24,7 +24,7 @@ import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
 import { effectiveBand, groupFor, leadTypeOf } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
-import { localHour } from "./time.js";
+import { HOME_TIMEZONE, localHour, nextSendableAt } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
 
 export interface FireSummary {
@@ -291,6 +291,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         goalInstance,
         channel,
         op,
+        isReply: String(action.angle) === "reply",
         now,
       });
       if (block) {
@@ -402,8 +403,12 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const priorClaims = await priorClaimsFor(String(action.goalInstanceId));
       const constraints = template.constraints as { maxWords?: number; noClaims?: string[] } | undefined;
       const caps = channel.capabilities as
-        | { maxSubjectLength?: number; maxBodyLength?: number; maxNoteLength?: number; html?: boolean }
+        | { maxSubjectLength?: number; maxBodyLength?: number; maxNoteLength?: number; html?: boolean; inviteNote?: string }
         | undefined;
+      // A LinkedIn invite from an account that cannot add notes goes without one. The words
+      // are cleared rather than kept, so the history shows what the lead actually received.
+      const blankInvite = op === "invite" && caps?.inviteNote === "none";
+      if (blankInvite) content.bodyMd = "";
 
       // The HTML part is frozen with the text, for the same reason: a brand refreshed
       // between approval and send must not change a message a human already signed off.
@@ -451,7 +456,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         if (wrappedText.clicks) trackingApplied = { ...trackingApplied, clicks: true };
       }
 
-      const check = validate(content, {
+      const check = blankInvite ? { ok: true, hardFails: [], softFails: [] } : validate(content, {
         ask: (prior as { ask?: "reply" | "link" } | undefined)?.ask,
         channelKey: String(action.channel),
         maxWords: constraints?.maxWords,
@@ -557,6 +562,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // looked up, and only for this slug, so a corrected URL is looked up again.
       if (op) {
         outbound.op = op;
+        // Empty for a blank invite: the adapter sends it without a note.
         outbound.note = content.bodyMd;
         const known = person.linkedin as { slug?: string; providerId?: string } | undefined;
         if (known?.slug === address && known.providerId) outbound.providerId = known.providerId;
@@ -831,6 +837,7 @@ async function blockedReason(args: {
   channel: Record<string, unknown>;
   /** The LinkedIn action this send will be, which has limits of its own. */
   op?: string;
+  isReply?: boolean;
   now: Date;
 }): Promise<Blocked | null> {
   if (await isSuppressed(args.orgId, [args.address])) return { reason: "on the suppression list" };
@@ -855,6 +862,15 @@ async function blockedReason(args: {
 
   const outsideWindow = windowBlock(args.channel, args.person, args.template, args.now);
   if (outsideWindow) return outsideWindow;
+
+  // A channel with its own sending hours (LinkedIn: mornings) sends only inside them, in
+  // the lead's timezone. An answer to something they wrote is a conversation and does not
+  // wait for the morning.
+  const quiet = (args.channel.policy as { quietHours?: [number, number] } | undefined)?.quietHours;
+  if (quiet && !args.isReply) {
+    const opens = nextSendableAt(args.now, String(args.person.timezone ?? HOME_TIMEZONE), "batch", quiet);
+    if (opens > args.now) return { reason: "outside this channel's sending hours in the lead's timezone", retryAt: opens };
+  }
 
   // Provider limits are enforced here, in code, from what was actually sent.
   const channelId = String(args.channel._id);

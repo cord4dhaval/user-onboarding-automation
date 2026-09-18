@@ -257,3 +257,36 @@ testing.
    sign-off. This conflicts with the current no-names copy rule, which is email-specific.
 4. Comments on leads' public posts carry the owner's name and are public. In or out.
 ```
+
+## 2026-09-18: generic design and the phases now in use
+
+Decided with Dhaval: the channel is built for every product on the engine, TeamGrid is only the product it is tested
+on, and the working email flow is not touched. Channels are tested one campaign each; once all are proven, one campaign
+carries several channels and Claude picks, per lead, what to plan, what to write, when, and on which channel.
+
+### Where each kind of rule lives
+
+```
+1. engine mechanics (code)      fireDue, governor, channelHealth: states, limits, gaps, hours, session health
+2. channel rules (data)         src/channels/rules.ts: LinkedIn defaults (limits, hours, lengths, writing rules)
+3. product settings (data)      product.config.channelRules[channel] overrides 2; ideas, voice, the ask stay product data
+4. per lead (Claude)            what to say to this person now, from 2 and 3
+```
+
+Email is not in the registry and keeps its rules where they are. LinkedIn work runs only where the channel key is
+`linkedin`; Claude's LinkedIn planning and writing will be routine 6 with its own tools, so routines 1–5 and their
+remote-trigger prompts stay as they are. Every touch and every signal carries its channel and the touch that drew it,
+so results can be compared across channels later.
+
+### Phases
+
+| Phase | What | Status |
+|---|---|---|
+| L0 | Rule set; blank invites on a free account (the connected one is free); 07:00–11:00 in the lead's zone; invites 10 rising to 20 a day, 100 a week; profile-keyed lists; LinkedIn templates in the editor; channel on reply events and the timeline | done 2026-09-18 |
+| L1 | Accept check and inbox check (the conversation and message query ids must be copied from a live session); reply stops the sequence; withdraw after 21 days; pause below 25% accepted | todo |
+| L2 | Routine 6: `plan_linkedin`, `compose_linkedin`, LinkedIn block on `lead_card`, 96-hour watch window | todo |
+| L3 | Profile and recent posts on the lead; approved comments before invites; email fallback; more accounts; content routine | todo |
+| L4 | One campaign across channels; the planner picks the channel per step | todo |
+
+Two of the open decisions above are settled: the session is pasted (method A), and inbound is polled rather than
+streamed. Still open: whether LinkedIn messages may speak as the account owner rather than as "the team".

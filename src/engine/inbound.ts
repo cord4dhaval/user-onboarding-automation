@@ -436,11 +436,26 @@ export async function pollReplies(
       const at = message.internalDate ? new Date(Number(message.internalDate)) : new Date();
       const text = newTextOnly(bodyOf(message));
 
+      // The touch this answers: ours in the same thread, else the last email we sent them.
+      // Kept on the event, with its channel, so every signal in the lead's history says which
+      // message on which channel drew it, the same shape on every channel.
+      const answered =
+        (message.threadId
+          ? await db
+              .collection(C.actions)
+              .findOne({ orgId, personId, channel: "email", "thread.id": message.threadId, status: "sent" }, { sort: { sentAt: -1 }, projection: { _id: 1 } })
+          : null) ??
+        (await db
+          .collection(C.actions)
+          .findOne({ orgId, personId, channel: "email", status: "sent", sentAt: { $lte: at } }, { sort: { sentAt: -1 }, projection: { _id: 1 } }));
+
       const recorded = await db.collection(C.events).insertOne({
         orgId,
         productId,
         personId,
         type: "reply_received",
+        channel: "email",
+        ...(answered ? { actionId: String(answered._id) } : {}),
         ts: at,
         handled: false,
         payload: {

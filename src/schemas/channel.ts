@@ -27,6 +27,8 @@ export const channelCapabilities = z.object({
   maxBodyLength: z.number().int().positive().optional(),
   /** A LinkedIn invite note, which is far shorter than a message on the same channel. */
   maxNoteLength: z.number().int().positive().optional(),
+  /** LinkedIn: whether invites carry a note. A free account can add one to three a month. */
+  inviteNote: z.enum(["note", "none"]).optional(),
   /** True where the provider queues and the outcome must be polled afterwards. */
   asyncDelivery: z.boolean().default(false),
 });

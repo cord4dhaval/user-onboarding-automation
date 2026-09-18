@@ -57,6 +57,12 @@ export const productConfig = z.object({
   trialLinkTemplate: z.string().default("https://example.com/start?p={{person_id}}"),
 
   /**
+   * This product's overrides of a channel's rules (src/channels/rules.ts): limits, hours,
+   * lengths, writing rules. Absent means the channel's defaults, which suit most products.
+   */
+  channelRules: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+
+  /**
    * What a session writing a whole message needs and may not invent.
    *
    * `facts` is the truth sheet: what each plan contains, what the product can do, what it

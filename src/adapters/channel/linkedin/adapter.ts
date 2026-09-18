@@ -57,6 +57,7 @@ export class LinkedInChannelAdapter implements ChannelAdapter {
 
       switch (op) {
         case "invite": {
+          // An empty note is deliberate (an account that cannot add notes), not a missing one.
           const { invitationUrn, already } = await this.client.sendInvite(providerId!, message.note ?? message.bodyText);
           // The invite is a completed touch; whether it is accepted is the lead's state, not
           // this send's. `already` means an invite was pending or they are connected — still

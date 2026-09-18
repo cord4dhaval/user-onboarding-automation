@@ -55,6 +55,7 @@ export default function TemplateDrawer({
                 { value: "sms", label: "SMS" },
                 { value: "whatsapp", label: "WhatsApp" },
                 { value: "voice", label: "AI call" },
+                { value: "linkedin", label: "LinkedIn" },
                 { value: "slack", label: "Slack" },
               ]}
             />
@@ -76,6 +77,14 @@ export default function TemplateDrawer({
                 Both are always written; this decides which one the recipient is shown.
               </span>
             </label>
+          )}
+
+          {channel === "linkedin" && (
+            <p className="hint">
+              A connection note or a message, words only. The first one to a lead is the invite: an account
+              without Premium sends it with no note, so the words here are used from the first message after
+              they accept.
+            </p>
           )}
 
           {channel === "whatsapp" && (
