@@ -15,6 +15,7 @@ import { dueAtFor, type CadenceBand } from "../../engine/cadence.js";
 import { suppress } from "../../engine/suppression.js";
 import { addressFor } from "../../engine/address.js";
 import { allowedMailboxIds, mailboxFilter } from "../../engine/channels.js";
+import { MAIN_ONLY } from "../../engine/alongside.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
@@ -454,10 +455,12 @@ export const TOOLS: ToolDef[] = [
         // unplanned ones, so a product whose first two hundred rows were already planned
         // reported "nothing to do" while thousands waited behind them. There was no error
         // and no log line: the backlog was invisible precisely because it was large.
+        // Alongside instances are left out here and below: Claude plans and reviews the lead's
+        // main campaign, and a channel campaign beside it runs its own first touch.
         const needPlan = wants("plan")
           ? await db
               .collection(C.goalInstances)
-              .find({ ...s, status: "active", currentPlanId: { $exists: false } })
+              .find({ ...s, status: "active", currentPlanId: { $exists: false }, ...MAIN_ONLY })
               .sort({ startedAt: 1 })
               .limit(limit)
               .toArray()
@@ -465,7 +468,7 @@ export const TOOLS: ToolDef[] = [
 
         const activeGoals = await db
           .collection(C.goalInstances)
-          .find({ ...s, status: "active" })
+          .find({ ...s, status: "active", ...MAIN_ONLY })
           .sort({ lastReviewedAt: 1, startedAt: 1 })
           .limit(200)
           .toArray();
@@ -688,7 +691,7 @@ export const TOOLS: ToolDef[] = [
       if (!person) throw new Error("person not found");
 
       const [goal, actions, events, product] = await Promise.all([
-        db.collection(C.goalInstances).findOne({ orgId, productId, personId: String(person._id), status: "active" }),
+        db.collection(C.goalInstances).findOne({ orgId, productId, personId: String(person._id), status: "active", ...MAIN_ONLY }),
         db
           .collection(C.actions)
           .find({ orgId, productId, personId: String(person._id) })
@@ -977,7 +980,7 @@ export const TOOLS: ToolDef[] = [
           const instance = await db
             .collection(C.goalInstances)
             .findOne(
-              { orgId: ctx.orgId, productId, personId, status: "active" },
+              { orgId: ctx.orgId, productId, personId, status: "active", ...MAIN_ONLY },
               { projection: { _id: 1, goalKey: 1 } },
             );
           if (instance) {
@@ -2516,7 +2519,7 @@ TOOLS.push({
 
     const instance = await db
       .collection(C.goalInstances)
-      .findOne({ orgId, productId, personId, status: "active" });
+      .findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY });
     if (!instance) return { active_campaign: null, note: "No campaign is running for this person." };
 
     const goal = await db.collection(C.goals).findOne({ orgId, productId, key: instance.goalKey });
@@ -4008,7 +4011,7 @@ async function queueAnswer(
   const instance =
     (lastSend?.goalInstanceId &&
       (await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(lastSend.goalInstanceId)) }))) ||
-    (await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active" }));
+    (await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY }));
   if (!instance) return null;
 
   // Their own thread first. With no send to answer, the campaign's mailboxes decide: an

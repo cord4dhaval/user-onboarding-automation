@@ -5,6 +5,7 @@ import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { detectMovement } from "./detect.js";
 import { accessAssetFor, assetContextFor } from "./assets.js";
 import { mailboxFilter } from "./channels.js";
+import { MAIN_ONLY } from "./alongside.js";
 import { ACCESS_RUNG, resolveTemplateFor } from "./templates.js";
 import { notify } from "./notify.js";
 import { effectiveBand, leadTypeOf } from "./rolling.js";
@@ -158,7 +159,7 @@ export async function recomputeTemps(
 
   const instances = await db
     .collection(C.goalInstances)
-    .find({ orgId, productId, status: "active" }, { projection: { personId: 1, goalKey: 1 } })
+    .find({ orgId, productId, status: "active", ...MAIN_ONLY }, { projection: { personId: 1, goalKey: 1 } })
     .limit(limit * 4)
     .toArray();
   if (instances.length === 0) return summary;
@@ -319,7 +320,7 @@ async function rescheduleFor(
 
   const instance = await db
     .collection(C.goalInstances)
-    .findOne({ orgId, productId, personId, status: "active" }, { projection: { goalKey: 1 } });
+    .findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY }, { projection: { goalKey: 1 } });
   const goal = instance
     ? await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) })
     : null;

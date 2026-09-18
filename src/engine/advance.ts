@@ -492,10 +492,12 @@ export async function advance(
     const channels = channelsByGoal.get(String(goal.key)) ?? [];
     // This campaign's own mailbox for them first, and only then the one they hold from
     // wherever else they have been written to. An instance from before campaigns had their
-    // own sender has none, which is why the person's is still read.
+    // own sender has none, which is why the person's is still read — except alongside, where
+    // the person's mailbox belongs to their main campaign.
+    const alongside = instance.alongside === true;
     const talker = {
       ...(person as Record<string, unknown>),
-      assignedChannelId: instance.channelId ?? person.assignedChannelId,
+      assignedChannelId: alongside ? instance.channelId : instance.channelId ?? person.assignedChannelId,
       leadType: leadTypeOf(goal),
     };
     const pick =
@@ -505,7 +507,7 @@ export async function advance(
       summary.skipped.push({ goalInstanceId, reason: skipReason(talker as never, channels) });
       continue;
     }
-    if (pick.assigned) assignments.push({ personId: String(person._id), channelId: pick.channelId });
+    if (pick.assigned && !alongside) assignments.push({ personId: String(person._id), channelId: pick.channelId });
     if (String(instance.channelId ?? "") !== pick.channelId) {
       instanceMailboxes.push({ goalInstanceId, channelId: pick.channelId });
     }

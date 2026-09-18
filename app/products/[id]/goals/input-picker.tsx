@@ -167,6 +167,25 @@ export default function InputPicker({
         </label>
       )}
 
+      {/* The same question the sources page asks. Without it every input made here arrived
+          as a list, and a channel that needs opt-in (WhatsApp) turned all of them away at
+          the first touch — which is never retried. An audience is people already known,
+          whose consent is kept as it is. */}
+      {type !== "audience" && (
+        <label>
+          Who these leads are
+          <Select
+            name="formLeads"
+            value="no"
+            ariaLabel="Whether every lead from this input filled in our form"
+            options={[
+              { value: "yes", label: "Filled in our form", hint: "opted in: WhatsApp allowed, start warm" },
+              { value: "no", label: "A list or an import", hint: "judged on fit, email only where opt-in is needed" },
+            ]}
+          />
+        </label>
+      )}
+
       {recurring && (
         <label>
           Check for new people

@@ -1,6 +1,7 @@
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { MAIN_ONLY } from "./alongside.js";
 import { calendarSettingsFrom, slotsFor } from "./booking.js";
 import { greetingName } from "./names.js";
 import { tokenFor } from "./tracking.js";
@@ -90,7 +91,7 @@ export async function answerSimpleReply(intent: ReplyIntent, input: SimpleReplyI
   const db = await getDb();
   const { orgId, productId, personId, at } = input;
 
-  const instance = await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active" });
+  const instance = await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY });
   if (!instance) return null;
   const person = await db.collection(C.people).findOne({ _id: new ObjectId(personId) });
   if (!person) return null;

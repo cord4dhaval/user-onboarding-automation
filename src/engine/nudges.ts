@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
+import { MAIN_ONLY } from "./alongside.js";
 
 const HOUR = 3_600_000;
 
@@ -61,7 +62,7 @@ export async function nudgeStartedRegistrations(
     const personId = String(row._id);
     const startedAt = row.at as Date;
 
-    const instance = await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active" });
+    const instance = await db.collection(C.goalInstances).findOne({ orgId, productId, personId, status: "active", ...MAIN_ONLY });
     if (!instance) { skip("no open campaign"); continue; }
     if (instance.handedOverAt) { skip("handed over to a person"); continue; }
 

@@ -575,6 +575,7 @@ export async function createGoal(formData: FormData) {
         key,
         name,
         leadType,
+        alongside: formData.get("alongside") === "yes",
         brief: String(formData.get("brief") ?? "").trim() || undefined,
         entry: { expression: "lead_created", minIcpFit: Number(formData.get("minIcpFit") ?? 0) },
         success: {
@@ -683,6 +684,11 @@ async function saveInput(
   );
 }
 
+/** An object with its keys in order, so two argument sets compare by content alone. */
+function sortedKeys(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 /** Creates whichever input the goal form selected, if any. */
 async function attachInput(formData: FormData, productId: string, goalKey: string): Promise<void> {
   const db = await getDb();
@@ -756,15 +762,44 @@ async function attachInput(formData: FormData, productId: string, goalKey: strin
       }
     }
 
-    await db
-      .collection(C.mcpBindings)
-      .updateOne(
-        { orgId: (await currentOrg()), connectionId },
-        { $set: { "bind.fetch_leads": { tool, args: { ...fixed, cursor: "$cursor" } } } },
-        { upsert: true },
-      );
+    // The binding belongs to the connection, not to this campaign: another campaign's input
+    // reading the same tool calls it with these same arguments. Saving this form with the
+    // box left empty used to rewrite them without the brand, and that campaign's input then
+    // failed on every poll. Empty now means "as already bound"; anything else must agree.
+    const orgId = await currentOrg();
+    const sibling = await db
+      .collection(C.sources)
+      .findOne({ orgId, productId, kind: "mcp_source", connectionId, defaultGoalKey: { $ne: goalKey } });
+    const binding = await db.collection(C.mcpBindings).findOne({ orgId, connectionId });
+    const bound = (binding?.bind as { fetch_leads?: { tool?: string; args?: Record<string, unknown> } } | undefined)?.fetch_leads;
+    const { cursor: _cursor, ...boundFixed } = bound?.args ?? {};
+    if (sibling && bound?.tool) {
+      if (bound.tool !== tool) {
+        throw new Error(`Campaign "${String(sibling.defaultGoalKey)}" already reads leads from this connection through ${bound.tool}. Pick that tool.`);
+      }
+      if (rawArgs && JSON.stringify(sortedKeys(fixed)) !== JSON.stringify(sortedKeys(boundFixed))) {
+        throw new Error(
+          `Campaign "${String(sibling.defaultGoalKey)}" reads this tool with ${JSON.stringify(boundFixed)}. Leave the box empty to use the same, or use those exact arguments.`,
+        );
+      }
+    }
+    if (!(bound?.tool === tool && !rawArgs)) {
+      await db
+        .collection(C.mcpBindings)
+        .updateOne(
+          { orgId, connectionId },
+          { $set: { "bind.fetch_leads": { tool, args: { ...fixed, cursor: "$cursor" } } } },
+          { upsert: true },
+        );
+    }
 
-    await saveInput(productId, goalKey, "mcp_source", { ...base, connectionId });
+    // Rows from the same tool have the same shape, so a map left at the form's default is
+    // the other input's map. It also keeps the two inputs' records of one form fill identical,
+    // which is how a campaign running alongside recognises a lead it has already seen.
+    const untouched = !rawMap || JSON.stringify(fieldMap) === JSON.stringify({ email: "email", name: "name" });
+    const map = sibling && untouched ? (sibling.fieldMap as Record<string, string | string[]>) : fieldMap;
+
+    await saveInput(productId, goalKey, "mcp_source", { ...base, fieldMap: map, connectionId });
     return;
   }
 
@@ -2658,6 +2693,7 @@ export async function updateGoal(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) throw new Error("Give the campaign a name.");
   const leadType = leadTypeFrom(formData);
+  const alongside = formData.get("alongside") === "yes";
 
   const allowedChannels = formData.getAll("allowedChannels").map(String).filter(Boolean);
   const channels = [String(formData.get("primaryChannel") ?? "email"), String(formData.get("fallbackChannel") ?? "")]
@@ -2680,6 +2716,7 @@ export async function updateGoal(formData: FormData) {
       $set: {
         name,
         leadType,
+        alongside,
         brief: String(formData.get("brief") ?? existing?.brief ?? "").trim() || undefined,
         success: {
           expression: String(formData.get("successExpression") ?? existing?.success?.expression ?? "account_created"),
@@ -2703,6 +2740,18 @@ export async function updateGoal(formData: FormData) {
       },
     },
   );
+
+  // The mark lives on each running instance too, because that is what every "which campaign
+  // is this lead in" lookup reads. Changed on the campaign alone, leads already in it would
+  // keep answering the old way.
+  if (alongside !== Boolean(existing?.alongside)) {
+    await db
+      .collection(C.goalInstances)
+      .updateMany(
+        { orgId, productId, goalKey: key, status: "active" },
+        alongside ? { $set: { alongside: true } } : { $unset: { alongside: "" } },
+      );
+  }
 
   revalidatePath(`/products/${productId}/goals`);
 }

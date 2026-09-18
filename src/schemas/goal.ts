@@ -146,6 +146,17 @@ export const goal = z.object({
    * written touch asks for. See LEAD_TYPE_PROFILES in src/engine/rolling.ts.
    */
   leadType: z.enum(["hot", "warm", "cold", "reengage", "trial"]).optional(),
+  /**
+   * Runs beside the lead's main campaign instead of competing with it.
+   *
+   * A person is in one active campaign at a time, because two plans messaging one human is
+   * incoherent. A channel campaign fed by the same source (a WhatsApp intro to the hot
+   * leads an email campaign already holds) is the exception: it carries only its own
+   * channels, so the two never write on the same one. Its instances are marked `alongside`
+   * and everything that asks "which campaign is this lead in" keeps answering with the
+   * main one. See src/engine/alongside.ts.
+   */
+  alongside: z.boolean().optional(),
   enabled: z.boolean().default(true),
 });
 export type Goal = z.infer<typeof goal>;
@@ -179,6 +190,8 @@ export const goalInstance = z.object({
    * campaigns. Absent on instances older than this, which fall back to the person's.
    */
   channelId: objectIdString.optional(),
+  /** Started by a campaign that runs alongside the main one. Never "the" campaign for the lead. */
+  alongside: z.boolean().optional(),
   startedAt: z.date(),
   endedAt: z.date().optional(),
   outcome: z.string().optional(),
