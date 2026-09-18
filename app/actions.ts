@@ -2006,6 +2006,8 @@ export interface HeldMessage {
   brief?: MessageBrief;
   /** The address it goes to on its channel: the phone number on WhatsApp. */
   to?: string;
+  /** What the provider reported after the send: "delivered" or "read" on WhatsApp. */
+  delivery?: string;
   /** What a WhatsApp message is sent as, for the chat preview. */
   whatsapp?: WhatsAppFacts;
 }
@@ -2257,6 +2259,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     skipReason: action.skipReason ? String(action.skipReason) : action.error ? String(action.error) : undefined,
     sentAt: action.sentAt ? new Date(String(action.sentAt)).toISOString() : undefined,
     reviewedAt: action.reviewedAt ? new Date(String(action.reviewedAt)).toISOString() : undefined,
+    delivery: (action.delivery as { status?: string } | undefined)?.status,
     brief: await briefFor(orgId, action),
     ...(String(action.channel) === "email" ? {} : await channelFacts(action, channel)),
   };

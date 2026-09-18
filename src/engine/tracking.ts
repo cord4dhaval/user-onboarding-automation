@@ -45,8 +45,8 @@ export function unb64url(value: string): string {
 }
 
 /**
- * c = click, o = open, u = unsubscribe, e = site event. The kind is signed too, so one
- * cannot stand in for another.
+ * c = click, o = open, u = unsubscribe, e = site event, w = a provider's webhook (the id is
+ * the connection). The kind is signed too, so one cannot stand in for another.
  *
  * `e` is the only one whose id is a person rather than an action, because the caller is the
  * customer's own website reporting that somebody reached a page — there is no message
@@ -54,7 +54,7 @@ export function unb64url(value: string): string {
  * token in a link and passes it on to whichever page confirms the thing, and a token per
  * page would mean a link per page.
  */
-export type TokenKind = "c" | "o" | "u" | "e";
+export type TokenKind = "c" | "o" | "u" | "e" | "w";
 
 /** Signs a link this app will have to trust later, with no session behind it. */
 export function tokenFor(kind: TokenKind, id: string, target = ""): string {

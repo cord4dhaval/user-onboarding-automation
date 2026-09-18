@@ -26,6 +26,12 @@ export interface HttpChannelConfig {
   errorPaths?: string[];
   /** Where a bearer token goes, if not the Authorization header. */
   authHeader?: string;
+  /**
+   * A second call for messages that carry their own words rather than an approved template:
+   * WhatsApp's free text inside the reply window goes to WATI's conversation endpoint, not
+   * to the template one. Anything it leaves out is taken from the main call.
+   */
+  session?: Partial<Omit<HttpChannelConfig, "session" | "authHeader" | "headers">>;
 }
 
 /**
@@ -45,12 +51,14 @@ export class HttpChannelAdapter implements ChannelAdapter {
   }
 
   async send(message: OutboundMessage): Promise<SendResult> {
-    const body = fill(this.config.payloadTemplate, message);
+    // Words, not a template: the free-text call where the channel has one.
+    const route = !message.providerTemplate && this.config.session ? { ...this.config, ...this.config.session } : this.config;
+    const body = fill(route.payloadTemplate, message);
     const header = this.config.authHeader ?? "authorization";
     const value = header.toLowerCase() === "authorization" ? `Bearer ${this.token}` : this.token;
 
-    const res = await fetch(this.config.endpointUrl, {
-      method: this.config.method ?? "POST",
+    const res = await fetch(route.endpointUrl, {
+      method: route.method ?? "POST",
       headers: { "content-type": "application/json", [header]: value, ...(this.config.headers ?? {}) },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
@@ -67,7 +75,7 @@ export class HttpChannelAdapter implements ChannelAdapter {
     } catch {
       // A provider that returns no body still accepted the message, when the status says so.
     }
-    const reason = this.reasonIn(payload);
+    const reason = reasonIn(payload, route.errorPaths);
 
     if (!res.ok) {
       // Error bodies routinely echo the token back, so only the status and the declared
@@ -76,25 +84,33 @@ export class HttpChannelAdapter implements ChannelAdapter {
     }
     // "OK" to the request is not the provider taking the message. WATI answers 200 for a
     // template that is not approved or a number that is not on WhatsApp, and says so inside.
-    const refused = this.config.acceptedPath ? pluck(payload, this.config.acceptedPath) === false : false;
-    if (refused || (this.config.errorPaths?.length && reason)) {
+    const refused = route.acceptedPath ? pluck(payload, route.acceptedPath) === false : false;
+    if (refused || (route.errorPaths?.length && reason)) {
       throw new Error(`provider refused the message${reason ? `: ${reason}` : ""}`);
     }
 
-    const found = this.config.messageIdPath ? pluck(payload, this.config.messageIdPath) : undefined;
+    const found = route.messageIdPath ? pluck(payload, route.messageIdPath) : undefined;
     const id = typeof found === "string" && found ? found : undefined;
     return { accepted: true, providerMessageId: id, disposition: "sent" };
   }
+}
 
-  /** The provider's own reason, from the declared fields only, cut to a readable length. */
-  private reasonIn(payload: unknown): string {
-    for (const path of this.config.errorPaths ?? []) {
-      const value = pluck(payload, path);
-      const text = Array.isArray(value) ? value.filter(Boolean).map(String).join("; ") : value ? String(value) : "";
-      if (text.trim()) return text.trim().slice(0, 300);
-    }
-    return "";
+/**
+ * The provider's own reason, from the declared fields only, cut to a readable length. Only
+ * words count: WATI's "$.message" is the reason on a 400 and the sent message itself on a
+ * 200, and an object there is not a complaint.
+ */
+function reasonIn(payload: unknown, paths: string[] = []): string {
+  for (const path of paths) {
+    const value = pluck(payload, path);
+    const text = Array.isArray(value)
+      ? value.filter((v) => typeof v === "string" && v.trim()).join("; ")
+      : typeof value === "string" || typeof value === "number"
+        ? String(value)
+        : "";
+    if (text.trim()) return text.trim().slice(0, 300);
   }
+  return "";
 }
 
 /** Walks the template, replacing "$content.subject" style leaves with real values. */

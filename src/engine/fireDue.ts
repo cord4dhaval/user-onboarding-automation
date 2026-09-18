@@ -582,7 +582,9 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       };
       outbound.ref = String(action._id);
       const approved = template.providerTemplate as { name: string; params?: Record<string, string> } | undefined;
-      if (approved?.name) {
+      // An answer to their reply goes as its own words, inside the reply window, never as
+      // whichever approved template the channel holds.
+      if (approved?.name && !isReply) {
         const filled = providerParams(approved.params ?? {}, outbound.vars);
         if ("problem" in filled) {
           const reason = `${approved.name}: ${filled.problem}`;
@@ -917,7 +919,7 @@ async function blockedReason(args: {
   }
   if (args.channel.status !== "healthy") return { reason: `channel is ${String(args.channel.status)}` };
 
-  const outsideWindow = windowBlock(args.channel, args.person, args.template, args.now);
+  const outsideWindow = windowBlock(args.channel, args.person, args.template, args.now, args.isReply === true);
   if (outsideWindow) return outsideWindow;
 
   // A channel with its own sending hours (LinkedIn: mornings) sends only inside them, in
@@ -986,16 +988,20 @@ function windowBlock(
   person: Record<string, unknown>,
   template: Record<string, unknown>,
   now: Date,
+  freeText: boolean,
 ): Blocked | null {
   const rules = (channel.capabilities as { windowRules?: string } | undefined)?.windowRules;
   const hours = Number(/^(\d+)h$/.exec(rules ?? "")?.[1] ?? 0);
   if (!hours) return null;
 
   // An approved template is accepted whether the window is open or shut, so nothing below
-  // can block it.
-  if ((template.providerTemplate as { name?: string } | undefined)?.name) return null;
+  // can block it. An answer to their reply is never sent as one — it goes as the words — so
+  // it has to be inside the window whatever template the channel happens to hold.
+  if (!freeText && (template.providerTemplate as { name?: string } | undefined)?.name) return null;
 
-  const lastReply = person.lastReplyAt ? new Date(person.lastReplyAt as Date) : undefined;
+  // The window is this channel's: an email reply does not open WhatsApp's.
+  const replied = (person.repliedOn as Record<string, unknown> | undefined)?.[String(channel.key)];
+  const lastReply = replied ? new Date(replied as Date) : undefined;
   const open = lastReply !== undefined && now.getTime() - lastReply.getTime() < hours * 3_600_000;
   if (open) return null;
 

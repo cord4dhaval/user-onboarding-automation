@@ -577,7 +577,12 @@ function outcomeLine(message: HeldMessage): string {
   const when = (iso?: string) => (iso ? ist(iso) : "");
   switch (message.status) {
     case "sent":
-      return `Sent ${when(message.sentAt)}. This is the message that arrived.`;
+      // What the provider said afterwards, where it says anything: WhatsApp reports both.
+      return message.delivery === "read"
+        ? `Sent ${when(message.sentAt)}, and read. This is the message that arrived.`
+        : message.delivery === "delivered"
+          ? `Sent ${when(message.sentAt)}, and delivered. This is the message that arrived.`
+          : `Sent ${when(message.sentAt)}. This is the message that arrived.`;
     case "dispatched":
       return "Handed to the provider — waiting on delivery confirmation.";
     case "sending":

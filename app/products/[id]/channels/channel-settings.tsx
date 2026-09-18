@@ -32,6 +32,8 @@ export interface ChannelSettings {
   audience: string[];
   /** People currently bound to it, so switching it off is a decision with a size. */
   assignedLeads: number;
+  /** Where the provider reports replies and delivery back, for a provider that pushes them. */
+  webhookUrl?: string;
 }
 
 const AUDIENCES = [
@@ -76,6 +78,19 @@ export default function ChannelSettingsDrawer({
         width={600}
       >
         <div className="stack">
+          {channel.webhookUrl ? (
+            <label>
+              Replies and delivery
+              <input readOnly value={channel.webhookUrl} onFocus={(event) => event.currentTarget.select()} />
+              <span className="muted">
+                Paste this into WATI under Integrations, then Webhooks, and tick Message received, Template
+                message sent, Template message failed, Sent message delivered and Sent message read. Replies,
+                button taps and STOP then reach the engine, and each message shows whether it was
+                delivered or read. Keep it private: anyone with it can post replies for your leads.
+              </span>
+            </label>
+          ) : null}
+
           <div className="usage">
             {usage.length === 0 ? (
               <p className="muted">No limit set, so nothing is being counted.</p>

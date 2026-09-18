@@ -19,6 +19,8 @@ import {
   updateChannel,
 } from "../../../actions";
 import { grantedCapabilities } from "@/auth/google.js";
+import { tokenFor } from "@/engine/tracking.js";
+import { appOrigin } from "@/engine/vars.js";
 import ReconnectGoogle from "./reconnect-google";
 import SesRecords from "./ses-records";
 import { requireSession, scope } from "../../../tenant";
@@ -303,6 +305,12 @@ export default async function Channels({
                 sendTool: send ? `${String(c.connectionId)}::${send.tool}` : undefined,
                 sendArgs: send?.args,
                 returnMessageId: send?.returns?.message_id,
+                // Where WATI reports replies and delivery. Signed per connection, because
+                // WATI cannot sign its own calls and a STOP posted here is permanent.
+                webhookUrl:
+                  connection?.provider === "wati" && appOrigin()
+                    ? `${appOrigin()}/api/webhooks/wati/${String(connection._id)}/${tokenFor("w", String(connection._id))}`
+                    : undefined,
               }}
               usage={usage}
               toolChoices={toolChoices}
