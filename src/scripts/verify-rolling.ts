@@ -287,6 +287,10 @@ console.log("idea bank");
   const productWithInvented = { config: { writing: { ideas: bank, invented: [{ n: 1001, title: "Invented", hook: "office_habit", proof: "x", status: "trial", source: "claude" }, { n: 1002, title: "Gone", hook: "office_habit", proof: "x", status: "retired", source: "claude" }] } } };
   check("invented ideas stay out when the loop is off", !ideasFor(productWithInvented, false).some((i) => i.n >= 1001));
   check("the loop adds invented ideas still in play", ideasFor(productWithInvented, true).some((i) => i.n === 1001) && !ideasFor(productWithInvented, true).some((i) => i.n === 1002));
+  const { IDEAS_ARE_TEACHING } = await import("../engine/rolling");
+  check("hot and warm rules teach the bank as patterns, not a menu", [LEAD_TYPE_PROFILES.hot, LEAD_TYPE_PROFILES.warm].every((p) => p.rules.some((r) => r.includes(IDEAS_ARE_TEACHING))));
+  const shaped = rankIdeas([...bank, { n: 41, title: "Chat open all day", hook: "office_habit", proof: "app time", also: ["Customer chats on WhatsApp Web from 10 to 7"] }], { text: "our team answers customers on whatsapp all day" }, new Map(), new Set());
+  check("an idea's other shapes count when matching a lead", shaped[0]?.n === 41);
   check("invented ideas are numbered from 1001", nextInventedN([]) === 1001 && nextInventedN([{ n: 1004 } as never]) === 1005);
   const withCard = renderLetter(
     resolveBlocks(frame as never, mv, {

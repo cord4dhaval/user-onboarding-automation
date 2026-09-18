@@ -308,6 +308,19 @@ export interface LeadTypeProfile {
 }
 
 /**
+ * How Claude is told to use the idea bank. Dhaval, 2026-09-18: the ideas are there for Claude
+ * to learn from, not examples to copy; "this can also be this or that". Each idea carries its
+ * pattern (why it lands) and other shapes of the same moment, and the planner writes the shape
+ * that fits the lead in front of it. The capability behind it never changes.
+ */
+export const IDEAS_ARE_TEACHING =
+  "The idea bank teaches you what lands with Indian founders; it is not a menu, and not copy to retell. " +
+  "Each idea shows a pattern (why it works), the proof (what TeamGrid really does about it) and also: other shapes the same pattern can take. " +
+  "Learn the pattern, then write the moment that fits this lead: the idea as told, one of its other shapes, or a new shape you find in their business and their week. " +
+  "The 8pm status calls (#7) could just as well be the Saturday WhatsApp round-up, the 7pm sheet every team fills, or something only their office does. " +
+  "The shape can change; the proof cannot: say only what the idea's proof says TeamGrid does. idea_refs names the ideas you learned from.";
+
+/**
  * The "no way, it can do that?" email, shared by every type that writes to people who once
  * asked about the product. Hot leads get it at hot pace with two emails planned; warm leads
  * (Dhaval, 2026-09-18: the July–August form leads showed interest once, so they are followed
@@ -326,7 +339,7 @@ const NO_WAY_SEQUENCE: Array<{ hook: string; job: string }> = [
 const NO_WAY_RULES: string[] = [
   "Five small blocks, a blank line between each: 1 their moment, a line from their own day (opening, then scene); 2 the hidden truth, what it costs or hides (scene, or one cost line for money); 3 the no-way part in reveal: what TeamGrid already knows or does, said plainly and true; 4 the safety line in limit: no screenshots, nothing people type is recorded; 5 question: one short closing line. Then the button.",
   "60 to 110 words. Short lines, one thing per line. If it needs more words, add a line; never make a line longer. The reader must understand it in one quick read.",
-  "Start from the idea, then the hook: plan from writing.ideas (best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got), and use the idea's hook and proof. Every plan step names idea_refs. Two leads should rarely get the same idea. Their business can colour a line or two; the email stays simple enough for any founder.",
+  `Start from the idea bank, then the hook. ${IDEAS_ARE_TEACHING} best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got. Two leads should rarely get the same shape of an idea. The email stays simple enough for any founder.`,
   "Show, do not describe. When the reveal is about the 6pm summary, time per app or the hours of a day, add receipt: a small sample card right after it, titled as a sample (\"A sample 6pm summary:\", \"A sample day's apps:\", \"A sample day:\"), 2 to 4 lines using only the figures in writing.facts.samples. The nouns may fit their business (\"dealer order lines\"); the figures stay as the sample shows them. The idea's card tag says which card fits.",
   "Humor is an add-on, not a style. Use one light line only where it fits this lead and this idea naturally (the quick call that took 47 minutes, MIS_final_FINAL_v3.xlsx, the punch machine). Most emails have none. Joke about habits, never about people.",
   "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, appraisal, resignation, CTC, ₹ and lakh. Simple English, respectful to the team.",

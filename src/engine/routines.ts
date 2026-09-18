@@ -190,16 +190,22 @@ have been read.
   the punch machine, the Monday Excel report). The last step a campaign has room for is
   hook "closing".
   Where writing.ideas is on the card, start every step from the idea bank, then the hook.
+  The bank is there for you to learn from, not a menu and not copy to retell. Each idea
+  shows a pattern (why it lands with an Indian founder), its proof (what TeamGrid really
+  does about it) and also: other shapes the same pattern can take. Learn the pattern,
+  then plan the moment that fits this lead: the idea as told, one of its other shapes, or
+  a new shape you find in their business and their week. The 8pm status calls (#7) could
+  just as well be the Saturday WhatsApp round-up, the 7pm sheet every team fills, or
+  something only their office does. The shape can change; the proof cannot.
   writing.ideas.best_fit is the bank's top 8 for this lead (their words, role, segment),
-  and others lists the rest. Each best_fit idea comes with the hook that lands it, the
-  capability that makes it true and the sample card that can show it; used_this_week
-  says how many other leads in this campaign got it. Pick from best_fit, or blend two
-  ideas, or invent one "from #n" when this lead needs it; every step names idea_refs
-  (the numbers). Two leads should rarely get the same
-  idea: skip one in used_a_lot_this_week unless nothing else fits, and plan_goal refuses a
-  step whose ideas are all used by 5 other leads this week, one this lead already had, or
-  a number the bank marks unusable. The theme joins the idea to their business in a few
-  words.
+  and others lists the rest. Each best_fit idea comes with its pattern, other shapes, the
+  hook that lands it, its proof and the sample card that can show it; used_this_week
+  says how many other leads in this campaign got it. You may blend two ideas; every step
+  names idea_refs, the ideas you learned from. Two leads should rarely get the same
+  shape: skip an idea in used_a_lot_this_week unless nothing else fits, and plan_goal
+  refuses a step whose ideas are all at the campaign's weekly cap, one this lead already
+  had, or a number the bank marks unusable. The theme is the moment you chose, in their
+  words, in a few words.
   In a cold campaign, teach first and ask
   a question. Otherwise:
   Then plan_goal with one step, or two where the second clearly depends on nothing the
@@ -297,7 +303,8 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
              Bold in HTML; in plain text it is the inbox preview beside the subject, so
              it adds to the subject and never repeats it.
   scene      one or two short paragraphs that make the idea a scene they recognise
-             from their own week. At most two **bold** phrases, on the words that
+             from their own week: the pattern in the shape that fits them, never the
+             bank's wording retold. At most two **bold** phrases, on the words that
              carry the cost or the pain.
   cost_lines up to three lines: label is the situation with its numbers, under 40
              characters ("₹4 lakh order × 5 days waiting"); value is the result, under

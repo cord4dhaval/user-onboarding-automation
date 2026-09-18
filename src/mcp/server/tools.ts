@@ -4926,13 +4926,15 @@ TOOLS.push({
 TOOLS.push({
   name: "propose_idea",
   description:
-    "Add a new idea to the product's idea bank when nothing on lead_card writing.ideas fits the lead in front of you. The idea is a scene from an Indian office week that TeamGrid makes visible. proof must be copied word for word from one writing.facts.canDo entry: that is what makes it true. It starts as a trial: plan_goal lets it reach 5 leads, then their results move it to active (ranked like the bank) or retire it. Refused: a title another idea already has, a proof that is not in canDo, testimonial or verdict words, and more than 10 trial ideas open at once. Returns the idea's number for plan_goal idea_refs. Development only for now.",
+    "Add a new idea to the product's idea bank when no pattern on lead_card writing.ideas fits the lead in front of you (a new shape of an existing pattern needs no new idea: plan it from that idea). The idea is a scene from an Indian office week that TeamGrid makes visible, with its pattern (why it lands) and other shapes it can take, so the next planner learns from it. proof must be copied word for word from one writing.facts.canDo entry: that is what makes it true. It starts as a trial: plan_goal lets it reach 5 leads, then their results move it to active (ranked like the bank) or retire it. Refused: a title another idea already has, a proof that is not in canDo, testimonial or verdict words, and more than 10 trial ideas open at once. Returns the idea's number for plan_goal idea_refs. Development only for now.",
   inputSchema: {
     type: "object",
     properties: {
       product_id: { type: "string" },
       title: { type: "string", description: "The scene in a few words, the way a founder would say it: \"The dispatch that waited for one signature\"." },
       detail: { type: "string", description: "One sentence: who lives this and what it costs or hides." },
+      pattern: { type: "string", description: "Why it lands, in one sentence, so the next planner can learn it and find other shapes of it." },
+      also: { type: "array", items: { type: "string" }, description: "2 or 3 other shapes the same pattern can take, in other businesses or moments." },
       hook: { type: "string", enum: ["daily_question", "hidden_bill", "office_habit", "just_ask", "found_out_late", "no_watching", "closing"] },
       proof: { type: "string", description: "One writing.facts.canDo text, word for word." },
       card: { type: "string", enum: ["summary", "apps", "day", "none"], description: "The sample card that can show it, or none." },
@@ -4942,7 +4944,7 @@ TOOLS.push({
       reason: { type: "string", description: "Why no bank idea fitted, in one sentence." },
       goal_instance_id: { type: "string", description: "The lead it was written for." },
     },
-    required: ["product_id", "title", "detail", "hook", "proof", "card", "reason"],
+    required: ["product_id", "title", "detail", "pattern", "hook", "proof", "card", "reason"],
   },
   async handler(args, ctx) {
     if (!ideasLoopOn()) {
@@ -4957,11 +4959,14 @@ TOOLS.push({
     const title = String(args.title ?? "").trim();
     const detail = String(args.detail ?? "").trim();
     const reason = String(args.reason ?? "").trim();
+    const pattern = String(args.pattern ?? "").trim();
+    const also = (Array.isArray(args.also) ? args.also : []).map((v) => String(v).trim()).filter(Boolean).slice(0, 4);
     const hook = String(args.hook ?? "").trim();
     const card = String(args.card ?? "none").trim() as "summary" | "apps" | "day" | "none";
     if (title.length < 8 || title.length > 90) throw new Error(`title is ${title.length} characters; write the scene in 8 to 90. Nothing was written.`);
     if (!detail || detail.length > 240) throw new Error("detail is one sentence, under 240 characters. Nothing was written.");
     if (!reason) throw new Error("Say in reason why no bank idea fitted. Nothing was written.");
+    if (!pattern || pattern.length > 240) throw new Error("pattern is one sentence under 240 characters: why this lands, so the next planner can learn it. Nothing was written.");
     const hooks = (LEAD_TYPE_PROFILES.hot.sequence ?? []).map((s) => s.hook);
     if (!hooks.includes(hook)) throw new Error(`hook must be one of ${hooks.join(", ")}. Nothing was written.`);
     if (!["summary", "apps", "day", "none"].includes(card)) throw new Error("card must be summary, apps, day or none. Nothing was written.");
@@ -4971,7 +4976,8 @@ TOOLS.push({
     if (!fact) {
       throw new Error("proof must be one writing.facts.canDo text, copied word for word, so the idea claims only what the product does. Nothing was written.");
     }
-    const loud = [...unprovenClaims(`${title}\n${detail}`), ...screenWords(`${title}\n${detail}`)];
+    const said = [title, detail, pattern, ...also].join("\n");
+    const loud = [...unprovenClaims(said), ...screenWords(said)];
     if (loud.length) throw new Error(`"${loud[0]}" cannot go in an idea: no customer results, verdict words or screen words. Nothing was written.`);
 
     const bank = ideasOf(product);
@@ -4999,6 +5005,8 @@ TOOLS.push({
         n,
         title,
         detail,
+        pattern,
+        ...(also.length ? { also } : {}),
         hook,
         proof: String(fact.text),
         plan: fact.plan ?? "Standard",

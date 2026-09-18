@@ -3,7 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
 import { TRIAL_LEADS, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, rankIdeas } from "./ideas.js";
-import { FRAME_BODY_MAX_WORDS, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
+import { FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -30,7 +30,7 @@ export interface WritingBrief {
   examples_note: string;
   ideas: {
     note: string;
-    best_fit: Array<{ n: number; title: string; detail?: string; hook: string; proof: string; plan?: string; card?: string; used_this_week: number; record?: string; source?: string; status?: string }>;
+    best_fit: Array<{ n: number; title: string; detail?: string; pattern?: string; also?: string[]; hook: string; proof: string; plan?: string; card?: string; used_this_week: number; record?: string; source?: string; status?: string }>;
     others: string[];
     used_a_lot_this_week: number[];
     already_had: number[];
@@ -135,10 +135,10 @@ export async function writingBriefFor(input: {
     const fresh = ranked.filter((i) => !i.already_had);
     ideas = {
       note: loop
-        ? "Plan from these. best_fit is ranked for this lead from their words and segment, from what each idea has earned (record: sends, clicks and replies, from leads like this one once there are a few), with ideas the campaign leaned on this week pushed down and untested ones given a small push. Your own reading of the lead matters more than the rank. Every plan step names idea_refs. You may blend two ideas. If no idea fits this lead, call propose_idea with a new one built on a verified fact, then plan with the number it returns: a new idea reaches 5 leads, and their results decide whether it stays."
-        : "Plan from these. best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. Every plan step names idea_refs. You may blend two ideas or invent a new one from them; still name the ideas it came from.",
+        ? `${IDEAS_ARE_TEACHING} best_fit is ranked for this lead from their words and segment and from what each idea has earned (record: sends, clicks and replies, from leads like this one once there are a few), with ideas the campaign leaned on this week pushed down and untested ones given a small push. Your own reading of the lead matters more than the rank. You may blend two ideas. If no pattern here fits this lead, call propose_idea with a new one built on a verified fact, then plan with the number it returns: a new idea reaches 5 leads, and their results decide whether it stays.`
+        : `${IDEAS_ARE_TEACHING} best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. You may blend two ideas; name every idea you learned from.`,
       best_fit: fresh.slice(0, 8).map((i) => ({
-        n: i.n, title: i.title, detail: i.detail, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week,
+        n: i.n, title: i.title, detail: i.detail, pattern: i.pattern, also: i.also, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week,
         ...(i.record ? { record: i.record } : {}),
         ...(i.source ? { source: i.source, status: i.status } : {}),
       })),

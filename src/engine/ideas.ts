@@ -27,6 +27,10 @@ export interface Idea {
   keywords?: string[];
   usable?: boolean;
   note?: string;
+  /** Why the idea lands, in one sentence: what Claude learns from it. */
+  pattern?: string;
+  /** Other shapes the same pattern can take ("this can also be this or that"). */
+  also?: string[];
   /** Absent on the approved bank; "claude" on an idea a planner invented. */
   source?: "claude";
   /** Invented ideas only: trial (a few leads), active (used like the bank), retired. */
@@ -221,7 +225,8 @@ export function rankIdeas(
     .map((idea) => {
       let score = 0;
       for (const k of idea.keywords ?? []) if (leadWords.has(String(k).toLowerCase())) score += 2;
-      for (const w of words(`${idea.title} ${idea.detail ?? ""}`)) if (leadWords.has(w)) score += 1;
+      // Its other shapes count too: "WhatsApp", "GST", "dispatch" may only be in one of them.
+      for (const w of words(`${idea.title} ${idea.detail ?? ""} ${(idea.also ?? []).join(" ")}`)) if (leadWords.has(w)) score += 1;
       if (lead.segment && (idea.segments ?? []).includes(lead.segment)) score += 2;
       const used = usage.get(idea.n) ?? 0;
       if (used >= limits.busyAt) score -= 2 * (used - limits.busyAt + 1);

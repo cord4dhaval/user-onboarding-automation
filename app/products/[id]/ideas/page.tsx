@@ -70,8 +70,9 @@ export default async function Ideas({ params }: { params: Promise<{ id: string }
         <div>
           <h1>Ideas</h1>
           <p className="sub">
-            The scenes every email is built on: the approved bank, and ideas Claude writes when none of them fits a
-            lead. A new idea starts on trial. It reaches {TRIAL_LEADS} leads, and once those are sent it either stays
+            What Claude learns from before it writes: each idea is a pattern that lands with Indian founders, with
+            other shapes it can take, never copy to retell. The approved bank, and ideas Claude writes when no pattern
+            fits a lead. A new idea starts on trial. It reaches {TRIAL_LEADS} leads, and once those are sent it either stays
             (ranked like the bank) or retires, with the reason on its row. Results feed the ranking on every lead card.
             Running in development only.
           </p>
@@ -120,7 +121,9 @@ export default async function Ideas({ params }: { params: Promise<{ id: string }
                     <td>
                       <strong>{idea.title}</strong>
                       <div className="reason">{idea.detail}</div>
-                      <div className="reason">Why: {idea.reason}</div>
+                      {idea.pattern && <div className="reason">Pattern: {idea.pattern}</div>}
+                      {idea.also?.length ? <div className="reason">Also: {idea.also.join(" · ")}</div> : null}
+                      <div className="reason">Why Claude wrote it: {idea.reason}</div>
                       <span className="cell-sub">
                         {idea.plan} · card {idea.card ?? "none"}
                         {idea.fromRefs?.length ? ` · from ${idea.fromRefs.map((n) => `#${n}`).join(", ")}` : ""}
@@ -198,7 +201,8 @@ function BankRow({ idea, t, week }: { idea: Idea; t: Totals | undefined; week: n
       <td className="num">{idea.n}</td>
       <td>
         <strong>{idea.title}</strong>
-        {idea.detail && <div className="reason">{idea.detail}</div>}
+        {idea.pattern ? <div className="reason">Pattern: {idea.pattern}</div> : idea.detail && <div className="reason">{idea.detail}</div>}
+        {idea.also?.length ? <div className="reason">Also: {idea.also.join(" · ")}</div> : null}
         <span className="cell-sub">
           {idea.plan ?? "Standard"} · card {idea.card ?? "none"}
           {t?.best && t.best.responses > 0 ? ` · best with ${t.best.group} (${t.best.responses} of ${t.best.sent})` : ""}
