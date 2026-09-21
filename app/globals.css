@@ -2183,3 +2183,18 @@ button.q-toggle:hover { background: var(--surface-2); }
   .pv-stage { min-height: 80vh; }
   .pv-foot { position: sticky; bottom: 0; flex-wrap: wrap; }
 }
+
+/* ── sales team (CRM) ─────────────────────────────────────────────────────────
+   The sales team's side of a person, from our own copy of their CRM. A card per record,
+   facts as a two-column list, and the read-again control on the heading's line. */
+.crm-card { margin-bottom: 12px; display: grid; gap: 10px; }
+.crm-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.crm-head svg { color: var(--ink-3); flex: none; }
+.crm-head .spacer { margin-left: auto; }
+.crm-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 16px; margin: 0; }
+.crm-facts dt { font-size: 12.5px; color: var(--ink-3); }
+.crm-facts dd { margin: 0; font-size: 13.5px; color: var(--ink); overflow-wrap: anywhere; }
+.crm-sub { margin: 0; font-size: 12px; }
+.crm-map { width: 100%; min-height: 320px; font-family: var(--font-mono), monospace; font-size: 12px; }
+.crm-stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.crm-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

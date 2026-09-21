@@ -37,6 +37,7 @@
     "backfill:timezones": "tsx --env-file=.env src/scripts/backfill-timezones.ts",
     "retire:channel": "tsx --env-file=.env src/scripts/retire-channel.ts",
     "prune:leads": "tsx --env-file=.env src/scripts/prune-leads.ts",
+    "crm:sync": "tsx --env-file=.env src/scripts/crm-sync.ts",
     "reclassify:signals": "tsx --env-file=.env src/scripts/reclassify-signals.ts",
     "build:check": "NEXT_DIST_DIR=.next-check next build",
     "verify:rolling": "tsx src/scripts/verify-rolling.ts",

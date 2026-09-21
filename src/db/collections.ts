@@ -39,6 +39,11 @@ export const COLLECTIONS = {
   notifications: "notifications",
   audiences: "audiences",
 
+  /** One CRM record and who of ours it is, with a snapshot so nothing needs the CRM to answer. See engine/crm/sync.ts. */
+  crmLinks: "crm_links",
+  /** Everything the sales team's CRM logged on our people, kept here read-only. */
+  crmActivity: "crm_activity",
+
   oauthClients: "oauth_clients",
   oauthCodes: "oauth_codes",
   oauthTokens: "oauth_tokens",

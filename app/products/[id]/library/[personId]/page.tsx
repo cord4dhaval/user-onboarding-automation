@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { gateOpen } from "@/engine/advance.js";
 import { personHistory } from "@/engine/library.js";
+import { crmForPerson } from "@/engine/crm/view.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { signalsOf } from "@/engine/engagement.js";
@@ -25,6 +26,8 @@ import { requireSession } from "../../../../tenant";
 import ConfirmButton from "../../../../ui/confirm";
 import ClaudeBadge from "../../../../ui/claude-badge";
 import PreviewDrawer from "../../review/preview-drawer";
+import { Tabs } from "../../../../ui/kit";
+import { SalesTeamCard, crmEntries } from "./crm";
 import { ist, istDay, istLong, istTime, istWeekday } from "../../../../ui/time";
 
 export const dynamic = "force-dynamic";
@@ -41,20 +44,40 @@ export const dynamic = "force-dynamic";
 interface Entry {
   at: Date;
   mark?: "signal" | "next" | "bad";
+  /**
+   * Whose move it was: ours (a message, a check), theirs (a click, a reply, a form), or the
+   * sales team's (from their CRM). Absent reads as ours. The page can then show one side on
+   * its own without a second list to keep in step with this one.
+   */
+  lane?: Lane;
   node: ReactNode;
 }
 
+type Lane = "ours" | "person" | "sales";
+const LANES: Array<{ key: "all" | Lane; label: string }> = [
+  { key: "all", label: "Everything" },
+  { key: "ours", label: "What we did" },
+  { key: "person", label: "What they did" },
+  { key: "sales", label: "Sales team" },
+];
+
 export default async function PersonPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; personId: string }>;
+  searchParams: Promise<{ lane?: string }>;
 }) {
   const { id, personId } = await params;
+  const { lane: laneParam } = await searchParams;
   const { orgId } = await requireSession();
   const history = await personHistory(orgId, id, personId);
   if (!history) return <main><h1>Not found</h1></main>;
 
   const { person, campaigns, actions, plans, events, names } = history;
+  // Our own copy of the sales team's CRM. Empty, and the page unchanged, for a product that
+  // reads no CRM.
+  const crm = await crmForPerson(orgId, id, personId);
   // The From header each message goes out with, so the inbox preview shows the sender the
   // reader will see rather than "Provider default sender".
   const fromById = new Map(
@@ -136,6 +159,7 @@ export default async function PersonPage({
     ].filter(Boolean);
     past.push({
       at: new Date(String(arrival.at)),
+      lane: "person",
       node: (
         <>
           <strong><UserPlus size={13} /> They became a lead</strong>
@@ -257,6 +281,7 @@ export default async function PersonPage({
     past.push({
       at: signal.at,
       mark: "signal",
+      lane: "person",
       node:
         signal.type === "clicked" ? (
           <>
@@ -286,6 +311,7 @@ export default async function PersonPage({
     if (type === "reply_received") {
       past.push({
         at,
+        lane: "person",
         mark: "signal",
         node: (
           <>
@@ -305,6 +331,7 @@ export default async function PersonPage({
     if (type === "linkedin_accepted") {
       past.push({
         at,
+        lane: "person",
         mark: "signal",
         node: <strong className="hit"><UserPlus size={13} /> They accepted the LinkedIn invite</strong>,
       });
@@ -329,6 +356,7 @@ export default async function PersonPage({
     if (type === "unsubscribed") {
       past.push({
         at,
+        lane: "person",
         mark: "bad",
         node: (
           <>
@@ -359,6 +387,7 @@ export default async function PersonPage({
     if (type.startsWith("check_passed:")) {
       past.push({
         at,
+        lane: "person",
         mark: "signal",
         node: (
           <>
@@ -404,7 +433,10 @@ export default async function PersonPage({
     });
   }
 
+  past.push(...crmEntries(crm));
   past.sort((a, b) => a.at.getTime() - b.at.getTime());
+  const lane = LANES.some((l) => l.key === laneParam) ? (laneParam as "all" | Lane) : "all";
+  const shown = lane === "all" ? past : past.filter((e) => (e.lane ?? "ours") === lane);
 
   const opened = signals.filter((s) => s.type === "opened" && !s.bot).length;
   const clicked = signals.filter((s) => s.type === "clicked" && !s.bot).length;
@@ -605,13 +637,30 @@ export default async function PersonPage({
         </div>
       )}
 
+      <SalesTeamCard view={crm} productId={id} personId={personId} />
+
       <h2>Activity</h2>
-      <p className="sub">What happened with this lead, oldest first. Open any email to see exactly what they got.</p>
-      {past.length === 0 ? (
-        <div className="empty"><strong>Nothing yet</strong>We have not emailed them.</div>
+      <p className="sub">
+        What happened with this lead, oldest first
+        {crm.records.length ? ", including what the sales team logged in their CRM" : ""}. Open any email to see exactly
+        what they got.
+      </p>
+      {crm.records.length > 0 && (
+        <Tabs
+          current={lane}
+          tabs={LANES.map((l) => ({
+            key: l.key,
+            label: l.label,
+            href: l.key === "all" ? "?" : `?lane=${l.key}`,
+            count: l.key === "all" ? undefined : past.filter((e) => (e.lane ?? "ours") === l.key).length,
+          }))}
+        />
+      )}
+      {shown.length === 0 ? (
+        <div className="empty"><strong>Nothing yet</strong>{lane === "all" ? "We have not emailed them." : "Nothing on this side yet."}</div>
       ) : (
         <div className="timeline">
-          {past.map((entry, i) => (
+          {shown.map((entry, i) => (
             <div key={i}>
               <WhenCell at={entry.at} />
               <span className={`t-mark ${entry.mark ? `m-${entry.mark}` : ""}`} />

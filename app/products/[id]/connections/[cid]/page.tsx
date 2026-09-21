@@ -11,6 +11,7 @@ import {
   startReauthOAuth,
 } from "../../../../actions";
 import ConnectionDrawer from "../connection-drawer";
+import CrmSection from "./crm-section";
 import { requireSession} from "../../../../tenant";
 import { RefreshCw, Save } from "lucide-react";
 import { SubmitButton } from "../../../../ui/kit";
@@ -150,6 +151,8 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
               </tbody>
             </table>
           </div>
+
+          <CrmSection productId={id} connection={connection} tools={tools} />
 
           <h2>Bind tools to actions</h2>
           {VERBS.map((verb) => {

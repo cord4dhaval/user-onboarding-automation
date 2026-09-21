@@ -55,6 +55,18 @@ export async function ensureIndexes(): Promise<void> {
     { name: "learning_note_key", unique: true },
   );
 
+  // One row per CRM record per connection: the poll asks "have we seen this record" before
+  // it spends a call on it, and a second row would split one deal's history in two.
+  await db.collection(C.crmLinks).createIndexes([
+    { key: { orgId: 1, connectionId: 1, externalId: 1 }, name: "crm_record", unique: true },
+    { key: { orgId: 1, productId: 1, personId: 1 }, name: "crm_by_person" },
+  ]);
+  // Unique on the fingerprint so reading the same history twice stores it once.
+  await db.collection(C.crmActivity).createIndexes([
+    { key: { orgId: 1, connectionId: 1, fingerprint: 1 }, name: "crm_activity_once", unique: true },
+    { key: { orgId: 1, personId: 1, at: 1 }, name: "crm_activity_timeline" },
+  ]);
+
   // One document per {channel, step, hour}. Unique because two rows for the same bucket
   // would split a count that only means anything whole.
   await db.collection(C.outcomePriors).createIndex(

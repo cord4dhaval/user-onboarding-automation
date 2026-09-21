@@ -23,6 +23,7 @@ import { dispatch } from "@/engine/dispatch.js";
 import { notify } from "@/engine/notify.js";
 import { identityStatus, sesConfigured } from "@/engine/sesIdentity.js";
 import { refreshChannelHealth } from "@/engine/channelHealth.js";
+import { crmTick } from "@/engine/crm/sync.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -338,6 +339,17 @@ export async function GET(request: NextRequest) {
   // is one call, not one per channel.
   const rechecked = await refreshSesChannels();
   if (rechecked.length) report.push({ sesChannels: rechecked });
+
+  // What the sales team's CRM logged, read into our own copy. Last, on a capped slice, and
+  // only for connections where CRM reading was switched on — with none, one empty query. A
+  // CRM that is down or rate-limited is reported here and never reaches the send phase above.
+  if (left() > 25_000) {
+    const crm = await crmTick(
+      Date.now() + Math.min(left() - 3_000, 25_000),
+      products.map((p) => String(p._id)),
+    ).catch((err) => [{ crm: "tick", error: err instanceof Error ? err.message : String(err) }]);
+    if (crm.length) report.push({ crm });
+  }
 
   // A routine that finished two minutes ago should not still read as running.
   const closed = await closeIdleRuns(now);
