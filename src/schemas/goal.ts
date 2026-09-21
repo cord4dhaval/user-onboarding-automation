@@ -128,6 +128,13 @@ export const goal = z.object({
     quietHours: z.tuple([z.number().int(), z.number().int()]).optional(),
     bufferDepth: z.number().int().positive().default(3),
     approvalMode: z.enum(["gate_on", "auto_send"]).default("gate_on"),
+    /**
+     * The first message alone may be let through while everything after it is still read
+     * first. It is the campaign's own fixed template, chosen when the campaign was set up,
+     * so someone has already read it once; what Claude writes later has not been read.
+     * "follow_campaign" (or absent) means the first message obeys approvalMode like the rest.
+     */
+    firstTouchApproval: z.enum(["follow_campaign", "auto_send"]).default("follow_campaign"),
   }),
 
   /** Cadence tightens as confidence drops: the people least likely to convert get the most pressure, since a calm sequence would not reach them at all. Never past the weekly cap. */

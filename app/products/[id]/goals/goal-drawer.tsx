@@ -57,6 +57,7 @@ export default function GoalDrawer({
     touches: number;
     days: number;
     approvalMode: string;
+    firstTouchApproval?: string;
     /** Empty means this campaign uses every healthy mailbox. */
     channelIds?: string[];
   };
@@ -248,6 +249,19 @@ export default function GoalDrawer({
               options={[
                 { value: "gate_on", label: "Hold each for review", hint: "nothing leaves unapproved" },
                 { value: "auto_send", label: "Send automatically", hint: "the engine sends on its own clock" },
+              ]}
+            />
+          </label>
+
+          <label>
+            First message
+            <Select
+              name="firstTouchApproval"
+              value={existing?.firstTouchApproval ?? "follow_campaign"}
+              ariaLabel="Whether the first message waits for a person"
+              options={[
+                { value: "follow_campaign", label: "Same as the rest", hint: "follows the setting above" },
+                { value: "auto_send", label: "Send straight away", hint: "the fixed first template, as soon as the lead arrives" },
               ]}
             />
           </label>

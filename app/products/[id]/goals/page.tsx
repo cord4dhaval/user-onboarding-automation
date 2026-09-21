@@ -190,7 +190,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
             </thead>
             <tbody>
               {rows.map(({ goal, active, done, feeding, importing }) => {
-                const sch = goal.schedule as { fetchEverySec: number; approvalMode: string };
+                const sch = goal.schedule as { fetchEverySec: number; approvalMode: string; firstTouchApproval?: string };
                 const budget = goal.budget as { touches: number; days: number };
                 const ft = goal.firstTouch as { templateKey: string; channels: string[] };
                 const usable = channelKeys.some((k) => ft.channels.includes(k));
@@ -259,7 +259,13 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                       )}
                       <div className="muted" style={{ fontSize: 12.5, marginTop: 3 }}>
                         {budget.touches} msg · {budget.days}d
-                        <div>{sch.approvalMode === "auto_send" ? "auto-send" : "review each"}</div>
+                        <div>
+                          {sch.approvalMode === "auto_send"
+                            ? "auto-send"
+                            : sch.firstTouchApproval === "auto_send"
+                              ? "first auto, then review"
+                              : "review each"}
+                        </div>
                       </div>
                     </td>
 
@@ -361,6 +367,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                             touches: budget.touches,
                             days: budget.days,
                             approvalMode: sch.approvalMode,
+                            firstTouchApproval: sch.firstTouchApproval,
                             channelIds: ((goal.channelIds ?? []) as string[]).map(String),
                           }}
                         />

@@ -616,6 +616,7 @@ export async function queueFirstTouches(args: {
       channel: pick.key,
       channelId: pick.channelId,
       templateId: String(template._id),
+      firstTouch: true,
       angle: "welcome",
       rationale: `First touch for goal ${goal.key}; ${pick.reason}.`,
       // Written before any provider call and enforced by a unique index, so a retry or an

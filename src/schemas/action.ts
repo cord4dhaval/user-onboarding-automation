@@ -92,6 +92,8 @@ export const action = z.object({
    * picks the member this person has not had.
    */
   templateKey: z.string().optional(),
+  /** Queued by the campaign's firstTouch at arrival; read at send for schedule.firstTouchApproval. */
+  firstTouch: z.boolean().optional(),
   content: composedContent,
   assetIds: z.array(objectIdString).default([]),
   rationale: z.string(),

@@ -607,6 +607,7 @@ export async function createGoal(formData: FormData) {
           bufferDepth: 3,
           // Anything but an explicit auto_send is stored as review, so a stray value holds.
           approvalMode: formData.get("approvalMode") === "auto_send" ? "auto_send" : "gate_on",
+          firstTouchApproval: formData.get("firstTouchApproval") === "auto_send" ? "auto_send" : "follow_campaign",
         },
         // Confidence buys patience, not pressure. Someone read as a near-certain fit will
         // convert on a calm sequence; someone read at 5% will not convert on one at all, so
@@ -2946,6 +2947,7 @@ export async function updateGoal(formData: FormData) {
         verifyHint: String(formData.get("verifyHint") ?? existing?.verifyHint ?? "").trim() || undefined,
         firstTouch: { templateKey: String(formData.get("firstTouchTemplate")), channels },
         "schedule.approvalMode": formData.get("approvalMode") === "auto_send" ? "auto_send" : "gate_on",
+        "schedule.firstTouchApproval": formData.get("firstTouchApproval") === "auto_send" ? "auto_send" : "follow_campaign",
         "failure.silenceDays": Number(formData.get("silenceDays") ?? existing?.failure?.silenceDays ?? 30),
         ...(verifierChanged ? { checks: [], needsVerificationPlan: true } : {}),
       },

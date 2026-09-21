@@ -506,7 +506,13 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         continue;
       }
 
-      const approvalMode = (goal?.schedule as { approvalMode?: string } | undefined)?.approvalMode ?? "gate_on";
+      const schedule = goal?.schedule as { approvalMode?: string; firstTouchApproval?: string } | undefined;
+      // The campaign's first message can be let through on its own while the rest are read
+      // first. Anything but an explicit "auto_send" there defers to the campaign's mode.
+      const approvalMode =
+        action.firstTouch === true && schedule?.firstTouchApproval === "auto_send"
+          ? "auto_send"
+          : (schedule?.approvalMode ?? "gate_on");
       // An asset can demand review on its own, and that demand outranks the campaign's
       // mode. Auto-send is a decision about routine copy; "hold anything carrying this" is
       // a decision about one particular thing, usually a way to reach a human.
