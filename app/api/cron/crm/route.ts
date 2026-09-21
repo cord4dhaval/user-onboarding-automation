@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { crmTick } from "@/engine/crm/sync.js";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,15 @@ export const maxDuration = 60;
  */
 const BUDGET_MS = 50_000;
 
+/**
+ * Answers at once and does the work after the answer has gone.
+ *
+ * The cron job service gives up on a request after thirty seconds, and a run is fifty —
+ * waiting for it would record every run as a failure, and a job that fails often enough is
+ * switched off by the service. The work still lives within this function's sixty seconds;
+ * what it did is written to the connection, where its CRM section shows it. `?wait=1`
+ * runs it in the request instead, for a person testing it by hand.
+ */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (secret) {
@@ -30,8 +39,13 @@ export async function GET(request: NextRequest) {
   }
 
   const started = new Date();
-  const report = await crmTick(started.getTime() + BUDGET_MS).catch((err) => [
-    { error: err instanceof Error ? err.message : String(err) },
-  ]);
-  return NextResponse.json({ at: started.toISOString(), ms: Date.now() - started.getTime(), report });
+  const run = () =>
+    crmTick(started.getTime() + BUDGET_MS).catch((err) => [{ error: err instanceof Error ? err.message : String(err) }]);
+
+  if (request.nextUrl.searchParams.get("wait") === "1") {
+    const report = await run();
+    return NextResponse.json({ at: started.toISOString(), ms: Date.now() - started.getTime(), report });
+  }
+  after(run);
+  return NextResponse.json({ at: started.toISOString(), started: true });
 }

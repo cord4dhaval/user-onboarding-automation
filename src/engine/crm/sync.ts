@@ -182,6 +182,73 @@ async function storeActivity(
   return result.upsertedCount;
 }
 
+/** One CRM event as a stored row, or nothing for an event that only announces a note we read whole. */
+function eventRow(e: Row, recordId: string, map: CrmMap): ActivityInput | null {
+  const ef = map.eventFields;
+  const at = dateOf(pluck(e, ef.at));
+  const type = str(pluck(e, ef.type)) ?? "event";
+  if (!at || (map.notes && map.noteEventTypes.includes(type))) return null;
+  const text = ef.text ? str(pluck(e, ef.text)) : undefined;
+  const actor = ef.actor ? str(pluck(e, ef.actor)) : undefined;
+  const id = ef.id ? str(pluck(e, ef.id)) : undefined;
+  // The same fields whether the event came from the record's own history or the org-wide
+  // feed, so the two readings of one event store one row.
+  return { at, type, kind: kindOf(type, map), text, actor, fp: fingerprint(recordId, id ?? "", at.toISOString(), type, text) };
+}
+
+async function readRecord(client: CrmClient, recordId: string): Promise<Row | undefined> {
+  const { map } = client.conn;
+  if (!map.record) return undefined;
+  const answer = await client.call(map.record.tool, map.record.args, { recordId });
+  const picked = map.record.path ? pluck(answer, map.record.path) : answer;
+  return picked && typeof picked === "object" ? (picked as Row) : undefined;
+}
+
+async function readNotes(client: CrmClient, recordId: string): Promise<ActivityInput[]> {
+  const { map } = client.conn;
+  if (!map.notes || !map.noteFields) return [];
+  const nf = map.noteFields;
+  const notes = await client.list(map.notes, { recordId }, 10);
+  const rows: ActivityInput[] = [];
+  for (const n of notes.items) {
+    const at = dateOf(pluck(n, nf.at));
+    const text = str(pluck(n, nf.text));
+    if (!at || !text) continue;
+    const actor = nf.actor ? str(pluck(n, nf.actor)) : undefined;
+    const id = nf.id ? str(pluck(n, nf.id)) : undefined;
+    rows.push({ at, type: "NOTE", kind: "note", text, actor, fp: fingerprint(recordId, "note", id ?? "", at.toISOString(), actor) });
+  }
+  return rows;
+}
+
+async function readMeetings(client: CrmClient, recordId: string): Promise<{ meetings: CrmMeeting[]; rows: ActivityInput[] }> {
+  const { map } = client.conn;
+  if (!map.meetings) return { meetings: [], rows: [] };
+  const listed = await client.list(map.meetings, { recordId }, 5);
+  const meetings = listed.items.map((m) => meetingOf(m, map)).filter((m): m is CrmMeeting => Boolean(m));
+  const rows: ActivityInput[] = [];
+  for (const m of meetings) {
+    // The booking is already an event. What only the meeting list knows is what was said,
+    // so that is the row it adds — once the CRM has a summary to give.
+    if (!m.summary && !m.actionItems?.length) continue;
+    rows.push({
+      at: m.end ?? m.start ?? new Date(),
+      type: "MEETING_SUMMARY",
+      kind: "meeting_held",
+      text: m.summary,
+      actor: m.organizer,
+      meta: { title: m.title, actionItems: m.actionItems, nextSteps: m.nextSteps },
+      // Keyed on the meeting, not its words, so a summary the CRM finishes later replaces
+      // the first draft rather than sitting beside it.
+      fp: fingerprint(recordId, "meeting", m.title, m.start?.toISOString()),
+    });
+  }
+  return { meetings, rows };
+}
+
+const latest = (rows: ActivityInput[]): Date | undefined =>
+  rows.reduce<Date | undefined>((max, r) => (!max || r.at > max ? r.at : max), undefined);
+
 /**
  * Reads one record in full — the record, every event, every note, every meeting — and
  * stores it against the person it belongs to. Safe to repeat.
@@ -195,12 +262,7 @@ export async function syncRecord(
   const { orgId, productId, connectionId, map } = client.conn;
   const links = db.collection(C.crmLinks);
 
-  let row = known?.row;
-  if (map.record) {
-    const answer = await client.call(map.record.tool, map.record.args, { recordId });
-    const picked = map.record.path ? pluck(answer, map.record.path) : answer;
-    if (picked && typeof picked === "object") row = picked as Row;
-  }
+  const row = (await readRecord(client, recordId)) ?? known?.row;
   if (!row) return { status: "missing", added: 0 };
   const snap = snapshotOf(row, map);
 
@@ -239,57 +301,14 @@ export async function syncRecord(
   }
   const personId = verdict.personId;
 
-  const activity: ActivityInput[] = [];
   const events = await client.list(map.events, { recordId }, 20);
-  const ef = map.eventFields;
-  const dropNotes = map.notes ? new Set(map.noteEventTypes) : new Set<string>();
-  for (const e of events.items) {
-    const at = dateOf(pluck(e, ef.at));
-    const type = str(pluck(e, ef.type)) ?? "event";
-    if (!at || dropNotes.has(type)) continue;
-    const text = ef.text ? str(pluck(e, ef.text)) : undefined;
-    const actor = ef.actor ? str(pluck(e, ef.actor)) : undefined;
-    const id = ef.id ? str(pluck(e, ef.id)) : undefined;
-    activity.push({ at, type, kind: kindOf(type, map), text, actor, fp: fingerprint(recordId, id ?? "", at.toISOString(), type, text) });
-  }
-
-  if (map.notes && map.noteFields) {
-    const nf = map.noteFields;
-    const notes = await client.list(map.notes, { recordId }, 10);
-    for (const n of notes.items) {
-      const at = dateOf(pluck(n, nf.at));
-      const text = str(pluck(n, nf.text));
-      if (!at || !text) continue;
-      const actor = nf.actor ? str(pluck(n, nf.actor)) : undefined;
-      const id = nf.id ? str(pluck(n, nf.id)) : undefined;
-      activity.push({ at, type: "NOTE", kind: "note", text, actor, fp: fingerprint(recordId, "note", id ?? "", at.toISOString(), actor) });
-    }
-  }
-
-  let meetings: CrmMeeting[] = [];
-  if (map.meetings) {
-    const listed = await client.list(map.meetings, { recordId }, 5);
-    meetings = listed.items.map((m) => meetingOf(m, map)).filter((m): m is CrmMeeting => Boolean(m));
-    for (const m of meetings) {
-      // The booking is already an event. What only the meeting list knows is what was said,
-      // so that is the row it adds — once the CRM has a summary to give.
-      if (!m.summary && !m.actionItems?.length) continue;
-      activity.push({
-        at: m.end ?? m.start ?? new Date(),
-        type: "MEETING_SUMMARY",
-        kind: "meeting_held",
-        text: m.summary,
-        actor: m.organizer,
-        meta: { title: m.title, actionItems: m.actionItems, nextSteps: m.nextSteps },
-        // Keyed on the meeting, not its words, so a summary the CRM finishes later replaces
-        // the first draft rather than sitting beside it.
-        fp: fingerprint(recordId, "meeting", m.title, m.start?.toISOString()),
-      });
-    }
-  }
+  const activity = events.items.map((e) => eventRow(e, recordId, map)).filter((r): r is ActivityInput => Boolean(r));
+  activity.push(...(await readNotes(client, recordId)));
+  const { meetings, rows: meetingRows } = await readMeetings(client, recordId);
+  activity.push(...meetingRows);
 
   const added = await storeActivity(client, recordId, personId, activity);
-  const lastActivityAt = activity.reduce<Date | undefined>((max, r) => (!max || r.at > max ? r.at : max), undefined);
+  const lastActivityAt = latest(activity);
   await links.updateOne(
     { orgId, connectionId, externalId: recordId },
     {
@@ -317,6 +336,58 @@ export async function syncRecord(
       .updateMany({ orgId, connectionId, recordId, personId: { $ne: personId } }, { $set: { personId } });
   }
   return { status: verdict.status, personId, added };
+}
+
+type Part = "record" | "notes" | "meetings";
+
+/**
+ * Refreshes only what an event changed on a record already tied to one of our people.
+ *
+ * The change feed already carries the event itself, so a rep's note costs one read (the
+ * note in full) rather than the four a whole record takes: the difference between keeping
+ * up with a sales team at work and falling behind it for the afternoon.
+ */
+async function refreshParts(client: CrmClient, link: Document, parts: Set<Part>): Promise<number> {
+  const db = await getDb();
+  const { orgId, connectionId, map } = client.conn;
+  const recordId = String(link.externalId);
+  const personId = String(link.personId);
+  const set: Record<string, unknown> = { syncedAt: new Date() };
+  const rows: ActivityInput[] = [];
+
+  if (parts.has("record")) {
+    const row = await readRecord(client, recordId);
+    if (row) {
+      const snap = snapshotOf(row, map);
+      if (map.projects.length && !(snap.project && map.projects.includes(snap.project))) {
+        await db.collection(C.crmLinks).updateOne(
+          { _id: link._id },
+          { $set: { status: "out_of_scope", snapshot: snap, checkedAt: new Date() }, $unset: { personId: "" } },
+        );
+        return 0;
+      }
+      set.snapshot = snap;
+    }
+  }
+  if (parts.has("notes")) rows.push(...(await readNotes(client, recordId)));
+  if (parts.has("meetings")) {
+    const read = await readMeetings(client, recordId);
+    set.meetings = read.meetings;
+    rows.push(...read.rows);
+  }
+  const added = await storeActivity(client, recordId, personId, rows);
+  await db.collection(C.crmLinks).updateOne({ _id: link._id }, { $set: set, $max: { lastActivityAt: latest(rows) ?? new Date(0) } });
+  return added;
+}
+
+/** What each kind of event leaves out of date besides itself. */
+function partsFor(kind: CrmKind): Part[] {
+  if (kind === "note") return ["notes"];
+  if (kind === "meeting_booked" || kind === "meeting_canceled" || kind === "meeting_held") return ["meetings"];
+  // A follow-up being set or ticked off is the sales team's to-do list, logged far more often
+  // than anything else; the event row says all of it, so it costs no read.
+  if (["call", "call_missed", "email_in", "email_out", "followup", "info"].includes(kind)) return [];
+  return ["record"];
 }
 
 /**
@@ -382,38 +453,72 @@ export async function syncChanges(
   const fromAt = new Date(since.getTime() - (map.fromFormat === "date" ? FEED_OVERLAP_MS : 0));
   const from = map.fromFormat === "date" ? fromAt.toISOString().slice(0, 10) : fromAt.toISOString();
 
+  // A queue entry is "<recordId>" (read the record whole) or "<recordId>|<part>" (refresh
+  // only that part of a record already tied to one of ours).
   const pending = new Set<string>(sync.pending ?? []);
+  const links = db.collection(C.crmLinks);
+  const known = new Map<string, Document | null>();
+  const linkOf = async (recordId: string) => {
+    if (!known.has(recordId)) known.set(recordId, await links.findOne({ orgId, connectionId, externalId: recordId }));
+    return known.get(recordId) ?? null;
+  };
+
   let newest = since;
   let events = 0;
   // Between feed reads the run still works off what the last read queued.
   const feed = readFeed ? await client.list(map.changes, { from }, 10) : { items: [], more: false };
+  const fromFeed = new Map<string, ActivityInput[]>();
   for (const e of feed.items) {
     const at = dateOf(pluck(e, map.eventFields.at));
     const recordId = str(pluck(e, map.eventFields.recordId));
     if (!at || !recordId || at <= since) continue;
     events++;
     if (at > newest) newest = at;
-    pending.add(recordId);
+    const link = await linkOf(recordId);
+    if (link?.status === "out_of_scope") continue;
+    if (link?.personId && (link.status === "linked" || link.status === "review")) {
+      // Ours already: keep the event as it is, and queue only what it left stale.
+      const row = eventRow(e, recordId, map);
+      if (row) fromFeed.set(recordId, [...(fromFeed.get(recordId) ?? []), row]);
+      const type = str(pluck(e, map.eventFields.type)) ?? "";
+      const parts = map.notes && map.noteEventTypes.includes(type) ? (["notes"] as Part[]) : partsFor(kindOf(type, map));
+      for (const part of parts) pending.add(`${recordId}|${part}`);
+    } else {
+      pending.add(recordId);
+    }
+  }
+  for (const [recordId, rows] of fromFeed) {
+    const link = await linkOf(recordId);
+    await storeActivity(client, recordId, String(link?.personId), rows);
+    await links.updateOne({ externalId: recordId, orgId, connectionId }, { $max: { lastActivityAt: latest(rows) ?? new Date(0) } });
   }
 
   // The feed is cheap and the records are not, so what the feed names is queued and worked
-  // off over as many ticks as it takes, rather than all inside one.
+  // off over as many runs as it takes, rather than all inside one.
+  const byRecord = new Map<string, Set<Part | "full">>();
+  for (const entry of pending) {
+    const [recordId, part] = entry.split("|") as [string, Part | undefined];
+    byRecord.set(recordId, (byRecord.get(recordId) ?? new Set()).add(part ?? "full"));
+  }
   let records = 0;
-  const links = db.collection(C.crmLinks);
-  for (const recordId of [...pending]) {
-    // A record is four spaced reads; one begun without room for them would run past the
-    // platform's own limit on the request.
+  for (const [recordId, parts] of byRecord) {
+    // A whole record is four spaced reads; one begun without room for them would run past
+    // the platform's own limit on the request.
     if (until - Date.now() < RECORD_ROOM_MS) break;
-    const link = await links.findOne({ orgId, connectionId, externalId: recordId });
-    pending.delete(recordId);
+    const link = await linkOf(recordId);
+    for (const part of parts) pending.delete(part === "full" ? recordId : `${recordId}|${part}`);
     if (link?.status === "out_of_scope") continue;
     if (link?.status === "unmatched" && link.checkedAt && Date.now() - new Date(link.checkedAt).getTime() < UNMATCHED_RECHECK_MS) continue;
     try {
-      await syncRecord(client, recordId, link?.personId ? { personId: String(link.personId) } : undefined);
+      if (parts.has("full") || !link?.personId) {
+        await syncRecord(client, recordId, link?.personId ? { personId: String(link.personId) } : undefined);
+      } else {
+        await refreshParts(client, link, parts as Set<Part>);
+      }
       records++;
     } catch (err) {
       if (err instanceof RateLimited) {
-        pending.add(recordId);
+        for (const part of parts) pending.add(part === "full" ? recordId : `${recordId}|${part}`);
         throw err;
       }
       // One record the CRM cannot answer for must not hold up every record behind it.
