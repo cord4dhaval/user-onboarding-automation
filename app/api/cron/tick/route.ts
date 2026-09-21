@@ -8,6 +8,7 @@ import { reconcileDispatched } from "@/engine/reconcile.js";
 import { verifyDue } from "@/engine/verify.js";
 import { recomputeTemps } from "@/engine/temp.js";
 import { pollReplies } from "@/engine/inbound.js";
+import { pollWhatsAppReport } from "@/engine/whatsappReport.js";
 import { detectLinkedInWork, pollLinkedIn } from "@/engine/linkedin.js";
 import { resolveChannelAdapter } from "@/engine/adapters.js";
 import { closeIdleRuns, recordEngineRun } from "@/engine/runlog.js";
@@ -143,6 +144,11 @@ export async function GET(request: NextRequest) {
       limit: 25,
     });
     const reconciled = await reconcileDispatched(orgId, productId, 25);
+    // WhatsApp sends the webhook never reported on, read back from the provider's own
+    // report. A missing webhook must not leave a message Meta blocked saying "sent".
+    const whatsapp = await pollWhatsAppReport(orgId, productId, now).catch((err) => ({
+      unconfirmed: 0, checked: 0, delivered: 0, read: 0, failed: 0, errors: [String(err)],
+    }));
     // Verification runs on the same clock as sending: a campaign that has succeeded should
     // stop chasing someone within a minute, not on the next hourly Claude pass.
     const verified = await verifyDue(orgId, productId, 25);
@@ -193,6 +199,8 @@ export async function GET(request: NextRequest) {
     if (
       sent.claimed ||
       reconciled.checked ||
+      whatsapp.checked ||
+      whatsapp.errors.length ||
       verified.succeeded ||
       verified.failed ||
       temps.changed ||
@@ -209,7 +217,7 @@ export async function GET(request: NextRequest) {
       // reason a campaign stopped, and a run log that omits it makes that look unexplained.
       replies.bounced
     ) {
-      const work = { product: String(product.name), sent, reconciled, verified, temps, replies, linkedin, linkedinWork, advanced, detected, late };
+      const work = { product: String(product.name), sent, reconciled, whatsapp, verified, temps, replies, linkedin, linkedinWork, advanced, detected, late };
       report.push(work);
       // Only ticks that did something are kept. A row a minute, mostly empty, would bury
       // the ones worth reading under 1,400 that say nothing.

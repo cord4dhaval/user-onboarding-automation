@@ -16,7 +16,30 @@ import { unsubscribePerson } from "./unsubscribe.js";
  */
 export type WhatsAppEvent =
   | { kind: "message"; id: string; phone: string; text: string; button?: string; senderName?: string; at: Date }
-  | { kind: "status"; ref: string; status: "sent" | "delivered" | "read" | "failed"; code?: string; detail?: string; at: Date };
+  | {
+      kind: "status";
+      ref: string;
+      status: "sent" | "delivered" | "read" | "failed";
+      code?: string;
+      detail?: string;
+      at: Date;
+      /** Where the status was learned, when it was not the provider's webhook. */
+      source?: string;
+    };
+
+/**
+ * Meta's failure codes in words, for when the provider sends only the number. The report
+ * WATI keeps has no detail at all, and "Meta 131049" on a row explains nothing to the person
+ * deciding whether to send again.
+ */
+const META_REASONS: Record<string, string> = {
+  "131049":
+    "held back to keep this person's marketing messages within Meta's limit. Not a fault in the template or number; a later retry can go through.",
+  "131026": "the number cannot receive it (not on WhatsApp, or an app too old for templates).",
+  "131047": "more than 24 hours since the person last wrote, so only an approved template can go.",
+  "131050": "the person has stopped marketing messages from this business.",
+  "130472": "Meta is holding back marketing messages to this number as part of an experiment.",
+};
 
 const WATI_STATUS: Record<string, "sent" | "delivered" | "read" | "failed"> = {
   templateMessageSent: "sent",
@@ -99,14 +122,16 @@ export async function applyWhatsAppEvent(
     const current = (action.delivery as { status?: keyof typeof ORDER } | undefined)?.status ?? "sent";
     if (ORDER[event.status] < ORDER[current]) return "older status, ignored";
 
+    const source = event.source ? { source: event.source } : {};
     if (event.status === "failed") {
+      const detail = event.detail ?? (event.code ? META_REASONS[event.code] : undefined);
       await db.collection(C.actions).updateOne(
         { _id: action._id },
         {
           $set: {
             status: "failed",
-            error: `WhatsApp did not deliver it${event.code ? ` (Meta ${event.code})` : ""}${event.detail ? `: ${event.detail}` : ""}`,
-            delivery: { status: "failed", at: event.at, ...(event.code ? { code: event.code } : {}) },
+            error: `WhatsApp did not deliver it${event.code ? ` (Meta ${event.code})` : ""}${detail ? `: ${detail}` : ""}`,
+            delivery: { status: "failed", at: event.at, ...(event.code ? { code: event.code } : {}), ...source },
           },
         },
       );
@@ -114,7 +139,7 @@ export async function applyWhatsAppEvent(
     }
     await db
       .collection(C.actions)
-      .updateOne({ _id: action._id }, { $set: { delivery: { status: event.status, at: event.at }, [`${event.status}At`]: event.at } });
+      .updateOne({ _id: action._id }, { $set: { delivery: { status: event.status, at: event.at, ...source }, [`${event.status}At`]: event.at } });
     return `marked ${event.status}`;
   }
 
