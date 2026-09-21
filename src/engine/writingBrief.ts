@@ -3,7 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
 import { TRIAL_LEADS, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, rankIdeas } from "./ideas.js";
-import { FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
+import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -264,8 +264,8 @@ export async function writingBriefFor(input: {
       "Segment off_icp: one short touch that asks a question a person can answer in a line (what the team mostly does at a computer, for example), no pitch.",
       "Where the fit is partial, say the limit plainly (for example: work away from a computer is not recorded).",
       "Professional register: complete sentences, no contractions, first person plural.",
-      "lead_type comes first: where it is set, its default_ask and rules decide what every touch asks for and override the format defaults below.",
-      "Choose format with a reason. text: a plain note that asks for a reply and carries no link; the default for early touches and anyone who has not clicked in a campaign with no lead type or a cold one. letter: HTML that looks typed, with bold phrases and a link on its own words and no logo, box or button; for a link ask, or where a bolded phrase carries the idea. html: the branded design, for a sample, table or screen, or a lead who engages with designed mail.",
+      "lead_type comes first: where it is set, its default_ask and rules decide what every touch asks for.",
+      FORMAT_CHOICE,
       "One ask: a reply question, or the button. Never both.",
       "Write in parts, not one block: opening (one sentence under 90 characters), scene (one or two short paragraphs, at most two **bold** phrases), cost_lines (up to 3: label under 40 characters, value under 50), shows (up to 3 lines under 50 characters), limit (one line, only where the fit is partial), question (one line), plus the timeline or reply_options your layout_tests arm asks for. The frame makes the cost lines a tinted box and the list a check list in HTML, and a label with an arrow line under it and dashes in plain text.",
       `The whole body, lists and titles included, stays within ${leadTypeOf(goal) ? LEAD_TYPE_PROFILES[leadTypeOf(goal)!].maxWords : FRAME_BODY_MAX_WORDS} words.`,
