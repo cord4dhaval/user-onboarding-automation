@@ -50,6 +50,7 @@ export default function PreviewDrawer({
   meta,
   facts,
   signal,
+  back,
   fetchMessage,
 }: {
   productId: string;
@@ -64,6 +65,8 @@ export default function PreviewDrawer({
   facts?: { label: string; value: string }[];
   /** What the recipient has already done, rendered by the page. */
   signal?: ReactNode;
+  /** The list's filters, so a decision made here returns the reader to the same list. */
+  back?: string;
   fetchMessage: (actionId: string) => Promise<HeldMessage | null>;
 }) {
   const [open, setOpen] = useState(false);
@@ -411,6 +414,7 @@ export default function PreviewDrawer({
             <footer className="pv-foot">
               {waiting ? (
                 <form action={decide} className="pv-decide">
+                  {back !== undefined && <input type="hidden" name="back" value={back} />}
                   <input type="hidden" name="productId" value={productId} />
                   <input type="hidden" name="ids" value={actionId} />
                   <input type="hidden" name="format" value={format} />

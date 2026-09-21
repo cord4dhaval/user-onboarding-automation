@@ -453,6 +453,8 @@ export default async function Review({
     if (channelParam) q.set("channel", channelParam);
     if (perParam) q.set("per", String(perParam));
     if (search) q.set("q", search);
+    // The page too: approving one message on page 3 should leave you on page 3, not page 1.
+    if (current > 1) q.set("page", String(current));
     return q.toString();
   })();
   /** Every filter except the search itself, so searching does not drop the tab you are on. */
@@ -498,6 +500,7 @@ export default async function Review({
         personEmail={email}
         from={fromById.get(String(action.channelId))}
         signal={<Signal temp={temp} engagement={engagement} long />}
+        back={back}
         facts={[
           { label: "Campaign", value: campaignLabel },
           { label: "Channel", value: `${String(action.channel)} · ${sender}` },
