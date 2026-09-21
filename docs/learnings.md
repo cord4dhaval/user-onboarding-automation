@@ -1072,6 +1072,75 @@ towards "automation works"; LinkedIn's own help pages are the only independent s
 
 ---
 
+## 2026-09-21 — Loss-first mails: what goes wrong, what it costs, what TeamGrid does
+
+Source: Dhaval's review of the teamgrid_leads_v3 queue on 2026-09-21. There were 65 mails waiting: 64 needed approval and 1 was queued. He found them too soft ("not only positive positive"). He asked for mails that show what the client loses today in money and time, and what TeamGrid catches and fixes, one capability at a time, "aggressively". This came together with the new email illustrations that show negative findings with numbers (public/email-illustrations/insights/).
+
+Context: the 65 waiting mails open on a gentle observation ("Paid hours and focused hours are rarely the same number") and show one sample line. They never say plainly what the founder is losing or what TeamGrid would have caught.
+
+Status: 21 draft mails written, one per capability. They are ideas 89 to 109 and are shown on public/email-content-loss/index.html. They are not yet in the live idea bank (`config.writing.ideas`), and no waiting mail has been rewritten. Both wait for Dhaval's approval.
+
+### How each mail is built
+
+1. **The problem**, stated plainly: "You pay for 9 hours. Right now you cannot see how many are real work."
+2. **What TeamGrid found**, as a sample: minutes on named sites, idle time, late logins, hours in calls.
+3. **What it costs**: rupees or hours, worked out in simple arithmetic and labelled "example".
+4. **What TeamGrid does**: three short lines, taken only from `facts.canDo`.
+5. **What you get back**: one line.
+6. **One button.** The P.S. carries the trial terms.
+
+### Rules kept
+
+- Professional register, no contractions, sentences of 20 words or fewer, "Best regards, The TeamGrid Team".
+- Roles, not names, in the mail text. Names appear only on sample screens.
+- The reader's own numbers are never stated. Every figure is either "sample" (a screen) or "example" (arithmetic), or comes from a named outside source (Slack/Qualtrics 43%).
+- No claim from `facts.unverified` (+32% focus, 6.2 hours, 500+ companies). No ROI promise.
+- Advanced-plan features carry the plan and ₹649 in the mail.
+- Subjects avoid "monitoring", "tracking employees" and "productivity score".
+
+### What changes from the 2026-09-17 rules
+
+- The 2026-09-17 research said: do not treat idle time as an accusation, and do not use an activity figure as a verdict. These mails put the lost time first, on purpose, because Dhaval asked for it. Mails still never say "catch", "spy" or "unproductive employee", and each one repeats the no-screenshots line.
+- IN-R1 asked for 50–80 words. These run 87–133 words because each carries a cost block. Trim before use where the format caps at 125.
+
+### Idea bank additions (draft)
+
+| # | Subject | Their situation | Cost line | Capability | Plan |
+|---|---|---|---|---|---|
+| 89 | You pay for 9 hours. How many are work? | You pay your team for 9 hours a day. Right now you cannot see how many of those hours are real work. | If 3 of 9 hours are not work: ₹6.7 lakh a month paid for no work | Active, idle and focus time (desktop app) | Standard |
+| 90 | 2 hours a day of YouTube, on your payroll | Every team loses time to YouTube, Instagram and shopping sites. Nobody sees it, so nobody fixes it. | 10 people like this: ₹88,000 a month | App and website categories: productive, neutral, distracting | Standard |
+| 91 | 4 hours of calls. 1 hour of work. | Your managers are busy all day. But a day full of calls is not a day of work done. | 5 managers: ₹1.75 lakh a month in calls | Hourly breakdown: meetings, focus, idle | Standard |
+| 92 | Longest stretch of work today: 14 minutes | WhatsApp pings, "quick call?" and "any update?" cut the day into small pieces. Hard work needs long quiet stretches. | So it moves to late evenings: or it slips | Focus time, hour by hour | Standard |
+| 93 | Stop the 8 PM "any update?" calls | Every evening you call or message each manager to ask what happened today. Half the answers are "working on it". | And the answers: are still guesses | Daily AI work summary by 6 PM | Standard |
+| 94 | Biometric shows who came in. Not who worked. | A punch at 9:30 says someone reached the office. It does not say when work started. For work from home, you know even less. | Plus HR time: fixing attendance by hand | Attendance from real activity, no punch clock | Standard |
+| 95 | 3 days of payroll chasing, every month | At month end, HR chases timesheets, leave records and "half day" arguments. Payroll waits for all of it. | Late payroll: an unhappy team | Automatic timesheets, leave, shifts and payroll export (HRMS) | Advanced |
+| 96 | The client who costs more than they pay | Some clients take far more hours than their fee covers. You find out at renewal, or never. | Loss on this one client: ₹14,000 a month | Hours by project and client, no timesheets | Standard |
+| 97 | Appraisals on 12 weeks of data, not memory | Most raises are decided on memory and on who speaks loudest. The quiet person doing the most work often gets the least. | A strong person who feels ignored: leaves | Productivity scores and 12-week trends per person | Standard |
+| 98 | Idle time doubled. Nobody told you. | People rarely resign without signs. Work slows, idle time grows, late nights pile up. Nobody connects it until the resignation mail arrives. | Plus the months: a new person needs to learn the work | Early warnings: activity falling, after-hours rising | Advanced |
+| 99 | A few people are carrying your whole team | In most teams, a few people do most of the work. They are also the ones who burn out and leave first. | Their work lands on others: and deadlines slip | Workload per person, uneven workload flag | Advanced |
+| 100 | A client email has waited since Monday | A client writes on Monday. By Thursday nobody has replied. You hear about it when the client complains, or leaves. | Lost over slow replies: all of it | Email Insights: reply wait by team and client | Advanced |
+| 101 | The deal that went quiet two weeks ago | A lead asks for a quote. The follow-up slips. Two weeks later the deal is gone, and nobody can say when it went cold. | Five like it in a quarter: ₹15 lakh | CRM that logs activity and alerts when a deal goes quiet | Advanced |
+| 102 | Which project slipped this week, and why? | Today, to learn why a project slipped, you ask four managers and wait a day. Each one tells a different story. | Answers based on opinion: not on what happened | Ask TeamGrid: plain-language questions | Advanced |
+| 103 | Your whole week on one page, every Monday | The Monday review takes the whole morning. Six managers read out numbers from six Excel sheets. | 4 Mondays: about 48 hours a month | Weekly Founder's Report | Advanced |
+| 104 | Leave that lands before every deadline | Some leave follows a pattern: Mondays, the day before a deadline, the week after a hard review. Nobody sees the pattern in a leave register. | Others cover the work: and get tired | Leave patterns (early warnings) | Advanced |
+| 105 | 43% of the workday goes to looking busy | A Slack survey found that Indian workers spend 43% of their working time on work that only looks busy. That was the highest of all countries surveyed. | If your team matched the survey: ₹8.6 lakh a month goes to looking busy | Active time, focus and apps: real work vs looking busy | Standard |
+| 106 | Overtime claims nobody can check | Overtime is paid on what people write down. Some of it is real. Some of it is a laptop left open. | For 20 people: ₹1.2 lakh a month, unchecked | After-hours active time and automatic timesheets | Standard |
+| 107 | 4 tools, or one ₹649 seat | Many teams pay for a time tracker billed in dollars, an HRMS, a CRM, and still keep timesheets in Excel. None of them agree with each other. | Data that never matches: hours of fixing every month | One platform: time, HRMS and CRM | Advanced |
+| 108 | Install today. See the gaps tomorrow. | You do not need a long rollout to see where time goes. One small app on each computer is enough. | Trial: 7 days, no card | 5-minute install, first report next morning, 7-day trial | Standard |
+| 109 | No screenshots. You still see the lost hours. | Screenshot tools make a team feel watched, and good people leave. But without any tool, you cannot see the lost hours at all. | Camera: never | Privacy: no screenshots, no keystrokes, employees see their own data | Standard |
+
+### Gaps and what to build
+
+| # | Finding | Engine today | Build | Status |
+|---|---|---|---|---|
+| LF1 | Waiting mails are too soft to earn attention | 65 waiting mails in teamgrid_leads_v3 open on gentle observations | Rewrite in template 4 only the leads the soft mails are not reaching: in-profile leads with two or more mails sent (or one opened) and no click. 25 of 65 rewritten on 2026-09-21; welcome, closing, off-profile and early-stage mails left as they were. The old mail is kept on each action under `before` | done 2026-09-21, awaiting review |
+| LF2 | The writer is never told to lead with the loss | `voice.do` asks for one problem and one feature | Add to `voice.do`: "state what the reader loses today in rupees or hours before naming the feature; show one sample finding" | proposed |
+| LF3 | Ideas 89–109 are not in the live bank | 88 bank ideas and 10 invented ones | Added to `config.writing.ideas` with hook, proof, keywords, pattern, also and their picture key | done 2026-09-21 |
+| LF4 | Payroll, email waits, CRM, Ask TeamGrid, Founder's Report, leave and overtime mails have no picture | Illustrations exist for 9 topics | 11 more insight pictures drawn (attendance, payroll, client, workload, emailwait, deals, ask, monday, leave, overtime, tools) in public/email-illustrations/insights/ | done 2026-09-21 |
+| LF5 | The first drafts repeated the picture's numbers in the text (Dhaval: "basically repetition of data") | Three formats: text, letter, designed | A fourth template, "picture + short text": the picture carries the findings; the text gives only the cost in rupees or hours, what TeamGrid does, what you get back and one button, in 65–89 words. Drafts for all 21 ideas on public/email-content-loss/picture.html | built 2026-09-21: format `picture`, `action.picture`, `renderPicture`, a Picture tab in Review beside Designed, Letter and Plain text; the 20 pictures are in `config.email.pictures`. Optional per mail, never a bulk switch |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -1182,3 +1251,4 @@ towards "automation works"; LinkedIn's own help pages are the only independent s
 | 98 | LinkedIn: routine 6 plans and writes per lead from the channel's rule set | LI8 | built 2026-09-18; its remote trigger waits on approval |
 | 99 | LinkedIn: approved comments before invites; founder posts and their engagers | LI9, LI11 | todo |
 | 100 | One campaign across channels; Claude picks the channel per step | LI10 | todo |
+| 101 | Loss-first mails: rewrite waiting v3 mails, voice rule, ideas 89–109 in the bank, template 4 (picture + short text) in the engine | LF1–LF5 | done 2026-09-21 except the voice rule (LF2) and letting the writer pick template 4 itself |

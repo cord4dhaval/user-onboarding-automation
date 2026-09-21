@@ -1,0 +1,56 @@
+[
+ {
+  "key": "welcome",
+  "bg": "#e8f6f5",
+  "alt": "TeamGrid morning brief: yesterday's work for each team, written up automatically",
+  "caption": "Your team's day, written for you"
+ },
+ {
+  "key": "setup",
+  "bg": "#e9f5ee",
+  "alt": "TeamGrid setup in three steps: install the agent, invite the team, first summary tomorrow morning",
+  "caption": "Running by this afternoon"
+ },
+ {
+  "key": "trust",
+  "bg": "#eef0fa",
+  "alt": "TeamGrid shows work patterns only: screenshots and keystroke logging are never captured, and the team member sees the same view",
+  "caption": "Patterns, not surveillance"
+ },
+ {
+  "key": "meetings",
+  "bg": "#fbf0e6",
+  "alt": "Status meetings crossed off the calendar, replaced by TeamGrid's written story of the day",
+  "caption": "Skip the status meeting"
+ },
+ {
+  "key": "focus",
+  "bg": "#e8f0fa",
+  "alt": "Chat messages asking for updates, muted, next to a team member's uninterrupted focus time in TeamGrid",
+  "caption": "Stop asking “any update?”"
+ },
+ {
+  "key": "summary",
+  "bg": "#fdf0e7",
+  "alt": "A phone notification from TeamGrid with yesterday's work written up: done items and one waiting on a client",
+  "caption": "No more chasing updates at 6 pm"
+ },
+ {
+  "key": "people",
+  "bg": "#e8f1fb",
+  "alt": "TeamGrid team view over a quarter: one steady contributor highlighted, one teammate flagged as overloaded",
+  "caption": "Credit the people carrying the load"
+ },
+ {
+  "key": "early",
+  "bg": "#fdf4e3",
+  "alt": "A work trend dipping over weeks: TeamGrid flags it the week it starts, long before a resignation letter",
+  "caption": "Hear it on day one, not at resignation"
+ },
+ {
+  "key": "hours",
+  "bg": "#e6f5f4",
+  "alt": "TeamGrid's where-hours-went view: time split by client and project, filled in without a timesheet",
+  "caption": "See where the hours went"
+ }
+]

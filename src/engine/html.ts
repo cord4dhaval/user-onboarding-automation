@@ -389,9 +389,35 @@ export function illustrationFor(product: Record<string, unknown> | null | undefi
   return list.find((i) => (i.match ?? []).some((w) => hay.includes(w.toLowerCase()))) ?? list.find((i) => !i.match?.length);
 }
 
-export function designedBrandFrom(kit: ResolvedKit, product: Record<string, unknown> | null | undefined, about: unknown[]): DesignedBrand {
-  const hero = illustrationFor(product, about);
+/**
+ * The brand a designed or picture mail wears. A message that carries its own picture puts it
+ * on top in place of the product's illustration: its text was written about that picture.
+ */
+export function designedBrandFrom(
+  kit: ResolvedKit,
+  product: Record<string, unknown> | null | undefined,
+  about: unknown[],
+  picture?: { url: string; alt: string; bg: string },
+): DesignedBrand {
+  const hero = picture ?? illustrationFor(product, about);
   return { ...letterBrandFrom(kit, product), ...(hero ? { hero: { url: hero.url, alt: hero.alt, bg: hero.bg } } : {}) };
+}
+
+/**
+ * The HTML for an email in the format it goes out as. One place for the choice, so the
+ * sender and the review screen cannot disagree about what a format looks like.
+ */
+export function emailHtmlFor(
+  format: unknown,
+  resolved: ResolvedTemplate,
+  kit: ResolvedKit,
+  product: Record<string, unknown> | null | undefined,
+  about: unknown[],
+  picture?: { url: string; alt: string; bg: string },
+): string {
+  if (String(format) === "letter") return renderLetter(resolved, letterBrandFrom(kit, product));
+  if (String(format) === "picture" && picture) return renderPicture(resolved, designedBrandFrom(kit, product, about, picture));
+  return editorialDesign(product) ? renderDesigned(resolved, designedBrandFrom(kit, product, about, picture)) : renderHtml(resolved, kit);
 }
 
 /**
@@ -571,6 +597,8 @@ export function renderDesigned(resolved: ResolvedTemplate, brand: DesignedBrand)
         rows.push(row(hair, 24));
         break;
       case "image": {
+        // The message's own picture already sits on top as the hero.
+        if (brand.hero && block.url === brand.hero.url) break;
         const img = `<img src="${attr(block.url)}" alt="${attr(block.alt)}" width="${Math.min(block.width ?? 512, 512)}" style="display:block;width:100%;max-width:512px;height:auto;border:0;border-radius:10px;" />`;
         rows.push(row(block.href ? `<a href="${attr(block.href)}" style="text-decoration:none;">${img}</a>` : img, 24));
         break;
@@ -637,6 +665,201 @@ ${preheaderHtml(preheader)}
     <tr><td class="pad" style="padding:${hero ? "22px 44px 18px" : "36px 44px 28px"};">${header}</td></tr>
     ${hero}
     <tr><td class="pad" style="padding:${hero ? 30 : 4}px 44px 36px;"><table ${T} width="100%">${rows.join("\n")}</table></td></tr>
+  </table>
+</td></tr></table>
+</body>
+</html>`;
+}
+
+/**
+ * Template 4, "picture + short text" (Dhaval chose it on 2026-09-21).
+ *
+ * The picture carries the findings: the hours, the sites, the late start, the quiet deal. The
+ * words add only what the picture cannot show: what it costs, what the product does about
+ * it, what the reader gets back, and one button. The first drafts repeated the picture's
+ * numbers in a table under it, which he called "basically repetition of data".
+ *
+ * It reads the same frame and parts as the other formats, so a reviewer can still switch a
+ * picture mail to designed, letter or plain text. Here the opening is a bold line, the scene
+ * the lead under the picture, the cost card a two-column table, the shows list a set of
+ * ticks, the question the highlighted "what you get back" line and the limit a small note.
+ * With images off the band keeps its colour and the alt text says what the picture showed.
+ */
+export function renderPicture(resolved: ResolvedTemplate, brand: DesignedBrand): string {
+  const F = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  const T = `role="presentation" cellpadding="0" cellspacing="0" border="0"`;
+  const accent = brand.accent || "#1a73e8";
+  const ink = inkOf(accent);
+  const soft = lighten(accent, 0.9);
+  const [text, body, muted, rule] = ["#101114", "#3c4043", "#5f6368", "#e5e7eb"];
+  const name = brand.name?.trim() || "";
+  const site = brand.website ? brand.website.replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
+  const row = (html: string, pb = 20) => `<tr><td style="padding:0 0 ${pb}px;">${html}</td></tr>`;
+  const para = (html: string, size = 16, color = body, weight = 400) =>
+    `<p style="margin:0;font-family:${F};font-size:${size}px;line-height:1.6;color:${color};font-weight:${weight};">${html}</p>`;
+  const paras = (raw: string) => raw.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean).map((p, k, all) => `${para(inline(p))}${k < all.length - 1 ? '<div style="height:12px;line-height:12px;font-size:0;">&nbsp;</div>' : ""}`).join("");
+  const label = (t: string) =>
+    `<p style="margin:0 0 8px;font-family:${F};font-size:11px;line-height:1.4;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;color:${muted};">${inline(t.replace(/:\s*$/, ""))}</p>`;
+  const hair = `<table ${T} width="100%"><tr><td style="border-top:1px solid ${rule};font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
+  const logo = (size: number) =>
+    brand.logoUrl ? `<img src="${attr(brand.logoUrl)}" width="${size}" height="${size}" alt="${attr(name)}" style="display:block;border:0;border-radius:6px;" />` : "";
+  const checks = (items: string[]) =>
+    `<table ${T} width="100%">${items
+      .map(
+        (item, k) =>
+          `<tr><td width="30" valign="top" style="padding:0 0 ${k === items.length - 1 ? 0 : 8}px;"><table ${T}><tr><td width="20" height="20" align="center" valign="middle" bgcolor="${soft}" style="width:20px;height:20px;background:${soft};border-radius:6px;font-family:${F};font-size:12px;font-weight:700;color:${ink};">&#10003;</td></tr></table></td><td valign="top" style="padding:0 0 ${k === items.length - 1 ? 0 : 8}px;font-family:${F};font-size:15px;line-height:1.45;color:${text};">${inline(item)}</td></tr>`,
+      )
+      .join("")}</table>`;
+  const bullets = (items: string[]) =>
+    `<ul style="margin:0;padding:0 0 0 22px;">${items.map((item) => `<li style="margin:0 0 6px;font-family:${F};font-size:15px;line-height:1.5;color:${body};">${inline(item)}</li>`).join("")}</ul>`;
+  // What it costs: the situation on the left, the amount on the right, one hairline apart.
+  const costTable = (rows: Array<{ label: string; value: string }>) =>
+    `<table ${T} width="100%">${rows
+      .map(
+        (r, k) =>
+          `<tr><td valign="top" style="padding:9px 12px 9px 0;${k ? `border-top:1px solid ${rule};` : ""}font-family:${F};font-size:15px;line-height:1.45;color:${body};">${inline(r.label)}</td><td valign="top" align="right" style="padding:9px 0;${k ? `border-top:1px solid ${rule};` : ""}font-family:${F};font-size:15px;line-height:1.45;font-weight:700;color:${text};">${inline(r.value.replace(/^\s*(→|->|&rarr;)\s*/, ""))}</td></tr>`,
+      )
+      .join("")}</table>`;
+
+  const blocks = resolved.blocks;
+  const rows: string[] = [];
+  let ctaSeen = false;
+  let signed = false;
+  const signature = () => {
+    if (signed || !name) return "";
+    signed = true;
+    return `${hair}<table ${T} style="margin-top:18px;"><tr>${brand.logoUrl ? `<td valign="top" style="padding:2px 12px 0 0;">${logo(30)}</td>` : ""}<td valign="top" style="font-family:${F};font-size:12px;line-height:1.55;color:${muted};"><strong style="color:${text};font-size:13px;">${esc(name)}</strong>${
+      brand.tagline ? `<br />${esc(brand.tagline)}` : ""
+    }${brand.website ? `<br /><a href="${attr(brand.website)}" style="color:${ink};font-weight:700;text-decoration:none;">${esc(site)}</a>` : ""}</td></tr></table>`;
+  };
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]!;
+    const next = blocks[i + 1];
+    switch (block.kind) {
+      case "preheader":
+        break;
+      case "heading":
+        rows.push(row(para(inline(block.text), 20, text, 700), 14));
+        break;
+      case "text": {
+        const raw = block.text.trim();
+        if (block.slot === "opening") {
+          rows.push(row(para(inline(raw.replace(/\*\*/g, "")), 18, text, 700), 12));
+          break;
+        }
+        if (block.slot === "question") {
+          rows.push(
+            row(
+              `<table ${T} width="100%"><tr><td bgcolor="${soft}" style="background:${soft};border-left:3px solid ${ink};border-radius:0 8px 8px 0;padding:12px 16px;font-family:${F};font-size:15px;line-height:1.5;font-weight:700;color:${ink};">${inline(raw.replace(/\*\*/g, ""))}</td></tr></table>`,
+              24,
+            ),
+          );
+          break;
+        }
+        if (block.slot === "limit") {
+          rows.push(row(para(inline(raw), 13, muted), 18));
+          break;
+        }
+        if (block.tight && next?.kind === "list" && next.fromParts) {
+          rows.push(row(`${label(raw)}${next.style === "receipt" ? sampleCard("", next.items, ink) : checks(next.items)}`, 22));
+          i++;
+          break;
+        }
+        if (/^(hi|hello|dear)\b[^\n]{0,40},$/i.test(raw)) {
+          rows.push(row(para(inline(raw)), 12));
+          break;
+        }
+        if (/^P\.S\./.test(raw)) {
+          rows.push(row(para(inline(raw), 14, muted), 20));
+          break;
+        }
+        if (/^best regards,?/i.test(raw)) {
+          rows.push(row(para(inline(raw)), 20));
+          break;
+        }
+        rows.push(row(paras(raw), block.tight ? 8 : 20));
+        break;
+      }
+      case "list":
+        rows.push(row(block.style === "receipt" ? sampleCard("", block.items, ink) : block.style === "check" ? checks(block.items) : bullets(block.items), 22));
+        break;
+      case "card":
+        rows.push(row(`${block.title ? label(block.title) : ""}${costTable(block.rows)}`, 22));
+        break;
+      case "callout":
+        rows.push(row(para(inline(block.text), 15, text), 20));
+        break;
+      case "divider":
+        rows.push(row(hair, 20));
+        break;
+      case "image": {
+        // The picture is on top already; any other image sits where the frame put it.
+        if (brand.hero && block.url === brand.hero.url) break;
+        const img = `<img src="${attr(block.url)}" alt="${attr(block.alt)}" width="512" style="display:block;width:100%;max-width:512px;height:auto;border:0;border-radius:10px;" />`;
+        rows.push(row(block.href ? `<a href="${attr(block.href)}" style="text-decoration:none;">${img}</a>` : img, 20));
+        break;
+      }
+      case "cta":
+        if (ctaSeen) {
+          rows.push(row(para(`<a href="${attr(block.url)}" style="color:${ink};font-weight:700;">${inline(block.text)}</a>`), 20));
+        } else {
+          rows.push(
+            row(
+              `<table ${T}><tr><td bgcolor="${ink}" style="background:${ink};border-radius:8px;"><a class="cta" href="${attr(block.url)}" style="display:inline-block;padding:13px 22px;font-family:${F};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">${inline(block.text)} &rarr;</a></td></tr></table>`,
+              24,
+            ),
+          );
+          ctaSeen = true;
+        }
+        break;
+      case "optout":
+        rows.push(
+          row(
+            `${signature()}<p style="margin:18px 0 0;font-family:${F};font-size:12px;line-height:1.5;color:${muted};">Not useful? Reply "remove me", or <a href="${attr(block.url)}" style="color:${muted};">unsubscribe</a>.</p>`,
+            0,
+          ),
+        );
+        break;
+    }
+  }
+  if (!signed && name) rows.push(row(signature(), 0));
+
+  const header = `<table ${T} width="100%"><tr><td valign="middle"><table ${T}><tr>${brand.logoUrl ? `<td style="padding:0 8px 0 0;">${logo(26)}</td>` : ""}<td style="font-family:${F};font-size:16px;font-weight:700;color:${text};">${esc(name)}</td></tr></table></td>${
+    site ? `<td align="right" valign="middle" style="font-family:${F};font-size:12px;color:${muted};">${esc(site)}</td>` : ""
+  }</tr></table>`;
+  const hero = brand.hero
+    ? `<tr><td bgcolor="${attr(brand.hero.bg)}" align="center" style="background:${attr(brand.hero.bg)};"><img src="${attr(brand.hero.url)}" width="600" height="260" alt="${attr(brand.hero.alt)}" style="display:block;width:100%;max-width:600px;height:auto;border:0;font-family:${F};font-size:15px;font-weight:700;line-height:1.5;color:${ink};" /></td></tr>`
+    : "";
+  const preheader = blocks.find((b) => b.kind === "preheader");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="x-apple-disable-message-reformatting" />
+<meta name="color-scheme" content="light" />
+<meta name="supported-color-schemes" content="light" />
+<title>${esc(resolved.subject ?? "")}</title>
+<style>
+  body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
+  table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}
+  img{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none;}
+  @media only screen and (max-width:620px){
+    .wrap{width:100% !important;border-radius:0 !important;}
+    .outer{padding:0 !important;}
+    .pad{padding-left:22px !important;padding-right:22px !important;}
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f4f5f7;">
+${preheaderHtml(preheader)}
+<table ${T} width="100%" style="background:#f4f5f7;"><tr><td class="outer" align="center" style="padding:32px 12px;">
+  <table ${T} class="wrap" width="600" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">
+    <tr><td class="pad" style="padding:20px 40px 16px;">${header}</td></tr>
+    ${hero}
+    <tr><td class="pad" style="padding:${hero ? 28 : 4}px 40px 34px;"><table ${T} width="100%">${rows.join("\n")}</table></td></tr>
   </table>
 </td></tr></table>
 </body>

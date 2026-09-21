@@ -1,0 +1,122 @@
+[
+ {
+  "key": "welcome",
+  "bg": "#fdf0ee",
+  "alt": "TeamGrid's morning report: for each person, productive, distracting and idle time. Rahul spent 2 hours 10 minutes on distracting sites, Vikram 1 hour 40 minutes idle.",
+  "caption": "How much of yesterday was work?"
+ },
+ {
+  "key": "setup",
+  "bg": "#e9f5ee",
+  "alt": "TeamGrid installed today; the first report next morning shows three late logins, 2 hours 15 minutes of idle time and 1 hour 20 minutes on youtube.com.",
+  "caption": "Install today. See gaps tomorrow"
+ },
+ {
+  "key": "trust",
+  "bg": "#eef0fa",
+  "alt": "TeamGrid's apps and websites view for one person: productive tools on top, then youtube.com, instagram.com and amazon.in flagged as 2 hours of distracting time, with no screenshots or keystrokes taken.",
+  "caption": "No screenshots. Still see time lost"
+ },
+ {
+  "key": "meetings",
+  "bg": "#f3effa",
+  "alt": "Sneha's Tuesday in TeamGrid: 4 hours 5 minutes in meetings, 1 hour 55 minutes on email and chat, only 1 hour 10 minutes of focused work, 50 minutes idle.",
+  "caption": "4 hours of calls. 1 hour of work"
+ },
+ {
+  "key": "focus",
+  "bg": "#e8f0fa",
+  "alt": "Aarav's day in TeamGrid, broken into small pieces: 1 hour 38 minutes on WhatsApp Web, 52 minutes on distracting sites, and no stretch of focused work longer than 14 minutes.",
+  "caption": "WhatsApp: 1h 38m. Longest focus: 14m"
+ },
+ {
+  "key": "summary",
+  "bg": "#fdf0e7",
+  "alt": "TeamGrid's evening summary listing the day's problems by name: Rahul 1 hour 15 minutes on youtube.com, Kavya 1 hour 40 minutes idle, Vikram logged in at 11:12 AM, Priya blocked for 4 hours.",
+  "caption": "The 6 pm summary names the problems"
+ },
+ {
+  "key": "people",
+  "bg": "#e8f1fb",
+  "alt": "TeamGrid's weekly view of productive hours per person: Meera 46 hours, Kavya 38, Aarav 35, Rahul 22 with 11 hours on distracting sites.",
+  "caption": "Meera: 46 hours. Rahul: 22"
+ },
+ {
+  "key": "early",
+  "bg": "#fdf4e3",
+  "alt": "Vikram's idle time per day in TeamGrid, rising from 45 minutes in June to 1 hour 30 minutes in September, flagged the week it began.",
+  "caption": "Idle time doubled. Nobody told you"
+ },
+ {
+  "key": "hours",
+  "bg": "#e6f5f4",
+  "alt": "Where Rohan's 8 hours went in TeamGrid: 5 hours of work in Cursor, Google Docs and Teams, and 3 hours not on work, on youtube.com, instagram.com, amazon.in and idle.",
+  "caption": "8 hours online. 3 were not work"
+ },
+ {
+  "key": "attendance",
+  "bg": "#fdf4e3",
+  "alt": "TeamGrid attendance for four people: punch time next to the time real work started. One person punched in at 9:31 but started work at 10:45; one person working from home started at 11:05.",
+  "caption": "Punched in at 9:31. Work started at 10:45"
+ },
+ {
+  "key": "payroll",
+  "bg": "#eef0fa",
+  "alt": "Left: three month-end days spent chasing timesheets, fixing leave and settling half-day disputes. Right: TeamGrid's payroll export with every timesheet filled automatically.",
+  "caption": "3 days of chasing. Or one export"
+ },
+ {
+  "key": "client",
+  "bg": "#fdf0ee",
+  "alt": "TeamGrid's hours by client for one month: Client A pays ₹50,000 but took 160 hours, ₹64,000 of salary, a loss of ₹14,000. Clients B and C are profitable.",
+  "caption": "₹50,000 fee. ₹64,000 of salary"
+ },
+ {
+  "key": "workload",
+  "bg": "#e8f1fb",
+  "alt": "Bar chart of a 10-person team's productive hours this week: the top three people did 150 of 300 hours, half of all the work.",
+  "caption": "3 people do half the work"
+ },
+ {
+  "key": "emailwait",
+  "bg": "#e6f5f4",
+  "alt": "TeamGrid Email Insights: an invoice query from Client A has waited 3 days and 4 hours for a reply, a change request 1 day; the accounts team replies in 19 hours on average, support in 2.",
+  "caption": "A client email, waiting 3 days"
+ },
+ {
+  "key": "deals",
+  "bg": "#fdf0e7",
+  "alt": "TeamGrid CRM alert: three deals worth ₹9 lakh together have had no activity for 9 to 16 days.",
+  "caption": "₹9 lakh in deals, gone quiet"
+ },
+ {
+  "key": "ask",
+  "bg": "#eef0fa",
+  "alt": "Ask TeamGrid: the question 'Which project slipped this week, and why?' answered from recorded work: the website revamp slipped 4 days because design waited on client files and developers spent most of Wednesday in meetings.",
+  "caption": "Ask in plain English. Get the real answer"
+ },
+ {
+  "key": "monday",
+  "bg": "#e9f5ee",
+  "alt": "TeamGrid's weekly Founder's Report: three wins, two risks (operations spent 41% of the week in meetings; one client took 160 hours on a ₹50,000 fee) and the week ahead.",
+  "caption": "Monday, 9 AM. Your week, one page"
+ },
+ {
+  "key": "leave",
+  "bg": "#fdf4e3",
+  "alt": "A quarter's timeline for one team member: five deadlines, each with a leave day just before it. TeamGrid flags the pattern.",
+  "caption": "5 leaves this quarter. All before deadlines"
+ },
+ {
+  "key": "overtime",
+  "bg": "#fdf0ee",
+  "alt": "TeamGrid overtime view for one person in September: 20 overtime hours claimed, 8 hours of real active work after hours, 12 hours with the laptop open and idle.",
+  "caption": "20 hours claimed. 8 hours worked"
+ },
+ {
+  "key": "tools",
+  "bg": "#e8f0fa",
+  "alt": "Left: four separate tools, a dollar-billed time tracker, an HRMS, a CRM and Excel timesheets, whose data does not match. Right: TeamGrid covers all four for ₹649 per user a month.",
+  "caption": "4 tools, 4 bills. Or one ₹649 seat"
+ }
+]

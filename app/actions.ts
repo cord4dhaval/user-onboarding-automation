@@ -41,6 +41,7 @@ import { assetFileUrl, deleteAssetFile, kindForMime, storeAssetFile } from "@/en
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
+import { pictureOf } from "@/engine/picture.js";
 import { addressFor } from "@/engine/address.js";
 import { timezoneFor } from "@/engine/time.js";
 import { stripOpenPixel } from "@/engine/tracking.js";
@@ -1736,7 +1737,8 @@ export async function decide(formData: FormData) {
   // writer chose for each message: a plain note approved in bulk would otherwise go out
   // rebuilt as a designed mail.
   const chosen = formData.get("format");
-  const chosenFormat = String(chosen ?? "html") === "text" ? "text" : String(chosen ?? "html") === "letter" ? "letter" : "html";
+  const picked = String(chosen ?? "html");
+  const chosenFormat = picked === "text" || picked === "letter" || picked === "picture" ? picked : "html";
   const waiting = {
     _id: { $in: ids },
     orgId,
@@ -1970,11 +1972,13 @@ export interface HeldMessage {
   subject?: string;
   /** The idea a written touch was built on, and the writer's format choice with its reason. */
   theme?: string;
-  chosenFormat?: "text" | "html" | "letter";
+  chosenFormat?: "text" | "html" | "letter" | "picture";
   formatWhy?: string;
   bodyHtml?: string;
   /** The same message as a letter: HTML that looks typed, with no logo, box or button. */
   bodyLetter?: string;
+  /** Template 4, the picture on top and the short text under it. Only for a message written around a picture. */
+  bodyPicture?: string;
   bodyText?: string;
   rationale?: string;
   /** False when the channel cannot carry HTML, so the designed version is not on offer. */
@@ -2222,14 +2226,17 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   // anything was missing. Render it the way the sender will instead.
   let rendered: { subject?: string; bodyMd?: string; bodyHtml?: string } | undefined;
   let previewError: string | undefined;
-  const storedAsLetter = action.format === "letter";
+  const storedAs = action.format === "letter" ? "letter" : action.format === "picture" ? "picture" : "html";
+  const hasPicture = Boolean(pictureOf(action));
   // The stored HTML is the version the writer picked, and it ships exactly as read.
-  let designed = storedAsLetter ? undefined : content.bodyHtml;
-  let letter = storedAsLetter ? content.bodyHtml : undefined;
+  let designed = storedAs === "html" ? content.bodyHtml : undefined;
+  let letter = storedAs === "letter" ? content.bodyHtml : undefined;
+  let picture = storedAs === "picture" ? content.bodyHtml : undefined;
   if (!content.bodyMd) {
     try {
       rendered = await previewContent(orgId, action);
-      if (storedAsLetter) letter ??= rendered.bodyHtml;
+      if (storedAs === "letter") letter ??= rendered.bodyHtml;
+      else if (storedAs === "picture") picture ??= rendered.bodyHtml;
       else designed ??= rendered.bodyHtml;
     } catch (err) {
       previewError = err instanceof Error ? err.message : "this message could not be rendered";
@@ -2242,10 +2249,14 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   let versionsError: string | undefined;
   const waiting =
     action.status === "awaiting_approval" || (action.status === "queued" && !action.reviewedAt);
-  if (waiting && !previewError && caps.html !== false && String(action.channel) === "email" && (!designed || !letter)) {
+  if (waiting && !previewError && caps.html !== false && String(action.channel) === "email" && (!designed || !letter || (hasPicture && !picture))) {
     const as = async (format: string) => (await previewContent(orgId, { ...action, format })).bodyHtml;
     try {
-      [designed, letter] = await Promise.all([designed ?? as("html"), letter ?? as("letter")]);
+      [designed, letter, picture] = await Promise.all([
+        designed ?? as("html"),
+        letter ?? as("letter"),
+        hasPicture ? (picture ?? as("picture")) : undefined,
+      ]);
     } catch (err) {
       versionsError = err instanceof Error ? err.message : "the other versions could not be rendered";
     }
@@ -2257,6 +2268,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     // Without the pixel, or the reviewer reading it is recorded as the lead opening it.
     bodyHtml: stripOpenPixel(designed ?? "") || undefined,
     bodyLetter: stripOpenPixel(letter ?? "") || undefined,
+    bodyPicture: stripOpenPixel(picture ?? "") || undefined,
     bodyText: content.bodyMd || rendered?.bodyMd,
     preview: Boolean(rendered),
     previewError,
@@ -2272,7 +2284,8 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
       : undefined,
     rationale: action.rationale ? String(action.rationale) : undefined,
     theme: action.theme ? String(action.theme) : undefined,
-    chosenFormat: action.format === "text" || action.format === "html" || action.format === "letter" ? action.format : undefined,
+    chosenFormat:
+      action.format === "text" || action.format === "html" || action.format === "letter" || action.format === "picture" ? action.format : undefined,
     formatWhy: action.formatWhy ? String(action.formatWhy) : undefined,
     canHtml: caps.html !== false,
     status: String(action.status),

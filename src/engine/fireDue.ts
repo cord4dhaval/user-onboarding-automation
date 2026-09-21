@@ -10,7 +10,8 @@ import {
   type RenderableAsset,
 } from "./compose.js";
 import { addressFor, identityValue } from "./address.js";
-import { designedBrandFrom, editorialDesign, letterBrandFrom, renderDesigned, renderHtml, renderLetter } from "./html.js";
+import { emailHtmlFor } from "./html.js";
+import { pictureOf, withPicture } from "./picture.js";
 import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
@@ -414,7 +415,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // Kept beside `prior` rather than folded into it: `prior` is written back to the
       // action when a message is held, and storing a copy of every asset on every action
       // would be a second, staler copy of the thing we just went and read.
-      const toRender = { ...prior, assets: carried };
+      const toRender = { ...prior, assets: withPicture(carried, action) };
       // An answer to something a person wrote is not a campaign touch, and rendering it
       // through the ladder dresses it as one: it inherits the next rung's heading and
       // subject, so a reply to "what does it cost?" arrives titled "one step left" above a
@@ -446,12 +447,14 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       const wantsHtml = !isReply && String(action.format ?? template.format ?? "html") !== "text";
       if (!content.bodyHtml && wantsHtml && String(action.channel) === "email" && caps?.html !== false) {
         const resolvedForHtml = resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender);
-        content.bodyHtml =
-          String(action.format) === "letter"
-            ? renderLetter(resolvedForHtml, letterBrandFrom(await brandKit(), product))
-            : editorialDesign(product)
-              ? renderDesigned(resolvedForHtml, designedBrandFrom(await brandKit(), product, [action.hook, action.theme, action.angle, template.key]))
-              : renderHtml(resolvedForHtml, await brandKit());
+        content.bodyHtml = emailHtmlFor(
+          action.format,
+          resolvedForHtml,
+          await brandKit(),
+          product,
+          [action.hook, action.theme, action.angle, template.key],
+          pictureOf(action),
+        );
       }
       // Tracking is wrapped in at send rather than at compose. What a reviewer approved is
       // the words, and a redirect does not change them — but a draft that never goes out
@@ -695,7 +698,12 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
         // A queued message is not a sent message. It waits at "dispatched" until the
         // reconciler confirms it with the provider.
-        const variant = variantOf(person, action, carried, content.bodyHtml ? (String(action.format) === "letter" ? "letter" : "html") : "text");
+        const variant = variantOf(
+          person,
+          action,
+          carried,
+          content.bodyHtml ? (String(action.format) === "letter" ? "letter" : String(action.format) === "picture" ? "picture" : "html") : "text",
+        );
         const queued = result.disposition === "queued" && !dryRun;
         await db.collection(C.actions).updateOne(
           { _id: action._id },
@@ -824,7 +832,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     person: Record<string, unknown>,
     action: Record<string, unknown>,
     carried: RenderableAsset[] = [],
-    format?: "html" | "text" | "letter",
+    format?: "html" | "text" | "letter" | "picture",
   ) {
     const belief = person.belief as { segment?: string; fitKnown?: boolean } | undefined;
     const variant: Record<string, unknown> = {

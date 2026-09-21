@@ -2,7 +2,8 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { renderTemplate, resolveBlocks, type ComposedContent } from "./compose.js";
-import { designedBrandFrom, editorialDesign, letterBrandFrom, renderDesigned, renderHtml, renderLetter } from "./html.js";
+import { emailHtmlFor } from "./html.js";
+import { pictureOf, withPicture } from "./picture.js";
 import { loadBrandKit } from "./brand.js";
 import { resolveTemplateFor } from "./templates.js";
 import { rungsSentTo, stepTemplateKey } from "./fireDue.js";
@@ -64,7 +65,7 @@ export async function previewContent(
   // carries something is the thing it carries. Loaded the same way the sender loads it.
   const toRender = {
     ...prior,
-    assets: await assetsForRender(orgId, productId, action.assetIds, template.blocks),
+    assets: withPicture(await assetsForRender(orgId, productId, action.assetIds, template.blocks), action),
   };
   const content = renderTemplate(template.blocks as Record<string, unknown>[], vars, toRender);
 
@@ -77,12 +78,14 @@ export async function previewContent(
   let bodyHtml: string | undefined;
   if (wantsHtml && String(action.channel) === "email" && caps.html !== false) {
     const resolved = resolveBlocks(template.blocks as Record<string, unknown>[], vars, toRender);
-    bodyHtml =
-      String(action.format) === "letter"
-        ? renderLetter(resolved, letterBrandFrom(await loadBrandKit(orgId, productId), product))
-        : editorialDesign(product)
-          ? renderDesigned(resolved, designedBrandFrom(await loadBrandKit(orgId, productId), product, [action.hook, action.theme, action.angle, template.key]))
-          : renderHtml(resolved, await loadBrandKit(orgId, productId));
+    bodyHtml = emailHtmlFor(
+      action.format,
+      resolved,
+      await loadBrandKit(orgId, productId),
+      product,
+      [action.hook, action.theme, action.angle, template.key],
+      pictureOf(action),
+    );
   }
 
   return { subject: content.subject, bodyMd: content.bodyMd, bodyHtml };
