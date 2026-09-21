@@ -326,6 +326,23 @@ async function assertProduct(productId: string, ctx: ToolCtx): Promise<string> {
  * reads the raw touch list and sees a timestamp seconds after the send has the explanation
  * on the same object instead of inferring interest from a scanner.
  */
+/** Sent, opened and clicked per format, people only: a gateway scan is not a reader. */
+function engagementByFormat(actions: Array<Record<string, unknown>>): Record<string, { sent: number; opened: number; clicked: number }> {
+  const out: Record<string, { sent: number; opened: number; clicked: number }> = {};
+  for (const a of actions) {
+    if (a.channel !== "email" || !["sent", "dispatched"].includes(String(a.status))) continue;
+    const key = String(a.format ?? "template");
+    const row = (out[key] ??= { sent: 0, opened: 0, clicked: 0 });
+    const signals = (a.signals ?? []) as Array<{ type?: string; bot?: unknown }>;
+    const human = (type: string, stamp: unknown) =>
+      signals.length ? signals.some((sig) => sig.type === type && !sig.bot) : Boolean(stamp);
+    row.sent++;
+    if (human("opened", a.firstOpenedAt)) row.opened++;
+    if (human("clicked", a.firstClickedAt)) row.clicked++;
+  }
+  return out;
+}
+
 function engagementOf(
   actions: Array<Record<string, unknown>>,
   events: Array<Record<string, unknown>>,
@@ -847,6 +864,8 @@ export const TOOLS: ToolDef[] = [
           status: a.status,
           sent_at: a.sentAt ?? null,
           subject: (a.content as { subject?: string })?.subject ?? null,
+          format: a.format ?? (a.channel === "email" ? "template" : null),
+          layout: a.layout ?? null,
           claims_made: (a.content as { claimsMade?: string[] })?.claimsMade ?? [],
           opened_at: a.firstOpenedAt ?? null,
           clicked_at: a.firstClickedAt ?? null,
@@ -864,9 +883,11 @@ export const TOOLS: ToolDef[] = [
         // The same thing said once, so a session does not have to fold the touch list to
         // learn whether this person has ever responded at all.
         engagement: engagementOf(actions, events),
+        // What this person did with each format we sent them, for the writer's format choice.
+        engagement_by_format: engagementByFormat(actions),
         events: events.map((e) => ({ type: e.type, ts: e.ts, payload: e.payload })),
         // The writing brief travels in `writing` above, once, and only where it applies.
-        product_config: product?.config ? { ...(product.config as Record<string, unknown>), writing: undefined } : null,
+        product_config: product?.config ? { ...(product.config as Record<string, unknown>), writing: undefined, email: undefined } : null,
         // What each channel can actually carry. Without this, copy gets written to an
         // email's shape and sent as a WhatsApp message, where it lands badly.
         channels: (

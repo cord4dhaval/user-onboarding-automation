@@ -349,7 +349,10 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
              words ("any update?", WFH, late mark, appraisal, ₹ lakh) from
              writing.phrases. No colours or screen words, no spy words, no customer
              quotes; survey numbers name their source (facts.external). ask "link",
-             format "letter", cta_text from the allowed list naming what they will see.
+             format by the rule below, cta_text from the allowed list naming what they
+             will see. The reveal names what TeamGrid hands them about this moment (the
+             line tonight's summary carries, the hours that client took, the flag that
+             fires), never a feature description alone.
              writing.hook_examples show the bar. compose_batch refuses a hot email with no
              reveal, no safety line, screen words, or a reply-only ask outside "closing".
              Show, do not describe: where the step's idea has a card (summary, apps or
@@ -358,12 +361,16 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
              writing.facts.samples. Nouns may fit their business ("GST filings" for a CA
              firm); the times, hours and percentages stay as the sample shows them. It
              renders plain, in the same section as the reveal, and counts in the words.
-  format     "text": a plain note that asks for a reply and carries no link; the
-             default for early touches and anyone who has not clicked. "letter": HTML
-             that looks typed, bold phrases and a link on its own words, no logo, box
-             or button; for a link ask or where a bold phrase carries the idea. "html":
-             the branded design, for a sample, table or screen, or a lead who engages
-             with designed mail. format_why says which, in one sentence.
+  format     decided per person and per mail, in this order:
+             1 "text" for a reply-only ask: a plain note, no link, reads as a person.
+             2 their own record (lead_card engagement_by_format): reuse a format they
+               clicked; after two or more sends, prefer the one they open.
+             3 "letter" (HTML that looks typed, one button) when the story carries the
+               mail with nothing to show, and always for trust and privacy topics.
+             4 "html" (the designed layout, with a picture for the topic) when the mail
+               shows something: a receipt sample, two or more cost lines, a timeline or
+               a list of what they would see.
+             When unsure, letter. format_why names the rule and the evidence.
   theme      the plan step's idea, reworded only if your writing sharpened it.
   hook       story, rupee_math, question, comparison, proof, or your own word.
 Write about their situation as a fact of their business, never as something they told

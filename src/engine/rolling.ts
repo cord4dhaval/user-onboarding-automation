@@ -336,6 +336,19 @@ const NO_WAY_SEQUENCE: Array<{ hook: string; job: string }> = [
   { hook: "closing", job: "The last note: should we close the request, or reply call for a walk-through." },
 ];
 
+/**
+ * How a writer picks plain text, the letter or the designed layout, for this person and this
+ * mail (Dhaval, 2026-09-21: the design only where it is needed, the letter first where it
+ * does the job, decided per lead and per content rather than fixed per campaign).
+ */
+export const FORMAT_CHOICE =
+  "Choose the format for this person and this mail, in this order. " +
+  "1 \"text\" for a reply-only ask (the closing note): a plain note reads as a person and gets answered. " +
+  "2 Their own record (lead_card engagement_by_format): a format they clicked is used again; after two or more sends, one they open beats one they ignore. " +
+  "3 \"letter\" when the story carries the mail with nothing to show (no sample, no cost lines), and always for trust and privacy (no_watching, proof): a typed note is believed where a brochure is not. " +
+  "4 \"html\", the designed layout with a picture for the topic, when the mail shows something: a receipt sample, two or more cost lines, a timeline, or a list of what they would see. " +
+  "When unsure, \"letter\". format_why names the rule and the evidence, for example \"sample 6pm summary to show; opened the designed welcome twice\".";
+
 const NO_WAY_RULES: string[] = [
   "Five small blocks, a blank line between each: 1 their moment, a line from their own day (opening, then scene); 2 the hidden truth, what it costs or hides (scene, or one cost line for money); 3 the no-way part in reveal: what TeamGrid already knows or does, said plainly and true; 4 the safety line in limit: no screenshots, nothing people type is recorded; 5 question: one short closing line. Then the button.",
   "60 to 110 words. Short lines, one thing per line. If it needs more words, add a line; never make a line longer. The reader must understand it in one quick read.",
@@ -345,7 +358,8 @@ const NO_WAY_RULES: string[] = [
   "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, appraisal, resignation, CTC, ₹ and lakh. Simple English, respectful to the team.",
   "Never colours or screen words (teal, blue, grey, dashboard, widget). Never spy or verdict words (monitor, catch, spy, lazy, unproductive employee). Never a customer quote or a result nobody measured.",
   "Numbers: an example about their team says so; a survey figure names its source (writing.facts.external). Features only from writing.facts; say \"on the Advanced plan\" where it applies.",
-  "ask \"link\", format \"letter\". cta_text names what they will see (\"See tomorrow's 6pm summary\", \"See where the hours go\"), from the allowed list.",
+  "The reveal names what TeamGrid hands them about this moment: the line tonight's summary would carry, the hours that client took this week, the flag that fires the day a pattern changes. A feature description alone (\"records hours by person and by project, no timesheet\") is not a reveal; it makes them nod, not stop. Two leads should not get the same reveal sentence.",
+  `ask "link". ${FORMAT_CHOICE} cta_text names what they will see ("See tomorrow's 6pm summary", "See where the hours go"), from the allowed list.`,
   "Subject: their own words or a surprising truth, 20 to 60 characters (\"The 8pm 'any update?' calls can stop tomorrow\", \"Nobody forgets to work. Everybody forgets to punch.\").",
   "ps is optional: \"P.S. Prefer a 15-minute walk-through first? Reply call.\"",
 ];
