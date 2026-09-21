@@ -15,6 +15,8 @@ import {
 } from "../../../actions";
 import { ist, istInputValue, istTime, istWeekday } from "../../../ui/time";
 import { isReplacedPlan } from "@/engine/replaced.js";
+import { digitsOnly } from "@/engine/address.js";
+import CopyButton from "../claude/copy-button";
 import InboxPreview from "./inbox-preview";
 import WhatsAppPreview from "./whatsapp-preview";
 
@@ -165,6 +167,17 @@ export default function PreviewDrawer({
         ) : (
           <div className="pv">
             <aside className="pv-side">
+              {/* First, and copyable: the number is what finds this chat in WATI or on the
+                  phone, to check what already went to them outside this list. */}
+              {message.to ? (
+                <section className="pv-sec" aria-label="Their number">
+                  <h3 className="pv-h">{whatsapp ? "WhatsApp number" : "Sends to"}</h3>
+                  <div className="pv-to">
+                    <span className="pv-num">{message.to}</span>
+                    <CopyButton text={digitsOnly(message.to) || message.to} label="Copy number" />
+                  </div>
+                </section>
+              ) : null}
               <Brief brief={message.brief} signal={signal} />
 
               <section className="pv-sec" aria-label="This message">
@@ -456,9 +469,11 @@ export default function PreviewDrawer({
                       : format === "letter"
                         ? "Approving sends this letter version."
                         : "Approving sends the plain text instead — this message only."
-                    : message.canHtml
-                      ? "No designed version was rendered for this message."
-                      : "This channel sends plain text only."}
+                    : message.reply
+                      ? "A reply goes as plain text, the words alone — no template around it."
+                      : message.canHtml
+                        ? "No designed version was rendered for this message."
+                        : "This channel sends plain text only."}
                 {message.versionsError ? ` The other versions could not be shown: ${message.versionsError}.` : ""}
                 {/* A body rendered on open, not read off the action: the words are the ones
                     that go, but a template edit before then would change them. */}

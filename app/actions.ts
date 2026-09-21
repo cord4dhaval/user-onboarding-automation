@@ -1979,6 +1979,8 @@ export interface HeldMessage {
   rationale?: string;
   /** False when the channel cannot carry HTML, so the designed version is not on offer. */
   canHtml: boolean;
+  /** An answer to the person: it always goes as plain words, whatever the channel can carry. */
+  reply?: boolean;
   /** The action's own status, so the drawer knows whether a decision is still on offer. */
   status: string;
   /** The channel kind. Only email is previewed as an inbox; the rest have no inbox to show. */
@@ -2222,11 +2224,15 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   // anything was missing. Render it the way the sender will instead.
   let rendered: { subject?: string; bodyMd?: string; bodyHtml?: string } | undefined;
   let previewError: string | undefined;
+  // A reply is sent as the words alone — no template, no designed or letter version (the
+  // sender's replyContent drops them). Offering those tabs here said "Approving sends this
+  // designed version" over a message that then went out as plain text.
+  const isReply = String(action.angle) === "reply";
   const storedAsLetter = action.format === "letter";
   // The stored HTML is the version the writer picked, and it ships exactly as read.
-  let designed = storedAsLetter ? undefined : content.bodyHtml;
-  let letter = storedAsLetter ? content.bodyHtml : undefined;
-  if (!content.bodyMd) {
+  let designed = storedAsLetter || isReply ? undefined : content.bodyHtml;
+  let letter = storedAsLetter && !isReply ? content.bodyHtml : undefined;
+  if (!content.bodyMd && !isReply) {
     try {
       rendered = await previewContent(orgId, action);
       if (storedAsLetter) letter ??= rendered.bodyHtml;
@@ -2242,7 +2248,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   let versionsError: string | undefined;
   const waiting =
     action.status === "awaiting_approval" || (action.status === "queued" && !action.reviewedAt);
-  if (waiting && !previewError && caps.html !== false && String(action.channel) === "email" && (!designed || !letter)) {
+  if (waiting && !isReply && !previewError && caps.html !== false && String(action.channel) === "email" && (!designed || !letter)) {
     const as = async (format: string) => (await previewContent(orgId, { ...action, format })).bodyHtml;
     try {
       [designed, letter] = await Promise.all([designed ?? as("html"), letter ?? as("letter")]);
@@ -2257,7 +2263,8 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     // Without the pixel, or the reviewer reading it is recorded as the lead opening it.
     bodyHtml: stripOpenPixel(designed ?? "") || undefined,
     bodyLetter: stripOpenPixel(letter ?? "") || undefined,
-    bodyText: content.bodyMd || rendered?.bodyMd,
+    // A reply not yet through the sender still holds its words in the slot, unwrapped.
+    bodyText: content.bodyMd || (isReply ? slot : rendered?.bodyMd),
     preview: Boolean(rendered),
     previewError,
     versionsError,
@@ -2274,7 +2281,8 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
     theme: action.theme ? String(action.theme) : undefined,
     chosenFormat: action.format === "text" || action.format === "html" || action.format === "letter" ? action.format : undefined,
     formatWhy: action.formatWhy ? String(action.formatWhy) : undefined,
-    canHtml: caps.html !== false,
+    canHtml: caps.html !== false && !isReply,
+    reply: isReply || undefined,
     status: String(action.status),
     channel: String(action.channel),
     skipReason: action.skipReason ? String(action.skipReason) : action.error ? String(action.error) : undefined,
