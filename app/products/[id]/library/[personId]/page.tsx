@@ -18,6 +18,7 @@ import {
 import { gateOpen } from "@/engine/advance.js";
 import { personHistory } from "@/engine/library.js";
 import { crmForPerson } from "@/engine/crm/view.js";
+import { whatsAppSent } from "@/engine/whatsappInbound.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { signalsOf } from "@/engine/engagement.js";
@@ -316,7 +317,11 @@ export default async function PersonPage({
         node: (
           <>
             <strong className="hit"><MessageSquare size={13} /> They replied{event.channel ? ` · ${String(event.channel)}` : ""}</strong>
-            <div className="muted t-detail">{payload.subject ? `Subject: “${String(payload.subject)}”` : "No subject."}</div>
+            {payload.subject ? <div className="muted t-detail">Subject: “{String(payload.subject)}”</div> : null}
+            {!payload.text && event.channel === "whatsapp" ? (
+              <div className="muted t-detail">No text: they sent {whatsAppSent(payload.messageType as string | undefined)}. Open the chat in WATI to see it.</div>
+            ) : null}
+            {!payload.text && !payload.subject && event.channel !== "whatsapp" ? <div className="muted t-detail">No subject.</div> : null}
             {/* Their own words, kept whole. A reply summarised into "replied" is the one
                 piece of writing in this system that nobody should have to go and find. */}
             {payload.text ? <blockquote className="t-quote">{String(payload.text).slice(0, 1200)}</blockquote> : null}
@@ -325,6 +330,9 @@ export default async function PersonPage({
       });
       continue;
     }
+
+    // A WhatsApp message written to the sales team, not to the campaign: kept, but not ours.
+    if (type === "whatsapp_chat") continue;
 
     // LinkedIn has no inbox signal for an invite: the accept check reads who became a
     // connection, and gives up on an invite after the channel's limit.

@@ -42,6 +42,9 @@ export async function POST(
   const event = parseWati(body);
   if (!event) return NextResponse.json({ ok: true, done: `ignored ${String(body.eventType ?? "event")}` });
 
-  const done = await applyWhatsAppEvent({ orgId: String(connection.orgId), productId: String(connection.productId) }, event);
+  const done = await applyWhatsAppEvent(
+    { orgId: String(connection.orgId), productId: String(connection.productId), connectionId },
+    event,
+  );
   return NextResponse.json({ ok: true, done });
 }

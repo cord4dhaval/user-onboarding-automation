@@ -1,4 +1,5 @@
 import { ObjectId, type Document } from "mongodb";
+import { resolveSecret } from "../crypto/broker.js";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { detectMovement } from "./detect.js";
@@ -15,7 +16,19 @@ import { unsubscribePerson } from "./unsubscribe.js";
  * WATI's; a second provider adds a parser and nothing else.
  */
 export type WhatsAppEvent =
-  | { kind: "message"; id: string; phone: string; text: string; button?: string; senderName?: string; at: Date }
+  | {
+      kind: "message";
+      id: string;
+      /** WATI's own id for the message, the one its chat history lists it under. */
+      ref?: string;
+      phone: string;
+      text: string;
+      /** What they sent when it was not plain text: "audio", "image", "contacts" and so on. */
+      messageType?: string;
+      button?: string;
+      senderName?: string;
+      at: Date;
+    }
   | {
       kind: "status";
       ref: string;
@@ -70,11 +83,14 @@ export function parseWati(body: Record<string, unknown>): WhatsAppEvent | null {
     const text = String(body.text ?? button ?? "").trim();
     const phone = String(body.waId ?? "").replace(/\D/g, "");
     if (!phone) return null;
+    const messageType = String(body.type ?? "text");
     return {
       kind: "message",
       id: String(body.whatsappMessageId ?? body.id ?? ""),
+      ...(body.id ? { ref: String(body.id) } : {}),
       phone,
       text,
+      ...(messageType !== "text" && !button ? { messageType } : {}),
       ...(button ? { button: String(button) } : {}),
       ...(body.senderName ? { senderName: String(body.senderName) } : {}),
       at,
@@ -102,12 +118,17 @@ const ORDER = { sent: 0, delivered: 1, read: 2, failed: 3 } as const;
  * with Meta's reason, because WATI took the request and only learned later that Meta would
  * not deliver it — the row said "sent" to a person who never received anything.
  *
- * A message from the lead is handled the way an email reply is: on their history with the
- * WhatsApp touch it answers, their queued messages stopped, the owner told at once, STOP
- * honoured without waiting for anyone, and the reply window opened for WhatsApp alone.
+ * A message from the lead counts as a reply only when it answers one of ours: the business
+ * number is shared with the sales team, and a lead chatting with them about a demo has not
+ * answered the campaign. Such a message is kept, off the timeline, and changes nothing but
+ * WhatsApp's own reply window; STOP is honoured whoever it was written to.
+ *
+ * A reply is handled the way an email reply is: on their history with the WhatsApp touch it
+ * answers, their queued messages stopped, the owner told at once, and the reply window opened
+ * for WhatsApp alone.
  */
 export async function applyWhatsAppEvent(
-  connection: { orgId: string; productId: string },
+  connection: { orgId: string; productId: string; connectionId?: string },
   event: WhatsAppEvent,
 ): Promise<string> {
   const db = await getDb();
@@ -148,22 +169,28 @@ export async function applyWhatsAppEvent(
   const personId = String(person._id);
 
   if (event.id) {
-    const seen = await db.collection(C.events).findOne({ orgId, type: "reply_received", "payload.whatsappMessageId": event.id });
+    const seen = await db
+      .collection(C.events)
+      .findOne({ orgId, type: { $in: ["reply_received", "whatsapp_chat"] }, "payload.whatsappMessageId": event.id });
     if (seen) return "duplicate";
   }
-  const answered = await db
-    .collection(C.actions)
-    .findOne({ orgId, personId, channel: "whatsapp", status: "sent", sentAt: { $lte: event.at } }, { sort: { sentAt: -1 }, projection: { _id: 1, goalInstanceId: 1 } });
+  const { answered, notAReply } = await answeredSend(orgId, personId, event, connection.connectionId);
   const recorded = await db.collection(C.events).insertOne({
     orgId,
     productId,
     personId,
-    type: "reply_received",
+    type: answered ? "reply_received" : "whatsapp_chat",
     channel: "whatsapp",
     ...(answered ? { actionId: String(answered._id) } : {}),
     ts: event.at,
-    handled: false,
-    payload: { whatsappMessageId: event.id, text: event.text, ...(event.button ? { button: event.button } : {}) },
+    handled: !answered,
+    payload: {
+      whatsappMessageId: event.id,
+      text: event.text,
+      ...(event.messageType ? { messageType: event.messageType } : {}),
+      ...(event.button ? { button: event.button } : {}),
+      ...(notAReply ? { notAReply } : {}),
+    },
   });
 
   // "STOP" on its own is what the template footer asks for, so it counts here even though a
@@ -177,6 +204,12 @@ export async function applyWhatsAppEvent(
     return "unsubscribed";
   }
 
+  if (!answered) {
+    // Meta opens the 24-hour window on any message they write, so free text may still go.
+    await db.collection(C.people).updateOne({ _id: person._id }, { $set: { "repliedOn.whatsapp": event.at } });
+    return `not a reply to us: ${notAReply}`;
+  }
+
   // The reply window is WhatsApp's own. lastReplyAt stays the "they wrote to us" every
   // channel reads; repliedOn.whatsapp is what lets free text go on WhatsApp for 24 hours.
   await db.collection(C.people).updateOne({ _id: person._id }, { $set: { lastReplyAt: event.at, "repliedOn.whatsapp": event.at } });
@@ -187,7 +220,9 @@ export async function applyWhatsAppEvent(
   );
 
   const who = String(person.name ?? event.senderName ?? "A lead");
-  const said = event.button ? `tapped "${event.button}"` : event.text.slice(0, 160).replace(/\s+/g, " ").trim();
+  const said = event.button
+    ? `tapped "${event.button}"`
+    : event.text.slice(0, 160).replace(/\s+/g, " ").trim() || whatsAppSent(event.messageType);
   await notify({
     orgId,
     productId,
@@ -223,11 +258,107 @@ export async function applyWhatsAppEvent(
 
   await mailOwner(orgId, productId, {
     subject: `WhatsApp reply from ${who}`,
-    lines: [`${who} ${event.button ? `tapped "${event.button}"` : "wrote"} on WhatsApp:`, "", event.text.slice(0, 1200) || "(no text)", "", "Their queued messages are on hold. The answer is drafted for your approval."],
+    lines: [
+      `${who} ${event.button ? `tapped "${event.button}"` : "wrote"} on WhatsApp:`,
+      "",
+      event.text.slice(0, 1200) || `(${whatsAppSent(event.messageType)}; open the chat in WATI to see it)`,
+      "",
+      "Their queued messages are on hold. The answer is drafted for your approval.",
+    ],
     href: `/products/${productId}/library/${personId}`,
   });
   await detectMovement(orgId, productId, { personId, reason: "replied on WhatsApp" });
   return "reply recorded";
+}
+
+/** An engine send shows in the WATI chat within seconds of the moment we made it. */
+const SAME_SEND_MS = 2 * 60_000;
+
+type ChatItem = { id?: string; owner?: boolean; created?: string; event_type?: string; status_string?: string };
+
+/** What they sent, in words, when there was no text to show. */
+export function whatsAppSent(messageType: string | undefined): string {
+  const words: Record<string, string> = {
+    audio: "a voice note",
+    voice: "a voice note",
+    image: "a photo",
+    video: "a video",
+    document: "a document",
+    contacts: "a contact card",
+    location: "a location",
+    sticker: "a sticker",
+    reaction: "a reaction",
+  };
+  return (messageType && words[messageType]) ?? "a photo, voice note or other file";
+}
+
+/**
+ * The send of ours a lead's WhatsApp message answers, or why it answers none.
+ *
+ * The number is shared with the sales team, so "the last send we made" is not enough: a lead
+ * who got our message on Friday and is talking to sales about a demo on Monday is answering
+ * sales. What decides it is the chat itself — the last outgoing message before theirs. When
+ * it is ours, it is a reply; when a person on the team wrote it, it is not. A message we
+ * never delivered cannot be answered at all.
+ *
+ * When the chat cannot be read, the latest send is taken as answered, as it was before:
+ * stopping the campaign for a sales chat costs less than mailing on through a reply.
+ */
+export async function answeredSend(
+  orgId: string,
+  personId: string,
+  event: Extract<WhatsAppEvent, { kind: "message" }>,
+  connectionId: string | undefined,
+): Promise<{ answered: Document | null; notAReply?: string }> {
+  const db = await getDb();
+  const sends = await db
+    .collection(C.actions)
+    .find({ orgId, personId, channel: "whatsapp", status: "sent", sentAt: { $lte: event.at } })
+    .sort({ sentAt: -1 })
+    .project({ _id: 1, goalInstanceId: 1, sentAt: 1 })
+    .toArray();
+  if (sends.length === 0) return { answered: null, notAReply: "none of our WhatsApp messages reached them" };
+  if (!connectionId) return { answered: sends[0] ?? null };
+
+  let chat: ChatItem[];
+  try {
+    chat = await readWatiChat(orgId, connectionId, event.phone);
+  } catch {
+    return { answered: sends[0] ?? null };
+  }
+
+  // WATI lists the chat newest first. Their message is found by WATI's id, or failing that
+  // by time: the webhook's timestamp and the chat's differ by a second or two.
+  const time = (item: ChatItem) => (item.created ? new Date(item.created).getTime() : NaN);
+  let index = event.ref ? chat.findIndex((item) => item.id === event.ref) : -1;
+  if (index < 0) {
+    index = chat.findIndex(
+      (item) => item.event_type === "message" && item.owner === false && Math.abs(time(item) - event.at.getTime()) < 60_000,
+    );
+  }
+  if (index < 0) return { answered: sends[0] ?? null };
+
+  const before = chat
+    .slice(index + 1)
+    .find((item) => item.event_type === "broadcastMessage" || (item.event_type === "message" && item.owner === true));
+  if (!before) return { answered: null, notAReply: "nothing had been sent to them in this chat" };
+  const ours = sends.find((send) => Math.abs(time(before) - new Date(send.sentAt as Date).getTime()) < SAME_SEND_MS);
+  if (ours && before.status_string !== "FAILED") return { answered: ours };
+  return { answered: null, notAReply: "the last message before theirs came from the team, not from the campaign" };
+}
+
+/** The latest forty items of a lead's WATI chat, newest first. */
+async function readWatiChat(orgId: string, connectionId: string, phone: string): Promise<ChatItem[]> {
+  const db = await getDb();
+  const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
+  const endpoint = String((connection?.http as { endpointUrl?: string } | undefined)?.endpointUrl ?? connection?.endpointUrl ?? "");
+  const token = await resolveSecret(orgId, connectionId, "engine.whatsapp_inbound");
+  const res = await fetch(`${new URL(endpoint).origin}/api/ext/v3/conversations/${phone}/messages?page_size=40`, {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`WATI chat answered HTTP ${res.status}`);
+  return (((await res.json()) as { message_list?: ChatItem[] }).message_list ?? []);
 }
 
 /**
