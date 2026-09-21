@@ -99,7 +99,10 @@ export async function setCrmEnabled(productId: string, connectionId: string, ena
   revalidatePath(connectionPath(productId, connectionId));
 }
 
-/** Which campaign the backfill walks first. Everybody else follows once it is done. */
+/**
+ * Which campaign's people the CRM cron looks up. One at a time, so older lists are brought
+ * in step by step rather than all at once; new arrivals are looked up regardless.
+ */
 export async function setCrmBackfillGoal(formData: FormData) {
   const productId = String(formData.get("productId"));
   const connectionId = String(formData.get("connectionId"));

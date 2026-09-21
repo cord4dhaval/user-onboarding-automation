@@ -6,7 +6,15 @@ import { reverifyConnection } from "../mcp/reverify.js";
 import { crmMap } from "../schemas/crm.js";
 import { CrmClient, RateLimited } from "../engine/crm/client.js";
 import { proposeCrmMap } from "../engine/crm/map.js";
-import { checkUnchecked, lockConnection, syncChanges, syncPerson, unlockConnection } from "../engine/crm/sync.js";
+import {
+  checkUnchecked,
+  hottestFirst,
+  lockConnection,
+  peopleInGoal,
+  syncChanges,
+  syncPerson,
+  unlockConnection,
+} from "../engine/crm/sync.js";
 
 /**
  * Sets up and runs CRM reading for one connection from a terminal.
@@ -17,7 +25,8 @@ import { checkUnchecked, lockConnection, syncChanges, syncPerson, unlockConnecti
  *
  *   npm run crm:sync -- --connection <id> --propose --scope '{"orgId":"…"}' --projects a,b
  *   npm run crm:sync -- --connection <id> --person <personId>
- *   npm run crm:sync -- --connection <id> --backfill [--goal teamgrid_leads_v3 [--only-goal]] [--minutes 30]
+ *   npm run crm:sync -- --connection <id> --backfill --goal teamgrid_leads_v3   (not looked up yet)
+ *   npm run crm:sync -- --connection <id> --refresh --goal teamgrid_leads_v3    (everyone, read again)
  *   npm run crm:sync -- --connection <id> --changes
  *   npm run crm:sync -- --connection <id> --enable | --disable
  */
@@ -60,41 +69,58 @@ async function main(): Promise<void> {
   }
 
   const person = arg("person");
-  const work = person || flag("backfill") || flag("changes");
+  const goal = arg("goal");
+  const work = person || flag("backfill") || flag("refresh") || flag("changes");
   if (!work) return;
+  if ((flag("backfill") || flag("refresh")) && !goal) {
+    throw new Error("--backfill and --refresh walk one campaign at a time: pass --goal <key>");
+  }
 
   if (!(await lockConnection(connectionId, 60 * 60_000))) throw new Error("another CRM run holds this connection; try again shortly");
   try {
     const client = await CrmClient.open(connectionId, { retries: 2 });
-    if (person) console.log("person", person, await syncPerson(client, person));
-    if (flag("changes")) console.log("changes", await syncChanges(client, Date.now() + 5 * 60_000));
-    if (flag("backfill")) {
-      const minutes = Number(arg("minutes") ?? 30);
-      const until = Date.now() + minutes * 60_000;
-      const goal = arg("goal");
-      let total = 0;
-      while (Date.now() < until) {
-        let done: number;
+    const productId = String(connection.productId);
+    const until = Date.now() + Number(arg("minutes") ?? 60) * 60_000;
+
+    /** Runs one unit of CRM work, waiting out a rate limit instead of giving up on it. */
+    const patiently = async <T>(work: () => Promise<T>): Promise<T> => {
+      for (;;) {
         try {
-          done = await checkUnchecked(client, Math.min(until, Date.now() + 60_000), goal, flag("only-goal"));
+          return await work();
         } catch (err) {
           if (!(err instanceof RateLimited)) throw err;
           // The limit is shared with the product's own mail, so back right off and resume.
           console.log(`${new Date().toISOString()} rate limited; waiting 3 minutes`);
           await new Promise((r) => setTimeout(r, 180_000));
-          continue;
         }
+      }
+    };
+
+    if (person) console.log("person", person, await patiently(() => syncPerson(client, person)));
+    if (flag("changes")) console.log("changes", await patiently(() => syncChanges(client, Date.now() + 5 * 60_000)));
+
+    if (flag("backfill") && goal) {
+      // Only the people in this campaign nobody has looked up yet, hottest first.
+      let total = 0;
+      while (Date.now() < until) {
+        const done = await patiently(() => checkUnchecked(client, Math.min(until, Date.now() + 60_000), { goalKey: goal }));
         total += done;
-        console.log(`${new Date().toISOString()} checked ${total} people · ${client.calls} calls`);
+        console.log(`${new Date().toISOString()} looked up ${total} · ${client.calls} calls`);
         if (!done) break;
-        if (goal) {
-          const left = await db.collection(C.goalInstances).countDocuments({ goalKey: goal, productId: String(connection.productId) });
-          const checked = await db.collection(C.people).countDocuments({
-            productId: String(connection.productId),
-            [`crmChecked.${connectionId}`]: { $exists: true },
-          });
-          console.log(`  ${goal}: ${left} in campaign · ${checked} checked in product`);
-        }
+      }
+    }
+
+    if (flag("refresh") && goal) {
+      // Everyone in the campaign read again in full, hottest first — for a campaign whose
+      // copy should be current now rather than whenever the change feed next names them.
+      const ids = await hottestFirst(orgId, productId, { _id: { $in: await peopleInGoal(orgId, productId, goal) } }, 5_000);
+      console.log(`${goal}: ${ids.length} people, hottest first`);
+      let n = 0;
+      for (const id of ids) {
+        if (Date.now() > until) break;
+        const res = await patiently(() => syncPerson(client, id));
+        n++;
+        console.log(`${new Date().toISOString()} ${n}/${ids.length} ${id} records=${res.records} new_rows=${res.added} · ${client.calls} calls`);
       }
     }
     const links = await db.collection(C.crmLinks).aggregate([

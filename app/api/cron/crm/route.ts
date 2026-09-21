@@ -9,11 +9,16 @@ export const maxDuration = 60;
  *
  * Kept off the sending tick on purpose. Its speed is set by the CRM's rate limit — one call
  * every three seconds — so what it needs is a whole run to itself, and what sending needs
- * is never to wait on a slow or rate-limited CRM. Each run reads the change feed when ten
- * minutes have passed and spends the rest looking people up: about three a run.
+ * is never to wait on a slow or rate-limited CRM. Each run reads the change feed, works off
+ * the records it names, and spends the rest looking up people not checked yet: three to six
+ * a run.
  *
- * Hit every minute. Two runs never overlap on one connection: the second finds it locked
- * and returns. With no connection switched to CRM reading it is one empty query.
+ * Hit every thirty minutes. The CRM's news reaches a person's page that much later, which
+ * is fine for context nobody acts on automatically, and it keeps this well clear of a rate
+ * limit the product's own mail shares. A first fill of a whole product is too big for that
+ * pace and is run once with `npm run crm:sync -- --backfill`. Two runs never overlap on one
+ * connection: the second finds it locked and returns. With no connection switched to CRM
+ * reading it is one empty query.
  */
 const BUDGET_MS = 50_000;
 

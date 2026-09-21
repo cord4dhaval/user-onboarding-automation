@@ -176,21 +176,23 @@ export default async function CrmSection({
         <form action={setCrmBackfillGoal} className="crm-actions">
           <input type="hidden" name="productId" value={productId} />
           <input type="hidden" name="connectionId" value={connectionId} />
-          <span className="muted">Look up first:</span>
+          <span className="muted">Campaign to look up:</span>
           <Select
             name="goal"
             value={sync.backfillGoal ?? ""}
-            ariaLabel="Campaign to look up first"
+            ariaLabel="Campaign whose people are looked up in the CRM"
             options={[
-              { value: "", label: "Newest people first" },
+              { value: "", label: "None — only people who arrive from now on" },
               ...goals.map((g) => ({ value: String(g.key), label: String(g.name ?? g.key) })),
             ]}
           />
-          <SubmitButton variant="ghost" size="sm" icon={<Save />} pendingLabel="Saving…">Save order</SubmitButton>
+          <SubmitButton variant="ghost" size="sm" icon={<Save />} pendingLabel="Saving…">Save</SubmitButton>
         </form>
         <p className="sub crm-sub">
-          The engine looks everyone up a few at a time on its minute clock, after sending, and reads the CRM&apos;s change
-          feed every ten minutes. A person added later is looked up within minutes of arriving.
+          Read on its own schedule, apart from sending. Each run reads the CRM&apos;s change feed — so anyone already found
+          stays current — then looks up a few people not checked yet, hottest first: people in the campaign chosen here,
+          and anyone who arrived after CRM reading was switched on. Older campaigns are looked up one at a time by
+          choosing them here, so switching this on never walks the whole list at once.
         </p>
       </div>
     </>

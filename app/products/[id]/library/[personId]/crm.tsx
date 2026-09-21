@@ -147,8 +147,8 @@ export function SalesTeamCard({ view, productId, personId }: { view: CrmPersonVi
           </div>
           <p className="sub crm-sub">
             {view.checkedAt
-              ? `Looked up by email and phone ${ist(view.checkedAt)}. If the team adds them later, it shows here within ten minutes.`
-              : "Not looked up yet. The engine checks new people within a few minutes."}
+              ? `Looked up by email and phone ${ist(view.checkedAt)}. If the team adds them later, it shows here after the next CRM read.`
+              : "Not looked up yet. New people are looked up on the next CRM read."}
           </p>
         </div>
       </>

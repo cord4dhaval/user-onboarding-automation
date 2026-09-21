@@ -15,7 +15,7 @@ import { kindOf } from "./map.js";
  * CRM is unreachable or the connection is later switched off.
  *
  * Three ways in, all idempotent: a person is checked once when we first see them; the
- * CRM's change feed is read every ten minutes; and a backfill walks everybody who has never
+ * CRM's change feed is read on every run of /api/cron/crm; and a backfill walks everybody who has never
  * been checked. Every stored row carries a fingerprint, so reading the same history twice
  * stores it once.
  */
@@ -437,49 +437,63 @@ export async function syncChanges(
   return { events, records, more: pending.size > 0 || feed.more };
 }
 
-/** People in this product nobody has looked up yet, the chosen campaign's first. */
-async function unchecked(
-  orgId: string,
-  productId: string,
-  connectionId: string,
-  goalKey: string | undefined,
-  limit: number,
-  onlyGoal: boolean,
-) {
+const BAND_RANK: Record<string, number> = { hot: 0, warm: 1, cold: 2, dead: 3 };
+
+/**
+ * People in the order their CRM history is worth having: hottest first, then by score.
+ * A writer is about to need the history of the person who just clicked; the one who has
+ * ignored six mails can wait for the next run.
+ */
+export async function hottestFirst(orgId: string, productId: string, filter: Document, limit: number): Promise<string[]> {
   const db = await getDb();
-  const filter = { orgId, productId, [`crmChecked.${connectionId}`]: { $exists: false } };
-  if (goalKey) {
-    const ids = await db
-      .collection(C.goalInstances)
-      .find({ orgId, productId, goalKey })
-      .project({ personId: 1 })
-      .toArray();
-    const inGoal = ids.map((g) => String(g.personId)).filter((id) => ObjectId.isValid(id));
-    const first = await db
-      .collection(C.people)
-      .find({ ...filter, _id: { $in: inGoal.map((id) => new ObjectId(id)) } })
-      .project({ _id: 1 })
-      .limit(limit)
-      .toArray();
-    if (first.length || onlyGoal) return first.map((p) => String(p._id));
-  }
-  const rest = await db.collection(C.people).find(filter).project({ _id: 1 }).sort({ createdAt: -1 }).limit(limit).toArray();
-  return rest.map((p) => String(p._id));
+  const rows = await db
+    .collection(C.people)
+    .find({ orgId, productId, ...filter })
+    .project({ _id: 1, "temp.band": 1, "temp.score": 1 })
+    .limit(2_000)
+    .toArray();
+  return rows
+    .sort((a, b) => {
+      const band = (BAND_RANK[a.temp?.band] ?? 4) - (BAND_RANK[b.temp?.band] ?? 4);
+      return band || Number(b.temp?.score ?? 0) - Number(a.temp?.score ?? 0);
+    })
+    .slice(0, limit)
+    .map((p) => String(p._id));
 }
 
-export async function checkUnchecked(
-  client: CrmClient,
-  until: number,
-  goalKey?: string,
-  onlyGoal = false,
-): Promise<number> {
+export async function peopleInGoal(orgId: string, productId: string, goalKey: string): Promise<ObjectId[]> {
+  const db = await getDb();
+  const rows = await db.collection(C.goalInstances).find({ orgId, productId, goalKey }).project({ personId: 1 }).toArray();
+  return rows.map((g) => String(g.personId)).filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+}
+
+/**
+ * Who the automatic lookup may reach, and nobody else: the one campaign chosen on the
+ * connection page, and anyone who arrived after CRM reading was switched on. Older people
+ * wait until their campaign is chosen, so switching a CRM on never sets off a walk through
+ * the whole list against a rate limit the product's own mail shares.
+ */
+export interface LookupScope {
+  goalKey?: string;
+  since?: Date;
+}
+
+async function unchecked(orgId: string, productId: string, connectionId: string, scope: LookupScope, limit: number) {
+  const or: Document[] = [];
+  if (scope.goalKey) or.push({ _id: { $in: await peopleInGoal(orgId, productId, scope.goalKey) } });
+  if (scope.since) or.push({ createdAt: { $gte: new Date(scope.since) } });
+  if (!or.length) return [];
+  return hottestFirst(orgId, productId, { [`crmChecked.${connectionId}`]: { $exists: false }, $or: or }, limit);
+}
+
+export async function checkUnchecked(client: CrmClient, until: number, scope: LookupScope): Promise<number> {
   const { orgId, productId, connectionId } = client.conn;
   const db = await getDb();
   let done = 0;
   // A person takes a handful of spaced calls. Starting one with less room than that would
   // run past the deadline the tick gave us, and the tick's deadline is the platform's.
   while (until - Date.now() > PERSON_ROOM_MS) {
-    const batch = await unchecked(orgId, productId, connectionId, goalKey, 5, onlyGoal);
+    const batch = await unchecked(orgId, productId, connectionId, scope, 5);
     if (!batch.length) break;
     for (const personId of batch) {
       if (until - Date.now() <= PERSON_ROOM_MS) break;
@@ -549,6 +563,7 @@ export async function crmTick(deadline: number, productIds?: string[]): Promise<
     if (Date.now() > deadline) break;
     const connectionId = String(connection._id);
     const sync = (connection.crm?.sync ?? {}) as { lastPollAt?: Date; rateLimitedUntil?: Date; backfillGoal?: string };
+    const scope: LookupScope = { goalKey: sync.backfillGoal, since: connection.crm?.enabledAt };
     if (sync.rateLimitedUntil && new Date(sync.rateLimitedUntil).getTime() > Date.now()) continue;
     if (!(await lockConnection(connectionId, 90_000))) continue;
 
@@ -559,7 +574,7 @@ export async function crmTick(deadline: number, productIds?: string[]): Promise<
       const queued = ((connection.crm?.sync?.pending ?? []) as string[]).length;
       const changes = due || queued ? await syncChanges(client, deadline, due) : null;
       if (due) set["crm.sync.lastPollAt"] = new Date();
-      const checked = await checkUnchecked(client, deadline, sync.backfillGoal);
+      const checked = await checkUnchecked(client, deadline, scope);
       set["crm.sync.status"] = "ok";
       set["crm.sync.error"] = null;
       if (changes || checked) report.push({ crm: connectionId, ...(changes ?? {}), checked, calls: client.calls });
