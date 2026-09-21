@@ -301,6 +301,12 @@ export async function advance(
       summary.skipped.push({ goalInstanceId, reason: "campaign definition missing" });
       continue;
     }
+    // Turning a campaign off holds what it had queued; without this, the people already in
+    // it went on getting new steps, and a paused call campaign failed a call every day.
+    if (goal.enabled === false) {
+      summary.skipped.push({ goalInstanceId, reason: "campaign turned off" });
+      continue;
+    }
     // A campaign whose LinkedIn touches Claude plans and writes runs on the LinkedIn routine
     // (engine/linkedin.ts), not on the email plan and compose machinery.
     if (claudePlansLinkedIn(goal)) {
