@@ -5,6 +5,7 @@
  *   MASTER_KEY_B64=$(openssl rand -base64 32) npx tsx src/scripts/verify-rolling.ts
  */
 import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, screenWords, unprovenClaims, checkpoint, companyTokens, effectiveBand, emojiProneSymbols, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
+import { crossChannelGap } from "../engine/cadence";
 import { applyTextTracking } from "../engine/tracking";
 import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 import { renderHtml, renderLetter } from "../engine/html";
@@ -57,6 +58,10 @@ check("a click still makes an explorer hot", effectiveBand("hot", "hot", "just_e
 check("dead stays dead", effectiveBand("dead", "hot") === "dead");
 check("no lead type keeps the person's band", effectiveBand("warm", null) === "warm");
 check("a cold campaign does not cool a hot person", effectiveBand("hot", "cold") === "hot");
+check("hot leads get email and WhatsApp 15 minutes apart", crossChannelGap(effectiveBand("warm", "hot")).ms === 15 * 60_000);
+check("warm leads keep 2 hours between channels", crossChannelGap(effectiveBand(undefined, "warm")).ms === 2 * H);
+check("cold leads keep a day between channels", crossChannelGap(effectiveBand(undefined, "cold")).ms === 24 * H);
+check("no band and dead keep the old 2 hours", crossChannelGap(undefined).ms === 2 * H && crossChannelGap("dead").ms === 2 * H);
 check("hot email watched 24 h: 30 h after send asks", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39), leadType: "hot" }).kind === "ask");
 check("the same without a lead type still watches (48 h)", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39) }).kind === "watch");
 check("hot asks for the link, closing hook may ask for a reply", LEAD_TYPE_PROFILES.hot.ask === "link" && LEAD_TYPE_PROFILES.hot.replyHooks.includes("closing"));

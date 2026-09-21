@@ -21,7 +21,7 @@ import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, nextSpacedSlot, opLimitsFor, rateBlock, rateHeadroom, spacedUntil } from "./governor.js";
 import { channelDownHold, takeChannelDown } from "./channelHealth.js";
 import { WAITING_FOR_ACCEPT, claudePlansLinkedIn } from "./linkedin.js";
-import { bandFor, lastOnChannel, type CadenceBand } from "./cadence.js";
+import { bandFor, crossChannelGap, lastOnChannel, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
 import { effectiveBand, groupFor, leadTypeOf } from "./rolling.js";
@@ -58,15 +58,6 @@ const STALE_CLAIM_MS = 15 * 60_000;
 const SEND_CONCURRENCY = 8;
 const DAY_MS = 86_400_000;
 
-/**
- * The least time between two messages to one person on different channels.
- *
- * The campaign's gap is counted per channel: a WhatsApp intro is not held for two days
- * because an email went yesterday, or it would never go to a lead whose email campaign
- * writes every day. But an email and a WhatsApp landing in the same minute read as one
- * sender who cannot decide, so any two messages are still kept this far apart.
- */
-const CROSS_CHANNEL_GAP_MS = 2 * 3_600_000;
 
 /** The most recent of several timestamps, in whatever shape they were stored. */
 function latestOf(values: unknown[]): Date | null {
@@ -349,14 +340,12 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         // Paced at the campaign's lead type where that is warmer than the person's own reading,
         // the same band the due date was set from; otherwise a hot campaign's next email is
         // held for a warm gap here after being dated for a hot one.
-        const band = bandFor(
-          effectiveBand(
-            (person.temp as { band?: string } | undefined)?.band,
-            leadTypeOf(goal),
-            (person.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
-          ),
-          goal?.cadenceByTemp as Record<string, CadenceBand> | undefined,
+        const paceBand = effectiveBand(
+          (person.temp as { band?: string } | undefined)?.band,
+          leadTypeOf(goal),
+          (person.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
         );
+        const band = bandFor(paceBand, goal?.cadenceByTemp as Record<string, CadenceBand> | undefined);
         const channelKey = String(action.channel);
         const last = latestOf([contactedThisRun.get(`${String(person._id)}|${channelKey}`), lastOnChannel(person, channelKey)]);
         // LinkedIn touches Claude planned were dated by the channel's own gaps (a first
@@ -365,7 +354,8 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         const gapEnds =
           !planPaced && last && band.minGapDays < 999 ? new Date(last.getTime() + band.minGapDays * DAY_MS) : null;
         const lastAny = latestOf([contactedThisRun.get(String(person._id)), person.lastContactedAt]);
-        const spacingEnds = lastAny ? new Date(lastAny.getTime() + CROSS_CHANNEL_GAP_MS) : null;
+        const crossGap = crossChannelGap(paceBand);
+        const spacingEnds = lastAny ? new Date(lastAny.getTime() + crossGap.ms) : null;
         const earliest = latestOf([gapEnds, spacingEnds]);
         if (earliest && earliest > now) {
           const byGap = gapEnds !== null && earliest.getTime() === gapEnds.getTime();
@@ -377,7 +367,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
                 dueAt: earliest,
                 deferReason: byGap
                   ? `waiting out the ${gapLabel(band.minGapDays)} gap since their last ${channelKey} message`
-                  : "keeping 2 hours after their last message on another channel",
+                  : `keeping ${crossGap.label} after their last message on another channel`,
               },
               $unset: { claimedAt: "" },
             },

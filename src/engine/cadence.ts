@@ -30,6 +30,29 @@ export const DEFAULT_CADENCE: Record<string, CadenceBand> = {
 
 const DAY_MS = 86_400_000;
 
+/**
+ * The least time between two messages to one person on different channels, by the band
+ * they are paced at.
+ *
+ * The campaign's gap is counted per channel: a WhatsApp intro is not held for two days
+ * because an email went yesterday, or it would never go to a lead whose email campaign
+ * writes every day. But an email and a WhatsApp landing in the same minute read as one
+ * sender who cannot decide, so any two messages are still kept apart. One fixed two hours
+ * (2026-09-21) was too slow for someone who filled in our form a minute ago, who expects an
+ * email and a WhatsApp together, and too quick for a stranger, who reads a WhatsApp two
+ * hours after a cold email as being chased.
+ */
+const CROSS_CHANNEL_GAP: Record<string, { ms: number; label: string }> = {
+  hot: { ms: 15 * 60_000, label: "15 minutes" },
+  warm: { ms: 2 * 3_600_000, label: "2 hours" },
+  cold: { ms: DAY_MS, label: "1 day" },
+};
+
+/** A person with no band yet, or gone dead, keeps the old two hours. */
+export function crossChannelGap(band: string | undefined): { ms: number; label: string } {
+  return CROSS_CHANNEL_GAP[band ?? ""] ?? CROSS_CHANNEL_GAP.warm!;
+}
+
 export function bandFor(
   band: string | undefined,
   configured?: Record<string, CadenceBand> | undefined,
