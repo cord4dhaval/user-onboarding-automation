@@ -2133,6 +2133,8 @@ button.q-toggle:hover { background: var(--surface-2); }
 }
 .pv-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 .pv-meta { margin: 0; font-size: 13px; color: var(--ink-2); }
+.pv-to { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pv-num { font-family: var(--font-mono), monospace; font-size: 15px; font-weight: 600; color: var(--ink); }
 .pv-tools { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
 .pv-tools .msg-form { margin-top: 0; }
 .pv-tools button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); }

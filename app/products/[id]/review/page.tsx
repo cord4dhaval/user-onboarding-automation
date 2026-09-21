@@ -5,6 +5,7 @@ import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { peopleEngagement } from "@/engine/engagement.js";
 import { isReplacedPlan, REPLACED_PLAN } from "@/engine/replaced.js";
+import { addressFor } from "@/engine/address.js";
 import { requireSession, scope } from "../../../tenant";
 import { decide, heldMessage, returnToReview } from "../../../actions";
 import { Check, CheckCheck, MessageSquare, MousePointerClick, RotateCcw, X } from "lucide-react";
@@ -481,6 +482,9 @@ export default async function Review({
     const content = (action.content ?? {}) as { subject?: string; slotText?: string; bodyMd?: string };
     const name = String(person?.name ?? person?.primaryEmail ?? "Unknown");
     const email = String(person?.primaryEmail ?? "");
+    // Where this message actually goes: the phone on WhatsApp. The drawer heads with it from
+    // the first frame, rather than showing the email until the message has loaded.
+    const address = person ? addressFor(person, String(action.channel)) : "";
     const goalKey = String(run?.goalKey ?? "—");
     const campaignLabel = campaignName(goalKey);
     const sender = senderById.get(String(action.channelId)) ?? String(action.channel);
@@ -497,7 +501,7 @@ export default async function Review({
         productId={id}
         actionId={String(action._id)}
         personName={name}
-        personEmail={email}
+        personEmail={address || email}
         from={fromById.get(String(action.channelId))}
         signal={<Signal temp={temp} engagement={engagement} long />}
         back={back}
