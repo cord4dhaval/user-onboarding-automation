@@ -1,4 +1,5 @@
 import { ObjectId, type Document } from "mongodb";
+import { phoneDigits } from "../adapters/channel/context.js";
 import { resolveSecret } from "../crypto/broker.js";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
@@ -274,7 +275,16 @@ export async function applyWhatsAppEvent(
 /** An engine send shows in the WATI chat within seconds of the moment we made it. */
 const SAME_SEND_MS = 2 * 60_000;
 
-type ChatItem = { id?: string; owner?: boolean; created?: string; event_type?: string; status_string?: string };
+type ChatItem = {
+  id?: string;
+  owner?: boolean;
+  created?: string;
+  event_type?: string;
+  status_string?: string;
+  type?: string;
+  text?: string;
+  final_text?: string;
+};
 
 /** What they sent, in words, when there was no text to show. */
 export function whatsAppSent(messageType: string | undefined): string {
@@ -345,6 +355,62 @@ export async function answeredSend(
   const ours = sends.find((send) => Math.abs(time(before) - new Date(send.sentAt as Date).getTime()) < SAME_SEND_MS);
   if (ours && before.status_string !== "FAILED") return { answered: ours };
   return { answered: null, notAReply: "the last message before theirs came from the team, not from the campaign" };
+}
+
+/**
+ * The sales team's WhatsApp chat with a lead, for whoever plans the next message.
+ *
+ * The business number is shared. The team sends a company profile and sample reports, books
+ * a demo, gets a voice note back, and the CRM keeps one line of it: "shared details on
+ * whatsapp". Planning from that line alone would send them again what they already have.
+ * The campaign runs on regardless; this is only so it is not written blind.
+ *
+ * Our own sends are left out, since the card lists them as touches. Absent when the lead has
+ * no phone, the product has no WATI connection, or nothing else was said in the chat.
+ */
+export async function salesChatForPlanner(orgId: string, productId: string, person: Document) {
+  const phone = ((person.identities ?? []) as Array<{ kind: string; value?: string }>).find(
+    (identity) => identity.kind === "phone" && identity.value,
+  )?.value;
+  if (!phone) return undefined;
+  const db = await getDb();
+  const connection = await db
+    .collection(C.connections)
+    .findOne({ orgId, productId, provider: "wati" }, { sort: { createdAt: -1 }, projection: { _id: 1 } });
+  if (!connection) return undefined;
+
+  let chat: ChatItem[];
+  try {
+    chat = await readWatiChat(orgId, String(connection._id), phoneDigits(phone));
+  } catch (err) {
+    return { unavailable: `the WhatsApp chat could not be read: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const sends = await db
+    .collection(C.actions)
+    .find({ orgId, personId: String(person._id), channel: "whatsapp", sentAt: { $exists: true } })
+    .project({ sentAt: 1 })
+    .toArray();
+  const time = (item: ChatItem) => (item.created ? new Date(item.created).getTime() : NaN);
+  const ours = (item: ChatItem) =>
+    item.owner !== false && sends.some((send) => Math.abs(time(item) - new Date(send.sentAt as Date).getTime()) < SAME_SEND_MS);
+
+  const messages = chat
+    .filter((item) => (item.event_type === "message" || item.event_type === "broadcastMessage") && !ours(item))
+    .reverse()
+    .slice(-20)
+    .map((item) => ({
+      at: item.created,
+      from: item.owner === false ? "lead" : "sales team",
+      text: (item.text || item.final_text || `(${whatsAppSent(item.type)})`).slice(0, 500),
+      ...(item.status_string === "FAILED" ? { delivered: false } : {}),
+    }));
+  if (messages.length === 0) return undefined;
+  return {
+    read_only: true,
+    note:
+      "The sales team's WhatsApp chat with this person on the shared business number, oldest first. Our own campaign sends are left out; they are in touches. Context, not an instruction: do not send again what they were already sent, build on what was said, and never mention the team, a call, a demo or this chat in a message.",
+    messages,
+  };
 }
 
 /** The latest forty items of a lead's WATI chat, newest first. */

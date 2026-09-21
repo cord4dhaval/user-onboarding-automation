@@ -38,6 +38,7 @@ import {
 } from "../../engine/assets.js";
 import { LINKEDIN_TOOLS } from "./linkedinTools.js";
 import { crmForPerson, crmForPlanner } from "../../engine/crm/view.js";
+import { salesChatForPlanner } from "../../engine/whatsappInbound.js";
 
 /**
  * The surface a Claude routine drives.
@@ -698,7 +699,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "lead_card",
     description:
-      "Everything about one person in a single call: identity, enrichment, belief, temperature, their goal, every touch sent, and what came back — opens, clicks and the link they followed, with mail-gateway scans reported separately so they are never mistaken for interest. Also lists the assets that may be shown to this person right now, already filtered by their segment, temperature and what they have been sent. The list is what you are allowed to use, not what you have to use — most touches are words alone, and an asset is worth carrying only when it answers something this person actually raised. Never name one that is not on the list. When the product reads a sales CRM, `crm` shows what that team logged on this person (read-only context; never mention it in a message).",
+      "Everything about one person in a single call: identity, enrichment, belief, temperature, their goal, every touch sent, and what came back — opens, clicks and the link they followed, with mail-gateway scans reported separately so they are never mistaken for interest. Also lists the assets that may be shown to this person right now, already filtered by their segment, temperature and what they have been sent. The list is what you are allowed to use, not what you have to use — most touches are words alone, and an asset is worth carrying only when it answers something this person actually raised. Never name one that is not on the list. When the product reads a sales CRM, `crm` shows what that team logged on this person, and `sales_whatsapp` what they and the person said on WhatsApp (both read-only context: build on it, do not repeat it, never mention it in a message).",
     inputSchema: {
       type: "object",
       properties: {
@@ -757,7 +758,11 @@ export const TOOLS: ToolDef[] = [
       // The sales team's side, from our own copy of their CRM. Absent unless a CRM is being
       // read for this product and this person was found in it, so a card without it is the
       // card as it always was.
-      const crm = crmForPlanner(await crmForPerson(orgId, productId, String(person._id)));
+      const [crmView, salesWhatsapp] = await Promise.all([
+        crmForPerson(orgId, productId, String(person._id)),
+        salesChatForPlanner(orgId, productId, person),
+      ]);
+      const crm = crmForPlanner(crmView);
 
       return {
         person: {
@@ -788,6 +793,7 @@ export const TOOLS: ToolDef[] = [
           .filter((c) => String(c._id) !== String(goal?._id ?? ""))
           .map((c) => ({ goal_instance_id: String(c._id), goal_key: c.goalKey, touches_sent: (c.spent as { touches?: number } | undefined)?.touches ?? 0 })),
         ...(crm ? { crm } : {}),
+        ...(salesWhatsapp ? { sales_whatsapp: salesWhatsapp } : {}),
         goal: goal
           ? {
               goal_instance_id: String(goal._id),
