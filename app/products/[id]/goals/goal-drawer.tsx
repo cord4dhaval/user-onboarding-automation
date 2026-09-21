@@ -253,18 +253,22 @@ export default function GoalDrawer({
             />
           </label>
 
-          <label>
-            First message
-            <Select
-              name="firstTouchApproval"
-              value={existing?.firstTouchApproval ?? "follow_campaign"}
-              ariaLabel="Whether the first message waits for a person"
-              options={[
-                { value: "follow_campaign", label: "Same as the rest", hint: "follows the setting above" },
-                { value: "auto_send", label: "Send straight away", hint: "the fixed first template, as soon as the lead arrives" },
-              ]}
-            />
-          </label>
+          <fieldset className="fieldset">
+            <legend>Welcome message</legend>
+            <label className="check">
+              <input
+                type="checkbox"
+                name="firstTouchApproval"
+                value="auto_send"
+                defaultChecked={existing?.firstTouchApproval === "auto_send"}
+              />
+              Send it automatically when a lead arrives
+            </label>
+            <span className="reason">
+              On: the first message goes out on its own, even while the rest wait for review. Off: it
+              follows the setting above.
+            </span>
+          </fieldset>
 
           <SubmitButton pendingLabel={isEdit ? "Saving…" : "Creating…"} disabled={!leadType}>
             {isEdit ? "Save changes" : "Create campaign"}

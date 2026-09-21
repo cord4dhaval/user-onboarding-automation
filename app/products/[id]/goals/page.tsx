@@ -263,7 +263,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                           {sch.approvalMode === "auto_send"
                             ? "auto-send"
                             : sch.firstTouchApproval === "auto_send"
-                              ? "first auto, then review"
+                              ? "welcome auto, then review"
                               : "review each"}
                         </div>
                       </div>
