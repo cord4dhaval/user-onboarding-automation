@@ -6,6 +6,7 @@ import { greetingName } from "../../engine/names.js";
 import { planViewFor } from "../../engine/planView.js";
 import { renderTemplate as renderForCount } from "../../engine/compose.js";
 import { mergeVarsFor as varsForCount } from "../../engine/vars.js";
+import { WRITTEN_MESSAGE_MAX_WORDS, WRITTEN_QUESTION_MAX_WORDS, takesWrittenWords, writtenParamsOf, writtenTemplatesFor } from "../../engine/engineSteps.js";
 import { readableWords } from "../../engine/validate.js";
 import { allowedSegments, stampPlaybook } from "../../engine/playbooks.js";
 import { PRIORITY, THINKING_KINDS, claimBatch, completeAll, releaseAll, type ThinkingKind } from "../../engine/queue.js";
@@ -1208,10 +1209,13 @@ export const TOOLS: ToolDef[] = [
       const perLeadFamily = (goalDef?.perLeadPlan as { family?: string } | undefined)?.family;
       const templateRows = await db
         .collection(C.templates)
-        .find({ orgId: ctx.orgId, productId: String(instance.productId), status: "active" }, { projection: { key: 1, family: 1, covers: 1 } })
+        .find({ orgId: ctx.orgId, productId: String(instance.productId), status: "active" }, { projection: { key: 1, family: 1, covers: 1, channel: 1, providerTemplate: 1 } })
         .toArray();
       const templateByKey = new Map(templateRows.map((t) => [String(t.key), t]));
       const families = new Set(templateRows.map((t) => String(t.family ?? "")).filter(Boolean));
+      // A key only counts on the channel its template sends on. Checked by key alone, an email
+      // family let every step of a WhatsApp plan through, and each one failed at send.
+      const onChannel = new Set(templateRows.flatMap((t) => [String(t.key), String(t.family ?? "")].filter(Boolean).map((k) => `${String(t.channel ?? "email")}:${k}`)));
       const opener = String((goalDef?.firstTouch as { templateKey?: string } | undefined)?.templateKey ?? "");
       const sentKeys = new Set(await rungsSentTo(String(instance.personId)));
       const menu = perLeadFamily ? [...new Set(templateRows.filter((t) => t.family === perLeadFamily).map((t) => String(t.key)))] : [];
@@ -1228,6 +1232,18 @@ export const TOOLS: ToolDef[] = [
         const row = templateByKey.get(key);
         if (!row && !families.has(key)) {
           templateProblems.push(`${step}: there is no active template "${key}".`);
+          continue;
+        }
+        const stepChannel = String(st.channel ?? "email");
+        if (!onChannel.has(`${stepChannel}:${key}`)) {
+          const elsewhere = [...onChannel].filter((k) => k.endsWith(`:${key}`)).map((k) => k.split(":")[0]);
+          templateProblems.push(`${step} goes on ${stepChannel}, but "${key}" is a ${elsewhere.join("/") || "different"} template.`);
+          continue;
+        }
+        // A template the writer fills is written fresh for every touch, like the frame: it is
+        // never "already had", and a plan may use it at every step.
+        if (row && takesWrittenWords(row)) {
+          inPlan.add(key);
           continue;
         }
         if (rolling && key === frameKey) {
@@ -1254,7 +1270,7 @@ export const TOOLS: ToolDef[] = [
         );
       }
       if (templateProblems.length > 0) {
-        throw new Error(`This plan names emails it cannot send:\n- ${templateProblems.join("\n- ")}\nNothing was written.`);
+        throw new Error(`This plan names templates it cannot send:\n- ${templateProblems.join("\n- ")}\nNothing was written.`);
       }
 
       // Assets are checked at plan time as well as at compose time, because a step can
@@ -1401,7 +1417,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "compose_batch",
     description:
-      "Write the actual copy for upcoming touches and queue them. Your part of each body is at most 90 words with no links, and the finished mail stays under 200 words; lead_card's skeleton shows what the template adds. Each becomes a scheduled message; the engine sends it when due, under every guardrail. Never repeat a claim already made to this person. A touch may carry assets from lead_card's assets_available; carrying none is the normal case. Anything not on that list is refused with the reason, and what an asset proves counts as said.",
+      "Write the actual copy for upcoming touches and queue them. Your part of each body is at most 90 words with no links, and the finished mail stays under 200 words; lead_card's skeleton shows what the template adds. Each becomes a scheduled message; the engine sends it when due, under every guardrail. Never repeat a claim already made to this person. A touch may carry assets from lead_card's assets_available; carrying none is the normal case. Anything not on that list is refused with the reason, and what an asset proves counts as said. A WhatsApp touch goes as an approved template, sent by name: body fills its {{message}} and question its {{question}}, nothing else is sent, and template_key names which template (lead_card's skeleton for the step lists the choices).",
     inputSchema: {
       type: "object",
       properties: {
@@ -1415,13 +1431,20 @@ export const TOOLS: ToolDef[] = [
               after_days: { type: "number" },
               channel: { type: "string" },
               angle: { type: "string" },
+              template_key: {
+                type: "string",
+                description:
+                  "WhatsApp (or any channel whose messages are approved provider templates): which template carries this " +
+                  "touch, from the choices in lead_card's skeleton. Omit to use the one the plan step names.",
+              },
               subject: { type: "string" },
               body: {
                 type: "string",
                 description:
                   "Markdown, at most 90 words, no links. Write the message only: the greeting, the " +
                   "call-to-action button, the sign-off and the unsubscribe line belong to the template " +
-                  "and are added around it.",
+                  "and are added around it. On a WhatsApp template this is its {{message}}: one paragraph " +
+                  `of at most ${WRITTEN_MESSAGE_MAX_WORDS} words with no line break, no greeting and no sign-off.`,
               },
               preheader: {
                 type: "string",
@@ -1506,7 +1529,12 @@ export const TOOLS: ToolDef[] = [
               shows_intro: { type: "string", description: "Optional line over the list. Defaults to \"What TeamGrid would show you:\"." },
               shows: { type: "array", items: { type: "string" }, description: "Up to 3 lines under 50 characters on what they would see. A check list in HTML, dashes in plain text." },
               limit: { type: "string", description: "Optional one line on what is not recorded, where the fit is partial." },
-              question: { type: "string", description: "The closing question, one line they can answer; shown bold in HTML." },
+              question: {
+                type: "string",
+                description:
+                  "The closing question, one line they can answer; shown bold in HTML. On a WhatsApp template with a " +
+                  `{{question}}, it fills that: one line of at most ${WRITTEN_QUESTION_MAX_WORDS} words ending in a question mark.`,
+              },
               theme: { type: "string", description: "The idea in words. Defaults to the plan step's theme." },
               hook: { type: "string", description: "How the idea lands: story, rupee_math, question, comparison, proof, or your own word." },
               asset_ids: {
@@ -1547,6 +1575,91 @@ export const TOOLS: ToolDef[] = [
         if (!String(t.rationale ?? "").trim()) throw new Error(`step ${String(t.step_id)} needs a rationale in words. Nothing was written.`);
       }
 
+      // Touches that go as an approved provider template (WhatsApp): the template is sent by
+      // name and only its variables change, so the writer fills {{message}} and, where it has
+      // one, {{question}}. Resolved before anything else reads the touch, because here
+      // `question` is that variable and not the closing line of a mail written in parts.
+      // Nothing did this before: the words went into the slot, the variables stayed empty,
+      // and every planned WhatsApp step failed or would have been refused by WATI.
+      const writtenTpl = await writtenTemplatesFor(orgId, productId);
+      const planForTouches = instance.currentPlanId && ObjectId.isValid(String(instance.currentPlanId))
+        ? await db.collection(C.plans).findOne({ _id: new ObjectId(String(instance.currentPlanId)) }, { projection: { steps: 1 } })
+        : null;
+      const planStepFor = new Map(((planForTouches?.steps ?? []) as Array<Record<string, unknown>>).map((st) => [Number(st.id ?? st.step_id), st]));
+      const providerTouch = new Map<Record<string, unknown>, Record<string, unknown>>();
+      for (const t of touches) {
+        const step = String(t.step_id);
+        const channel = String(t.channel ?? "");
+        const choices = [...writtenTpl.byKey.values()].filter((row) => String(row.channel) === channel).map((row) => String(row.key));
+        const named = str(t.template_key)?.trim();
+        const stepKey = String(planStepFor.get(Number(t.step_id))?.templateKey ?? planStepFor.get(Number(t.step_id))?.template_key ?? "");
+        if (named) {
+          const row = writtenTpl.byKey.get(named);
+          if (!row || String(row.channel) !== channel) {
+            throw new Error(
+              `step ${step} names template_key "${named}", which is not an active ${channel} template that takes written words. ` +
+                (choices.length ? `Use one of: ${choices.join(", ")}.` : `This product has none on ${channel}.`) + " Nothing was written.",
+            );
+          }
+          providerTouch.set(t, row);
+          continue;
+        }
+        const fromStep = writtenTpl.byKey.get(stepKey);
+        if (fromStep && String(fromStep.channel) === channel) {
+          providerTouch.set(t, fromStep);
+          continue;
+        }
+        if (writtenTpl.channels.has(channel) && !writtenTpl.activeKeys.has(stepKey)) {
+          throw new Error(
+            `step ${step} goes on ${channel}, where every message is an approved template with your words in it. ` +
+              `Name one as template_key: ${choices.join(", ")}. Nothing was written.`,
+          );
+        }
+      }
+      for (const [t, row] of providerTouch) {
+        const step = String(t.step_id);
+        const key = String(row.key);
+        const takes = writtenParamsOf(row);
+        const message = String(t.body ?? "").trim();
+        const question = String(t.question ?? "").trim();
+        // Meta refuses a variable holding a line break, a tab or more than four spaces in a
+        // row, and the provider may still answer OK. Said here, before anyone reviews it.
+        const unsendable = (x: string) => /[\n\t]/.test(x) || / {5,}/.test(x);
+        const wordsIn = (x: string) => x.split(/\s+/).filter(Boolean).length;
+        const stray = ["subject", "preheader", "ps", "opening", "scene", "cost_lines", "shows", "receipt", "reveal", "timeline", "reply_options", "format", "cta_text", "limit"].filter(
+          (k) => t[k] !== undefined && String(t[k] ?? "").trim() !== "",
+        );
+        if (stray.length) {
+          throw new Error(`step ${step} goes as the approved template "${key}", which takes body and question only; leave out ${stray.join(", ")}. Nothing was written.`);
+        }
+        if (!message) throw new Error(`step ${step} has no body. It is the "${key}" template's {{message}}. Nothing was written.`);
+        if (unsendable(message)) {
+          throw new Error(`step ${step} body has a line break, a tab or a run of spaces. It goes into one WhatsApp template variable, which cannot hold them: write one paragraph. Nothing was written.`);
+        }
+        if (wordsIn(message) > WRITTEN_MESSAGE_MAX_WORDS) {
+          throw new Error(`step ${step} body is ${wordsIn(message)} words. The "${key}" template's {{message}} takes at most ${WRITTEN_MESSAGE_MAX_WORDS}. Nothing was written.`);
+        }
+        if (/^(hi|hello|hey|dear|greetings|good (morning|afternoon|evening))\b/i.test(message)) {
+          throw new Error(`step ${step} body opens with a greeting. The "${key}" template already says hello by name; start with what you have to say. Nothing was written.`);
+        }
+        if (/(regards|thanks|thank you|cheers|sincerely|the teamgrid team)[\s,.!]*$/i.test(message)) {
+          throw new Error(`step ${step} body ends with a sign-off. The "${key}" template signs off itself. Nothing was written.`);
+        }
+        if (takes.includes("question")) {
+          if (!question) throw new Error(`step ${step}: the "${key}" template has a {{question}}; write question, one line ending in a question mark. Nothing was written.`);
+          if (unsendable(question)) throw new Error(`step ${step} question has a line break, a tab or a run of spaces, which a WhatsApp variable cannot hold. Nothing was written.`);
+          if (!/\?$/.test(question)) throw new Error(`step ${step} question does not end with a question mark. Nothing was written.`);
+          if (wordsIn(question) > WRITTEN_QUESTION_MAX_WORDS) {
+            throw new Error(`step ${step} question is ${wordsIn(question)} words; keep it to ${WRITTEN_QUESTION_MAX_WORDS}. Nothing was written.`);
+          }
+        } else if (question) {
+          const withQuestion = [...writtenTpl.byKey.values()].filter((r) => String(r.channel) === String(row.channel) && writtenParamsOf(r).includes("question")).map((r) => String(r.key));
+          throw new Error(
+            `step ${step}: the "${key}" template has no {{question}}. Leave question out${withQuestion.length ? `, or name ${withQuestion.join(" or ")} as template_key` : ""}. Nothing was written.`,
+          );
+        }
+      }
+
       // A touch written in parts: opening, scene, cost lines, what they would see, a limit
       // and the question. The frame lays each part out for the format; everything below
       // checks the assembled words, so a part cannot slip past a rule the body obeys.
@@ -1565,6 +1678,7 @@ export const TOOLS: ToolDef[] = [
       // Which arm of each layout test this lead sits in, for good (docs/learnings.md PT8).
       const armFor = (test: LayoutTest) => layoutArm(String(instance.personId), test);
       for (const t of touches) {
+        if (providerTouch.has(t)) continue;
         const step = String(t.step_id);
         const structured = ["opening", "scene", "question", "cost_lines", "shows", "receipt", "reveal"].some((k) => t[k] !== undefined);
         if (!structured) {
@@ -1860,6 +1974,23 @@ export const TOOLS: ToolDef[] = [
         }
       }
 
+      // The same truth rules for a template's variables: they are short, but they are the
+      // only words in the message that were written for this person.
+      for (const [t] of providerTouch) {
+        const step = String(t.step_id);
+        const said = [t.body, t.question].map((v) => String(v ?? "")).join("\n");
+        const pointsAtForm = /\byou (named|mentioned|told us|said|shared|filled|submitted|selected|wrote|listed|indicated|flagged|picked|chose)\b|\byour (form|answer|response|submission)\b|\bon the form\b/i.exec(said);
+        if (pointsAtForm) {
+          throw new Error(`step ${step} says "${pointsAtForm[0]}", which tells them we are reading back what they submitted. Write about their situation directly instead. Nothing was written.`);
+        }
+        const unproven = unprovenClaims(said);
+        if (unproven.length) {
+          throw new Error(`step ${step} says "${unproven[0]}". Never quote customers or claim a result nobody measured. Nothing was written.`);
+        }
+        const named = companyWords.find((token) => said.toLowerCase().includes(token));
+        if (named) throw new Error(`step ${step} names their company ("${named}"). Describe what they do instead of printing the name. Nothing was written.`);
+      }
+
       // Limits a reader feels, enforced here so a human in Review never has to trim a mail.
       // One problem and one thing they would see fits in 90 words; a link in the body is a
       // second ask beside the template's one button; the preheader and PS are short or absent.
@@ -1889,6 +2020,8 @@ export const TOOLS: ToolDef[] = [
         if (LINK.test(body)) {
           throw new Error(`step ${step} carries a link. The template already has the one button this mail asks for; a second link is a second ask. Nothing was written.`);
         }
+        // A template's own buttons are its ask; the question, where it has one, is separate.
+        if (providerTouch.has(t)) continue;
         const ask = String(t.ask ?? "link");
         if (ask !== "link" && ask !== "reply") {
           throw new Error(`step ${step} ask is "${ask}"; it is "reply" or "link". Nothing was written.`);
@@ -2001,6 +2134,18 @@ export const TOOLS: ToolDef[] = [
           ((plan?.steps ?? []) as Array<Record<string, unknown>>).map((st) => [Number(st.id ?? st.step_id), st]),
         );
         for (const t of touches) {
+          const provider = providerTouch.get(t);
+          if (provider && reader) {
+            // Meta holds a template's body, variables filled, to 1024 characters.
+            const whole = renderForCount((provider.blocks ?? []) as Array<Record<string, unknown>>, varsForCount(reader, productForCount), {
+              slotText: String(t.body ?? "").trim(),
+              ...(String(t.question ?? "").trim() ? { slots: { question: String(t.question).trim() } } : {}),
+            });
+            if (whole.bodyMd.length > 1024) {
+              throw new Error(`step ${String(t.step_id)} renders to ${whole.bodyMd.length} characters with the "${String(provider.key)}" template; WhatsApp takes 1024. Cut the body. Nothing was written.`);
+            }
+            continue;
+          }
           const key = String(stepsById.get(Number(t.step_id))?.templateKey ?? "");
           if (!key || !reader) continue;
           const tpl = await db
@@ -2213,6 +2358,9 @@ export const TOOLS: ToolDef[] = [
             channelId: String(channel._id),
             angle: isFrameTouch(t) ? String(stepRows.get(Number(t.step_id))?.angle ?? themeSlug(String(t.theme ?? t.angle))) : String(t.angle),
             rationale: String(t.rationale),
+            // The template it goes as, named on the action so the sender and the preview use
+            // this one whatever the plan step said.
+            ...(providerTouch.has(t) ? { templateKey: String(providerTouch.get(t)!.key) } : {}),
             ...(isFrameTouch(t)
               ? {
                   theme: String(t.theme ?? stepRows.get(Number(t.step_id))?.theme ?? t.angle),
@@ -2238,7 +2386,16 @@ export const TOOLS: ToolDef[] = [
                       parts: { ...(sp.cost ? { cost: sp.cost } : {}), ...(sp.shows ? { shows: sp.shows } : {}), ...(sp.receipt ? { receipt: sp.receipt } : {}) },
                     };
                   })()
-                : {
+                : providerTouch.has(t)
+                  ? {
+                      slotText: body.trim(),
+                      slots: String(t.question ?? "").trim() ? { question: String(t.question).trim() } : undefined,
+                      templateParams: {
+                        message: body.trim(),
+                        ...(String(t.question ?? "").trim() ? { question: String(t.question).trim() } : {}),
+                      },
+                    }
+                  : {
                     slotText: body,
                     slots: String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : undefined,
                   }),
@@ -4883,6 +5040,27 @@ TOOLS.push({
         `step ${wrongChannel.id} uses "${wrongChannel.channel}", which campaign "${goalKey}" does not allow. ` +
           `Allowed: ${allowedChannels.join(", ")}.`,
       );
+    }
+
+    // A named template has to exist on the channel its step sends on. Unchecked, a WhatsApp
+    // playbook named "hot_lead_followup" — no template anywhere — on all five steps, was
+    // stamped onto nineteen leads, and every step failed at send.
+    const named = steps.filter((s) => s.templateKey);
+    if (named.length) {
+      const rows = await db
+        .collection(C.templates)
+        .find({ orgId: ctx.orgId, productId, status: "active" }, { projection: { key: 1, family: 1, channel: 1 } })
+        .toArray();
+      const onChannel = new Set(rows.flatMap((t) => [String(t.key), String(t.family ?? "")].filter(Boolean).map((k) => `${String(t.channel ?? "email")}:${k}`)));
+      const wrong = named.filter((s) => !onChannel.has(`${s.channel}:${s.templateKey}`));
+      if (wrong.length) {
+        const menu = (channel: string) => [...new Set([...onChannel].filter((k) => k.startsWith(`${channel}:`)).map((k) => k.slice(channel.length + 1)))];
+        throw new Error(
+          wrong
+            .map((s) => `step ${s.id} names "${s.templateKey}", which is no active ${s.channel} template. On ${s.channel} there is: ${menu(s.channel).join(", ") || "nothing"}.`)
+            .join(" ") + " Nothing was written.",
+        );
+      }
     }
 
     const budget = (goal.budget ?? {}) as { touches?: number };

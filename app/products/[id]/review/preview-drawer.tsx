@@ -135,7 +135,9 @@ export default function PreviewDrawer({
   const whatsapp = message?.channel === "whatsapp" ? message.whatsapp : undefined;
   // A template goes by name with only its variables filled in, so its words are the ones
   // Meta approved: editing or rewriting them here would change the preview and not the send.
-  const fixedWords = Boolean(whatsapp?.template);
+  // Unless the template takes words written for this lead in {{message}}: those are theirs
+  // to change, and only those.
+  const fixedWords = Boolean(whatsapp?.template) && !whatsapp?.written;
   // When Approve actually puts it in front of someone, said on the button that does it.
   const dueLater = message?.dueAt ? new Date(message.dueAt).getTime() > Date.now() : false;
 
@@ -238,6 +240,11 @@ export default function PreviewDrawer({
                     <p className="muted pv-note">
                       The words are the approved WhatsApp template&rsquo;s. Change them in WATI and
                       submit the new version for approval.
+                    </p>
+                  ) : whatsapp?.written ? (
+                    <p className="muted pv-note">
+                      Only the paragraph written for this lead can change. The rest is the approved
+                      template {whatsapp.template}&rsquo;s own text.
                     </p>
                   ) : null}
                   {message.rewriteRequestedAt ? (
@@ -386,7 +393,14 @@ export default function PreviewDrawer({
 
               {/* Email and WhatsApp are shown the way the recipient meets them — the line in the
                   inbox or chat list, then opened. Other channels keep the body. */}
-              {whatsapp ? (
+              {/* A message that cannot be rendered says so, and why, in the open. Put inside
+                  the chat bubble, the error read as the message itself. */}
+              {!message.bodyText && message.previewError ? (
+                <div className="empty">
+                  <strong>This message cannot be shown</strong>
+                  {message.previewError}
+                </div>
+              ) : whatsapp ? (
                 <WhatsAppPreview
                   device={device}
                   businessName={whatsapp.businessName}
@@ -461,7 +475,7 @@ export default function PreviewDrawer({
                   ? outcomeLine(message)
                   : whatsapp
                     ? whatsapp.template
-                      ? `Approving sends the approved WhatsApp template ${whatsapp.template}, with their name filled in. It can go whether or not they have written to us.`
+                      ? `Approving sends the approved WhatsApp template ${whatsapp.template}, with their name${whatsapp.written ? " and the words written for them" : ""} filled in. It can go whether or not they have written to us.`
                       : "Approving sends this as free text. WhatsApp only delivers that within 24 hours of their last message to us."
                   : designed || letter
                     ? format === "html"

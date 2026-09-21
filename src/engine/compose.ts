@@ -47,6 +47,12 @@ export interface ComposedContent {
    * reason as `slots`: a second render must still find them.
    */
   parts?: ComposedParts;
+  /**
+   * What a writer put in an approved provider template's variables ("message", "question"),
+   * by name. The provider sends the template by name with these filled in, so they are the
+   * words that actually go; kept through every render for the same reason as `slotText`.
+   */
+  templateParams?: Record<string, string>;
 }
 
 /** The pieces of a written touch that are not prose. See the `written_email` frame. */
@@ -650,6 +656,7 @@ export function renderTemplate(
     slotText: precomposed?.slotText,
     slots: precomposed?.slots,
     parts: precomposed?.parts,
+    templateParams: precomposed?.templateParams,
   };
 }
 

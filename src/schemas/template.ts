@@ -147,7 +147,13 @@ export const template = z.object({
    * names no known variable is passed through as written, which is how a constant is set.
    */
   providerTemplate: z
-    .object({ name: z.string(), params: z.record(z.string(), z.string()).default({}) })
+    .object({
+      name: z.string(),
+      params: z.record(z.string(), z.string()).default({}),
+      /** What the approved template shows around its body, for the review preview only. */
+      footer: z.string().optional(),
+      buttons: z.array(z.object({ kind: z.enum(["url", "reply", "phone"]), text: z.string() })).optional(),
+    })
     .optional(),
   constraints: z.object({
     maxWords: z.number().int().positive().optional(),

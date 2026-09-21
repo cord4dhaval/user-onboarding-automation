@@ -1,5 +1,5 @@
 import { ObjectId, type Document } from "mongodb";
-import { engineRenderedKeysFor } from "./engineSteps.js";
+import { engineRenderedKeysFor, stepNeedsWords, writtenTemplatesFor } from "./engineSteps.js";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { dueAtFor, type CadenceBand } from "./cadence.js";
@@ -193,7 +193,7 @@ export async function advance(
       .collection(C.actions)
       .find(
         { ...s, goalInstanceId: { $in: instanceIds } },
-        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1, channel: 1, sentAt: 1, firstOpenedAt: 1, firstClickedAt: 1, firstRepliedAt: 1 } },
+        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1, channel: 1, sentAt: 1, firstOpenedAt: 1, firstClickedAt: 1, firstRepliedAt: 1, "delivery.status": 1 } },
       )
       .toArray(),
   ]);
@@ -221,8 +221,14 @@ export async function advance(
   /** The last touch that went out in each campaign, and the latest click or reply, for checkpoints. */
   const lastSentBy = new Map<string, { at: Date; channel: string }>();
   const lastSignalBy = new Map<string, Date>();
+  /** Campaigns where the provider refused a message, and those where one got through. */
+  const refusedIn = new Set<string>();
+  const reachedIn = new Set<string>();
   for (const action of actionRows) {
     const key = String(action.goalInstanceId);
+    const delivery = (action.delivery as { status?: string } | undefined)?.status;
+    if (delivery === "failed") refusedIn.add(key);
+    else if (["sent", "dispatched"].includes(String(action.status))) reachedIn.add(key);
     if (["sent", "dispatched"].includes(String(action.status)) && action.sentAt) {
       const at = new Date(String(action.sentAt));
       const seen = lastSentBy.get(key);
@@ -259,6 +265,8 @@ export async function advance(
   // once per campaign and the per-person decision is made in memory.
   /** Steps the engine renders itself: a family of variants, or a template with no slot. */
   const familyKeys = await engineRenderedKeysFor(orgId, productId);
+  /** Templates that send nothing until a session fills their provider variables. */
+  const written = await writtenTemplatesFor(orgId, productId);
 
   const channelsByGoal = new Map<string, PooledChannel[]>();
   const kinds = await channelKinds(orgId, productId);
@@ -332,6 +340,15 @@ export async function advance(
     // Anything already waiting means this person's next message exists. Writing a second one
     // now would put two messages in front of somebody who has read neither.
     if ((pendingBy.get(goalInstanceId) ?? 0) > 0) continue;
+
+    // Nothing this campaign sent has reached them: the provider refused it (WhatsApp's 131049,
+    // Meta's cap on marketing messages per person, blocks about one intro in three). A
+    // follow-up would answer a message they never saw. Held rather than ended: returning the
+    // refused message to review and getting it through lets the sequence carry on.
+    if (refusedIn.has(goalInstanceId) && !reachedIn.has(goalInstanceId)) {
+      summary.skipped.push({ goalInstanceId, reason: "nothing sent in this campaign has reached them; the provider refused it" });
+      continue;
+    }
 
     const person = personById.get(String(instance.personId));
     if (!person) {
@@ -453,6 +470,12 @@ export async function advance(
     // has won. Handing it to a session would replace a tested first mail with freehand.
     // So is a step whose template has no slot: written copy would be dropped at render.
     if (step && tier === 1 && familyKeys.has(String(step.templateKey ?? ""))) tier = 2;
+    // A step whose template goes by name with the writer's words in its variables has
+    // nothing to send until somebody writes them. Queued empty, as tier 2 is, it reached
+    // WATI with {{message}} blank, or failed for want of a template when the step named
+    // none of the channel's. So it is always a session's, whoever the lead is.
+    const needsWords = !fallback && stepNeedsWords(step, written);
+    if (needsWords && tier === 2) tier = 1;
     // Written copy that has waited on a session for longer than a routine takes to come
     // round twice is not coming. The template's own words go out instead, and the waiting
     // job is finished by next_work once it sees the queued message.
@@ -466,6 +489,12 @@ export async function advance(
     }
     if (!step) {
       summary.skipped.push({ goalInstanceId, reason: "plan exhausted" });
+      continue;
+    }
+    // Late words for such a step are waited for, not replaced: there is no template text to
+    // send in their place. The compose job is still open, so the next session picks it up.
+    if (needsWords && composeLate) {
+      summary.skipped.push({ goalInstanceId, reason: "waiting for Claude to write this touch; its template sends nothing without written words" });
       continue;
     }
 

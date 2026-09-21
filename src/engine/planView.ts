@@ -2,7 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { gateOpen, nextStep, type StepEngagement } from "./advance.js";
-import { engineRenderedKeysFor, skeletonFor, type Skeleton } from "./engineSteps.js";
+import { engineRenderedKeysFor, skeletonFor, writtenTemplatesFor, type Skeleton } from "./engineSteps.js";
 import { FRAME_BODY_MAX_WORDS, frameKeyOf, isRolling, isRollingPlan } from "./rolling.js";
 
 /**
@@ -21,6 +21,7 @@ export type StepState = "sent" | "waiting" | "skipped" | "open" | "closed";
 export interface PlanStepView {
   step_id: number;
   template_key: string | null;
+  channel: string;
   angle: string | null;
   gate: string | null;
   after_days: number;
@@ -106,6 +107,7 @@ export async function planViewFor(instance: Document, actions: Document[], band:
       return {
         step_id: id,
         template_key: typeof key === "string" && key ? key : null,
+        channel: String(st.channel ?? "email"),
         angle: st.angle ? String(st.angle) : null,
         gate: st.gate ? String(st.gate) : null,
         after_days: Number(st.offsetDays ?? st.after_days ?? st.afterDays ?? 0),
@@ -131,7 +133,16 @@ export async function planViewFor(instance: Document, actions: Document[], band:
   } else if (nextView.engine_renders) {
     note = `Step ${nextView.step_id} is the engine's: ${nextView.engine_reason ?? "it renders it itself"} ("${nextView.template_key}"). Nothing to write until that has gone out.`;
   } else {
-    const skeleton = nextView.template_key ? await skeletonFor(orgId, productId, nextView.template_key, plan.segmentKey ? String(plan.segmentKey) : null) : null;
+    // On a channel where every message is an approved template with the writer's words in
+    // it, a step naming none of them (or a key that does not exist) is still written: the
+    // skeleton shown is the channel's first such template, with the others as choices.
+    const written = await writtenTemplatesFor(orgId, productId);
+    const stepKey = nextView.template_key ?? "";
+    const skeletonKey =
+      written.channels.has(nextView.channel) && !written.activeKeys.has(stepKey)
+        ? [...written.byKey.values()].find((t) => String(t.channel) === nextView.channel)?.key
+        : stepKey;
+    const skeleton = skeletonKey ? await skeletonFor(orgId, productId, String(skeletonKey), plan.segmentKey ? String(plan.segmentKey) : null) : null;
     toWrite = { ...nextView, skeleton };
     note = rolling && nextView.template_key === frameKey
       ? `Write step ${nextView.step_id} whole, in parts: subject, preheader, opening, scene, cost_lines, shows, limit (if the fit is partial), question, an optional ps, format with format_why, ask, theme and hook. The frame lays the parts out for plain text or HTML and adds the greeting, the button (left off for a reply ask), the sign-off and the unsubscribe line. Read writing on the lead card first.`

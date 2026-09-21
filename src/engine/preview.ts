@@ -57,7 +57,7 @@ export async function previewContent(
         usedKeys: await rungsSentTo(String(person._id)),
         ...(rungKey ? { rungKey } : {}),
       });
-  if (!template) throw new Error(`no active ${String(action.channel)} template for this product`);
+  if (!template) throw new Error(`no active ${String(action.channel)} template${rungKey ? ` "${rungKey}"` : ""} for this product`);
 
   const vars = mergeVarsFor(person, product);
   const prior = action.content as Partial<ComposedContent> | undefined;

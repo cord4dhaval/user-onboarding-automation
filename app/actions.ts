@@ -41,6 +41,8 @@ import { assetFileUrl, deleteAssetFile, kindForMime, storeAssetFile } from "@/en
 import { notify, refreshDerived } from "@/engine/notify.js";
 import { listCalls, type CallRow, type RoutineKey } from "@/engine/runlog.js";
 import { previewContent } from "@/engine/preview.js";
+import { stepTemplateKey } from "@/engine/fireDue.js";
+import { takesWrittenWords } from "@/engine/engineSteps.js";
 import { addressFor } from "@/engine/address.js";
 import { timezoneFor } from "@/engine/time.js";
 import { stripOpenPixel } from "@/engine/tracking.js";
@@ -1880,13 +1882,19 @@ export async function editMessage(formData: FormData) {
   if (!body) throw new Error("A message needs words. Reject it instead if it should not go.");
 
   const { db, action } = await editableAction(actionId);
+  // A WhatsApp template's {{message}} is what actually goes, and a template variable holds
+  // no line breaks: the edit is saved as one paragraph, in both places, or the preview
+  // would show the edit and WATI would send the old words.
+  const params = (action.content as { templateParams?: Record<string, string> } | undefined)?.templateParams;
+  const words = params ? body.replace(/\s+/g, " ") : body;
   await db.collection(C.actions).updateOne(
     { _id: action._id },
     {
       $set: {
         "content.subject": subject || undefined,
-        "content.slotText": body,
-        "content.wordCount": body.split(/\s+/).filter(Boolean).length,
+        "content.slotText": words,
+        ...(params ? { "content.templateParams": { ...params, message: words } } : {}),
+        "content.wordCount": words.split(/\s+/).filter(Boolean).length,
         // The rendered halves are dropped so the next render rebuilds them from this text.
         // Leaving them would show the reviewer their own edit and send the old words.
         editedAt: new Date(),
@@ -1945,7 +1953,7 @@ export async function regenerateMessage(formData: FormData) {
         // Back to the gate: a rewrite nobody has read is not an approved message.
         status: "awaiting_approval",
       },
-      $unset: { "content.slotText": "", "content.bodyMd": "", "content.bodyHtml": "", reviewedAt: "", error: "", skipReason: "" },
+      $unset: { "content.slotText": "", "content.bodyMd": "", "content.bodyHtml": "", "content.templateParams": "", reviewedAt: "", error: "", skipReason: "" },
     },
   );
 
@@ -2037,6 +2045,11 @@ export interface WhatsAppFacts {
   /** The template's footer line and buttons, where the template row records them. */
   footer?: string;
   buttons?: { kind: "url" | "reply" | "phone"; text: string }[];
+  /**
+   * The template carries words written for this lead in its variables ({{message}}), so
+   * that part can be edited; the rest is Meta's approved text.
+   */
+  written?: boolean;
 }
 
 /**
@@ -2297,9 +2310,26 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
 /** Where a message on a channel other than email goes, and for WhatsApp what it is sent as. */
 async function channelFacts(action: Document, channel: Document | null): Promise<Pick<HeldMessage, "to" | "whatsapp">> {
   const db = await getDb();
+  // The template the sender will use: the id a first touch carries, else the key the
+  // action or its plan step names. Reading the id alone showed every written WhatsApp
+  // message as free text, with none of its template's buttons.
+  const key = action.templateId
+    ? undefined
+    : action.templateKey
+      ? String(action.templateKey)
+      : action.goalInstanceId && ObjectId.isValid(String(action.goalInstanceId))
+        ? await (async () => {
+            const instance = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(action.goalInstanceId)) });
+            return instance ? stepTemplateKey(instance, action) : undefined;
+          })()
+        : undefined;
   const [person, template, product] = await Promise.all([
     action.personId ? db.collection(C.people).findOne({ _id: new ObjectId(String(action.personId)) }) : null,
-    action.templateId ? db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) }) : null,
+    action.templateId
+      ? db.collection(C.templates).findOne({ _id: new ObjectId(String(action.templateId)) })
+      : key
+        ? db.collection(C.templates).findOne({ orgId: action.orgId, productId: action.productId, channel: String(action.channel), key, status: "active" })
+        : null,
     action.productId ? db.collection(C.products).findOne({ _id: new ObjectId(String(action.productId)) }, { projection: { name: 1 } }) : null,
   ]);
   const to = person ? addressFor(person, String(action.channel)) || undefined : undefined;
@@ -2317,6 +2347,7 @@ async function channelFacts(action: Document, channel: Document | null): Promise
       buttons: (approved?.buttons ?? [])
         .filter((b) => b.text)
         .map((b) => ({ kind: b.kind === "url" || b.kind === "phone" ? b.kind : "reply", text: String(b.text) })),
+      written: takesWrittenWords(template) || undefined,
     },
   };
 }

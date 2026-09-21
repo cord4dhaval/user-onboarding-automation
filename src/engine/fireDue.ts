@@ -244,8 +244,10 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
           });
 
       if (!template) {
+        // Named, when a step asked for one: "no active template" alone sent a person looking
+        // through every template on the channel for a key that was never there.
         await release(action._id, "failed", {
-          error: `no active ${String(action.channel)} template for this product`,
+          error: `no active ${String(action.channel)} template${rungKey ? ` "${rungKey}"` : ""} for this product`,
         });
         summary.failed.push({ person: label, error: "no template on this channel" });
         continue;
@@ -573,8 +575,8 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         // fixed up to the host: the signup it leads to is then theirs, as an email's is.
         trial_path: pathAndQuery(vars.trial_link),
         // What the writer put in the template's open places ("message", "question"), by name.
-        // Read off the stored action, not the render, which knows nothing about them.
-        ...((prior as { templateParams?: Record<string, string> } | undefined)?.templateParams ?? {}),
+        // Read off the stored content, which keeps them through a render at the review gate.
+        ...(prior?.templateParams ?? {}),
       };
       outbound.ref = String(action._id);
       const approved = template.providerTemplate as { name: string; params?: Record<string, string> } | undefined;
