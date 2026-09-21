@@ -72,6 +72,8 @@ export default function GoalDrawer({
   const [channelKey, setChannelKey] = useState(existing?.primaryChannel ?? channelKeys[0] ?? "email");
   const senders = mailboxes.filter((box) => box.key === channelKey);
   const [leadType, setLeadType] = useState(existing?.leadType ?? "");
+  // The auto-send switch names the template it applies to, so it follows the pick above it.
+  const [firstTemplate, setFirstTemplate] = useState(existing?.firstTouchTemplate ?? templateKeys[0] ?? "welcome");
   const chosenType = leadTypes.find((t) => t.value === leadType);
 
   return (
@@ -194,7 +196,8 @@ export default function GoalDrawer({
               First message
               <Select
                 name="firstTouchTemplate"
-                value={existing?.firstTouchTemplate ?? templateKeys[0] ?? "welcome"}
+                value={firstTemplate}
+                onValueChange={setFirstTemplate}
                 searchable={templateKeys.length > 8}
                 ariaLabel="Template the first message uses"
                 options={(templateKeys.length ? templateKeys : ["welcome"]).map((k) => ({ value: k, label: k }))}
@@ -254,7 +257,7 @@ export default function GoalDrawer({
           </label>
 
           <fieldset className="fieldset">
-            <legend>Welcome message</legend>
+            <legend>First message</legend>
             <label className="check">
               <input
                 type="checkbox"
@@ -262,7 +265,7 @@ export default function GoalDrawer({
                 value="auto_send"
                 defaultChecked={existing?.firstTouchApproval === "auto_send"}
               />
-              Send it automatically when a lead arrives
+              Send <code>{firstTemplate}</code> automatically when a lead arrives
             </label>
             <span className="reason">
               On: the first message goes out on its own, even while the rest wait for review. Off: it
