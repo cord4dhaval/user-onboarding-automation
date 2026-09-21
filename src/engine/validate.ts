@@ -71,8 +71,11 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
     }
   }
 
+  // A claim says what the product does, and saying it twice wastes a mail. What it never does
+  // is a promise, and the hot and warm rules require it before every button: refusing it as a
+  // repeat failed every second mail to a lead from 2026-09-18 (66 on teamgrid_leads_v3).
   for (const claim of content.claimsMade) {
-    if (ctx.priorClaims?.includes(claim)) hardFails.push(`claim already made earlier: "${claim}"`);
+    if (ctx.priorClaims?.includes(claim) && !isReassurance(claim)) hardFails.push(`claim already made earlier: "${claim}"`);
   }
 
   const subject = content.subject?.trim() ?? "";
@@ -118,4 +121,9 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
   }
 
   return { ok: hardFails.length === 0, hardFails, softFails };
+}
+
+/** A line about what is not recorded (no screenshots, nothing typed, work away from a computer). */
+export function isReassurance(claim: string): boolean {
+  return /\bno screenshots?\b|\bnever\b|\bnot recorded\b|\bnothing (?:people|anyone|anybody) types?\b|\bnothing typed\b|\bonly computer work\b|\baway from a computer\b/i.test(claim);
 }
