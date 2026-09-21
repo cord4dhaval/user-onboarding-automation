@@ -26,6 +26,7 @@ const FEED_OVERLAP_MS = 24 * 60 * 60_000;
 const UNMATCHED_RECHECK_MS = 24 * 60 * 60_000;
 /** Enough for one person: two lookups and four reads of a record, three seconds apart. */
 const PERSON_ROOM_MS = 20_000;
+const RECORD_ROOM_MS = 15_000;
 
 type Row = Record<string, unknown>;
 
@@ -368,7 +369,11 @@ export async function syncPerson(client: CrmClient, personId: string): Promise<{
  * Records already known to belong elsewhere cost nothing: a Grow8 deal in a shared CRM is
  * remembered as out of scope and its events are skipped without a call.
  */
-export async function syncChanges(client: CrmClient, until: number): Promise<{ events: number; records: number; more: boolean }> {
+export async function syncChanges(
+  client: CrmClient,
+  until: number,
+  readFeed = true,
+): Promise<{ events: number; records: number; more: boolean }> {
   const db = await getDb();
   const { orgId, connectionId, map } = client.conn;
   const connection = await db.collection(C.connections).findOne({ _id: new ObjectId(connectionId) });
@@ -380,7 +385,8 @@ export async function syncChanges(client: CrmClient, until: number): Promise<{ e
   const pending = new Set<string>(sync.pending ?? []);
   let newest = since;
   let events = 0;
-  const feed = await client.list(map.changes, { from }, 10);
+  // Between feed reads the run still works off what the last read queued.
+  const feed = readFeed ? await client.list(map.changes, { from }, 10) : { items: [], more: false };
   for (const e of feed.items) {
     const at = dateOf(pluck(e, map.eventFields.at));
     const recordId = str(pluck(e, map.eventFields.recordId));
@@ -395,7 +401,9 @@ export async function syncChanges(client: CrmClient, until: number): Promise<{ e
   let records = 0;
   const links = db.collection(C.crmLinks);
   for (const recordId of [...pending]) {
-    if (Date.now() > until) break;
+    // A record is four spaced reads; one begun without room for them would run past the
+    // platform's own limit on the request.
+    if (until - Date.now() < RECORD_ROOM_MS) break;
     const link = await links.findOne({ orgId, connectionId, externalId: recordId });
     pending.delete(recordId);
     if (link?.status === "out_of_scope") continue;
@@ -419,7 +427,12 @@ export async function syncChanges(client: CrmClient, until: number): Promise<{ e
 
   await db.collection(C.connections).updateOne(
     { _id: new ObjectId(connectionId) },
-    { $set: { "crm.sync.cursor": newest.toISOString(), "crm.sync.pending": [...pending].slice(0, 500) } },
+    {
+      $set: {
+        ...(readFeed ? { "crm.sync.cursor": newest.toISOString() } : {}),
+        "crm.sync.pending": [...pending].slice(0, 500),
+      },
+    },
   );
   return { events, records, more: pending.size > 0 || feed.more };
 }
@@ -516,16 +529,19 @@ export async function unlockConnection(connectionId: string): Promise<void> {
 }
 
 /**
- * The CRM step of the minute tick. Runs after sending, on a capped slice of the budget,
- * and only for connections a person switched CRM reading on for. With none, it reads one
- * empty query and returns — the engine behaves exactly as it did before CRM reading existed.
+ * One run of CRM reading, for its own cron (/api/cron/crm), apart from the sending tick.
+ *
+ * It has a clock of its own because its pace is set by the CRM's rate limit, not by the
+ * send queue: inside the sending tick it only ever got what sending left over — room for
+ * one person a minute. Here it gets the whole run. Only connections a person switched CRM
+ * reading on for are read; with none, it is one empty query, and sending never waits on it.
  */
-export async function crmTick(deadline: number, productIds: string[]): Promise<Array<Record<string, unknown>>> {
+export async function crmTick(deadline: number, productIds?: string[]): Promise<Array<Record<string, unknown>>> {
   const db = await getDb();
   const report: Array<Record<string, unknown>> = [];
   const connections = await db
     .collection(C.connections)
-    .find({ "crm.enabled": true, productId: { $in: productIds } })
+    .find({ "crm.enabled": true, ...(productIds ? { productId: { $in: productIds } } : {}) })
     .project({ _id: 1, orgId: 1, productId: 1, crm: 1 })
     .toArray();
 
@@ -540,7 +556,8 @@ export async function crmTick(deadline: number, productIds: string[]): Promise<A
     try {
       const client = await CrmClient.open(connectionId);
       const due = !sync.lastPollAt || Date.now() - new Date(sync.lastPollAt).getTime() >= POLL_EVERY_MS;
-      const changes = due ? await syncChanges(client, deadline) : null;
+      const queued = ((connection.crm?.sync?.pending ?? []) as string[]).length;
+      const changes = due || queued ? await syncChanges(client, deadline, due) : null;
       if (due) set["crm.sync.lastPollAt"] = new Date();
       const checked = await checkUnchecked(client, deadline, sync.backfillGoal);
       set["crm.sync.status"] = "ok";
