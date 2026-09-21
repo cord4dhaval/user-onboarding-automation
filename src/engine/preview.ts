@@ -2,7 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { renderTemplate, resolveBlocks, type ComposedContent } from "./compose.js";
-import { letterBrandFrom, renderHtml, renderLetter } from "./html.js";
+import { designedBrandFrom, editorialDesign, letterBrandFrom, renderDesigned, renderHtml, renderLetter } from "./html.js";
 import { loadBrandKit } from "./brand.js";
 import { resolveTemplateFor } from "./templates.js";
 import { rungsSentTo, stepTemplateKey } from "./fireDue.js";
@@ -80,7 +80,9 @@ export async function previewContent(
     bodyHtml =
       String(action.format) === "letter"
         ? renderLetter(resolved, letterBrandFrom(await loadBrandKit(orgId, productId), product))
-        : renderHtml(resolved, await loadBrandKit(orgId, productId));
+        : editorialDesign(product)
+          ? renderDesigned(resolved, designedBrandFrom(await loadBrandKit(orgId, productId), product, [action.hook, action.theme, action.angle, template.key]))
+          : renderHtml(resolved, await loadBrandKit(orgId, productId));
   }
 
   return { subject: content.subject, bodyMd: content.bodyMd, bodyHtml };

@@ -354,6 +354,296 @@ ${out.join("\n")}
 }
 
 /**
+ * A picture a product keeps for the top of its designed mail, and the words that pick it.
+ *
+ * Kept in the product's config (`email.illustrations`), in priority order. The first whose
+ * words appear in what the touch is about wins; one with no words is the fallback. The
+ * pictures carry no numbers, so no mail shows a figure its own story does not.
+ */
+export interface Illustration {
+  key: string;
+  url: string;
+  alt: string;
+  /** The band colour behind the picture, which is all a reader with images off sees. */
+  bg: string;
+  match?: string[];
+}
+
+/** What a designed mail carries of the brand, and the picture on top when there is one. */
+export interface DesignedBrand extends LetterBrand {
+  hero?: { url: string; alt: string; bg: string };
+}
+
+/** Whether a product's designed format is the editorial one rather than the plain card. */
+export function editorialDesign(product?: Record<string, unknown> | null): boolean {
+  return (product?.config as { email?: { style?: unknown } } | undefined)?.email?.style === "editorial";
+}
+
+/** The product's picture for a touch, from its hook, theme, angle or template key. */
+export function illustrationFor(product: Record<string, unknown> | null | undefined, about: unknown[]): Illustration | undefined {
+  const list = ((product?.config as { email?: { illustrations?: Illustration[] } } | undefined)?.email?.illustrations ?? []).filter(
+    (i) => typeof i?.url === "string" && i.url,
+  );
+  if (!list.length) return undefined;
+  const hay = about.filter((x): x is string => typeof x === "string").join(" ").toLowerCase();
+  return list.find((i) => (i.match ?? []).some((w) => hay.includes(w.toLowerCase()))) ?? list.find((i) => !i.match?.length);
+}
+
+export function designedBrandFrom(kit: ResolvedKit, product: Record<string, unknown> | null | undefined, about: unknown[]): DesignedBrand {
+  const hero = illustrationFor(product, about);
+  return { ...letterBrandFrom(kit, product), ...(hero ? { hero: { url: hero.url, alt: hero.alt, bg: hero.bg } } : {}) };
+}
+
+/**
+ * The editorial designed format (Dhaval chose it on 2026-09-21 from the preview pages):
+ * the logo and name on top, an illustrated band when the product has a picture for the
+ * subject, the opening set as the headline, the product's part in a tinted panel with
+ * drawn check chips, example costs in a bordered card, sample figures as large numbers,
+ * one button, and the signature at the foot.
+ *
+ * Everything that carries meaning is text in table cells, so it reads the same in Outlook
+ * and with images off; the picture is decoration on a band of its own colour. Always light,
+ * for the same reason as the letter: a dark-capable scheme painted previews black.
+ */
+export function renderDesigned(resolved: ResolvedTemplate, brand: DesignedBrand): string {
+  const F = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  const T = `role="presentation" cellpadding="0" cellspacing="0" border="0"`;
+  const accent = brand.accent || "#1a73e8";
+  const ink = inkOf(accent);
+  const soft = lighten(accent, 0.9);
+  const [text, body, muted, rule] = ["#101114", "#3c4043", "#5f6368", "#e5e7eb"];
+  const name = brand.name?.trim() || "";
+  const site = brand.website ? brand.website.replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
+  const withName = (html: string) =>
+    name ? html.replace(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`), `<strong style="color:${ink};">${esc(name)}</strong>`) : html;
+  const row = (html: string, pb = 24) => `<tr><td style="padding:0 0 ${pb}px;">${html}</td></tr>`;
+  const para = (html: string, size = 16, color = body, weight = 400, margin = 0) =>
+    `<p style="margin:0 0 ${margin}px;font-family:${F};font-size:${size}px;line-height:1.6;color:${color};font-weight:${weight};">${html}</p>`;
+  const paras = (raw: string, size = 16, color = body, gap = 14, marked = false) => {
+    const parts = raw.split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
+    return parts.map((p, k) => para(marked ? withName(inline(p)) : inline(p), size, color, 400, k === parts.length - 1 ? 0 : gap)).join("");
+  };
+  const label = (t: string) =>
+    `<p style="margin:0 0 10px;font-family:${F};font-size:11px;line-height:1.4;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;color:${muted};">${inline(t.replace(/:\s*$/, ""))}</p>`;
+  const hair = `<table ${T} width="100%"><tr><td style="border-top:1px solid ${rule};font-size:0;line-height:0;">&nbsp;</td></tr></table>`;
+  const logo = (size: number) =>
+    brand.logoUrl ? `<img src="${attr(brand.logoUrl)}" width="${size}" height="${size}" alt="${attr(name)}" style="display:block;border:0;border-radius:6px;" />` : "";
+  const chip = (glyph: string, size = 28) =>
+    `<table ${T}><tr><td width="${size}" height="${size}" align="center" valign="middle" bgcolor="${soft}" style="width:${size}px;height:${size}px;background:${soft};border-radius:8px;font-family:${F};font-size:14px;font-weight:700;color:${ink};">${glyph}</td></tr></table>`;
+  const checks = (items: string[]) =>
+    `<table ${T} width="100%">${items
+      .map((item, k) => `<tr><td width="40" valign="top" style="padding:0 0 ${k === items.length - 1 ? 0 : 10}px;">${chip("&#10003;")}</td><td valign="middle" style="padding:0 0 ${k === items.length - 1 ? 0 : 10}px;font-family:${F};font-size:15px;line-height:1.5;color:${text};">${inline(item)}</td></tr>`)
+      .join("")}</table>`;
+  // Two or three sample figures ("6h 40m tracked", "4.2h deep focus") read as numbers, not
+  // as lines of a receipt; anything richer keeps the sample card.
+  const figures = (items: string[]) => {
+    const parsed = items.map((i) => /^((?:₹\s?)?[\d.,]+\s?(?:h|m|%|hrs?|min)?(?:\s\d+m)?)\s+([^·:]{2,40})$/i.exec(i.trim()));
+    if (items.length < 2 || items.length > 3 || parsed.some((m) => !m)) return "";
+    return `<table ${T} width="100%"><tr>${parsed
+      .map((m, k) => `<td class="col" width="${Math.floor(100 / parsed.length)}%" valign="top" style="padding:0 0 0 ${k ? 16 : 0}px;${k ? `border-left:1px solid ${rule};` : ""}"><div style="font-family:${F};font-size:26px;line-height:1.15;font-weight:700;letter-spacing:-0.02em;color:${k ? text : ink};white-space:nowrap;">${esc(m![1]!)}</div><div style="font-family:${F};font-size:12px;line-height:1.4;color:${muted};padding-top:4px;">${inline(m![2]!)}</div></td>`)
+      .join("")}</tr></table>`;
+  };
+  const sample = (title: string, items: string[]) => {
+    const big = figures(items);
+    return big ? `${title ? label(title) : ""}${big}` : sampleCard(title, items, ink);
+  };
+  // What follows a heading line in the frame: a list of what the product shows, or a sample.
+  const partsAfter = (title: string, list: Extract<ResolvedBlock, { kind: "list" }>) =>
+    list.style === "receipt" ? sample(title, list.items) : `${label(title)}${list.style === "check" ? checks(list.items) : bullets(list)}`;
+  const bullets = (list: Extract<ResolvedBlock, { kind: "list" }>) =>
+    `<ul style="margin:0;padding:0 0 0 22px;">${list.items
+      .map((item) => `<li style="margin:0 0 6px;font-family:${F};font-size:16px;line-height:1.6;color:${body};">${list.style === "strike" ? `<s>${inline(item)}</s>` : inline(item)}</li>`)
+      .join("")}</ul>`;
+  const panel = (inner: string) =>
+    `<table ${T} width="100%"><tr><td bgcolor="${soft}" style="background:${soft};border-radius:12px;padding:20px 22px;">${inner}</td></tr></table>`;
+
+  const blocks = resolved.blocks;
+  const rows: string[] = [];
+  let ctaSeen = false;
+  let signed = false;
+  // A template with no written opening (the welcome) still gets a headline: its first short
+  // line after the greeting.
+  const headlineAt = blocks.some((b) => b.kind === "text" && b.slot === "opening")
+    ? -1
+    : blocks.findIndex((b) => b.kind === "text" && !b.slot && !/^(hi|hello|dear)\b/i.test(b.text.trim()) && b.text.trim().length <= 70 && !b.text.includes("\n"));
+  const signature = () => {
+    if (signed || !name) return "";
+    signed = true;
+    return `${hair}<table ${T} style="margin-top:20px;"><tr>${brand.logoUrl ? `<td valign="top" style="padding:2px 12px 0 0;">${logo(32)}</td>` : ""}<td valign="top" style="font-family:${F};font-size:12px;line-height:1.55;color:${muted};"><strong style="color:${text};font-size:13px;">${esc(name)}</strong>${
+      brand.tagline ? `<br />${esc(brand.tagline)}` : ""
+    }${brand.website ? `<br /><a href="${attr(brand.website)}" style="color:${ink};font-weight:700;text-decoration:none;">${esc(site)}</a>` : ""}</td></tr></table>`;
+  };
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]!;
+    const next = blocks[i + 1];
+    switch (block.kind) {
+      case "preheader":
+        break;
+      case "heading":
+        rows.push(row(`<h2 style="margin:0;font-family:${F};font-size:22px;line-height:1.25;letter-spacing:-0.01em;font-weight:700;color:${text};">${inline(block.text)}</h2>`, 16));
+        break;
+      case "text": {
+        const raw = block.text.trim();
+        if (block.slot === "opening" || i === headlineAt) {
+          rows.push(row(`<h1 class="h1" style="margin:0;font-family:${F};font-size:26px;line-height:1.25;letter-spacing:-0.02em;font-weight:700;color:${text};">${inline(raw.replace(/\*\*/g, ""))}</h1>`, 18));
+          break;
+        }
+        if (block.slot === "question") {
+          rows.push(row(para(inline(raw.replace(/\*\*/g, "")), 18, text, 700), 24));
+          break;
+        }
+        if (block.slot === "limit") {
+          rows.push(row(`<table ${T}><tr><td valign="top" style="padding:0 8px 0 0;font-family:${F};font-size:14px;font-weight:700;color:${ink};">&#10003;</td><td style="font-family:${F};font-size:14px;line-height:1.5;color:${muted};">${inline(raw)}</td></tr></table>`, 24));
+          break;
+        }
+        if (block.slot === "timeline") {
+          const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
+          rows.push(
+            row(
+              `<table ${T} width="100%">${lines
+                .map((l, k) => {
+                  const m = /^\*\*(.+?):?\*\*:?\s*(.*)$/.exec(l);
+                  return `<tr><td width="22" valign="top" style="padding:5px 0 0;"><table ${T}><tr><td width="10" height="10" bgcolor="${k === lines.length - 1 ? ink : lighten(accent, 0.55)}" style="width:10px;height:10px;border-radius:5px;background:${k === lines.length - 1 ? ink : lighten(accent, 0.55)};font-size:0;line-height:0;">&nbsp;</td></tr></table></td><td valign="top" style="padding:0 0 ${k === lines.length - 1 ? 0 : 12}px;"><div style="font-family:${F};font-size:11px;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;color:${ink};">${inline(m ? m[1]! : "")}</div><div style="font-family:${F};font-size:15px;line-height:1.5;color:${text};padding-top:2px;">${inline(m ? m[2]! : l)}</div></td></tr>`;
+                })
+                .join("")}</table>`,
+              24,
+            ),
+          );
+          break;
+        }
+        if (block.slot === "reveal") {
+          // The product's part: its words, and the list or sample that shows it, in one panel.
+          let inner = `<table ${T} style="margin:0 0 12px;"><tr>${brand.logoUrl ? `<td valign="middle" style="padding:0 8px 0 0;">${logo(20)}</td>` : ""}<td valign="middle" style="font-family:${F};font-size:11px;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;color:${ink};">${esc(name ? `What ${name} shows` : "What you would see")}</td></tr></table>${paras(raw, 16, text, 12, true)}`;
+          const title = blocks[i + 1];
+          const list = blocks[i + 2];
+          if (title?.kind === "text" && title.tight && list?.kind === "list" && list.fromParts) {
+            inner += `<table ${T} width="100%" style="margin-top:18px;"><tr><td bgcolor="#ffffff" style="background:#ffffff;border-radius:10px;padding:16px 18px;">${partsAfter(title.text.replace(new RegExp(`^What ${name} would show you:?$`, "i"), "What you would see"), list)}</td></tr></table>`;
+            i += 2;
+          }
+          rows.push(row(panel(inner), 16));
+          break;
+        }
+        if (block.tight && next?.kind === "list" && next.fromParts) {
+          rows.push(row(partsAfter(raw, next), 24));
+          i++;
+          break;
+        }
+        if (/^(hi|hello|dear)\b[^\n]{0,40},$/i.test(raw)) {
+          rows.push(row(para(inline(raw), 16, body), 14));
+          break;
+        }
+        if (/^P\.S\./.test(raw)) {
+          rows.push(row(para(inline(raw), 14, muted), 24));
+          break;
+        }
+        if (/^best regards,?/i.test(raw) || raw === `The ${name} Team`) {
+          rows.push(row(para(inline(raw), 16, body), next?.kind === "text" && next.text.trim() === `The ${name} Team` ? 0 : 24));
+          break;
+        }
+        rows.push(row(paras(raw), block.tight ? 8 : 20));
+        break;
+      }
+      case "list":
+        rows.push(row(block.style === "receipt" ? sample("", block.items) : block.style === "check" ? checks(block.items) : bullets(block), 24));
+        break;
+      case "card": {
+        const inner = block.rows
+          .map(
+            (r, k) =>
+              `<tr><td style="padding:${k ? 12 : 0}px 0 0;${k ? `border-top:1px solid ${rule};` : ""}"><div style="font-family:${F};font-size:15px;line-height:1.5;color:${text};">${inline(r.label)}</div>${
+                r.value ? `<div style="font-family:${F};font-size:16px;line-height:1.5;font-weight:700;color:${ink};padding:2px 0 ${k === block.rows.length - 1 ? 0 : 12}px;">&rarr; ${inline(r.value.replace(/^\s*(→|->|&rarr;)\s*/, ""))}</div>` : ""
+              }</td></tr>`,
+          )
+          .join("");
+        rows.push(
+          row(
+            `<table ${T} width="100%" style="border:1px solid ${rule};border-radius:12px;border-collapse:separate;"><tr><td style="padding:18px 20px;">${block.title ? label(block.title) : ""}<table ${T} width="100%">${inner}</table></td></tr></table>`,
+            24,
+          ),
+        );
+        break;
+      }
+      case "callout":
+        rows.push(row(panel(para(inline(block.text), 15, text)), 24));
+        break;
+      case "divider":
+        rows.push(row(hair, 24));
+        break;
+      case "image": {
+        const img = `<img src="${attr(block.url)}" alt="${attr(block.alt)}" width="${Math.min(block.width ?? 512, 512)}" style="display:block;width:100%;max-width:512px;height:auto;border:0;border-radius:10px;" />`;
+        rows.push(row(block.href ? `<a href="${attr(block.href)}" style="text-decoration:none;">${img}</a>` : img, 24));
+        break;
+      }
+      case "cta":
+        if (ctaSeen) {
+          rows.push(row(para(`<a href="${attr(block.url)}" style="color:${ink};font-weight:700;">${inline(block.text)}</a>`), 24));
+        } else {
+          rows.push(
+            row(
+              `<table ${T}><tr><td bgcolor="${ink}" style="background:${ink};border-radius:8px;"><a class="cta" href="${attr(block.url)}" style="display:inline-block;padding:14px 24px;font-family:${F};font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">${inline(block.text)} &rarr;</a></td></tr></table>`,
+              28,
+            ),
+          );
+          ctaSeen = true;
+        }
+        break;
+      case "optout":
+        rows.push(
+          row(
+            `${signature()}<p style="margin:18px 0 0;font-family:${F};font-size:12px;line-height:1.5;color:${muted};">Not useful? Reply "remove me", or <a href="${attr(block.url)}" style="color:${muted};">unsubscribe</a>.</p>`,
+            0,
+          ),
+        );
+        break;
+    }
+  }
+  if (!signed && name) rows.push(row(signature(), 0));
+
+  const header = `<table ${T} width="100%"><tr><td valign="middle"><table ${T}><tr>${brand.logoUrl ? `<td style="padding:0 8px 0 0;">${logo(28)}</td>` : ""}<td style="font-family:${F};font-size:16px;font-weight:700;color:${text};">${esc(name)}</td></tr></table></td>${
+    site ? `<td align="right" valign="middle" style="font-family:${F};font-size:12px;color:${muted};">${esc(site)}</td>` : ""
+  }</tr></table>`;
+  const hero = brand.hero
+    ? `<tr><td bgcolor="${attr(brand.hero.bg)}" align="center" style="background:${attr(brand.hero.bg)};"><img src="${attr(brand.hero.url)}" width="600" height="260" alt="${attr(brand.hero.alt)}" style="display:block;width:100%;max-width:600px;height:auto;border:0;font-family:${F};font-size:15px;font-weight:700;line-height:1.5;color:${ink};" /></td></tr>`
+    : "";
+  const preheader = blocks.find((b) => b.kind === "preheader");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="x-apple-disable-message-reformatting" />
+<meta name="color-scheme" content="light" />
+<meta name="supported-color-schemes" content="light" />
+<title>${esc(resolved.subject ?? "")}</title>
+<style>
+  body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
+  table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}
+  img{-ms-interpolation-mode:bicubic;border:0;outline:none;text-decoration:none;}
+  @media only screen and (max-width:620px){
+    .wrap{width:100% !important;border-radius:0 !important;}
+    .outer{padding:0 !important;}
+    .pad{padding-left:22px !important;padding-right:22px !important;}
+    .h1{font-size:23px !important;}
+    .col{display:block !important;width:100% !important;border-left:0 !important;padding:0 0 14px !important;}
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f4f5f7;">
+${preheaderHtml(preheader)}
+<table ${T} width="100%" style="background:#f4f5f7;"><tr><td class="outer" align="center" style="padding:32px 12px;">
+  <table ${T} class="wrap" width="600" style="width:600px;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">
+    <tr><td class="pad" style="padding:${hero ? "22px 44px 18px" : "36px 44px 28px"};">${header}</td></tr>
+    ${hero}
+    <tr><td class="pad" style="padding:${hero ? 30 : 4}px 44px 36px;"><table ${T} width="100%">${rows.join("\n")}</table></td></tr>
+  </table>
+</td></tr></table>
+</body>
+</html>`;
+}
+
+/**
  * A day-1 receipt in the designed format: the lines as they were written, in the body font.
  */
 function receipt(lines: string[], accent: string): string {
