@@ -1737,30 +1737,37 @@ export async function decide(formData: FormData) {
   // rebuilt as a designed mail.
   const chosen = formData.get("format");
   const chosenFormat = String(chosen ?? "html") === "text" ? "text" : String(chosen ?? "html") === "letter" ? "letter" : "html";
-  const asText = chosenFormat === "text";
+  const waiting = {
+    _id: { $in: ids },
+    orgId,
+    productId,
+    // Both states a reviewer can act on: one has reached the gate, the other is dated for
+    // later and has not been decided on. Matching only the first meant a reviewer could
+    // click Approve on a scheduled message and have nothing happen at all — no change, no
+    // error, no explanation. Deciding early on a message you have read is a real decision,
+    // and the system should keep it rather than quietly discard it.
+    $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
+  };
+
+  // The stored HTML is the version the writer picked. A reviewer who switched to another one
+  // drops it, and the sender renders the chosen version at send — the choice is recorded on
+  // the action too, so the rebuild knows which. Only a switch drops it: a letter or design
+  // approved as it was written ships exactly as read. Keeping it on every switch to
+  // "designed" sent a letter out under that name.
+  if (approve && chosen !== null) {
+    await db
+      .collection(C.actions)
+      .updateMany({ ...waiting, format: { $ne: chosenFormat } }, { $unset: { "content.bodyHtml": "" } });
+  }
 
   const result = await db.collection(C.actions).updateMany(
-    {
-      _id: { $in: ids },
-      orgId,
-      productId,
-      // Both states a reviewer can act on: one has reached the gate, the other is dated for
-      // later and has not been decided on. Matching only the first meant a reviewer could
-      // click Approve on a scheduled message and have nothing happen at all — no change, no
-      // error, no explanation. Deciding early on a message you have read is a real decision,
-      // and the system should keep it rather than quietly discard it.
-      $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
-    },
+    waiting,
     // Approving returns it to the queue rather than sending directly, so budgets, caps and
     // suppression are all still checked at the moment it actually goes out. A message dated
     // for next week keeps that date; approving it early only means it will not stop here
     // again on the way out.
     {
       $set: { status: approve ? "queued" : "skipped", reviewedAt: new Date(), ...(chosen !== null ? { format: chosenFormat } : {}) },
-      // Dropping the rendered HTML is not enough on its own — the sender rebuilds it from
-      // the template when it is missing, so the choice is recorded on the action too. A
-      // letter is rebuilt the same way, so a designed version rendered earlier cannot stand in.
-      ...(approve && (asText || chosenFormat === "letter") ? { $unset: { "content.bodyHtml": "" } } : {}),
     },
   );
 
@@ -1989,6 +1996,8 @@ export interface HeldMessage {
   preview?: boolean;
   /** Why nothing could be shown, when even the render failed. */
   previewError?: string;
+  /** Why the versions the writer did not pick are missing, when rendering them failed. */
+  versionsError?: string;
   /**
    * The words a reviewer may edit — the slot copy alone, not the rendered message. Editing
    * the rendered body would bake the template's greeting and button into the copy, and the
@@ -2212,23 +2221,33 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   // showed the reviewer a subject over a blank page — nothing to approve on, and no sign
   // anything was missing. Render it the way the sender will instead.
   let rendered: { subject?: string; bodyMd?: string; bodyHtml?: string } | undefined;
-  let renderedLetter: string | undefined;
   let previewError: string | undefined;
   const storedAsLetter = action.format === "letter";
+  // The stored HTML is the version the writer picked, and it ships exactly as read.
+  let designed = storedAsLetter ? undefined : content.bodyHtml;
+  let letter = storedAsLetter ? content.bodyHtml : undefined;
   if (!content.bodyMd) {
     try {
       rendered = await previewContent(orgId, action);
-      // A writer who chose a format made the choice explicit, so the other two are rendered
-      // beside it and a reviewer can switch before approving. A message with no chosen
-      // format keeps what its template renders, as before.
-      if (action.format && caps.html !== false && String(action.channel) === "email") {
-        const as = async (format: string) => (await previewContent(orgId, { ...action, format })).bodyHtml;
-        const own = rendered.bodyHtml;
-        renderedLetter = storedAsLetter ? own : await as("letter");
-        if (action.format !== "html") rendered = { ...rendered, bodyHtml: await as("html") };
-      }
+      if (storedAsLetter) letter ??= rendered.bodyHtml;
+      else designed ??= rendered.bodyHtml;
     } catch (err) {
       previewError = err instanceof Error ? err.message : "this message could not be rendered";
+    }
+  }
+  // Every email still waiting on a decision offers all three versions, rendered or not. The
+  // writer's pick is only the default: the sender renders a message once, at the gate, in the
+  // format it was written for, so reading the stored body alone left a reviewer with that one
+  // and plain text. A decided message shows only the version it went, or goes, as.
+  let versionsError: string | undefined;
+  const waiting =
+    action.status === "awaiting_approval" || (action.status === "queued" && !action.reviewedAt);
+  if (waiting && !previewError && caps.html !== false && String(action.channel) === "email" && (!designed || !letter)) {
+    const as = async (format: string) => (await previewContent(orgId, { ...action, format })).bodyHtml;
+    try {
+      [designed, letter] = await Promise.all([designed ?? as("html"), letter ?? as("letter")]);
+    } catch (err) {
+      versionsError = err instanceof Error ? err.message : "the other versions could not be rendered";
     }
   }
 
@@ -2236,11 +2255,12 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
   return {
     subject: content.subject ?? rendered?.subject,
     // Without the pixel, or the reviewer reading it is recorded as the lead opening it.
-    bodyHtml: stripOpenPixel((storedAsLetter ? undefined : content.bodyHtml) ?? rendered?.bodyHtml ?? "") || undefined,
-    bodyLetter: stripOpenPixel((storedAsLetter ? content.bodyHtml : undefined) ?? renderedLetter ?? "") || undefined,
+    bodyHtml: stripOpenPixel(designed ?? "") || undefined,
+    bodyLetter: stripOpenPixel(letter ?? "") || undefined,
     bodyText: content.bodyMd || rendered?.bodyMd,
     preview: Boolean(rendered),
     previewError,
+    versionsError,
     // The slot if there is one; otherwise the rendered body, which is what a reviewer
     // would otherwise have to retype to change one line of a template default.
     editableBody: slot || content.bodyMd || rendered?.bodyMd,

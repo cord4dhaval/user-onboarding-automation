@@ -21,6 +21,13 @@ import WhatsAppPreview from "./whatsapp-preview";
 /** Where the Fit choice is remembered, per browser. */
 const FIT_KEY = "review.preview.fit";
 
+/** The three versions every email can go out as, in the order the tabs show them. */
+const FORMATS = [
+  { key: "html", label: "Designed" },
+  { key: "letter", label: "Letter" },
+  { key: "text", label: "Plain text" },
+] as const;
+
 /**
  * One held message, previewed as it will actually arrive.
  *
@@ -296,37 +303,20 @@ export default function PreviewDrawer({
                     preview with it: the reader always sees the version they release. */}
                 {designed || letter ? (
                   <div className="seg" role="tablist" aria-label="Format">
-                    {designed && (
+                    {FORMATS.filter((f) => (f.key === "html" ? designed : f.key === "letter" ? letter : true)).map((f) => (
                       <button
+                        key={f.key}
                         type="button"
                         role="tab"
-                        aria-selected={format === "html"}
-                        className={format === "html" ? "on" : undefined}
-                        onClick={() => setFormat("html")}
+                        aria-selected={format === f.key}
+                        className={format === f.key ? "on" : undefined}
+                        onClick={() => setFormat(f.key)}
+                        title={message.chosenFormat === f.key ? message.formatWhy || "The writer picked this version" : undefined}
                       >
-                        Designed
+                        {f.label}
+                        {message.chosenFormat === f.key ? <span className="pick">AI pick</span> : null}
                       </button>
-                    )}
-                    {letter && (
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={format === "letter"}
-                        className={format === "letter" ? "on" : undefined}
-                        onClick={() => setFormat("letter")}
-                      >
-                        Letter
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={format === "text"}
-                      className={format === "text" ? "on" : undefined}
-                      onClick={() => setFormat("text")}
-                    >
-                      Plain text
-                    </button>
+                    ))}
                   </div>
                 ) : null}
                 <span className="spacer" />
@@ -465,6 +455,7 @@ export default function PreviewDrawer({
                     : message.canHtml
                       ? "No designed version was rendered for this message."
                       : "This channel sends plain text only."}
+                {message.versionsError ? ` The other versions could not be shown: ${message.versionsError}.` : ""}
                 {/* A body rendered on open, not read off the action: the words are the ones
                     that go, but a template edit before then would change them. */}
                 {waiting && message.preview && !message.previewError
