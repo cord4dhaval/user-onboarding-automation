@@ -27,6 +27,7 @@ import {
  *   npm run crm:sync -- --connection <id> --person <personId>
  *   npm run crm:sync -- --connection <id> --backfill --goal teamgrid_leads_v3   (not looked up yet)
  *   npm run crm:sync -- --connection <id> --refresh --goal teamgrid_leads_v3    (everyone, read again)
+ *        [--fresh-since 2026-09-21T09:20:00Z]   resume: skip whoever was read after this
  *   npm run crm:sync -- --connection <id> --changes
  *   npm run crm:sync -- --connection <id> --enable | --disable
  */
@@ -115,9 +116,19 @@ async function main(): Promise<void> {
       // copy should be current now rather than whenever the change feed next names them.
       const ids = await hottestFirst(orgId, productId, { _id: { $in: await peopleInGoal(orgId, productId, goal) } }, 5_000);
       console.log(`${goal}: ${ids.length} people, hottest first`);
+      // --fresh-since resumes a refresh that stopped: whoever was read after it is skipped.
+      const freshSince = arg("fresh-since") ? new Date(String(arg("fresh-since"))) : undefined;
       let n = 0;
       for (const id of ids) {
         if (Date.now() > until) break;
+        if (freshSince) {
+          const p = await db.collection(C.people).findOne({ _id: new ObjectId(id) }, { projection: { crmChecked: 1 } });
+          const at = (p?.crmChecked as Record<string, Date> | undefined)?.[connectionId];
+          if (at && new Date(at) >= freshSince) {
+            n++;
+            continue;
+          }
+        }
         const res = await patiently(() => syncPerson(client, id));
         n++;
         console.log(`${new Date().toISOString()} ${n}/${ids.length} ${id} records=${res.records} new_rows=${res.added} · ${client.calls} calls`);

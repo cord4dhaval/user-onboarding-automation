@@ -33,11 +33,19 @@ export interface CrmConnection {
   map: CrmMap;
 }
 
+/**
+ * An OAuth access token lives about an hour. A backfill outlives that, and a client holding
+ * the token it opened with starts answering 401 halfway through — the broker refreshes a
+ * token only when it is asked for one, so the client asks again on a schedule and on a 401.
+ */
+const RENEW_EVERY_MS = 20 * 60_000;
+
 export class CrmClient {
   calls = 0;
+  private openedAt = Date.now();
 
   constructor(
-    private readonly mcp: McpClient,
+    private mcp: McpClient,
     readonly conn: CrmConnection,
     /**
      * How many times to wait out a 429. None inside the minute tick or a page action: a wait
@@ -46,7 +54,14 @@ export class CrmClient {
      */
     private readonly retries = 0,
     private readonly spacingMs = SPACING_MS,
+    private readonly renewer?: () => Promise<McpClient>,
   ) {}
+
+  private async renew(): Promise<void> {
+    if (!this.renewer) return;
+    this.mcp = await this.renewer();
+    this.openedAt = Date.now();
+  }
 
   static async open(connectionId: string, opts: { retries?: number } = {}): Promise<CrmClient> {
     const db = await getDb();
@@ -55,12 +70,15 @@ export class CrmClient {
     const parsed = crmMap.safeParse(connection.crm?.map);
     if (!parsed.success) throw new Error("this connection has no CRM map yet");
     const orgId = String(connection.orgId);
-    const token = await resolveSecret(orgId, connectionId, "crm.sync");
-    const mcp = new McpClient(String(connection.serverUrl), token, await schemasFor(connectionId));
+    const schemas = await schemasFor(connectionId);
+    const connect = async () =>
+      new McpClient(String(connection.serverUrl), await resolveSecret(orgId, connectionId, "crm.sync"), schemas);
     return new CrmClient(
-      mcp,
+      await connect(),
       { orgId, productId: String(connection.productId), connectionId, map: parsed.data },
       opts.retries ?? 0,
+      SPACING_MS,
+      connect,
     );
   }
 
@@ -75,6 +93,8 @@ export class CrmClient {
 
   async call(tool: string, args: Record<string, unknown>, ctx: Record<string, unknown>): Promise<unknown> {
     const resolved = this.resolveArgs(args, ctx);
+    if (Date.now() - this.openedAt > RENEW_EVERY_MS) await this.renew();
+    let renewed = false;
     for (let attempt = 0; ; attempt++) {
       const wait = lastCallAt + this.spacingMs - Date.now();
       if (wait > 0) await sleep(wait);
@@ -85,6 +105,12 @@ export class CrmClient {
         return typeof raw === "string" ? parseJson(raw) : raw;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        if (/\b401\b/.test(message) && !renewed && this.renewer) {
+          renewed = true;
+          attempt--;
+          await this.renew();
+          continue;
+        }
         if (!/\b429\b/.test(message)) throw err;
         if (attempt >= this.retries) throw new RateLimited(message);
         await sleep(20_000 * (attempt + 1));
