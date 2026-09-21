@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { creditTemplatesOf } from "./templates.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { stampGoalOutcome } from "./outcomes.js";
+import { clickedRecently } from "./rolling.js";
 import { McpClient } from "../mcp/client.js";
 import { schemasFor } from "../mcp/schemas.js";
 import { resolveSecret } from "../crypto/broker.js";
@@ -475,8 +476,8 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
 /**
  * How often one person's checks are worth re-running.
  *
- * Someone contacted in the last two days and running hot is the most likely to have just
- * converted, and noticing late means congratulating them after chasing them again. Someone
+ * Someone contacted in the last two days who clicked recently is the most likely to have
+ * just converted, and noticing late means congratulating them after chasing them again. Someone
  * cold and silent has nothing happening, and asking hourly only spends a rate limit.
  */
 export function verifyIntervalMs(person: Document | null, lastContactedAt?: Date): number {
@@ -486,7 +487,7 @@ export function verifyIntervalMs(person: Document | null, lastContactedAt?: Date
     ? Date.now() - new Date(lastContactedAt).getTime() < 48 * HOUR
     : false;
 
-  if (band === "hot" && contactedRecently) return HOUR;
+  if (clickedRecently(person) && contactedRecently) return HOUR;
   if (band === "cold" || band === "dead") return 24 * HOUR;
   return 6 * HOUR;
 }

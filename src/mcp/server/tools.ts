@@ -3,7 +3,6 @@ import { getDb } from "../../db/client.js";
 import { COLLECTIONS as C } from "../../db/collections.js";
 import { anglePerformance, anglesTriedOn, assetPerformance, attributeReply, bumpPrior, evidenceStatus, explorationBlock, ideaPerformance, MIN_SAMPLE, spentAngles, stampGoalOutcome, summarisePriors, themePerformance } from "../../engine/outcomes.js";
 import { greetingName } from "../../engine/names.js";
-import { computeTemp, lastFormArrival } from "../../engine/temp.js";
 import { planViewFor } from "../../engine/planView.js";
 import { renderTemplate as renderForCount } from "../../engine/compose.js";
 import { mergeVarsFor as varsForCount } from "../../engine/vars.js";
@@ -21,7 +20,7 @@ import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, ideaLeadCount, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, type InventedIdea } from "../../engine/ideas.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, unsampledFigures, effectiveBand, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -749,7 +748,7 @@ export const TOOLS: ToolDef[] = [
       // this here rather than leaving it to the composer is what stops an expired case
       // study, a second copy of a video they already have, or a calendar link to somebody
       // who has never opened anything.
-      const band = (person.temp as { band?: string } | undefined)?.band;
+      const band = paceBand(person, goalDef);
       const assetsAvailable = await assetMenuFor(
         orgId,
         productId,
@@ -858,10 +857,11 @@ export const TOOLS: ToolDef[] = [
             : null,
         /**
          * Whether this person has earned a way to reach us: a calendar link, a phone
-         * number, a named human. False until they are hot, and separate from the tier cap
-         * because handing over access is not the same decision as sending a heavy asset.
+         * number, a named human. False until they click something, and separate from the
+         * tier cap because handing over access is not the same decision as sending a heavy
+         * asset.
          */
-        access_unlocked: accessUnlocked(band),
+        access_unlocked: accessUnlocked(clickedRecently(person)),
         // Prior claims are supplied so the next message never repeats or contradicts one.
         //
         // And what each one earned. This card promised "every touch sent and what came
@@ -1008,22 +1008,8 @@ export const TOOLS: ToolDef[] = [
                 source: "system",
                 updatedAt: new Date(),
               },
-              // Fit is known before any engagement, so temperature starts from fit alone.
-              // An unknown fit still lands in the cold band, and that is deliberate: the
-              // cadence there is the tightest, which is what someone we cannot read needs.
-              // termsUsed records that the number came from a guess, so nothing downstream
-              // mistakes it for a measurement.
-              // The same reading the tick makes, so a form lead is warm from the first
-              // classification rather than from whichever tick re-reads them.
-              temp: computeTemp({
-                icpFit,
-                fitKnown,
-                trackableSends: 0,
-                clicks: 0,
-                opens: 0,
-                silenceDays: 30,
-                formArrivedAt: lastFormArrival(before),
-              }),
+              // No temperature here: it comes from their campaign's lead type, which the
+              // tick reads, not from fit.
               needsClassification: false,
             },
           },
@@ -1982,9 +1968,10 @@ export const TOOLS: ToolDef[] = [
         // engine sends itself. lead_card shows the same view, so a refusal here means the
         // card was not read.
         const priorActions = await db.collection(C.actions).find({ orgId, productId, goalInstanceId }).toArray();
-        const personBand = (
-          await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { "temp.band": 1 } })
-        )?.temp?.band as string | undefined;
+        const personBand = paceBand(
+          await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { temp: 1, "enrichment.form.timeline": 1 } }),
+          campaignDef,
+        );
         const view = await planViewFor(instance, priorActions, personBand);
         for (const t of touches) {
           const st = view?.steps.find((v) => v.step_id === Number(t.step_id));
@@ -2153,11 +2140,7 @@ export const TOOLS: ToolDef[] = [
         .map((value) => (value ? new Date(String(value)) : null))
         .filter((date): date is Date => !!date && !Number.isNaN(date.getTime()));
       let anchor: Date | null = stamps.length > 0 ? new Date(Math.max(...stamps.map((d) => d.getTime()))) : null;
-      const band = effectiveBand(
-        (person?.temp as { band?: string } | undefined)?.band,
-        leadTypeOf(goalDef),
-        (person?.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
-      );
+      const band = paceBand(person, goalDef);
       const cadence = goalDef?.cadenceByTemp as Record<string, CadenceBand> | undefined;
       const planOffset = new Map<number, number>();
       for (const step of ((plan?.steps ?? []) as Array<Record<string, unknown>>)) {

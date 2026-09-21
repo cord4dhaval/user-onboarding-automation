@@ -519,7 +519,7 @@ function Brief({ brief, signal }: { brief?: MessageBrief; signal?: ReactNode }) 
         <p className="pv-line">
           {[
             who.arrived ? `${who.arrived.how} ${day(who.arrived.at)}` : null,
-            who.warmth ? `${who.warmth.band}${who.warmth.score !== undefined ? ` · ${who.warmth.score}` : ""}` : null,
+            who.warmth ? who.warmth.band : null,
             who.sentBefore === 0
               ? "nothing sent to them yet"
               : `${who.sentBefore} message${who.sentBefore === 1 ? "" : "s"} sent before this`,

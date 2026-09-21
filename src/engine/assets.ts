@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { calendarSettingsFrom, slotsFor } from "./booking.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { RenderableAsset } from "./compose.js";
+import { clickedRecently, paceBand } from "./rolling.js";
 
 /**
  * Which assets a session may offer this person, right now.
@@ -70,14 +71,17 @@ export interface AssetMenuRow {
  * recoverable once answered. Someone who has never opened anything does not get a calendar
  * link because the campaign happened to permit heavy assets.
  */
-export function accessUnlocked(band?: string): boolean {
-  return band === "hot";
+export function accessUnlocked(clicked?: boolean): boolean {
+  return clicked === true;
 }
 
 export interface MenuInput {
   /** From `person.belief.segment`. Assets naming no segment are offered to everyone. */
   segment?: string;
+  /** The pace this campaign has them at (paceBand). */
   band?: string;
+  /** A click recent enough to count, which is what unlocks a way to reach us. */
+  clicked?: boolean;
   /** From `goal.cadenceByTemp[band].maxAssetTier`. Absent means no cap. */
   maxTier?: string;
   /** From `goal.allowedChannels` — an asset no allowed channel can carry is not a choice. */
@@ -150,7 +154,7 @@ export async function eligibleAssets(
     .toArray();
 
   const spent = new Set(input.sentAssetIds ?? []);
-  const unlocked = accessUnlocked(input.band);
+  const unlocked = accessUnlocked(input.clicked);
   const objections = (input.objections ?? []).map((o) => o.toLowerCase());
   const likely = (input.likelyObjections ?? []).map((o) => o.toLowerCase());
 
@@ -226,11 +230,12 @@ export function assetContextFrom(
   /** From the product's own definition of this person's segment, where the caller has it. */
   segmentObjections: string[] = [],
 ): MenuInput {
-  const band = (person?.temp as { band?: string } | undefined)?.band;
+  const band = paceBand(person, goalDef);
   const cadence = (goalDef?.cadenceByTemp ?? {}) as Record<string, { maxAssetTier?: string }>;
   return {
     segment: (person?.belief as { segment?: string } | undefined)?.segment,
     band,
+    clicked: clickedRecently(person),
     maxTier: band ? cadence[band]?.maxAssetTier : undefined,
     channels: (goalDef?.allowedChannels ?? []) as string[],
     objections: ((person?.objections ?? []) as Array<{ text?: unknown }>).map((o) => String(o.text ?? "")),
@@ -334,14 +339,14 @@ export async function assetRefusals(
     const rank = TIER_RANK[String(row.tier)] ?? 0;
     if (cap !== undefined && rank > cap) {
       problems.push(
-        `${label} is tier ${String(row.tier)} and this person is ${context.band ?? "unscored"}, ` +
+        `${label} is tier ${String(row.tier)} and this person is paced ${context.band ?? "without a lead type"}, ` +
           `which allows up to ${context.maxTier}. Asking for more attention than they have given is how a sequence loses one.`,
       );
     }
 
-    if (row.kind === "access" && !accessUnlocked(context.band)) {
+    if (row.kind === "access" && !accessUnlocked(context.clicked)) {
       problems.push(
-        `${label} hands over a way to reach us, and this person is ${context.band ?? "unscored"}, not hot. ` +
+        `${label} hands over a way to reach us, and this person has not clicked anything recently. ` +
           `That is offered once they have answered something, not before.`,
       );
     }
@@ -485,7 +490,7 @@ export async function accessAssetFor(
   productId: string,
   context: MenuInput,
 ): Promise<AssetMenuRow | null> {
-  if (!accessUnlocked(context.band)) return null;
+  if (!accessUnlocked(context.clicked)) return null;
   const eligible = await eligibleAssets(orgId, productId, context);
   return eligible.find((row) => row.kind === "access") ?? null;
 }

@@ -21,7 +21,7 @@ import {
   tenantArnFor,
 } from "@/engine/sesIdentity.js";
 import { refreshChannelHealth, releaseChannelHolds } from "@/engine/channelHealth.js";
-import { LEAD_TYPES, type LeadType } from "@/engine/rolling.js";
+import { LEAD_TYPES, paceBand, type LeadType } from "@/engine/rolling.js";
 import { LinkedInClient } from "@/adapters/channel/linkedin/client.js";
 import { SessionError, type LinkedInSession } from "@/adapters/channel/linkedin/session.js";
 import { linkedinCapabilities, linkedinGovernor } from "@/adapters/channel/linkedin/limits.js";
@@ -2053,7 +2053,7 @@ export interface MessageBrief {
     arrived?: { how: string; at: string };
     /** The engine's one-line reading of what they need. */
     read?: string;
-    warmth?: { band: string; score?: number };
+    warmth?: { band: string };
     /** Messages that already reached them, across every campaign. */
     sentBefore: number;
   };
@@ -2136,7 +2136,7 @@ async function briefFor(orgId: string, action: Record<string, unknown>): Promise
   >;
   const arrival = ((person?.arrivals ?? []) as { intent?: string; kind?: string; at?: unknown }[])[0];
   const belief = (person?.belief ?? {}) as { painHypothesis?: string; useCase?: string; objectionsLikely?: unknown[] };
-  const temp = person?.temp as { band?: string; score?: number } | undefined;
+  const pace = paceBand(person, goal);
   const success = goal?.success as { expression?: string; describedAs?: string } | undefined;
   // Met or not is only knowable when the condition is one named check, not an expression.
   const met =
@@ -2174,7 +2174,7 @@ async function briefFor(orgId: string, action: Record<string, unknown>): Promise
           }
         : undefined,
       read: belief.painHypothesis || belief.useCase || undefined,
-      warmth: temp?.band ? { band: temp.band, score: temp.score } : undefined,
+      warmth: pace ? { band: pace } : undefined,
       sentBefore,
     },
     why: {

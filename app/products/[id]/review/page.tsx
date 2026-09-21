@@ -6,6 +6,7 @@ import { COLLECTIONS as C } from "@/db/collections.js";
 import { peopleEngagement } from "@/engine/engagement.js";
 import { isReplacedPlan, REPLACED_PLAN } from "@/engine/replaced.js";
 import { addressFor } from "@/engine/address.js";
+import { paceBand } from "@/engine/rolling.js";
 import { requireSession, scope } from "../../../tenant";
 import { decide, heldMessage, returnToReview } from "../../../actions";
 import { Check, CheckCheck, MessageSquare, MousePointerClick, RotateCcw, X } from "lucide-react";
@@ -323,7 +324,7 @@ export default async function Review({
   const lifted = (
     await db
       .collection(C.people)
-      .find({ ...s, "temp.band": "hot" }, { projection: { _id: 1 } })
+      .find({ ...s, "temp.by": "click" }, { projection: { _id: 1 } })
       .toArray()
   ).map((p) => String(p._id));
 
@@ -493,7 +494,8 @@ export default async function Review({
     // decided one by its decision.
     const when = action.sentAt ?? action.reviewedAt ?? action.dueAt;
     const engagement = responded.get(String(action.personId));
-    const temp = person?.temp as { band?: string } | undefined;
+    // The pace this message goes at: its own campaign's lead type, a click or silence on top.
+    const temp = { band: paceBand(person, goals.find((g) => String(g.key) === goalKey)) };
     const due = isDue(action);
 
     const preview = (

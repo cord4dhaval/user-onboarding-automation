@@ -136,7 +136,7 @@ export async function refreshDerived(orgId: string, productId: string): Promise<
   const warm = (
     await db
       .collection(C.people)
-      .find({ ...scope, "temp.band": "hot" }, { projection: { _id: 1 } })
+      .find({ ...scope, "temp.by": "click" }, { projection: { _id: 1 } })
       .toArray()
   ).map((p) => String(p._id));
 

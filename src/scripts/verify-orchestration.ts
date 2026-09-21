@@ -159,15 +159,17 @@ console.log(`\nverifying against "${String(product.name)}" (${productId})\n`);
 // ── 5. Tiering: who costs a model call ───────────────────────────────────────
 {
   const instance = { spent: { touches: 1 }, deadline: new Date(Date.now() + 86_400_000) };
-  const hot = tierFor({ temp: { band: "hot" }, belief: { icpFit: 0.2 } }, instance);
-  const cold = tierFor({ temp: { band: "cold" }, belief: { icpFit: 0.3 } }, instance);
-  const dead = tierFor({ temp: { band: "dead" }, belief: { icpFit: 0.9 } }, instance);
-  const suppressed = tierFor({ temp: { band: "hot" }, lifecycle: "suppressed" }, instance);
+  const hot = tierFor({ temp: { band: "hot", by: "click" }, belief: { icpFit: 0.2 } }, instance);
+  // A hot campaign is not a click: its leads are paced hot, not each worth a model call.
+  const hotCampaign = tierFor({ temp: { band: "hot", by: "campaign" }, belief: { icpFit: 0.2 } }, instance);
+  const cold = tierFor({ temp: { band: "cold", by: "campaign" }, belief: { icpFit: 0.3 } }, instance);
+  const dead = tierFor({ temp: { band: "dead", by: "silence" }, belief: { icpFit: 0.9 } }, instance);
+  const suppressed = tierFor({ temp: { band: "hot", by: "click" }, lifecycle: "suppressed" }, instance);
 
   check(
     "tiering sends the few to Claude and the many to the template",
-    hot === 1 && cold === 2 && dead === 3 && suppressed === 3,
-    `hot=${hot} cold=${cold} dead=${dead} suppressed=${suppressed}`,
+    hot === 1 && hotCampaign === 2 && cold === 2 && dead === 3 && suppressed === 3,
+    `hot=${hot} hotCampaign=${hotCampaign} cold=${cold} dead=${dead} suppressed=${suppressed}`,
   );
 }
 

@@ -4,8 +4,9 @@
  *
  *   MASTER_KEY_B64=$(openssl rand -base64 32) npx tsx src/scripts/verify-rolling.ts
  */
-import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, screenWords, unprovenClaims, checkpoint, companyTokens, effectiveBand, emojiProneSymbols, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
+import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, screenWords, unprovenClaims, checkpoint, clickedRecently, companyTokens, emojiProneSymbols, paceBand, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { crossChannelGap } from "../engine/cadence";
+import { readTemp } from "../engine/temp";
 import { applyTextTracking } from "../engine/tracking";
 import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 import { renderHtml, renderLetter } from "../engine/html";
@@ -52,16 +53,31 @@ check("unknown channel watches like email", watchWindowMs("carrier_pigeon") === 
 console.log("lead types");
 check("hot campaign read from the goal", leadTypeOf({ leadType: "hot" }) === "hot");
 check("unknown lead type ignored", leadTypeOf({ leadType: "lukewarm" }) === null && leadTypeOf(null) === null);
-check("a warm person in a hot campaign is paced hot", effectiveBand("warm", "hot", "ASAP — actively evaluating tools") === "hot");
-check("'just exploring' in a hot campaign is paced warm", effectiveBand("warm", "hot", "just_exploring") === "warm");
-check("a click still makes an explorer hot", effectiveBand("hot", "hot", "just_exploring") === "hot");
-check("dead stays dead", effectiveBand("dead", "hot") === "dead");
-check("no lead type keeps the person's band", effectiveBand("warm", null) === "warm");
-check("a cold campaign does not cool a hot person", effectiveBand("hot", "cold") === "hot");
-check("hot leads get email and WhatsApp 15 minutes apart", crossChannelGap(effectiveBand("warm", "hot")).ms === 15 * 60_000);
-check("warm leads keep 2 hours between channels", crossChannelGap(effectiveBand(undefined, "warm")).ms === 2 * H);
-check("cold leads keep a day between channels", crossChannelGap(effectiveBand(undefined, "cold")).ms === 24 * H);
+const lead = (temp?: { band?: string; by?: string }, timeline?: string) => ({ temp, enrichment: { form: { timeline } } });
+check("the campaign's lead type paces, whatever their old score said", paceBand(lead({ band: "cold", by: "campaign" }), { leadType: "hot" }) === "hot");
+check("a warm campaign paces warm even for a person read hot by another campaign", paceBand(lead({ band: "hot", by: "campaign" }), { leadType: "warm" }) === "warm");
+check("'just exploring' in a hot campaign is paced warm", paceBand(lead(undefined, "just_exploring"), { leadType: "hot" }) === "warm");
+check("a click makes anyone hot, an explorer too", paceBand(lead({ band: "hot", by: "click" }, "just_exploring"), { leadType: "cold" }) === "hot");
+check("silence stops them in every campaign", paceBand(lead({ band: "dead", by: "silence" }), { leadType: "hot" }) === "dead");
+check("no lead type, no pace", paceBand(lead({ band: "warm", by: "campaign" }), {}) === undefined);
+check("only a click counts as clicked", clickedRecently(lead({ band: "hot", by: "click" })) && !clickedRecently(lead({ band: "hot", by: "campaign" })));
+check("hot leads get email and WhatsApp 15 minutes apart", crossChannelGap(paceBand(lead(), { leadType: "hot" })).ms === 15 * 60_000);
+check("warm leads keep 2 hours between channels", crossChannelGap(paceBand(lead(), { leadType: "warm" })).ms === 2 * H);
+check("cold leads keep a day between channels", crossChannelGap(paceBand(lead(), { leadType: "cold" })).ms === 24 * H);
 check("no band and dead keep the old 2 hours", crossChannelGap(undefined).ms === 2 * H && crossChannelGap("dead").ms === 2 * H);
+
+console.log("temperature");
+{
+  const base = { trackableSends: 2, clicks: 0, silenceDays: 30, now, lastContactedAt: ago(24) };
+  const two = [{ key: "july_aug", band: "warm" }, { key: "v3", band: "hot" }];
+  const r = readTemp({ ...base, campaigns: two });
+  check("the warmest running campaign sets the band", r.band === "hot" && r.by === "campaign" && r.campaign === "v3");
+  check("a click in the last three weeks makes them hot", readTemp({ ...base, clicks: 1, lastClickAt: ago(20 * 24), campaigns: [{ key: "uk", band: "cold" }] }).by === "click");
+  check("an old click is history", readTemp({ ...base, clicks: 1, lastClickAt: ago(22 * 24), campaigns: [{ key: "uk", band: "cold" }] }).band === "cold");
+  check("silence past the limit stops them", readTemp({ ...base, lastContactedAt: ago(31 * 24), campaigns: two }).band === "dead");
+  check("untracked mail proves no silence", readTemp({ ...base, trackableSends: 0, lastContactedAt: ago(31 * 24), campaigns: two }).by === "campaign");
+  check("no running campaign, no band", readTemp({ ...base, campaigns: [] }).band === undefined);
+}
 check("hot email watched 24 h: 30 h after send asks", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39), leadType: "hot" }).kind === "ask");
 check("the same without a lead type still watches (48 h)", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39) }).kind === "watch");
 check("hot asks for the link, closing hook may ask for a reply", LEAD_TYPE_PROFILES.hot.ask === "link" && LEAD_TYPE_PROFILES.hot.replyHooks.includes("closing"));

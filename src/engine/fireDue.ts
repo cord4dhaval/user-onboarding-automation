@@ -24,7 +24,7 @@ import { WAITING_FOR_ACCEPT, claudePlansLinkedIn } from "./linkedin.js";
 import { bandFor, crossChannelGap, lastOnChannel, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
-import { effectiveBand, groupFor, leadTypeOf } from "./rolling.js";
+import { groupFor, paceBand } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
 import { HOME_TIMEZONE, localHour, nextSendableAt } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
@@ -337,15 +337,10 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // An answer to something they wrote is exempt: that is a conversation, not a
       // campaign touch, and holding it for the band would be the worse rudeness.
       if (String(action.angle) !== "reply") {
-        // Paced at the campaign's lead type where that is warmer than the person's own reading,
-        // the same band the due date was set from; otherwise a hot campaign's next email is
-        // held for a warm gap here after being dated for a hot one.
-        const paceBand = effectiveBand(
-          (person.temp as { band?: string } | undefined)?.band,
-          leadTypeOf(goal),
-          (person.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
-        );
-        const band = bandFor(paceBand, goal?.cadenceByTemp as Record<string, CadenceBand> | undefined);
+        // Paced at this campaign's lead type (a click or silence on top), the same band the
+        // due date was set from.
+        const pace = paceBand(person, goal);
+        const band = bandFor(pace, goal?.cadenceByTemp as Record<string, CadenceBand> | undefined);
         const channelKey = String(action.channel);
         const last = latestOf([contactedThisRun.get(`${String(person._id)}|${channelKey}`), lastOnChannel(person, channelKey)]);
         // LinkedIn touches Claude planned were dated by the channel's own gaps (a first
@@ -354,7 +349,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         const gapEnds =
           !planPaced && last && band.minGapDays < 999 ? new Date(last.getTime() + band.minGapDays * DAY_MS) : null;
         const lastAny = latestOf([contactedThisRun.get(String(person._id)), person.lastContactedAt]);
-        const crossGap = crossChannelGap(paceBand);
+        const crossGap = crossChannelGap(pace);
         const spacingEnds = lastAny ? new Date(lastAny.getTime() + crossGap.ms) : null;
         const earliest = latestOf([gapEnds, spacingEnds]);
         if (earliest && earliest > now) {

@@ -6,7 +6,7 @@ import { dueAtFor, type CadenceBand } from "./cadence.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
 import { channelKinds, pickChannelFrom, loadChannels, persistAssignments, persistInstanceMailboxes, skipReason, type PooledChannel } from "./channels.js";
 import type { ChannelKey } from "../schemas/common.js";
-import { checkpoint, effectiveBand, frameKeyOf, isRolling, isRollingPlan, leadTypeOf, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
+import { checkpoint, clickedRecently, frameKeyOf, isRolling, isRollingPlan, leadTypeOf, paceBand, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
 import { claudePlansLinkedIn } from "./linkedin.js";
 
 /**
@@ -63,7 +63,7 @@ export function tierFor(person: Document, goalInstance: Document): Tier {
 
   const belief = (person.belief as { icpFit?: number; fitKnown?: boolean } | undefined) ?? {};
   const replied = Boolean(person.lastReplyAt);
-  if (band === "hot" || replied) return 1;
+  if (clickedRecently(person) || replied) return 1;
   // A strong fit is worth one good message rather than five generic ones, but only while
   // the sequence still has room to use it.
   if ((belief.icpFit ?? 0) >= 0.7 && belief.fitKnown !== false && budget < 4) return 1;
@@ -352,8 +352,7 @@ export async function advance(
     const plan = planById.get(String(instance.currentPlanId)) ?? null;
     const perLeadFamily = perLeadPlanOf(goal)?.family;
     const startedAt = new Date(String(instance.startedAt ?? instance.createdAt ?? now)).getTime();
-    const bandNow = (person.temp as { band?: string } | undefined)?.band;
-    const engagementNow = { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: bandNow };
+    const engagementNow = { ...(engagementBy.get(goalInstanceId) ?? { opened: false, clicked: false }), band: paceBand(person, goal) };
 
     // A campaign that plans one or two touches at a time. Its lead runs only a plan written
     // for that; anything older reads as spent, and a spent plan reaches a checkpoint where
@@ -470,12 +469,8 @@ export async function advance(
       continue;
     }
 
-    // Paced at the campaign's lead type where that is warmer than the person's own reading.
-    const band = effectiveBand(
-      (person.temp as { band?: string } | undefined)?.band,
-      leadTypeOf(goal),
-      (person.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline,
-    );
+    // Paced at the campaign's lead type, a click or silence on top.
+    const band = paceBand(person, goal);
     const dueAt = dueAtFor({
       offsetDays: Number(step.offsetDays ?? step.after_days ?? 3),
       band,

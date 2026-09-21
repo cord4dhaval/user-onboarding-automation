@@ -443,18 +443,39 @@ export function leadTypeOf(goal: Document | null | undefined): LeadType | null {
 }
 
 /**
- * The temperature a lead is paced at inside their campaign.
+ * The band a campaign's lead type paces its leads at, before anything they did.
  *
- * A campaign's lead type sets the floor. A person gone dead stays dead, and a lead in a hot
- * campaign who told us they are only exploring is paced as warm until they click.
+ * A lead in a hot campaign who told us on the form they are only exploring is paced warm
+ * until they click.
  */
-export function effectiveBand(personBand: string | undefined, leadType: LeadType | null, formTimeline?: unknown): string | undefined {
-  if (!leadType || personBand === "dead") return personBand;
-  const floor = LEAD_TYPE_PROFILES[leadType].band;
-  const rank: Record<string, number> = { cold: 0, warm: 1, hot: 2 };
-  let wanted: string = floor;
-  if (floor === "hot" && personBand !== "hot" && /explor|research|just looking|not sure/i.test(String(formTimeline ?? ""))) wanted = "warm";
-  return (rank[personBand ?? ""] ?? -1) > (rank[wanted] ?? -1) ? personBand : wanted;
+export function campaignBand(person: Document | null | undefined, goal: Document | null | undefined): string | undefined {
+  const type = leadTypeOf(goal);
+  if (!type) return undefined;
+  const band = LEAD_TYPE_PROFILES[type].band;
+  const timeline = (person?.enrichment as { form?: { timeline?: unknown } } | undefined)?.form?.timeline;
+  return band === "hot" && /explor|research|just looking|not sure/i.test(String(timeline ?? "")) ? "warm" : band;
+}
+
+/**
+ * The one temperature a message is paced at: its own campaign's lead type, with two things
+ * the person did on top. Silence past the campaign's limit stops them (dead); a recent click
+ * brings the next message sooner (hot).
+ *
+ * Until 2026-09-21 the person also carried a score of their own (fit, opens, a form) that
+ * was a second lead type, and the warmer of the two won. A lead then showed "warm" on the
+ * screen while being paced hot, so the score was dropped and the campaign's type is the
+ * only one.
+ */
+export function paceBand(person: Document | null | undefined, goal: Document | null | undefined): string | undefined {
+  const by = (person?.temp as { by?: string } | undefined)?.by;
+  if (by === "silence") return "dead";
+  if (by === "click") return "hot";
+  return campaignBand(person, goal);
+}
+
+/** Whether they clicked something recently enough that it still counts. */
+export function clickedRecently(person: Document | null | undefined): boolean {
+  return (person?.temp as { by?: string } | undefined)?.by === "click";
 }
 
 /** The watch window for a touch, shortened for a lead type that decides fast. */

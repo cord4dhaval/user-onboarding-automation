@@ -16,6 +16,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { gateOpen } from "@/engine/advance.js";
+import { paceBand } from "@/engine/rolling.js";
+import { explainTemp } from "@/engine/temp.js";
 import { personHistory } from "@/engine/library.js";
 import { crmForPerson } from "@/engine/crm/view.js";
 import { whatsAppSent } from "@/engine/whatsappInbound.js";
@@ -98,7 +100,7 @@ export default async function PersonPage({
         fitKnown?: boolean;
       }
     | undefined;
-  const temp = person.temp as { band: string; score: number } | undefined;
+  const temp = person.temp as { band?: string; by?: string; campaign?: string } | undefined;
   const booking = person.booking && !(person.booking as { cancelledAt?: Date }).cancelledAt
     ? (person.booking as { label: string; meetLink?: string })
     : null;
@@ -452,14 +454,8 @@ export default async function PersonPage({
   // A zero from emails that never carried an open pixel is not a zero: nothing was counting.
   const opensTracked = sent.some((a) => (a.tracking as { opens?: boolean } | undefined)?.opens);
 
-  const interestWhy = interestReasons({
-    fit: belief?.fitKnown !== false && Number(belief?.icpFit ?? 0) >= 0.6,
-    form: arrivals.some((a) => a.intent === "form"),
-    sent: sent.length,
-    opened,
-    clicked,
-    replied: replies.length,
-  });
+  // Where the band came from: their campaign's lead type, or a click or silence on top.
+  const interestWhy = explainTemp(temp, (key) => goalName(names.goals, key));
 
   return (
     <>
@@ -484,12 +480,10 @@ export default async function PersonPage({
           </span>
           {/* The reading alone invites the wrong reading: "cold" from a guess and "cold"
               from measured silence call for opposite responses. */}
-          {temp && (
-            <span className={`pill ${temp.band}`} title={`Interest score ${Math.round(temp.score)}`}>
-              {BAND_LABEL[temp.band] ?? humanize(temp.band)}
-            </span>
+          {temp?.band && (
+            <span className={`pill ${temp.band}`}>{BAND_LABEL[temp.band] ?? humanize(temp.band)}</span>
           )}
-          {temp && interestWhy && <span className="muted temp-why">{interestWhy}</span>}
+          {temp?.band && <span className="muted temp-why">{interestWhy}</span>}
           {/* A booked call is the one event that hands this person to a human, so it sits
               beside the lifecycle where a reader looks first. Label and link come from the
               booking itself; the calendar event is the record, this is the pointer to it. */}
@@ -758,7 +752,7 @@ export default async function PersonPage({
             const engagement = {
               opened: campaignActions.some((a) => Boolean(a.firstOpenedAt)),
               clicked: campaignActions.some((a) => Boolean(a.firstClickedAt)),
-              band: temp?.band,
+              band: paceBand(person, names.goals.get(String(campaign.goalKey))),
             };
             const rows = planRows(current, campaignActions, engagement, (key, action) => ({
               name:
@@ -897,9 +891,10 @@ const ARRIVAL_KIND: Record<string, string> = {
 };
 
 const BAND_LABEL: Record<string, string> = {
-  hot: "Very interested",
-  warm: "Some interest",
-  cold: "No interest yet",
+  hot: "Hot",
+  warm: "Warm",
+  cold: "Cold",
+  dead: "Gone quiet",
 };
 
 const CAMPAIGN_STATUS: Record<string, string> = {
@@ -980,18 +975,6 @@ function sureness(confidence: number): string {
  * The engine's own list names the terms it weighed, not the ones that fired: "clicks"
  * appeared on a person who had never clicked, beside a Clicked count of zero.
  */
-function interestReasons(s: { fit: boolean; form: boolean; sent: number; opened: number; clicked: number; replied: number }): string {
-  const parts: string[] = [];
-  if (s.fit) parts.push("good fit");
-  if (s.form) parts.push("asked through a form");
-  if (s.replied > 0) parts.push("replied");
-  if (s.clicked > 0) parts.push("clicked a link");
-  else if (s.opened > 0) parts.push("opened an email");
-  if (s.sent > 0 && s.clicked === 0 && s.replied === 0) parts.push("no clicks or replies yet");
-  const text = parts.join(", ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 function whyLabel(rationale: unknown): string | null {
   const text = String(rationale ?? "").trim();
   if (!text) return null;

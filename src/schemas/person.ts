@@ -26,12 +26,15 @@ export const belief = z.object({
   updatedAt: z.date(),
 });
 
+/** The warmest lead type among their running campaigns, unless a click or silence overrides it. */
 export const temperature = z.object({
-  score: z.number(),
-  band: temperatureBand,
+  band: temperatureBand.optional(),
+  /** What set the band. */
+  by: z.enum(["click", "silence", "campaign", "none"]),
+  /** The campaign whose lead type set the band, when that is what did. */
+  campaign: z.string().optional(),
+  lastClickAt: z.date().optional(),
   computedAt: z.date(),
-  /** Which inputs were actually available — a channel without open tracking drops that term. */
-  termsUsed: z.array(z.string()),
 });
 
 export const identity = z.object({

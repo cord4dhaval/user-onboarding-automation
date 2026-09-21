@@ -554,14 +554,11 @@ export async function hottestFirst(orgId: string, productId: string, filter: Doc
   const rows = await db
     .collection(C.people)
     .find({ orgId, productId, ...filter })
-    .project({ _id: 1, "temp.band": 1, "temp.score": 1 })
+    .project({ _id: 1, "temp.band": 1 })
     .limit(2_000)
     .toArray();
   return rows
-    .sort((a, b) => {
-      const band = (BAND_RANK[a.temp?.band] ?? 4) - (BAND_RANK[b.temp?.band] ?? 4);
-      return band || Number(b.temp?.score ?? 0) - Number(a.temp?.score ?? 0);
-    })
+    .sort((a, b) => (BAND_RANK[a.temp?.band] ?? 4) - (BAND_RANK[b.temp?.band] ?? 4))
     .slice(0, limit)
     .map((p) => String(p._id));
 }

@@ -3,7 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
 import { TRIAL_LEADS, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, rankIdeas } from "./ideas.js";
-import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, effectiveBand, frameKeyOf, groupFor, layoutArm, leadTypeOf } from "./rolling.js";
+import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -161,7 +161,7 @@ export async function writingBriefFor(input: {
         type,
         label: profile.label,
         who: profile.who,
-        paced_as: effectiveBand((person.temp as { band?: string } | undefined)?.band, type, form.timeline) ?? null,
+        paced_as: paceBand(person, goal) ?? null,
         default_ask: profile.ask,
         reply_ask_only_for_hooks: profile.replyHooks,
         body_max_words: profile.maxWords,
