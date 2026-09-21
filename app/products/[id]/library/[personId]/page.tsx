@@ -215,7 +215,7 @@ export default async function PersonPage({
           )}
           {action.theme && action.format ? (
             <div className="muted t-detail">
-              Written as {action.format === "text" ? "plain text" : action.format === "letter" ? "a letter (plain-looking HTML)" : action.format === "picture" ? "a picture email (picture on top, short text)" : "a designed email"}
+              Written as {action.format === "text" ? "plain text" : action.format === "letter" ? "a letter (plain-looking HTML)" : "a designed email"}
               {action.formatWhy ? `: ${String(action.formatWhy)}` : "."}
             </div>
           ) : null}
@@ -709,7 +709,7 @@ export default async function PersonPage({
                     {content.subject ? <div className="muted t-detail">Subject: “{content.subject}”</div> : null}
                     {action.theme && action.format ? (
                       <div className="muted t-detail">
-                        Written as {action.format === "text" ? "plain text" : action.format === "letter" ? "a letter (plain-looking HTML)" : action.format === "picture" ? "a picture email (picture on top, short text)" : "a designed email"}
+                        Written as {action.format === "text" ? "plain text" : action.format === "letter" ? "a letter (plain-looking HTML)" : "a designed email"}
                         {action.formatWhy ? `: ${String(action.formatWhy)}` : "."}
                       </div>
                     ) : null}

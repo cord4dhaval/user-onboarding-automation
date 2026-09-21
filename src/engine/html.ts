@@ -406,6 +406,9 @@ export function designedBrandFrom(
 /**
  * The HTML for an email in the format it goes out as. One place for the choice, so the
  * sender and the review screen cannot disagree about what a format looks like.
+ *
+ * A message written around a picture is designed as the picture mail; the letter never
+ * carries it (Dhaval, 2026-09-21: three versions only, and no image in the letter).
  */
 export function emailHtmlFor(
   format: unknown,
@@ -416,8 +419,8 @@ export function emailHtmlFor(
   picture?: { url: string; alt: string; bg: string },
 ): string {
   if (String(format) === "letter") return renderLetter(resolved, letterBrandFrom(kit, product));
-  if (String(format) === "picture" && picture) return renderPicture(resolved, designedBrandFrom(kit, product, about, picture));
-  return editorialDesign(product) ? renderDesigned(resolved, designedBrandFrom(kit, product, about, picture)) : renderHtml(resolved, kit);
+  if (picture) return renderPicture(resolved, designedBrandFrom(kit, product, about, picture));
+  return editorialDesign(product) ? renderDesigned(resolved, designedBrandFrom(kit, product, about)) : renderHtml(resolved, kit);
 }
 
 /**
@@ -672,18 +675,18 @@ ${preheaderHtml(preheader)}
 }
 
 /**
- * Template 4, "picture + short text" (Dhaval chose it on 2026-09-21).
+ * The designed version of a message written around a picture (Dhaval, 2026-09-21).
  *
  * The picture carries the findings: the hours, the sites, the late start, the quiet deal. The
  * words add only what the picture cannot show: what it costs, what the product does about
  * it, what the reader gets back, and one button. The first drafts repeated the picture's
- * numbers in a table under it, which he called "basically repetition of data".
+ * numbers in a table under it, which he called "basically repetition of data". The words
+ * never refer to the picture, because the letter and plain-text versions go without it.
  *
- * It reads the same frame and parts as the other formats, so a reviewer can still switch a
- * picture mail to designed, letter or plain text. Here the opening is a bold line, the scene
- * the lead under the picture, the cost card a two-column table, the shows list a set of
- * ticks, the question the highlighted "what you get back" line and the limit a small note.
- * With images off the band keeps its colour and the alt text says what the picture showed.
+ * Same frame and parts as the other formats: the opening is a bold line, the scene the lead
+ * under the picture, the cost card a two-column table, the shows list a set of ticks, the
+ * question the highlighted "what you get back" line and the limit a small note. With images
+ * off the band keeps its colour and the alt text says what the picture showed.
  */
 export function renderPicture(resolved: ResolvedTemplate, brand: DesignedBrand): string {
   const F = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";

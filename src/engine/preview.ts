@@ -3,7 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { renderTemplate, resolveBlocks, type ComposedContent } from "./compose.js";
 import { emailHtmlFor } from "./html.js";
-import { pictureOf, withPicture } from "./picture.js";
+import { pictureOf } from "./picture.js";
 import { loadBrandKit } from "./brand.js";
 import { resolveTemplateFor } from "./templates.js";
 import { rungsSentTo, stepTemplateKey } from "./fireDue.js";
@@ -65,7 +65,7 @@ export async function previewContent(
   // carries something is the thing it carries. Loaded the same way the sender loads it.
   const toRender = {
     ...prior,
-    assets: withPicture(await assetsForRender(orgId, productId, action.assetIds, template.blocks), action),
+    assets: await assetsForRender(orgId, productId, action.assetIds, template.blocks),
   };
   const content = renderTemplate(template.blocks as Record<string, unknown>[], vars, toRender);
 

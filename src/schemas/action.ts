@@ -79,13 +79,9 @@ export const action = z.object({
   theme: z.string().optional(),
   /** How the idea is delivered: story, rupee_math, question, comparison, proof, or another. */
   hook: z.string().optional(),
-  /**
-   * Plain text, designed, a letter (HTML that looks typed), or a picture mail (template 4: the
-   * picture carries the findings, the text only what they cost). Read at send and outranks
-   * the template's own format.
-   */
-  format: z.enum(["text", "html", "letter", "picture"]).optional(),
-  /** The picture a template-4 mail was written around. See engine/picture.ts. */
+  /** Plain text, designed, or a letter (HTML that looks typed). Read at send and outranks the template's own format. */
+  format: z.enum(["text", "html", "letter"]).optional(),
+  /** The picture a message was written around; only its designed version shows it. See engine/picture.ts. */
   picture: z.object({ key: z.string(), url: z.string().url(), alt: z.string(), bg: z.string() }).optional(),
   formatWhy: z.string().optional(),
   /** The idea-bank numbers the touch was built on, copied from its plan step, for learning by idea. */
@@ -154,7 +150,7 @@ export const action = z.object({
       /** The rolling planner's labels, frozen here for the same reason the segment is. */
       theme: z.string().nullable().optional(),
       hook: z.string().nullable().optional(),
-      format: z.enum(["text", "html", "letter", "picture"]).optional(),
+      format: z.enum(["text", "html", "letter"]).optional(),
       ask: z.enum(["reply", "link"]).optional(),
       /** segment|team size band, the unit results are compared across. */
       group: z.string().optional(),

@@ -21,9 +21,8 @@ import WhatsAppPreview from "./whatsapp-preview";
 /** Where the Fit choice is remembered, per browser. */
 const FIT_KEY = "review.preview.fit";
 
-/** The versions an email can go out as, in the order the tabs show them. Picture only for a message written around one. */
+/** The three versions every email can go out as, in the order the tabs show them. */
 const FORMATS = [
-  { key: "picture", label: "Picture" },
   { key: "html", label: "Designed" },
   { key: "letter", label: "Letter" },
   { key: "text", label: "Plain text" },
@@ -69,7 +68,7 @@ export default function PreviewDrawer({
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState<HeldMessage | null>(null);
-  const [format, setFormat] = useState<"html" | "text" | "letter" | "picture">("html");
+  const [format, setFormat] = useState<"html" | "text" | "letter">("html");
   const [device, setDevice] = useState<"web" | "mobile">("web");
   const [fit, setFit] = useState(() => {
     try {
@@ -95,13 +94,11 @@ export default function PreviewDrawer({
       setFormat(
         chosen === "text"
           ? "text"
-          : chosen === "picture" && loaded?.canHtml && loaded.bodyPicture
-            ? "picture"
-            : chosen === "letter" && loaded?.canHtml && loaded.bodyLetter
-              ? "letter"
-              : loaded?.canHtml && loaded.bodyHtml
-                ? "html"
-                : "text",
+          : chosen === "letter" && loaded?.canHtml && loaded.bodyLetter
+            ? "letter"
+            : loaded?.canHtml && loaded.bodyHtml
+              ? "html"
+              : "text",
       );
     });
   }
@@ -117,7 +114,6 @@ export default function PreviewDrawer({
 
   const designed = Boolean(message?.canHtml && message.bodyHtml);
   const letter = Boolean(message?.canHtml && message.bodyLetter);
-  const picture = Boolean(message?.canHtml && message.bodyPicture);
   // A decision is only on offer while the message is still waiting — at the gate, or dated
   // for later with nobody having decided — the same two the queue lists and `decide` takes.
   // Everything else opens read-only: the point of showing it is the record.
@@ -129,8 +125,7 @@ export default function PreviewDrawer({
   const recoverable =
     message?.status === "failed" ||
     (message?.status === "skipped" && Boolean(message.skipReason) && !isReplacedPlan(message.skipReason));
-  const html =
-    format === "letter" ? message?.bodyLetter : format === "picture" ? message?.bodyPicture : format === "html" ? message?.bodyHtml : undefined;
+  const html = format === "letter" ? message?.bodyLetter : format === "html" ? message?.bodyHtml : undefined;
   const email = message?.channel === "email";
   const whatsapp = message?.channel === "whatsapp" ? message.whatsapp : undefined;
   // A template goes by name with only its variables filled in, so its words are the ones
@@ -306,9 +301,9 @@ export default function PreviewDrawer({
               <div className="pv-bar">
                 {/* The format decides what Approve sends, so switching it switches the
                     preview with it: the reader always sees the version they release. */}
-                {designed || letter || picture ? (
+                {designed || letter ? (
                   <div className="seg" role="tablist" aria-label="Format">
-                    {FORMATS.filter((f) => (f.key === "html" ? designed : f.key === "letter" ? letter : f.key === "picture" ? picture : true)).map((f) => (
+                    {FORMATS.filter((f) => (f.key === "html" ? designed : f.key === "letter" ? letter : true)).map((f) => (
                       <button
                         key={f.key}
                         type="button"
@@ -451,14 +446,12 @@ export default function PreviewDrawer({
                     ? whatsapp.template
                       ? `Approving sends the approved WhatsApp template ${whatsapp.template}, with their name filled in. It can go whether or not they have written to us.`
                       : "Approving sends this as free text. WhatsApp only delivers that within 24 hours of their last message to us."
-                  : designed || letter || picture
+                  : designed || letter
                     ? format === "html"
                       ? "Approving sends this designed version."
                       : format === "letter"
                         ? "Approving sends this letter version."
-                        : format === "picture"
-                          ? "Approving sends this picture version."
-                          : "Approving sends the plain text instead — this message only."
+                        : "Approving sends the plain text instead — this message only."
                     : message.canHtml
                       ? "No designed version was rendered for this message."
                       : "This channel sends plain text only."}

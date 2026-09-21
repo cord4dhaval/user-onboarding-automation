@@ -11,7 +11,7 @@ import {
 } from "./compose.js";
 import { addressFor, identityValue } from "./address.js";
 import { emailHtmlFor } from "./html.js";
-import { pictureOf, withPicture } from "./picture.js";
+import { pictureOf } from "./picture.js";
 import { loadBrandKit, type ResolvedKit } from "./brand.js";
 import { validate } from "./validate.js";
 import { isSuppressed } from "./suppression.js";
@@ -415,7 +415,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // Kept beside `prior` rather than folded into it: `prior` is written back to the
       // action when a message is held, and storing a copy of every asset on every action
       // would be a second, staler copy of the thing we just went and read.
-      const toRender = { ...prior, assets: withPicture(carried, action) };
+      const toRender = { ...prior, assets: carried };
       // An answer to something a person wrote is not a campaign touch, and rendering it
       // through the ladder dresses it as one: it inherits the next rung's heading and
       // subject, so a reply to "what does it cost?" arrives titled "one step left" above a
@@ -702,7 +702,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
           person,
           action,
           carried,
-          content.bodyHtml ? (String(action.format) === "letter" ? "letter" : String(action.format) === "picture" ? "picture" : "html") : "text",
+          content.bodyHtml ? (String(action.format) === "letter" ? "letter" : "html") : "text",
         );
         const queued = result.disposition === "queued" && !dryRun;
         await db.collection(C.actions).updateOne(
@@ -832,7 +832,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
     person: Record<string, unknown>,
     action: Record<string, unknown>,
     carried: RenderableAsset[] = [],
-    format?: "html" | "text" | "letter" | "picture",
+    format?: "html" | "text" | "letter",
   ) {
     const belief = person.belief as { segment?: string; fitKnown?: boolean } | undefined;
     const variant: Record<string, unknown> = {
