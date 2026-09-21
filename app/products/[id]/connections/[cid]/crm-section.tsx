@@ -57,7 +57,7 @@ export default async function CrmSection({
   if (!parsed.success) {
     return (
       <>
-        <h2>Sales CRM</h2>
+        <h2 id="crm">Sales CRM</h2>
         {intro}
         <div className="card crm-card">
           <p className="sub crm-sub">
@@ -92,7 +92,7 @@ export default async function CrmSection({
 
   return (
     <>
-      <h2>Sales CRM</h2>
+      <h2 id="crm">Sales CRM</h2>
       {intro}
       <div className="card crm-card">
         <div className="crm-head">

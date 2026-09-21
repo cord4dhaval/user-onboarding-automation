@@ -105,6 +105,10 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
         />
       </div>
 
+      {/* Up here rather than under the tool list: it is a switch people come to this page for,
+          and on a CRM server the tool list alone is forty rows long. */}
+      <CrmSection productId={id} connection={connection} tools={tools} />
+
       <form action={discoverTools.bind(null, id, cid)}>
         <SubmitButton variant="ghost" icon={<RefreshCw />} pendingLabel="Discovering…">
           {tools.length ? "Re-discover tools" : "Discover tools"}
@@ -151,8 +155,6 @@ export default async function ConnectionDetail({ params }: { params: Promise<{ i
               </tbody>
             </table>
           </div>
-
-          <CrmSection productId={id} connection={connection} tools={tools} />
 
           <h2>Bind tools to actions</h2>
           {VERBS.map((verb) => {

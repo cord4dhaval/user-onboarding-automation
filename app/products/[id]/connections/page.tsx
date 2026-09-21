@@ -1,3 +1,4 @@
+import type { Document } from "mongodb";
 import { Settings2 } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
@@ -11,6 +12,9 @@ import {
 } from "../../../actions";
 import ConfirmButton from "../../../ui/confirm";
 import ConnectionDrawer from "./connection-drawer";
+import { crmMap } from "@/schemas/crm.js";
+import { proposeCrmMap } from "@/engine/crm/map.js";
+import type { McpTool } from "@/mcp/client.js";
 import {scope, requireSession} from "../../../tenant";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +43,13 @@ export default async function Connections({
     .toArray();
   const bindings = await db.collection(C.mcpBindings).find({ orgId: scope(orgId, id).orgId }).toArray();
   const boundBy = new Map(bindings.map((b) => [String(b.connectionId), Object.keys((b.bind ?? {}) as object)]));
+  // Whether each connection can read a sales CRM, and whether it is: shown on the list so
+  // the switch is findable without opening every connection.
+  const crmLooking = new Set(
+    bindings
+      .filter((b) => proposeCrmMap((b.discoveredTools ?? []) as McpTool[]) !== null)
+      .map((b) => String(b.connectionId)),
+  );
 
   return (
     <>
@@ -72,7 +83,7 @@ export default async function Connections({
         <div className="tw">
           <table>
             <thead>
-              <tr><th>Provider</th><th>Server</th><th>Account</th><th>Bound actions</th><th>Status</th><th /></tr>
+              <tr><th>Provider</th><th>Server</th><th>Account</th><th>Bound actions</th><th>Sales CRM</th><th>Status</th><th /></tr>
             </thead>
             <tbody>
               {rows.map((c) => {
@@ -89,6 +100,9 @@ export default async function Connections({
                       {bound.length
                         ? bound.map((v) => <span key={v} className="pill ok" style={{ marginRight: 4 }}>{v}</span>)
                         : <span className="muted">none</span>}
+                    </td>
+                    <td>
+                      <CrmCell productId={id} connection={c} capable={crmLooking.has(String(c._id))} />
                     </td>
                     <td>
                       <span className={`pill ${c.status === "healthy" ? "ok" : "warn"}`}>{String(c.status)}</span>
@@ -130,4 +144,21 @@ export default async function Connections({
 
     </>
   );
+}
+
+/** On, off, or not a CRM — linking straight to the switch on the connection's page. */
+function CrmCell({ productId, connection, capable }: { productId: string; connection: Document; capable: boolean }) {
+  const crm = (connection.crm ?? {}) as { enabled?: boolean; map?: unknown; sync?: { status?: string } };
+  const mapped = crmMap.safeParse(crm.map).success;
+  if (!mapped && !capable) return <span className="muted">—</span>;
+  const href = `/products/${productId}/connections/${String(connection._id)}#crm`;
+  if (crm.enabled) {
+    const trouble = crm.sync?.status && crm.sync.status !== "ok";
+    return (
+      <a href={href} className={`pill ${trouble ? "warm" : "ok"}`}>
+        {trouble ? `reading · ${crm.sync?.status}` : "reading on"}
+      </a>
+    );
+  }
+  return <a href={href} className="pill">{mapped ? "off" : "set up"}</a>;
 }
