@@ -1206,7 +1206,7 @@ Decisions (Dhaval, 2026-09-21 and 22):
 | CX5 | A person reads and confirms the context | Only as raw JSON on Settings | A Context page: sections, proof to confirm, page map | todo, UI pass |
 | CX6 | Campaign rules: pause the company on a reply, out-of-office, stop on a meeting | Seven reply intents; none of the three | `engine/campaignRules.ts`: a hold on a lead's campaigns until a date (`holdUntil`, `holdReason`, `holdKind`) that fireDue waits out without losing approval and advance/plan requests/nudges skip. A real reply by email, WhatsApp or LinkedIn holds colleagues at the same company (not free-mail domains) for 14 days. An out-of-office reply (Auto-Submitted, X-Autoreply or an automatic-reply subject) is recorded as `auto_reply`, not a reply, and holds the lead until 09:30 IST the day after the return date it names (Indian date order), or one week. A booking on our page or a `booked` event from the customer's site skips what was waiting and stops the sequence; a meeting sales logs in the CRM does not (decision 2026-09-21). Shown on the lead page and in Review. `npm run verify:rules` | done 2026-09-22 |
 | CX7 | Deliverability basics | SES DNS only; bounces recorded, never watched | DNS check for any domain, email check before the first send, bounce auto-pause, own tracking domain, rented warm-up | todo |
-| CX8 | One reply stream across Gmail, WhatsApp and LinkedIn | Replies live on each lead's timeline; LinkedIn inbox read is off | One list with intent tags that React answers from | todo |
+| CX8 | One reply stream across Gmail, WhatsApp and LinkedIn | Replies live on each lead's timeline; LinkedIn inbox read is off | Replies page (`/replies`, `engine/replies.ts`): every reply of the last 90 days with Claude's tag and the answer, in states Needs an answer / Answer drafted / Answered / No answer needed / Automatic; approve or reject a drafted answer there, Mark done for one answered outside the engine; count in the side menu. LinkedIn replies appear once inbox reading is on (CX9). `npm run verify:replies` | done 2026-09-22 |
 | CX9 | LinkedIn fully on | Visit, invite, message, comment | Inbox read, withdraw, like and follow before invite | todo |
 | CX10 | Lead database, email finder, CRM write-back | none | — | skip for now: future scope (2026-09-22) |
 | CX11 | Own buying signals; team invites and roles | Site events exist (`/api/e`); owner role only | — | later (2026-09-22) |
@@ -1329,5 +1329,5 @@ Decisions (Dhaval, 2026-09-21 and 22):
 | 104 | Context page to read the context and confirm proof | CX5 | todo, UI pass |
 | 105 | Campaign rules: company pause on reply, out-of-office, stop on meeting | CX6 | done 2026-09-22 |
 | 106 | Deliverability basics: DNS check, email check before first send, bounce auto-pause, tracking domain, rented warm-up | CX7, merges with 12 and 75 | todo |
-| 107 | One reply stream across Gmail, WhatsApp and LinkedIn | CX8 | todo |
+| 107 | One reply stream across Gmail, WhatsApp and LinkedIn | CX8 | done 2026-09-22 (LinkedIn replies wait on 108) |
 | 108 | LinkedIn fully on: inbox read, withdraw, like and follow before invite | CX9, merges with 97 and 99 | todo |

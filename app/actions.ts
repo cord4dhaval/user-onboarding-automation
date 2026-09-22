@@ -1780,7 +1780,29 @@ export async function decide(formData: FormData) {
   // silently matched none of them, that was the only way to find out at all.
   const params = new URLSearchParams(back);
   params.set(approve ? "approved" : "rejected", String(result.modifiedCount));
-  redirect(`/products/${productId}/review?${params.toString()}`);
+  // A drafted answer approved from the Replies page returns there, not to Review.
+  const page = String(formData.get("returnTo") ?? "") === "replies" ? "replies" : "review";
+  if (page === "replies") revalidatePath(`/products/${productId}/replies`);
+  redirect(`/products/${productId}/${page}?${params.toString()}`);
+}
+
+/**
+ * Marks a reply as dealt with by a person: answered from Gmail, on a call, on WhatsApp by
+ * hand. Without it a reply answered outside the engine read "Needs your answer" for ever.
+ * Recorded on the reply itself, with who and when, so the list can say it was a person.
+ */
+export async function markReplyDone(productId: string, eventId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  if (!ObjectId.isValid(eventId)) return;
+  await db
+    .collection(C.events)
+    .updateOne(
+      { _id: new ObjectId(eventId), orgId, productId, type: "reply_received" },
+      { $set: { handled: true, handledBy: "person", handledAt: new Date() } },
+    );
+  revalidatePath(`/products/${productId}/replies`);
+  revalidatePath(`/products/${productId}`, "layout");
 }
 
 /**

@@ -8,6 +8,7 @@ import Notifications from "../../ui/notifications";
 import { ToastProvider } from "../../ui/toast";
 import Nav from "./nav";
 import { ideasLoopOn } from "@/engine/ideas.js";
+import { repliesWaitingCount } from "@/engine/replies.js";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +34,13 @@ export default async function ProductLayout({
   }
 
   const db = await getDb();
-  const [account, products, review] = await Promise.all([
+  const [account, products, review, replies] = await Promise.all([
     getAccount(session),
     db.collection(C.products).find({ orgId: session.orgId }).sort({ createdAt: 1 }).toArray(),
     db
       .collection(C.actions)
       .countDocuments({ orgId: session.orgId, productId: id, status: "awaiting_approval" }),
+    repliesWaitingCount(session.orgId, id),
   ]);
 
   return (
@@ -49,7 +51,7 @@ export default async function ProductLayout({
           <a className="brand" href="/products" style={{ padding: "4px 10px 14px", gap: 8 }}>
             <Zap size={17} strokeWidth={2.5} /> Engine
           </a>
-          <Nav productId={id} counts={{ review }} />
+          <Nav productId={id} counts={{ review, replies }} />
         </aside>
         <Notifications productId={id} />
         {/* The ideas loop has a kill switch (IDEAS_LOOP=off); the server says whether it is on. */}

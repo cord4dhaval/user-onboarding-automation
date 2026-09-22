@@ -2206,3 +2206,44 @@ button.q-toggle:hover { background: var(--surface-2); }
 .crm-map { width: 100%; min-height: 320px; font-family: var(--font-mono), monospace; font-size: 12px; }
 .crm-stats { display: flex; flex-wrap: wrap; gap: 8px; }
 .crm-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ── replies ───────────────────────────────────────────────────────────────── */
+
+.btn.quiet { background: transparent; border-color: var(--rule); color: var(--ink-2); }
+.btn.quiet:hover { background: var(--surface-2); color: var(--ink); filter: none; }
+
+.replies-filter { margin-bottom: 16px; }
+.reply-list { display: flex; flex-direction: column; gap: 10px; }
+.reply-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: var(--r);
+  padding: 12px 14px;
+}
+/* The edge says the state before the words do: red waits on us, blue waits on approval. */
+.reply-card.waiting { border-left-color: var(--hot); }
+.reply-card.drafted { border-left-color: var(--accent); }
+.reply-card.answered { border-left-color: var(--good); }
+.reply-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.reply-who { font-size: 14.5px; margin-right: 4px; }
+.reply-who a { color: var(--ink); text-decoration: none; }
+.reply-who a:hover { color: var(--accent); }
+.reply-when { margin-left: auto; font-size: 12.5px; }
+.reply-subject { font-size: 13px; margin-top: 6px; }
+.reply-quote {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--rule);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.reply-quote.ours { border-left-color: var(--accent); background: var(--accent-soft); }
+.reply-answer { margin-top: 10px; }
+.reply-answer-head { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.reply-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.reply-foot .spacer { margin-left: auto; }
+.reply-detail { font-size: 12.5px; }

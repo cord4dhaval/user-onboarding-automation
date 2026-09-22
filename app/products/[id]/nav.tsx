@@ -1,11 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { FileText, Inbox, LayoutDashboard, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
+import { FileText, Inbox, LayoutDashboard, MessagesSquare, Palette, Plug, Send, Sparkles, Target, Users } from "lucide-react";
 import type { ReactNode } from "react";
 
 export interface NavCounts {
   review: number;
+  /** Replies nobody has dealt with: unread, or with a drafted answer awaiting approval. */
+  replies: number;
 }
 
 /**
@@ -20,6 +22,7 @@ const WORK = [
   { href: "", label: "Dashboard", icon: <LayoutDashboard /> },
   { href: "/goals", label: "Campaigns", icon: <Target /> },
   { href: "/library", label: "Audience", icon: <Users /> },
+  { href: "/replies", label: "Replies", icon: <MessagesSquare />, counter: "replies" as const },
   { href: "/review", label: "Review", icon: <Inbox />, counter: "review" as const },
 ];
 
@@ -35,7 +38,7 @@ export default function Nav({ productId, counts }: { productId: string; counts: 
   const pathname = usePathname();
   const base = `/products/${productId}`;
 
-  function item(entry: { href: string; label: string; icon: ReactNode; counter?: "review" }) {
+  function item(entry: { href: string; label: string; icon: ReactNode; counter?: keyof NavCounts }) {
     const href = `${base}${entry.href}`;
     // The dashboard tab would otherwise match every child route.
     const active = entry.href === "" ? pathname === base : pathname.startsWith(href);

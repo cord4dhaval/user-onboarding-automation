@@ -4486,6 +4486,8 @@ TOOLS.push({
         text: String(args.text),
         answer: args.answer ? String(args.answer) : null,
         actionId,
+        // The reply this reading is of, so the Replies page joins them without guessing.
+        ...(replyEvent ? { replyEventId: String(replyEvent._id) } : args.event_id ? { replyEventId: String(args.event_id) } : {}),
       },
     });
 
