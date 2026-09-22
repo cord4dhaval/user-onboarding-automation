@@ -25,7 +25,7 @@ import { LEAD_TYPES, paceBand, type LeadType } from "@/engine/rolling.js";
 import { LinkedInClient } from "@/adapters/channel/linkedin/client.js";
 import { SessionError, type LinkedInSession } from "@/adapters/channel/linkedin/session.js";
 import { linkedinCapabilities, linkedinGovernor } from "@/adapters/channel/linkedin/limits.js";
-import { FindRefused, saveLinkedInFind } from "@/engine/linkedinFind.js";
+import { FindRefused, profileUrl, saveLinkedInFind } from "@/engine/linkedinFind.js";
 import { rulesFor } from "@/channels/rules.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import {
@@ -2059,6 +2059,23 @@ export interface HeldMessage {
   delivery?: string;
   /** What a WhatsApp message is sent as, for the chat preview. */
   whatsapp?: WhatsAppFacts;
+  /** Where a LinkedIn touch goes and how that profile was found, for checking it by eye. */
+  linkedin?: LinkedInFacts;
+}
+
+/**
+ * A LinkedIn touch as a reviewer needs to check it: the profile to open, how it was matched
+ * to the lead, and whether an invite carries any words at all.
+ */
+export interface LinkedInFacts {
+  /** The profile it goes to, as a link to open. */
+  url?: string;
+  /** How the profile was found: sure, likely, confirmed by a person, or imported. */
+  found?: { status: string; by?: string; why?: string; evidence?: string };
+  /** A connection invite rather than a message. */
+  invite: boolean;
+  /** Whether the account sends a note with an invite; a free account sends none. */
+  withNote: boolean;
 }
 
 /**
@@ -2337,7 +2354,7 @@ export async function heldMessage(actionId: string): Promise<HeldMessage | null>
 }
 
 /** Where a message on a channel other than email goes, and for WhatsApp what it is sent as. */
-async function channelFacts(action: Document, channel: Document | null): Promise<Pick<HeldMessage, "to" | "whatsapp">> {
+async function channelFacts(action: Document, channel: Document | null): Promise<Pick<HeldMessage, "to" | "whatsapp" | "linkedin">> {
   const db = await getDb();
   // The template the sender will use: the id a first touch carries, else the key the
   // action or its plan step names. Reading the id alone showed every written WhatsApp
@@ -2362,6 +2379,20 @@ async function channelFacts(action: Document, channel: Document | null): Promise
     action.productId ? db.collection(C.products).findOne({ _id: new ObjectId(String(action.productId)) }, { projection: { name: 1 } }) : null,
   ]);
   const to = person ? addressFor(person, String(action.channel)) || undefined : undefined;
+  if (String(action.channel) === "linkedin") {
+    const find = person?.linkedinFind as { status?: string; by?: string; why?: string; evidence?: string } | undefined;
+    // The first LinkedIn touch is the invite; the op is only written once it has gone.
+    const invite = action.op === "invite" || (action.op === undefined && action.firstTouch === true);
+    return {
+      to,
+      linkedin: {
+        url: to ? profileUrl(to) : undefined,
+        found: find?.status ? { status: find.status, by: find.by, why: find.why, evidence: find.evidence } : undefined,
+        invite,
+        withNote: (channel?.capabilities as { inviteNote?: string } | undefined)?.inviteNote === "note",
+      },
+    };
+  }
   if (String(action.channel) !== "whatsapp") return { to };
 
   const approved = template?.providerTemplate as

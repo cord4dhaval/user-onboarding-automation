@@ -43,6 +43,14 @@ const FORMATS = [
  * be one tall column: header, format pills, tools, an imitation browser, a second subject
  * and sender block, then the message, with Approve somewhere below it.
  */
+/** How a lead's LinkedIn profile was matched, in the words the lead page uses. */
+const FOUND_LABEL: Record<string, string> = {
+  sure: "Found by Claude: name and company match",
+  likely: "Found by Claude: likely match, check it",
+  unsure: "Claude was not sure this is them",
+  confirmed: "Confirmed by a person",
+};
+
 export default function PreviewDrawer({
   productId,
   actionId,
@@ -133,6 +141,9 @@ export default function PreviewDrawer({
   const html = format === "letter" ? message?.bodyLetter : format === "html" ? message?.bodyHtml : undefined;
   const email = message?.channel === "email";
   const whatsapp = message?.channel === "whatsapp" ? message.whatsapp : undefined;
+  const linkedin = message?.channel === "linkedin" ? message.linkedin : undefined;
+  // A free account's invite carries no words: the template text is never sent.
+  const bareInvite = Boolean(linkedin?.invite && !linkedin.withNote);
   // A template goes by name with only its variables filled in, so its words are the ones
   // Meta approved: editing or rewriting them here would change the preview and not the send.
   // Unless the template takes words written for this lead in {{message}}: those are theirs
@@ -171,7 +182,27 @@ export default function PreviewDrawer({
             <aside className="pv-side">
               {/* First, and copyable: the number is what finds this chat in WATI or on the
                   phone, to check what already went to them outside this list. */}
-              {message.to ? (
+              {linkedin?.url ? (
+                <section className="pv-sec" aria-label="Their LinkedIn profile">
+                  {/* The one thing to check before approving an invite: is this them. The
+                      profile opens in a new tab, and how it was matched sits beneath it. */}
+                  <h3 className="pv-h">LinkedIn profile</h3>
+                  <div className="pv-to">
+                    <a className="pv-num" href={linkedin.url} target="_blank" rel="noreferrer">
+                      {linkedin.url.replace("https://www.", "")}
+                    </a>
+                    <CopyButton text={linkedin.url} label="Copy link" />
+                  </div>
+                  {linkedin.found ? (
+                    <p className="pv-meta">
+                      {FOUND_LABEL[linkedin.found.status] ?? linkedin.found.status}
+                      {linkedin.found.by === "import" ? " (18 September search)" : ""}
+                      {linkedin.found.why ? `. ${linkedin.found.why}` : ""}
+                      {linkedin.found.evidence ? ` Matched on: ${linkedin.found.evidence}` : ""}
+                    </p>
+                  ) : null}
+                </section>
+              ) : message.to ? (
                 <section className="pv-sec" aria-label="Their number">
                   <h3 className="pv-h">{whatsapp ? "WhatsApp number" : "Sends to"}</h3>
                   <div className="pv-to">
@@ -201,7 +232,7 @@ export default function PreviewDrawer({
               {/* Changing the message, rather than only deciding on it: fix a line, move the
                   date, or ask for it to be written again. Beside the message rather than
                   above it, so an edit is made with the email it changes still in view. */}
-              {message.editable && (
+              {message.editable && !bareInvite && (
                 <div className="pv-tools">
                   <div className="row">
                     {!fixedWords && (
@@ -400,6 +431,12 @@ export default function PreviewDrawer({
                   <strong>This message cannot be shown</strong>
                   {message.previewError}
                 </div>
+              ) : bareInvite ? (
+                <div className="empty">
+                  <strong>Connection request, no note</strong>
+                  This account has no Premium, so LinkedIn sends the invite without a message. They see only the
+                  request from the profile. The words come after they accept.
+                </div>
               ) : whatsapp ? (
                 <WhatsAppPreview
                   device={device}
@@ -449,11 +486,13 @@ export default function PreviewDrawer({
                     name="decision"
                     value="approve"
                     icon={<Check />}
-                    pendingLabel={dueLater ? "Approving…" : "Sending…"}
+                    pendingLabel={dueLater || linkedin ? "Approving…" : "Sending…"}
                   >
                     {dueLater && message.dueAt
                       ? `Approve — sends ${istWeekday(message.dueAt)}, ${istTime(message.dueAt)}`
-                      : "Approve — sends now"}
+                      : linkedin
+                        ? "Approve — sends 7–11 am their time"
+                        : "Approve — sends now"}
                   </SubmitButton>
                   <SubmitButton name="decision" value="reject" variant="quiet" icon={<X />} pendingLabel="Rejecting…">
                     Reject
@@ -473,6 +512,10 @@ export default function PreviewDrawer({
               <p className="pv-says">
                 {!waiting
                   ? outcomeLine(message)
+                  : linkedin
+                    ? linkedin.invite
+                      ? "Approving sends the connection request between 7 and 11 am in their time."
+                      : "Approving sends this LinkedIn message between 7 and 11 am in their time, once they are connected."
                   : whatsapp
                     ? whatsapp.template
                       ? `Approving sends the approved WhatsApp template ${whatsapp.template}, with their name${whatsapp.written ? " and the words written for them" : ""} filled in. It can go whether or not they have written to us.`
@@ -491,7 +534,7 @@ export default function PreviewDrawer({
                 {message.versionsError ? ` The other versions could not be shown: ${message.versionsError}.` : ""}
                 {/* A body rendered on open, not read off the action: the words are the ones
                     that go, but a template edit before then would change them. */}
-                {waiting && message.preview && !message.previewError
+                {waiting && message.preview && !message.previewError && !linkedin
                   ? " Greeting, button and opt-out line are added at send, as shown."
                   : ""}
               </p>
