@@ -620,11 +620,13 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // bulk mail: an unsubscribe control under it reads as a form letter.
       if (!dryRun && !isReply) outbound.listUnsubscribeUrl = vars.opt_out_url;
 
-      // Only an answer joins the conversation: it is one side of something the person wrote,
-      // and arriving as a fresh message reads as nobody having seen it. Every campaign touch
-      // goes as its own mail — each has its own subject and stands on its own, and stacking
-      // them under the welcome buried every new one inside an old thread (decided 2026-09-22).
-      const conversation = isReply
+      // Only an answer to a mail the lead wrote joins a thread: it is one side of something
+      // they started, and arriving as a fresh message reads as nobody having seen it. Every
+      // campaign touch goes as its own mail — stacking them under the welcome buried every
+      // new one inside an old thread (decided 2026-09-22). A "reply" carrying its own subject
+      // (the mail an AI call promised) is not an answer to their mail, so it goes on its own too.
+      const conversation =
+        isReply && !prior?.subject
         ? await conversationFor(
             opts.orgId,
             opts.productId,
@@ -1086,22 +1088,23 @@ interface Conversation {
 }
 
 /**
- * The conversation a message to this person should join, if there is one.
+ * The thread an answer should join: the one the lead's own email is in.
  *
- * Two things can be the newest message in it: something we sent, or something they wrote
- * back. Whichever is later is what `In-Reply-To` names — pointing at our own last send when
- * they have since replied threads the message under the wrong parent, and clients that
- * build the tree from headers show the answer above the question.
+ * Only something they wrote by email opens a thread to answer into. A lead who replied on
+ * WhatsApp, or who has only ever received our mail, has no email of theirs to sit under,
+ * and threading the answer under our own campaign mail is exactly the stacking every
+ * campaign touch is kept out of. Returns undefined there, and the answer goes as its own mail.
  *
- * Returns undefined for a first touch, which is a new conversation by definition.
+ * Inside their thread the parent is whichever is newest: their mail, or an answer of ours
+ * sent after it (a "later" check-in follows the answer it promised). Pointing `In-Reply-To`
+ * at an older message shows the answer above the question in clients that build the tree
+ * from headers.
  *
- * Scoped to one channel document rather than to the channel kind. Thread handles belong to
- * the mailbox that minted them, so a person whose sender was switched off and who was moved
- * to another mailbox must start a new conversation there — asked by kind, this found the old
- * mailbox's thread and handed it to an account that has never seen it, which the provider
- * answers with a 404 and the send is lost.
+ * Thread handles belong to the mailbox that minted them. Their mail reached one mailbox; an
+ * answer going out from another would hand Gmail a threadId that account has never seen,
+ * which it answers with a 404 and the send is lost — so a different mailbox starts fresh.
  */
-async function conversationFor(
+export async function conversationFor(
   orgId: string,
   productId: string,
   personId: string,
@@ -1110,59 +1113,6 @@ async function conversationFor(
 ): Promise<Conversation | undefined> {
   const db = await getDb();
 
-  const lastSent = await db
-    .collection(C.actions)
-    // Either half is enough to continue a conversation, and no provider gives both. Gmail
-    // hands back a threadId and hides the Message-ID until asked; SES has no threads at all
-    // and threading there is only ever the RFC headers. Requiring thread.id — which is what
-    // this asked for when Gmail was the only sender — matches nothing on SES, so every
-    // follow-up would start its own conversation.
-    .find({
-      orgId,
-      productId,
-      personId,
-      channelId,
-      status: { $in: ["sent", "dispatched"] },
-      $or: [{ "thread.id": { $exists: true } }, { "thread.messageId": { $exists: true } }, { providerMessageId: { $exists: true } }],
-    })
-    .sort({ sentAt: -1 })
-    .limit(1)
-    .next();
-  if (!lastSent) return undefined;
-
-  // Absent where the provider handed back only its own id: a LinkedIn invite has an
-  // invitation urn and no thread, and reading through it made every DM after an invite fail.
-  const thread = (lastSent.thread ?? {}) as { id?: string; messageId?: string; references?: string[] };
-
-  // The parent's RFC Message-ID, fetched the first time anything needs to point at it and
-  // written back so no later touch in this conversation asks again. A provider that cannot
-  // answer — no read scope, message deleted — leaves threading to threadId alone.
-  let parentMessageId = thread.messageId;
-  if (!parentMessageId && lastSent.providerMessageId && adapter.resolveMessageId) {
-    parentMessageId = await adapter.resolveMessageId(String(lastSent.providerMessageId));
-    if (parentMessageId) {
-      await db.collection(C.actions).updateOne(
-        { _id: lastSent._id },
-        {
-          $set: {
-            "thread.messageId": parentMessageId,
-            "thread.references": [...(thread.references ?? []), parentMessageId],
-          },
-        },
-      );
-    }
-  }
-
-  const references = [...(thread.references ?? []), parentMessageId].filter(Boolean) as string[];
-  const conversation: Conversation = {
-    threadId: thread.id,
-    inReplyTo: parentMessageId,
-    references: [...new Set(references)],
-  };
-
-  // Their reply, if it came after our last send and carried an id we can point at. A reply
-  // read before this change has no rfcMessageId, so the chain quietly falls back to our own
-  // last message rather than breaking.
   const reply = await db
     .collection(C.events)
     .find({
@@ -1170,19 +1120,56 @@ async function conversationFor(
       productId,
       personId,
       type: "reply_received",
-      ts: { $gt: lastSent.sentAt as Date },
+      channel: "email",
       "payload.rfcMessageId": { $exists: true, $ne: null },
+      "payload.threadId": { $exists: true, $ne: null },
     })
     .sort({ ts: -1 })
     .limit(1)
     .next();
-  if (reply) {
-    const theirId = String((reply.payload as { rfcMessageId?: unknown }).rfcMessageId);
-    conversation.inReplyTo = theirId;
-    conversation.references = [...references, theirId];
-    const theirThread = (reply.payload as { threadId?: unknown }).threadId;
-    if (theirThread) conversation.threadId = String(theirThread);
+  if (!reply) return undefined;
+  const theirs = reply.payload as { rfcMessageId: string; threadId: string; mailbox?: string };
+
+  const channel = await db.collection(C.channels).findOne({ _id: new ObjectId(channelId) }, { projection: { from: 1, connectionId: 1 } });
+  const connection = channel?.connectionId
+    ? await db.collection(C.connections).findOne({ _id: new ObjectId(String(channel.connectionId)) }, { projection: { accountEmail: 1 } })
+    : null;
+  const bare = (value: unknown) => (/<([^>]+)>/.exec(String(value ?? ""))?.[1] ?? String(value ?? "")).trim().toLowerCase();
+  const received = bare(theirs.mailbox);
+  if (!received || (received !== bare(connection?.accountEmail) && received !== bare(channel?.from))) return undefined;
+
+  // Ours in their thread, newest first: the mail they answered, or an answer already given.
+  const ours = await db
+    .collection(C.actions)
+    .find({ orgId, productId, personId, channelId, "thread.id": theirs.threadId, status: { $in: ["sent", "dispatched"] } })
+    .sort({ sentAt: -1 })
+    .limit(1)
+    .next();
+
+  // An RFC Message-ID of ours, fetched the first time anything points at it and written
+  // back so no later message in this thread asks again. Gmail replaces the id we submit
+  // with its own, so it can only be read back after the send.
+  const thread = (ours?.thread ?? {}) as { messageId?: string; references?: string[] };
+  let ourId = thread.messageId;
+  if (ours && !ourId && ours.providerMessageId && adapter.resolveMessageId) {
+    ourId = await adapter.resolveMessageId(String(ours.providerMessageId));
+    if (ourId) {
+      await db.collection(C.actions).updateOne(
+        { _id: ours._id },
+        { $set: { "thread.messageId": ourId, "thread.references": [...(thread.references ?? []), ourId] } },
+      );
+    }
   }
+
+  const oursIsNewer = Boolean(ours && ourId && (ours.sentAt as Date) > (reply.ts as Date));
+  const chain = oursIsNewer
+    ? [...(thread.references ?? []), ourId]
+    : [...(thread.references ?? []), ourId, theirs.rfcMessageId];
+  const conversation: Conversation = {
+    threadId: theirs.threadId,
+    inReplyTo: oursIsNewer ? ourId : theirs.rfcMessageId,
+    references: [...new Set(chain.filter(Boolean) as string[])],
+  };
 
   return conversation;
 }
