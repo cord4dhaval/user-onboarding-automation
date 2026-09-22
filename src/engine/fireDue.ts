@@ -241,6 +241,11 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             // was reaching real people as the welcome mail arriving twice.
             usedKeys: await rungsSentTo(String(person._id)),
             ...(rungKey ? { rungKey } : {}),
+            // What they most recently told the sales team, then what their form said.
+            interest: [
+              (person.news as { what?: string } | undefined)?.what,
+              (person.enrichment as { form?: { main_problem?: string } } | undefined)?.form?.main_problem,
+            ].filter(Boolean).join(" "),
           });
 
       if (!template) {

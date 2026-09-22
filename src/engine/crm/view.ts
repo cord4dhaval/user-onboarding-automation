@@ -31,6 +31,8 @@ export interface CrmActivityView {
   meta?: Record<string, unknown>;
   recordId: string;
   review: boolean;
+  /** When our copy first held it, which can be long after it happened: what a plan could have known. */
+  knownAt?: Date;
 }
 
 export interface CrmPersonView {
@@ -98,6 +100,7 @@ export async function crmForPerson(orgId: string, productId: string, personId: s
       meta: r.meta as Record<string, unknown> | undefined,
       recordId: String(r.recordId),
       review: reviewIds.has(String(r.recordId)),
+      ...(r.createdAt ? { knownAt: new Date(r.createdAt) } : {}),
     })),
   };
 }

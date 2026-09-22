@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { gateOpen, nextStep, type StepEngagement } from "./advance.js";
 import { engineRenderedKeysFor, skeletonFor, writtenTemplatesFor, type Skeleton } from "./engineSteps.js";
+import { newsSincePlan } from "./news.js";
 import { FRAME_BODY_MAX_WORDS, frameKeyOf, isRolling, isRollingPlan } from "./rolling.js";
 
 /**
@@ -43,6 +44,8 @@ export interface PlanView {
   next_step_to_write: PlanStepView | null;
   /** Messages already queued, awaiting approval or sending for this campaign. */
   waiting: number;
+  /** When news this plan was written without reached us. Present only then: the plan is stale. */
+  news_since_plan?: string;
   note: string;
 }
 
@@ -89,8 +92,14 @@ export async function planViewFor(instance: Document, actions: Document[], band:
     if (WRITTEN_AND_LIVE.includes(String(a.status))) delivered.add(String(a.angle ?? "").toLowerCase());
   }
   const engagement = engagementFrom(actions, band);
+  // News that reached us after this plan was written makes its unwritten steps stale, as
+  // advance() reads it: nothing more is written from it, a new plan is.
+  const person = rolling && isRollingPlan(plan) && instance.personId && ObjectId.isValid(String(instance.personId))
+    ? await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) }, { projection: { newsAt: 1 } })
+    : null;
+  const newsAt = newsSincePlan(person, plan.createdAt);
   // In a rolling campaign only a plan written for it runs; an older one is history.
-  const next = rolling && !isRollingPlan(plan) ? null : nextStep(plan, written, delivered, engagement);
+  const next = (rolling && !isRollingPlan(plan)) || newsAt ? null : nextStep(plan, written, delivered, engagement);
   const nextId = next ? Number(next.id) : null;
 
   const steps: PlanStepView[] = ((plan.steps ?? []) as Document[])
@@ -122,7 +131,9 @@ export async function planViewFor(instance: Document, actions: Document[], band:
   const nextView = nextId === null ? null : steps.find((s) => s.step_id === nextId) ?? null;
   let note: string;
   let toWrite: PlanStepView | null = null;
-  if (waiting > 0) {
+  if (newsAt) {
+    note = `News about this person reached us at ${newsAt.toISOString()}, after this plan was written (see since_last_plan). Its unsent steps are stale: plan again with plan_goal, built on that news, before writing anything.`;
+  } else if (waiting > 0) {
     note = `A message is already waiting for this person. Write nothing until it has gone out.`;
   } else if (rolling && !isRollingPlan(plan)) {
     note = `This campaign plans one or two touches at a time, and this plan was written before that. It is spent; the engine asks for this lead's next plan at their checkpoint.`;
@@ -156,6 +167,7 @@ export async function planViewFor(instance: Document, actions: Document[], band:
     steps,
     next_step_to_write: toWrite,
     waiting,
+    ...(newsAt ? { news_since_plan: newsAt.toISOString() } : {}),
     note,
   };
 }

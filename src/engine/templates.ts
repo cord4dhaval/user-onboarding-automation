@@ -2,6 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import type { ProductConfig } from "../schemas/product.js";
+import { heardWords } from "./news.js";
 
 /**
  * Builds the starter template set for a product from its config alone: the whole stage
@@ -148,6 +149,8 @@ export interface TemplatePick {
    * not part of that sequence at all.
    */
   rungKey?: string;
+  /** What the person said they want (the latest CRM note or message): a variant about it goes first. */
+  interest?: string;
 }
 
 /**
@@ -177,7 +180,7 @@ export async function resolveTemplateFor(pick: TemplatePick): Promise<Document |
   // nothing once every variant has been sent to this person, so the named-rung logic
   // below still decides what a spent rung does.
   if (pick.rungKey) {
-    const variant = chooseVariant(candidates, { family: pick.rungKey, segment: pick.segment, usedKeys: used });
+    const variant = chooseVariant(candidates, { family: pick.rungKey, segment: pick.segment, usedKeys: used, interest: pick.interest });
     if (variant) return variant;
   }
 
@@ -416,6 +419,14 @@ export interface VariantPick {
   segment?: string;
   usedKeys?: Set<string>;
   rnd?: () => number;
+  /** What the person said they want. Variants that speak to it are drawn from first. */
+  interest?: string;
+}
+
+/** Everything a template says, for matching it against what a person asked for. */
+function templateWords(t: Document): Set<string> {
+  const blocks = (t.blocks ?? []) as Array<{ fallback?: unknown }>;
+  return heardWords([t.name, ...blocks.map((b) => (typeof b.fallback === "string" ? b.fallback : ""))].join(" "));
 }
 
 /**
@@ -444,7 +455,7 @@ export function chooseVariant(candidates: Document[], pick: VariantPick): Docume
     if (!current || (mine && !currentMine)) byKey.set(key, t);
   }
 
-  const pool = [...byKey.values()].filter((t) => {
+  let pool = [...byKey.values()].filter((t) => {
     if (pick.usedKeys?.has(String(t.key))) return false;
     // Already shown under another template's name, such as a welcome that carried the same
     // example: offering it again is a repeat, whatever the key says.
@@ -453,6 +464,15 @@ export function chooseVariant(candidates: Document[], pick: VariantPick): Docume
     return only.length === 0 || (pick.segment !== undefined && only.includes(pick.segment));
   });
   if (pool.length === 0) return null;
+  // A lead who told the sales team what they want gets the variant about it, where there is
+  // one: a fixed email sent in place of a plan should at least be about their need. The
+  // statistics then choose among equals.
+  const heard = heardWords(pick.interest);
+  if (heard.size && pool.length > 1) {
+    const fit = new Map(pool.map((t) => [t, [...templateWords(t)].filter((w) => heard.has(w)).length]));
+    const best = Math.max(...fit.values());
+    if (best > 0) pool = pool.filter((t) => fit.get(t) === best);
+  }
   if (pool.length === 1) return pool[0]!;
 
   const rnd = pick.rnd ?? Math.random;

@@ -61,6 +61,8 @@ export async function writingBriefFor(input: {
   /** The lead's run of this campaign, so the idea bank can be ranked against the rest of it. */
   goalInstanceId?: string;
   goalKey?: string;
+  /** What they and the sales team said since they arrived (CRM notes, their WhatsApp messages): ranked above the form. */
+  said?: string;
 }): Promise<WritingBrief> {
   const { orgId, productId, person, goal, product, actions } = input;
   const db = await getDb();
@@ -134,7 +136,7 @@ export async function writingBriefFor(input: {
       .map((v) => String(v ?? ""))
       .join(" ")
       .slice(0, 2000);
-    const ranked = rankIdeas(bank, { text: leadText, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had, limits, results ? ideaRecords(results, group) : undefined);
+    const ranked = rankIdeas(bank, { text: leadText, said: input.said, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had, limits, results ? ideaRecords(results, group) : undefined);
     const fresh = ranked.filter((i) => !i.already_had);
     ideas = {
       note: loop

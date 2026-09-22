@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { ROLLING_MAX_STEPS } from "./rolling.js";
 import { ideaPerformance, type IdeaRow } from "./outcomes.js";
+import { heardWords } from "./news.js";
 
 /**
  * The product's idea bank, used on every plan.
@@ -207,19 +208,42 @@ export function recordText(rec: (IdeaRecord & { scope: "group" | "all" }) | null
 const words = (text: string) => new Set(String(text ?? "").toLowerCase().match(/[a-z₹]{3,}/g) ?? []);
 
 /**
+ * How much what they said after arriving (lead.said: CRM notes, their own WhatsApp messages)
+ * lifts each idea. Matched against what each idea proves, its keywords and proof, and by how
+ * rare the word is across the bank: "CRM" after a walk-through lifts the one idea about the
+ * CRM hard, a word every proof shares lifts nothing much.
+ */
+export function saidScores(ideas: Idea[], said: string | undefined): Map<number, number> {
+  const heard = heardWords(said);
+  const scores = new Map<number, number>();
+  if (heard.size === 0) return scores;
+  const proves = new Map(ideas.map((idea) => [idea.n, words(`${(idea.keywords ?? []).join(" ")} ${idea.proof ?? ""}`)]));
+  const spread = new Map<string, number>();
+  for (const set of proves.values()) for (const w of set) if (heard.has(w)) spread.set(w, (spread.get(w) ?? 0) + 1);
+  for (const [n, set] of proves) {
+    let score = 0;
+    for (const w of set) if (spread.has(w)) score += 6 / spread.get(w)!;
+    if (score) scores.set(n, Math.round(score));
+  }
+  return scores;
+}
+
+/**
  * The bank ranked for one lead: their own words (the problem they typed, their role, what
- * their company says it does) against each idea's keywords and title, their segment, and a
- * penalty for ideas the campaign has leaned on this week. Ideas they already had come last.
+ * their company says it does) against each idea's keywords and title, what they said since
+ * (saidScores), their segment, and a penalty for ideas the campaign has leaned on this week.
+ * Ideas they already had come last.
  */
 export function rankIdeas(
   ideas: Idea[],
-  lead: { text: string; segment?: string | null },
+  lead: { text: string; said?: string; segment?: string | null },
   usage: Map<number, number>,
   had: Set<number>,
   limits: IdeaLimits = { busyAt: IDEA_BUSY_AT, cap: IDEA_CAP },
   records?: IdeaRecords,
 ): Array<Idea & { score: number; used_this_week: number; already_had: boolean; record?: string }> {
   const leadWords = words(lead.text);
+  const heard = saidScores(ideas, lead.said);
   return ideas
     .filter((idea) => idea.usable !== false)
     .map((idea) => {
@@ -228,6 +252,7 @@ export function rankIdeas(
       // Its other shapes count too: "WhatsApp", "GST", "dispatch" may only be in one of them.
       for (const w of words(`${idea.title} ${idea.detail ?? ""} ${(idea.also ?? []).join(" ")}`)) if (leadWords.has(w)) score += 1;
       if (lead.segment && (idea.segments ?? []).includes(lead.segment)) score += 2;
+      score += heard.get(idea.n) ?? 0;
       const used = usage.get(idea.n) ?? 0;
       if (used >= limits.busyAt) score -= 2 * (used - limits.busyAt + 1);
       // plan_goal refuses a step whose ideas are all at the cap, so the card never leads with one.

@@ -6,6 +6,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { detectMovement } from "./detect.js";
 import { looksLikeOptOut } from "./inbound.js";
 import { notify } from "./notify.js";
+import { recordNews } from "./news.js";
 import { mailOwner } from "./ownerMail.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
 import { suppress } from "./suppression.js";
@@ -208,6 +209,9 @@ export async function applyWhatsAppEvent(
   if (!answered) {
     // Meta opens the 24-hour window on any message they write, so free text may still go.
     await db.collection(C.people).updateOne({ _id: person._id }, { $set: { "repliedOn.whatsapp": event.at } });
+    // Not an answer to the campaign, but still them talking to the company: news their
+    // next planned touch was written without.
+    await recordNews(personId, { at: event.at, source: "sales_whatsapp", what: event.text.trim() || whatsAppSent(event.messageType) || "a message" });
     return `not a reply to us: ${notAReply}`;
   }
 

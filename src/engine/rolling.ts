@@ -86,7 +86,7 @@ export interface CheckpointInput {
 
 export type CheckpointDecision =
   | { kind: "watch"; until: Date }
-  | { kind: "ask"; reason: "window_closed" | "signal" | "nothing_sent" }
+  | { kind: "ask"; reason: "window_closed" | "signal" | "nothing_sent" | "news" }
   | { kind: "waiting"; since: Date }
   | { kind: "fallback"; since: Date };
 

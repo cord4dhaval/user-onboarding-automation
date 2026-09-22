@@ -12,6 +12,9 @@ import { plain, renderTemplate, resolveBlocks } from "../engine/compose";
 import { renderHtml, renderLetter } from "../engine/html";
 import { expandShortUnsubscribe, shortUnsubscribeUrl } from "../engine/unsubscribe";
 import { DEFAULT_KIT } from "../engine/brand";
+import { heardWords, newsSincePlan, saidText, sinceLastPlan, staleReason } from "../engine/news";
+import { rankIdeas, saidScores } from "../engine/ideas";
+import { chooseVariant } from "../engine/templates";
 
 let failures = 0;
 function check(name: string, cond: boolean) {
@@ -365,6 +368,45 @@ check("a tampered code is refused", expandShortUnsubscribe(short.split("/u/")[1]
 check("garbage is refused", expandShortUnsubscribe("nonsense") === null);
 
 check("plain() drops bold and italics", plain("**a** and _b_.") === "a and b.");
+
+console.log("news since the plan");
+{
+  const plannedAt = new Date("2026-09-21T11:17:43Z");
+  check("no news → plan current", newsSincePlan({}, plannedAt) === null);
+  check("news that reached us after the plan → stale", newsSincePlan({ newsAt: new Date("2026-09-21T12:01:17Z") }, plannedAt) !== null);
+  check("news from before the plan → current", newsSincePlan({ newsAt: new Date("2026-09-21T10:00:00Z") }, plannedAt) === null);
+  check("stale skip reads as a replaced plan, not a failure", /^plan replaced/.test(staleReason({ news: { source: "crm", what: "wants CRM" } })));
+  // The sales note was written at 10:36, before the plan, but reached us at 12:01, after it.
+  const crm = {
+    enabled: true,
+    records: [],
+    activity: [
+      { at: new Date("2026-09-21T10:36:50Z"), knownAt: new Date("2026-09-21T12:01:17Z"), kind: "note" as const, type: "NOTE", text: "Demo is completed and he is more interested to purchase CRM, and we have offered free trial for 3 users.", recordId: "r", review: false },
+      { at: new Date("2026-09-21T10:36:57Z"), knownAt: new Date("2026-09-21T12:01:17Z"), kind: "followup" as const, type: "FOLLOWUP", text: "scheduled follow-up", recordId: "r", review: false },
+      { at: new Date("2026-09-18T09:17:13Z"), knownAt: new Date("2026-09-18T09:30:00Z"), kind: "meeting_booked" as const, type: "MEETING", recordId: "r", review: false },
+    ],
+  };
+  const since = sinceLastPlan({ planWrittenAt: plannedAt, crm, actions: [{ channel: "email", content: { subject: "One team, 7 days" }, firstOpenedAt: new Date("2026-09-21T12:14:53Z") }], events: [] });
+  check("a note written before the plan but synced after it is news", since?.items.some((i) => i.what.includes("purchase CRM")) === true);
+  check("follow-up admin is not news", since?.items.every((i) => !i.what.includes("scheduled follow-up")) === true);
+  check("history the plan already had is left out", since?.items.every((i) => !i.from.includes("meeting_booked")) === true);
+  check("our own opens since the plan are listed", since?.items.some((i) => i.what.startsWith("opened")) === true);
+  check("deal talk is not a need: only CRM is heard", [...heardWords(crm.activity[0]!.text)].join(",") === "crm");
+  const bank = [
+    { n: 1, title: "Evening calls", hook: "daily_question", proof: "Written end-of-day summary by 6pm" },
+    { n: 2, title: "Deals that went quiet", hook: "found_out_late", proof: "CRM that logs activity automatically and alerts when a lead or deal goes quiet." },
+    { n: 3, title: "Setup", hook: "setup", proof: "7-day trial with no card, free" },
+  ];
+  const ranked = rankIdeas(bank, { text: "Results KPIs pipeline", said: saidText(crm, undefined), segment: "founder" }, new Map(), new Set());
+  check("what they told the sales team lifts the CRM idea to the top", ranked[0]!.n === 2);
+  check("'free trial' in a note lifts no setup idea", (saidScores(bank, saidText(crm, undefined)).get(3) ?? 0) === 0);
+  const variants = [
+    { key: "hours", family: "f", name: "Hours by project", blocks: [{ fallback: "See where the hours go" }] },
+    { key: "crm", family: "f", name: "Deals that go quiet", blocks: [{ fallback: "The CRM alerts you when a deal goes quiet" }] },
+  ];
+  check("a fallback variant about what they asked for goes first", chooseVariant(variants, { family: "f", interest: "more interested to purchase CRM", rnd: () => 0.99 })?.key === "crm");
+  check("no interest → statistics decide as before", chooseVariant(variants, { family: "f", rnd: () => 0.5 }) !== null);
+}
 
 if (failures) {
   console.error(`\n${failures} check(s) failed`);

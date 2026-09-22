@@ -5,11 +5,14 @@ import { pluck } from "../../mcp/binding.js";
 import type { CrmKind, CrmMap, CrmMatchedBy, CrmMeeting, CrmSnapshot } from "../../schemas/crm.js";
 import { CrmClient, RateLimited, dateOf, fingerprint, lowerEmail, phoneKey } from "./client.js";
 import { kindOf } from "./map.js";
+import { NEWS_KINDS, recordNews } from "../news.js";
 
 /**
  * Keeps our own copy of what the sales team's CRM knows about each of our people.
  *
- * Read-only, and additive: nothing here changes what the engine sends. It stores the
+ * Read-only towards the CRM. What it stores never changes a message by itself, but a new note,
+ * meeting or call is stamped on the person as news (news.ts), and that makes the planner
+ * write their next touch again with it in view. It stores the
  * record, its history, its notes and its meetings in our database so the person's page and
  * the planner can tell the whole story without asking the CRM — and keep telling it when the
  * CRM is unreachable or the connection is later switched off.
@@ -179,6 +182,15 @@ async function storeActivity(
     })),
     { ordered: false },
   );
+  // Rows seen for the first time that someone did or said: news the lead's plan was written
+  // without. The latest one is stamped, which is what wakes the planner.
+  if (personId) {
+    const fresh = Object.keys(result.upsertedIds ?? {})
+      .map((i) => rows[Number(i)]!)
+      .filter((r) => NEWS_KINDS.has(r.kind))
+      .sort((a, b) => b.at.getTime() - a.at.getTime())[0];
+    if (fresh) await recordNews(personId, { at: fresh.at, source: "crm", kind: fresh.kind, what: fresh.text ?? fresh.type }, now);
+  }
   return result.upsertedCount;
 }
 

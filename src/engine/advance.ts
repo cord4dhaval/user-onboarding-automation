@@ -8,6 +8,7 @@ import { channelKinds, pickChannelFrom, loadChannels, persistAssignments, persis
 import type { ChannelKey } from "../schemas/common.js";
 import { checkpoint, clickedRecently, frameKeyOf, isRolling, isRollingPlan, leadTypeOf, paceBand, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
 import { claudePlansLinkedIn } from "./linkedin.js";
+import { newsSincePlan, staleReason } from "./news.js";
 
 /**
  * Turning a plan into messages, on the clock, for everybody.
@@ -179,7 +180,7 @@ export async function advance(
       .collection(C.people)
       .find(
         { _id: { $in: instances.map((i) => new ObjectId(String(i.personId))) } },
-        { projection: { temp: 1, belief: 1, lifecycle: 1, suppressedAt: 1, lastReplyAt: 1, lastContactedAt: 1, consent: 1, stage: 1, needsClassification: 1, "enrichment.form.timeline": 1 } },
+        { projection: { temp: 1, belief: 1, lifecycle: 1, suppressedAt: 1, lastReplyAt: 1, lastContactedAt: 1, consent: 1, stage: 1, needsClassification: 1, "enrichment.form.timeline": 1, newsAt: 1, news: 1 } },
       )
       .toArray(),
     db
@@ -193,7 +194,7 @@ export async function advance(
       .collection(C.actions)
       .find(
         { ...s, goalInstanceId: { $in: instanceIds } },
-        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1, channel: 1, sentAt: 1, firstOpenedAt: 1, firstClickedAt: 1, firstRepliedAt: 1, "delivery.status": 1 } },
+        { projection: { goalInstanceId: 1, planStepId: 1, status: 1, angle: 1, channel: 1, sentAt: 1, reviewedAt: 1, firstOpenedAt: 1, firstClickedAt: 1, firstRepliedAt: 1, "delivery.status": 1 } },
       )
       .toArray(),
   ]);
@@ -213,6 +214,8 @@ export async function advance(
   const planById = new Map(plans.map((p) => [String(p._id), p]));
 
   const pendingBy = new Map<string, number>();
+  /** Messages waiting that nobody has approved, with when each was made. */
+  const unsentBy = new Map<string, Array<{ id: ObjectId; createdAt: number }>>();
   const writtenBy = new Map<string, Set<number>>();
   /** What this person did with what we sent, for the gates on their remaining steps. */
   const engagementBy = new Map<string, { opened: boolean; clicked: boolean }>();
@@ -242,6 +245,12 @@ export async function advance(
     }
     if (["queued", "awaiting_approval", "sending"].includes(String(action.status))) {
       pendingBy.set(key, (pendingBy.get(key) ?? 0) + 1);
+    }
+    // Waiting and nobody has approved it yet: what news can still take back.
+    if (["queued", "awaiting_approval"].includes(String(action.status)) && !action.reviewedAt) {
+      const list = unsentBy.get(key) ?? [];
+      list.push({ id: action._id as ObjectId, createdAt: (action._id as ObjectId).getTimestamp().getTime() });
+      unsentBy.set(key, list);
     }
     if (action.firstOpenedAt || action.firstClickedAt) {
       const e = engagementBy.get(key) ?? { opened: false, clicked: false };
@@ -295,6 +304,8 @@ export async function advance(
   // Rolling campaigns: plans asked for at a checkpoint, and the instances to stamp with the ask.
   const planAsks: Array<{ subjectId: string; payload: Record<string, unknown>; productId: string; campaignKey: string; priority: number }> = [];
   const askedIds: ObjectId[] = [];
+  // Unapproved messages from plans that news has overtaken, skipped once the pass is done.
+  const staleSkips: Array<{ ids: ObjectId[]; reason: string }> = [];
 
   for (const instance of instances) {
     if (Date.now() > deadline) break;
@@ -335,6 +346,21 @@ export async function advance(
     if (budget.touches !== undefined && spent >= budget.touches) {
       summary.parked++;
       continue;
+    }
+
+    // News the current plan was written without (a note the sales team logged, a message
+    // they sent the sales number) makes what it left unsent stale. Messages nobody has
+    // approved yet are taken back, and the plan is asked for again below, the way a reply
+    // ends the old one.
+    const currentPlan = planById.get(String(instance.currentPlanId)) ?? null;
+    const newsAt =
+      isRolling(goal) && isRollingPlan(currentPlan) ? newsSincePlan(personById.get(String(instance.personId)), currentPlan?.createdAt) : null;
+    if (newsAt) {
+      const stale = (unsentBy.get(goalInstanceId) ?? []).filter((m) => m.createdAt < newsAt.getTime());
+      if (stale.length) {
+        staleSkips.push({ ids: stale.map((m) => m.id), reason: staleReason(personById.get(String(instance.personId))) });
+        pendingBy.set(goalInstanceId, (pendingBy.get(goalInstanceId) ?? 0) - stale.length);
+      }
     }
 
     // Anything already waiting means this person's next message exists. Writing a second one
@@ -384,7 +410,7 @@ export async function advance(
         summary.skipped.push({ goalInstanceId, reason: "waiting to be read before the first plan" });
         continue;
       }
-      step = isRollingPlan(plan)
+      step = isRollingPlan(plan) && !newsAt
         ? nextStep(plan, writtenBy.get(goalInstanceId) ?? new Set(), deliveredBy.get(goalInstanceId) ?? new Set(), engagementNow)
         : null;
       if (!step) {
@@ -400,17 +426,20 @@ export async function advance(
         }
         // The first ask does not wait out a window: the welcome is not a question the next
         // plan depends on, and a lead who just arrived is the one most worth a quick second touch.
+        // News since the plan asks at once, unless the ask already went out after it.
         const decision: CheckpointDecision = !askedAt
           ? { kind: "ask", reason: "nothing_sent" }
-          : checkpoint({
-              lastSentAt: last?.at ?? null,
-              lastChannel: last?.channel,
-              signalAt: lastSignalBy.get(goalInstanceId) ?? null,
-              askedAt,
-              planWrittenAt: isRollingPlan(plan) && plan?.createdAt ? new Date(String(plan.createdAt)) : null,
-              now,
-              leadType: leadTypeOf(goal),
-            });
+          : newsAt && askedAt < newsAt
+            ? { kind: "ask", reason: "news" }
+            : checkpoint({
+                lastSentAt: last?.at ?? null,
+                lastChannel: last?.channel,
+                signalAt: lastSignalBy.get(goalInstanceId) ?? null,
+                askedAt,
+                planWrittenAt: isRollingPlan(plan) && plan?.createdAt ? new Date(String(plan.createdAt)) : null,
+                now,
+                leadType: leadTypeOf(goal),
+              });
         if (decision.kind === "watch") {
           summary.skipped.push({ goalInstanceId, reason: `watching the last touch until ${decision.until.toISOString()}` });
           continue;
@@ -425,7 +454,7 @@ export async function advance(
             payload: { goalInstanceId, personId: String(person._id), reason: askedAt ? `checkpoint:${decision.reason}` : "first_rolling_plan" },
             productId,
             campaignKey: String(instance.goalKey),
-            priority: decision.reason === "signal" ? PRIORITY.urgent : PRIORITY.normal,
+            priority: decision.reason === "signal" || decision.reason === "news" ? PRIORITY.urgent : PRIORITY.normal,
           });
           askedIds.push(instance._id as ObjectId);
           summary.plansAsked++;
@@ -585,6 +614,16 @@ export async function advance(
       assetIds: [],
       idempotencyKey: fallback ? `${goalInstanceId}:fallback:${now.getTime()}` : `${goalInstanceId}:step:${step.id}`,
     });
+  }
+
+  // Only while still unapproved: a message somebody approved in the meantime stands.
+  for (const s of staleSkips) {
+    await db
+      .collection(C.actions)
+      .updateMany(
+        { _id: { $in: s.ids }, status: { $in: ["queued", "awaiting_approval"] }, reviewedAt: { $exists: false } },
+        { $set: { status: "skipped", skipReason: s.reason } },
+      );
   }
 
   // Before the actions, so an insert that fails partway still leaves every person pointing
