@@ -11,7 +11,7 @@ import { mailOwner } from "./ownerMail.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
 import { suppress } from "./suppression.js";
 import { unsubscribePerson } from "./unsubscribe.js";
-import { pauseCompanyMates } from "./campaignRules.js";
+import { holdForAbsence, pauseCompanyMates, whatsAppAutoReplyKind } from "./campaignRules.js";
 
 /**
  * What a WhatsApp provider tells us after a send: that a lead wrote something, or what
@@ -174,10 +174,39 @@ export async function applyWhatsAppEvent(
   if (event.id) {
     const seen = await db
       .collection(C.events)
-      .findOne({ orgId, type: { $in: ["reply_received", "whatsapp_chat"] }, "payload.whatsappMessageId": event.id });
+      .findOne({ orgId, type: { $in: ["reply_received", "whatsapp_chat", "auto_reply"] }, "payload.whatsappMessageId": event.id });
     if (seen) return "duplicate";
   }
   const { answered, notAReply } = await answeredSend(orgId, personId, event, connection.connectionId);
+
+  // Their business account answering by itself is not them writing back, the same rule as an
+  // automatic email reply: kept on their history, and nothing stops, pauses or escalates. An
+  // away message holds their campaigns until they are back. It still opens Meta's 24-hour
+  // window, since Meta opens it on any message from their number.
+  const msAfterSend = answered?.sentAt ? event.at.getTime() - new Date(answered.sentAt as Date).getTime() : undefined;
+  const auto = event.button ? null : whatsAppAutoReplyKind(event.text, msAfterSend);
+  if (auto) {
+    const away = auto === "absence" ? await holdForAbsence({ orgId, productId, personId, text: event.text, sent: event.at }) : null;
+    await db.collection(C.events).insertOne({
+      orgId,
+      productId,
+      personId,
+      type: "auto_reply",
+      channel: "whatsapp",
+      ...(answered ? { actionId: String(answered._id) } : {}),
+      ts: event.at,
+      payload: {
+        whatsappMessageId: event.id,
+        text: event.text.slice(0, 2000),
+        kind: auto,
+        ...(msAfterSend !== undefined ? { secondsAfterOurSend: Math.round(msAfterSend / 1000) } : {}),
+        ...(away ? { holdUntil: away.until, returnDateInMessage: away.fromMessage, campaignsHeld: away.held } : {}),
+      },
+    });
+    await db.collection(C.people).updateOne({ _id: person._id }, { $set: { "repliedOn.whatsapp": event.at } });
+    return away ? "away message: campaigns held" : "automatic reply, not counted";
+  }
+
   const recorded = await db.collection(C.events).insertOne({
     orgId,
     productId,
@@ -407,7 +436,14 @@ export async function salesChatForPlanner(orgId: string, productId: string, pers
     .slice(-20)
     .map((item) => ({
       at: item.created,
-      from: item.owner === false ? "lead" : "sales team",
+      // Their business account's greeting is not their words: labelled so a planner does not
+      // answer it and saidText does not count it as something they said.
+      from:
+        item.owner !== false
+          ? "sales team"
+          : whatsAppAutoReplyKind(item.text || item.final_text || "", undefined)
+            ? "their automatic reply"
+            : "lead",
       text: (item.text || item.final_text || `(${whatsAppSent(item.type)})`).slice(0, 500),
       ...(item.status_string === "FAILED" ? { delivered: false } : {}),
     }));

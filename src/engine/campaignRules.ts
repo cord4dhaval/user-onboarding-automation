@@ -222,6 +222,35 @@ export function autoReplyKind(header: (name: string) => string | undefined, subj
   return ABSENCE.test(`${subject}\n${text}`) ? "absence" : "auto";
 }
 
+/**
+ * Words only an automatic WhatsApp Business reply writes, whenever it arrives. We wrote to
+ * them first, so "thank you for contacting us" is their greeting message, not a person.
+ */
+const WA_AUTO_ALWAYS =
+  /thank(s| you) for (contacting|reaching out|messaging|your message|getting in touch|connecting with|writing to)|this is an? (automated|automatic|auto[- ]?generated) (message|reply|response)|(currently|presently) (unavailable|closed|away|not available)|(outside|out of) (our )?(business|working|office) hours|we are (closed|away) (now|today|for)/i;
+
+/** Words a person might also type, so they count only when they come back within seconds. */
+const WA_AUTO_FAST =
+  /(how|what) (can|may) (we|i) (help|assist) you|let us know how (we|i) (can|may) (help|assist)|(we|our team|i) (will|shall) (get back|revert|respond|reply|contact you|call you|be in touch)|welcome to /i;
+
+/** A greeting or away message goes out the moment ours lands; a person takes longer to read and type. */
+export const WA_AUTO_FAST_MS = 2 * 60_000;
+
+/**
+ * Whether a WhatsApp message is the lead's business account answering by itself (the
+ * greeting or away message WhatsApp Business sends), and if so whether it says they are
+ * away. WhatsApp carries no header for this, so it is read off the words and the timing:
+ * "Thank you for contacting SBJ NIRMAL PRODUCTS, let us know how we can help" came back 23
+ * seconds after our send, was taken as a reply, and stopped the lead's campaign.
+ *
+ * `msAfterSend` is how long after our send it came, or undefined when it answers none.
+ */
+export function whatsAppAutoReplyKind(text: string, msAfterSend: number | undefined): "absence" | "auto" | null {
+  const fast = msAfterSend !== undefined && msAfterSend >= 0 && msAfterSend <= WA_AUTO_FAST_MS;
+  if (!WA_AUTO_ALWAYS.test(text) && !(fast && WA_AUTO_FAST.test(text))) return null;
+  return ABSENCE.test(text) ? "absence" : "auto";
+}
+
 const MONTHS: Record<string, number> = {
   jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4, jun: 5, june: 5,
   jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,

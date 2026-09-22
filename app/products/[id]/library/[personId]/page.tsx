@@ -350,7 +350,9 @@ export default async function PersonPage({
                 ? payload.holdUntil
                   ? `Not a reply from them. Their campaign waits until ${istDay(payload.holdUntil as string)}${payload.returnDateInMessage ? ", the day after the date in their message" : "; the message gave no date, so one week"}.`
                   : "Not a reply from them."
-                : "Sent by their mail system, not by them. Nothing changes."}
+                : event.channel === "whatsapp"
+                  ? "Sent by their WhatsApp Business account, not by them. Nothing changes."
+                  : "Sent by their mail system, not by them. Nothing changes."}
             </div>
             {payload.text ? <blockquote className="t-quote">{String(payload.text).slice(0, 400)}</blockquote> : null}
           </>

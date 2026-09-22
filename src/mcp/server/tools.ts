@@ -16,6 +16,7 @@ import { suppress } from "../../engine/suppression.js";
 import { addressFor } from "../../engine/address.js";
 import { allowedMailboxIds, mailboxFilter } from "../../engine/channels.js";
 import { activeInstanceFor } from "../../engine/instances.js";
+import { channelTypeLabel } from "../../channels/catalog.js";
 import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
@@ -4403,9 +4404,23 @@ TOOLS.push({
       .findOne({ _id: new ObjectId(personId), orgId, productId }, { projection: { primaryEmail: 1 } });
     if (!person) throw new Error("person not found");
 
-    const at = args.at ? new Date(String(args.at)) : new Date();
+    // The reply as the inbound poller stored it: when it came, on which channel, and which
+    // send of ours it answers. Found by id, or else as their latest reply nobody has handled
+    // (the escalate work item names the person, not the event). Without it the answer was
+    // tied to whatever went out last and dated to the routine's run, so a WhatsApp message
+    // got answered by email under the subject of a mail sent the next morning.
+    const latestReply = (filter: Record<string, unknown>) =>
+      db.collection(C.events).find({ orgId, productId, personId, type: "reply_received", ...filter }).sort({ ts: -1 }).limit(1).next();
+    const replyEvent =
+      (args.event_id && ObjectId.isValid(String(args.event_id))
+        ? await db.collection(C.events).findOne({ _id: new ObjectId(String(args.event_id)), orgId, personId, type: "reply_received" })
+        : null) ??
+      (await latestReply({ handled: { $ne: true } })) ??
+      (await latestReply({}));
+
+    const at = args.at ? new Date(String(args.at)) : replyEvent?.ts ? new Date(replyEvent.ts as Date) : new Date();
     const intent = String(args.intent);
-    const actionId = await attributeReply(orgId, productId, personId, at);
+    const actionId = await attributeReply(orgId, productId, personId, at, replyEvent?.actionId ? String(replyEvent.actionId) : undefined);
 
     await db.collection(C.people).updateOne({ _id: new ObjectId(personId) }, { $set: { lastSignalAt: at } });
 
@@ -4474,10 +4489,12 @@ TOOLS.push({
       },
     });
 
-    if (args.event_id && ObjectId.isValid(String(args.event_id))) {
+    if (replyEvent) {
+      await db.collection(C.events).updateOne({ _id: replyEvent._id }, { $set: { handled: true, handledAt: new Date() } });
+    } else if (args.event_id && ObjectId.isValid(String(args.event_id))) {
       await db
         .collection(C.events)
-        .updateOne({ _id: new ObjectId(String(args.event_id)), orgId }, { $set: { handled: true, handledAt: at } });
+        .updateOne({ _id: new ObjectId(String(args.event_id)), orgId }, { $set: { handled: true, handledAt: new Date() } });
     }
 
     // The answer becomes a message, or it was never an answer.
@@ -4556,21 +4573,34 @@ async function queueAnswer(
   // Their own thread first. With no send to answer, the campaign's mailboxes decide: an
   // answer from an address this campaign never sends from is a stranger joining in.
   const answerGoal = await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) });
-  const channel =
-    (lastSend?.channelId
-      ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
-      : instance.channelId
-        ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(instance.channelId)), enabled: true, status: "healthy" })
-        : null) ??
-    (await db.collection(C.channels).findOne({
+  const campaignMailbox = () =>
+    db.collection(C.channels).findOne({
       orgId,
       productId,
       key: "email",
       enabled: true,
       status: "healthy",
       ...mailboxFilter(answerGoal?.channelIds),
-    }));
+    });
+  let channel =
+    (lastSend?.channelId
+      ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
+      : instance.channelId
+        ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(instance.channelId)), enabled: true, status: "healthy" })
+        : null) ?? (await campaignMailbox());
   if (!channel) return null;
+
+  // An answer goes as the words alone, and WhatsApp takes free text only inside its reply
+  // window. Once that has shut, a WhatsApp draft could never be sent, so the answer goes by
+  // email and says why.
+  let rationale = `Answers what they wrote on ${channelTypeLabel(String(lastSend?.channel ?? channel.key))}. Queued by the React routine, held for a human.`;
+  const windowHours = Number(/^(\d+)h$/.exec(String((channel.capabilities as { windowRules?: string } | undefined)?.windowRules ?? ""))?.[1] ?? 0);
+  if (windowHours && Date.now() - at.getTime() >= windowHours * 3_600_000) {
+    const mailbox = await campaignMailbox();
+    if (!mailbox) return null;
+    rationale = `Answers what they wrote on ${channelTypeLabel(String(channel.key))}. Sent by email because the ${windowHours}h ${channelTypeLabel(String(channel.key))} reply window has closed. Queued by the React routine, held for a human.`;
+    channel = mailbox;
+  }
 
   const actionId = new ObjectId();
   try {
@@ -4583,7 +4613,7 @@ async function queueAnswer(
       channel: String(channel.key),
       channelId: String(channel._id),
       angle: "reply",
-      rationale: "Answers what they wrote. Queued by the React routine, held for a human.",
+      rationale,
       content: {
         bodyMd: "",
         slotText: answer,

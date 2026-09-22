@@ -421,29 +421,44 @@ export async function stampGoalOutcome(
 /**
  * Ties a reply to the message it answers.
  *
- * The most recent send is the right guess and the only one available: a reply arrives as
- * an email in a mailbox, carrying no reference to the action that provoked it. Stamped
- * once, so a thread of five messages back and forth counts as one person answering rather
- * than five.
+ * The inbound pollers already know that message — the email in the same thread, the
+ * WhatsApp send the chat shows just before theirs — and pass it as `answeredId`. Without
+ * it, the most recent send before the reply is the guess. Before the reply, not before
+ * now: a WhatsApp answered on Monday and read by a routine on Tuesday was credited to
+ * Tuesday morning's email, and the answer went out by email to a WhatsApp message.
+ *
+ * Stamped once, so a thread of five messages back and forth counts as one person
+ * answering rather than five. The known send is returned even when it was stamped
+ * already, because the answer still belongs in its conversation.
  */
 export async function attributeReply(
   orgId: string,
   productId: string,
   personId: string,
   at: Date,
+  answeredId?: string,
 ): Promise<string | null> {
   const db = await getDb();
-  const action = await db.collection(C.actions).findOne(
-    {
-      orgId,
-      productId,
-      personId,
-      status: { $in: ["sent", "dispatched"] },
-      firstRepliedAt: { $exists: false },
-    },
-    { sort: { sentAt: -1 }, projection: { channel: 1, variant: 1 } },
-  );
+  const projection = { channel: 1, variant: 1, firstRepliedAt: 1 };
+  const action =
+    (answeredId && ObjectId.isValid(answeredId)
+      ? await db
+          .collection(C.actions)
+          .findOne({ _id: new ObjectId(answeredId), orgId, productId, personId, status: { $in: ["sent", "dispatched"] } }, { projection })
+      : null) ??
+    (await db.collection(C.actions).findOne(
+      {
+        orgId,
+        productId,
+        personId,
+        status: { $in: ["sent", "dispatched"] },
+        sentAt: { $lte: at },
+        firstRepliedAt: { $exists: false },
+      },
+      { sort: { sentAt: -1 }, projection },
+    ));
   if (!action) return null;
+  if (action.firstRepliedAt) return String(action._id);
 
   await db
     .collection(C.actions)
