@@ -619,16 +619,19 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // bulk mail: an unsubscribe control under it reads as a form letter.
       if (!dryRun && !isReply) outbound.listUnsubscribeUrl = vars.opt_out_url;
 
-      // Continue the conversation this person is already in, rather than starting a third
-      // one beside it. A follow-up that arrives as a fresh message reads as nobody having
-      // seen what they wrote, which is the opposite of what a reply-driven sequence is for.
-      const conversation = await conversationFor(
-        opts.orgId,
-        opts.productId,
-        String(action.personId),
-        String(action.channelId),
-        adapter,
-      );
+      // Only an answer joins the conversation: it is one side of something the person wrote,
+      // and arriving as a fresh message reads as nobody having seen it. Every campaign touch
+      // goes as its own mail — each has its own subject and stands on its own, and stacking
+      // them under the welcome buried every new one inside an old thread (decided 2026-09-22).
+      const conversation = isReply
+        ? await conversationFor(
+            opts.orgId,
+            opts.productId,
+            String(action.personId),
+            String(action.channelId),
+            adapter,
+          )
+        : undefined;
       if (conversation) {
         outbound.threadId = conversation.threadId;
         outbound.inReplyTo = conversation.inReplyTo;
