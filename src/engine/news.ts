@@ -78,11 +78,19 @@ const DEAL_WORDS = new Set([
   "price", "pricing", "completed", "scheduled", "follow", "busy", "details", "shared", "whatsapp", "message", "number",
   "more", "need", "want", "will", "the", "and", "for", "with", "have", "has", "had", "been", "was", "are", "not", "you",
   "your", "our", "they", "them", "him", "her", "his", "their", "this", "that", "from", "about", "also", "can", "all",
+  // Arranging a time is not a need either: "a quick demo on Monday, India time".
+  "time", "today", "tomorrow", "morning", "evening", "quick", "book", "thanks", "thank", "yes", "there", "let", "india", "ist",
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "voice", "note",
+  // Nor is the log of trying to reach them: "line busy", "received the call and cut".
+  "received", "receiving", "cut", "immediately", "line", "ringing", "reachable", "reached", "picked", "callback",
+  "scheduling", "schedule",
 ]);
 
 /** The words in what someone said that can name a need: three letters or more, the deal talk left out. */
 export function heardWords(text: string | undefined): Set<string> {
-  return new Set((String(text ?? "").toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((w) => !DEAL_WORDS.has(w)));
+  // An address or a link says who they are, not what they need.
+  const said = String(text ?? "").toLowerCase().replace(/\S+@\S+|https?:\/\/\S+|www\.\S+/g, " ");
+  return new Set((said.match(/[a-z]{3,}/g) ?? []).filter((w) => !DEAL_WORDS.has(w)));
 }
 
 /** The linked CRM rows that are someone doing or saying something, with when we first held each. */

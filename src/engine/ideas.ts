@@ -209,21 +209,24 @@ const words = (text: string) => new Set(String(text ?? "").toLowerCase().match(/
 
 /**
  * How much what they said after arriving (lead.said: CRM notes, their own WhatsApp messages)
- * lifts each idea. Matched against what each idea proves, its keywords and proof, and by how
- * rare the word is across the bank: "CRM" after a walk-through lifts the one idea about the
- * CRM hard, a word every proof shares lifts nothing much.
+ * lifts each idea. Matched against what each idea proves. A word few proofs share names a
+ * part of the product ("CRM" after a walk-through), and every idea proving that part is lifted
+ * by the same amount, clear of the keyword fit; a word most proofs share ("team", "hours")
+ * names nothing and lifts nothing.
  */
 export function saidScores(ideas: Idea[], said: string | undefined): Map<number, number> {
   const heard = heardWords(said);
   const scores = new Map<number, number>();
   if (heard.size === 0) return scores;
-  const proves = new Map(ideas.map((idea) => [idea.n, words(`${(idea.keywords ?? []).join(" ")} ${idea.proof ?? ""}`)]));
+  // The proof only: keywords tag a scene ("crm" sits on every sales-team story), the proof is
+  // what the product does about it, and a need names what the product should do.
+  const proves = new Map(ideas.map((idea) => [idea.n, words(idea.proof ?? "")]));
   const spread = new Map<string, number>();
   for (const set of proves.values()) for (const w of set) if (heard.has(w)) spread.set(w, (spread.get(w) ?? 0) + 1);
+  const rare = Math.max(3, Math.round(ideas.length / 10));
   for (const [n, set] of proves) {
-    let score = 0;
-    for (const w of set) if (spread.has(w)) score += 6 / spread.get(w)!;
-    if (score) scores.set(n, Math.round(score));
+    const named = [...set].filter((w) => (spread.get(w) ?? Infinity) <= rare).length;
+    if (named) scores.set(n, 6 * named);
   }
   return scores;
 }
