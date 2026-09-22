@@ -156,7 +156,7 @@ export async function planViewFor(instance: Document, actions: Document[], band:
     const skeleton = skeletonKey ? await skeletonFor(orgId, productId, String(skeletonKey), plan.segmentKey ? String(plan.segmentKey) : null) : null;
     toWrite = { ...nextView, skeleton };
     note = rolling && nextView.template_key === frameKey
-      ? `Write step ${nextView.step_id} whole, in parts: subject, preheader, opening, scene, cost_lines, shows, limit (if the fit is partial), question, an optional ps, format with format_why, ask, theme and hook. The frame lays the parts out for plain text or HTML and adds the greeting, the button (left off for a reply ask), the sign-off and the unsubscribe line. Read writing on the lead card first.`
+      ? `Write step ${nextView.step_id} whole, short (about 50 words), in parts: subject, opening, scene, reveal, limit (only if most of their work is away from a computer), question (the price on a link ask), ps (reply \"call\"), format with format_why, ask, theme and hook. The frame lays the parts out for plain text or HTML and adds the greeting, the button (left off for a reply ask), the sign-off and the unsubscribe line. Read writing on the lead card first.`
       : `Write step ${nextView.step_id} (${nextView.template_key ?? nextView.angle ?? "no template"}), and only the your_words part of its skeleton. Later steps are for later runs.`;
   }
 

@@ -25,8 +25,12 @@ export const CHECKPOINT_REASK_MS = 12 * 3_600_000;
 /** The frame a written touch renders through when a campaign names none. */
 export const DEFAULT_FRAME_KEY = "written_email";
 
-/** Most words a session writes into the frame. The whole mail still stays under 200. */
-export const FRAME_BODY_MAX_WORDS = 125;
+/**
+ * Most words a session writes into the frame. The manager's review of 2026-09-22: nobody
+ * reads a long mail, so the hook is the subject and first line and the whole mail is about
+ * 50 words. The whole mail, greeting and sign-off included, still stays under 200.
+ */
+export const FRAME_BODY_MAX_WORDS = 75;
 
 /**
  * How long a touch is given to be answered before the next one is planned.
@@ -253,9 +257,10 @@ export function layoutArm(personId: string, test: LayoutTest): LayoutArm {
 
 /**
  * Plain language (Dhaval, 2026-09-17): the ideas were right but the words were hard for a
- * busy owner to follow. One idea per sentence, and no sentence longer than this.
+ * busy owner to follow. One idea per sentence, and no sentence longer than this. Cut from
+ * 20 to 16 on 2026-09-22, the length of the mails the manager approved.
  */
-export const SENTENCE_MAX_WORDS = 20;
+export const SENTENCE_MAX_WORDS = 16;
 
 /** Sentences over the limit, emphasis marks ignored. */
 export function longSentences(text: string, max = SENTENCE_MAX_WORDS): string[] {
@@ -302,7 +307,7 @@ export interface LeadTypeProfile {
   maxWords: number;
   /** The jobs written touches do in order, where the type has a sequence. */
   sequence?: Array<{ hook: string; job: string }>;
-  /** Whether each touch must show the day-1 receipt and the privacy twist before its ask. */
+  /** Whether each touch must say what TeamGrid does about the problem (reveal) and give the price before its ask. */
   reveal?: boolean;
   rules: string[];
 }
@@ -321,19 +326,22 @@ export const IDEAS_ARE_TEACHING =
   "The shape can change; the proof cannot: say only what the idea's proof says TeamGrid does. idea_refs names the ideas you learned from.";
 
 /**
- * The "no way, it can do that?" email, shared by every type that writes to people who once
- * asked about the product. Hot leads get it at hot pace with two emails planned; warm leads
- * (Dhaval, 2026-09-18: the July–August form leads showed interest once, so they are followed
- * up, not pushed) get the same shape one email at a time.
+ * What each email in a hot or warm campaign sells, in the order a planner picks from.
+ *
+ * Until 2026-09-22 each hook explained one feature and aimed at "no way, it can do that?".
+ * The manager's review: the mails read as a generic feature tour, never asked anyone to buy
+ * or call, and 572 of them drew 11 clicks and 1 reply. Each hook is now one problem the
+ * owner has, what it costs, what changes with TeamGrid, the price and one next step. The
+ * hook names stay, so the results already counted under them still compare.
  */
-const NO_WAY_SEQUENCE: Array<{ hook: string; job: string }> = [
-  { hook: "daily_question", job: "The question they ask every day (\"any update?\", \"what happened today?\") and the answer TeamGrid already writes by 6pm." },
-  { hook: "hidden_bill", job: "The money nobody counted: paid hours with no owner, in rupees for a team their size, and TeamGrid showing those hours from day 1." },
-  { hook: "office_habit", job: "An office habit everyone lives with (the quick call that takes an hour, the Monday Excel report, the punch machine, the green dot on WhatsApp) and the feature that makes it unnecessary." },
-  { hook: "just_ask", job: "The thing that sounds impossible: ask \"why was this week slow?\" in plain English (Advanced), the team's best hour, or the Monday report that writes itself (Advanced)." },
-  { hook: "found_out_late", job: "What they find out too late (the deadline that slipped on Monday, heard on Friday; the few people carrying everything) and seeing it the same day." },
-  { hook: "no_watching", job: "The fear of the team's reaction: no screenshots, no keystrokes, breaks pause on their own, everyone sees their own day." },
-  { hook: "closing", job: "The last note: should we close the request, or reply call for a walk-through." },
+const SELL_SEQUENCE: Array<{ hook: string; job: string }> = [
+  { hook: "daily_question", job: "The question they ask every day (\"any update?\", \"what did you do today?\") and the short note TeamGrid writes by 6pm, so nobody calls or writes updates." },
+  { hook: "hidden_bill", job: "Money lost every month that nobody counts (a client who takes more hours than they pay for, paid hours with no work behind them), as a ₹ example for a team their size, set against the price." },
+  { hook: "office_habit", job: "An office habit that eats the day (the evening calls, the Monday Excel report, the punch machine, WhatsApp all day) and how TeamGrid makes it unnecessary." },
+  { hook: "just_ask", job: "A straight answer without asking anyone (\"why was this week slow?\", the Monday report that writes itself). These are on the ₹649 plan." },
+  { hook: "found_out_late", job: "What they find out too late (a customer nobody called back, a deadline that slipped on Monday and was heard on Friday) and the reminder that tells them the same day." },
+  { hook: "no_watching", job: "The worry about the team's reaction: no screenshots, nothing people type is recorded, everyone sees their own day. The one email where the privacy line belongs." },
+  { hook: "closing", job: "The last note: should we close this, or reply \"call\" and we will set it up with you." },
 ];
 
 /**
@@ -342,26 +350,34 @@ const NO_WAY_SEQUENCE: Array<{ hook: string; job: string }> = [
  * does the job, decided per lead and per content rather than fixed per campaign).
  */
 export const FORMAT_CHOICE =
-  "Choose the format for this person and this mail, in this order. " +
-  "1 \"text\" for a reply-only ask (the closing note): a plain note reads as a person and gets answered. " +
+  "Choose the format for this person and this mail. Every format carries the same short words. " +
+  "1 \"text\" for a reply-only ask (the closing note, a short question): a plain note reads as a person and gets answered. " +
   "2 Their own record (lead_card engagement_by_format): a format they clicked is used again; after two or more sends, one they open beats one they ignore. " +
-  "3 \"letter\" when the story carries the mail with nothing to show (no sample, no cost lines), and always for trust and privacy (no_watching, proof): a typed note is believed where a brochure is not. " +
-  "4 \"html\", the designed layout with a picture for the topic, when the mail shows something: a receipt sample, two or more cost lines, a timeline, or a list of what they would see. " +
-  "When unsure, \"letter\". format_why names the rule and the evidence, for example \"sample 6pm summary to show; opened the designed welcome twice\".";
+  "3 \"html\", the designed look with a picture on top, for a lead who has opened our mail before: the picture shows the problem in numbers, so the words stay short. " +
+  "4 \"letter\" for a lead who has not opened anything yet, and always for trust and privacy (no_watching): a typed note is believed where a brochure is not. " +
+  "When unsure, \"letter\". format_why names the rule and the evidence, for example \"opened the designed welcome twice\".";
 
-const NO_WAY_RULES: string[] = [
-  "Five small blocks, a blank line between each: 1 their moment, a line from their own day (opening, then scene); 2 the hidden truth, what it costs or hides (scene, or one cost line for money); 3 the no-way part in reveal: what TeamGrid already knows or does, said plainly and true; 4 the safety line in limit: no screenshots, nothing people type is recorded; 5 question: one short closing line. Then the button.",
-  "60 to 110 words. Short lines, one thing per line. If it needs more words, add a line; never make a line longer. The reader must understand it in one quick read.",
-  `Start from the idea bank, then the hook. ${IDEAS_ARE_TEACHING} best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got. Two leads should rarely get the same shape of an idea. The email stays simple enough for any founder.`,
-  "Show, do not describe. When the reveal is about the 6pm summary, time per app or the hours of a day, add receipt: a small sample card right after it, titled as a sample (\"A sample 6pm summary:\", \"A sample day's apps:\", \"A sample day:\"), 2 to 4 lines using only the figures in writing.facts.samples. The nouns may fit their business (\"dealer order lines\"); the figures stay as the sample shows them. The idea's card tag says which card fits.",
-  "Humor is an add-on, not a style. Use one light line only where it fits this lead and this idea naturally (the quick call that took 47 minutes, MIS_final_FINAL_v3.xlsx, the punch machine). Most emails have none. Joke about habits, never about people.",
-  "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, appraisal, resignation, CTC, ₹ and lakh. Simple English, respectful to the team.",
-  "Never colours or screen words (teal, blue, grey, dashboard, widget). Never spy or verdict words (monitor, catch, spy, lazy, unproductive employee). Never a customer quote or a result nobody measured.",
-  "Numbers: an example about their team says so; a survey figure names its source (writing.facts.external). Features only from writing.facts; say \"on the Advanced plan\" where it applies.",
-  "The reveal names what TeamGrid hands them about this moment: the line tonight's summary would carry, the hours that client took this week, the flag that fires the day a pattern changes. A feature description alone (\"records hours by person and by project, no timesheet\") is not a reveal; it makes them nod, not stop. Two leads should not get the same reveal sentence.",
-  `ask "link". ${FORMAT_CHOICE} cta_text names what they will see ("See tomorrow's 6pm summary", "See where the hours go"), from the allowed list.`,
-  "Subject: their own words or a surprising truth, 20 to 60 characters (\"The 8pm 'any update?' calls can stop tomorrow\", \"Nobody forgets to work. Everybody forgets to punch.\").",
-  "ps is optional: \"P.S. Prefer a 15-minute walk-through first? Reply call.\"",
+/** The button words on every link ask (the manager's review, 2026-09-22): they say where it goes. */
+export const TRIAL_CTA = "Try it free for 7 days";
+
+/**
+ * The short selling email, shared by every type that writes to people who once asked about
+ * the product. Approved by the manager on 2026-09-22 from four before/after rewrites: a ₹
+ * figure or their problem in the subject, the problem bold on the first line, one or two
+ * lines on what TeamGrid does, the price in bold, and the trial button with a reply "call"
+ * P.S. About 50 words, in the words a shop owner uses.
+ */
+const SELL_RULES: string[] = [
+  "Every email sells one result and asks for one step: try it free for 7 days, or reply \"call\". It is never a feature tour: one problem, what it costs, what changes with TeamGrid, the price, the next step.",
+  "Hook them in the subject and the first line; most people decide there. Subject: a ₹ figure or their own problem in their words, 25 to 55 characters (\"Is 1 client costing you ₹1.68 lakh a year?\", \"Stop asking 'what did you do today?'\"). opening: the problem and what it costs, shown bold.",
+  "Five parts, about 50 words, never more than 75: opening (the problem, bold); scene (1 or 2 short lines: the ₹ example, said to be an example, at most 2 **bold** figures); reveal (1 or 2 lines on what TeamGrid does about it, as a result they get, saying once that it is a small app on their office computers); question (the price, shown bold in a box: \"₹299 per person a month.\" with the total for their team size when known, or \"No card needed to try.\"); ps (\"P.S. Reply \"call\" and we will call you.\").",
+  "Where they are choosing a tool now (timeline ASAP) and the idea is about sales or customers, the question may ask for the call instead (\"Reply \"call\" and we will show you how it works in 15 minutes.\"), with the price in the scene and the free trial in the ps.",
+  "Words a shop owner uses, sentences of 16 words or fewer. Customer, not lead, enquiry or exhibitor. Price, not quote. \"Keeps track of every customer\", not CRM. \"Nobody has replied\", not \"goes quiet\". \"Too busy\", not overloaded or workload. \"New people\", not new hires. \"Fill any sheet\", not timesheet. No feature names (Founder's Report, Pattern Intelligence, Anomaly Feed): say what they get.",
+  "The price comes only from writing.facts.plans: ₹299 per person a month, or ₹649 for anything the facts put on the Advanced plan. Give the price, not the plan name. A total for their team is arithmetic, and a team size they did not give is an example.",
+  "No feature lists (leave shows out), no thinking questions (\"Which buyer would top that list?\"), no clever lines. The privacy line (no screenshots, nothing people type is recorded) goes only in the no_watching email or to someone who asked. limit only where most of their work is away from a computer (site visits, field work), in one short line.",
+  `Start from the idea bank, then the hook. ${IDEAS_ARE_TEACHING} best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got. Two leads should rarely get the same shape of an idea.`,
+  "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, ₹ and lakh. Never colours or screen words (dashboard, widget), never spy or verdict words (monitor, catch, spy, lazy), never a customer quote or a result nobody measured. Features only from writing.facts; an example number says so.",
+  `ask "link" with cta_text "${TRIAL_CTA}". ${FORMAT_CHOICE}`,
 ];
 
 export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
@@ -372,14 +388,14 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 24,
     ask: "link",
     replyHooks: ["closing"],
-    maxWords: 110,
+    maxWords: FRAME_BODY_MAX_WORDS,
     reveal: true,
-    // Dhaval, 2026-09-17: short, simple, and "no way, it can do that?". Each email picks the
-    // hook that fits this lead best, not a fixed order; the planner takes two not yet sent.
-    sequence: NO_WAY_SEQUENCE,
+    // Each email picks the hook that fits this lead best, not a fixed order; the planner
+    // takes two not yet sent. The shape is the manager's short selling email (2026-09-22).
+    sequence: SELL_SEQUENCE,
     rules: [
-      "These people asked about the product. Each email makes them think: no way, it can do that? It explains one thing simply, never a list of features.",
-      ...NO_WAY_RULES,
+      "These people asked about the product, and many are choosing a tool now. Each email makes it easy to say yes today.",
+      ...SELL_RULES,
       "The closing email (hook \"closing\") may ask for a reply instead.",
     ],
   },
@@ -390,13 +406,13 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 48,
     ask: "link",
     replyHooks: ["question", "closing"],
-    maxWords: 110,
+    maxWords: FRAME_BODY_MAX_WORDS,
     reveal: true,
-    sequence: NO_WAY_SEQUENCE,
+    sequence: SELL_SEQUENCE,
     rules: [
-      "These people showed interest once and did not sign up. This is a follow-up, not a first pitch: calm and friendly, one thing per email, and each email makes them think: no way, it can do that? Never mention a form, an ad, a signup or any earlier email, and never open with \"following up\" or \"just checking in\".",
-      ...NO_WAY_RULES,
-      "Plan one email at a time; the next is planned after seeing what they did with this one. After two links with no click, hook \"question\" asks one short question they can answer in a line (format \"text\", ask \"reply\", no link). The closing email (hook \"closing\") may ask for a reply instead.",
+      "These people showed interest once and did not sign up. Calm and friendly, one result per email, in the same short shape. Never mention a form, an ad, a signup or any earlier email, and never open with \"following up\" or \"just checking in\".",
+      ...SELL_RULES,
+      "Plan one email at a time; the next is planned after seeing what they did with this one. After two links with no click, hook \"question\" asks one short question they can answer in a line (format \"text\", ask \"reply\", no link), for example \"Would a 15-minute call help? Reply call.\" The closing email (hook \"closing\") may ask for a reply instead.",
     ],
   },
   cold: {
@@ -406,9 +422,9 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 72,
     ask: "reply",
     replyHooks: [],
-    maxWords: 125,
+    maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Teach first. Plain text, a question they can answer in a line, and no link until they reply or click.",
+      "Teach first, short and plain. A ₹ figure or their problem in the subject, the problem bold on the first line, one line on what TeamGrid does, then one question they can answer in a line (\"Would a 15-minute call help? Reply call.\"). Plain text, no link until they reply or click. About 50 words, sentences of 16 words or fewer.",
     ],
   },
   reengage: {
@@ -418,9 +434,9 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 72,
     ask: "reply",
     replyHooks: [],
-    maxWords: 125,
+    maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Say what is new or what may have changed for them, and ask one easy question before offering the trial again.",
+      "Say what is new or what may have changed for them, in plain words, and ask one easy question (\"Reply call and we will set it up with you.\") before offering the trial again. About 50 words.",
     ],
   },
   trial: {
@@ -430,9 +446,9 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     watchHours: 24,
     ask: "link",
     replyHooks: ["question"],
-    maxWords: 125,
+    maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Help them reach the first useful report, then lead to the plan that fits. Never ask them to sign up again.",
+      "Help them reach the first useful report, then lead to the plan that fits, with its price. Never ask them to sign up again. About 50 words.",
     ],
   },
 };
@@ -485,27 +501,29 @@ export function watchWindowFor(channel: string | undefined, leadType: LeadType |
   return Math.min(base, LEAD_TYPE_PROFILES[leadType].watchHours * 3_600_000);
 }
 
-/** Words a hot email's button may carry: the reveal, or the plain signup. */
+/**
+ * Words a button may carry. Until 2026-09-22 a hot email's button named the reveal ("See who
+ * is carrying the work") and then opened the sign-up page, which the manager called out: the
+ * words must say where it goes. The trial is the default; the page buttons go with link_page.
+ */
 export const CTA_TEXTS = [
+  TRIAL_CTA,
   "Start your free trial",
-  "See the first day",
-  "See your team's hours",
-  "See a day without watching anyone",
-  "See your own hours",
-  "See tomorrow's 6pm summary",
-  "See where the hours go",
-  "See what your office did today",
-  "See a real workday",
-  "Find your team's best hour",
-  "Ask your first question",
-  "See the Monday report",
-  "See who is carrying the work",
-  "See how it works",
   // For a button that goes to one of the product's pages (link_page) rather than the start link.
   "See the comparison",
   "See the plans",
   "See how your data stays safe",
 ] as const;
+
+/** The ₹ prices a product's plans carry ("₹299 per user per month" gives "₹299"), so a selling email can be held to them. */
+export function planPriceFigures(facts: unknown): string[] {
+  const plans = ((facts as { plans?: Array<{ price?: unknown }> } | null | undefined)?.plans ?? []);
+  const out = new Set<string>();
+  for (const plan of plans) {
+    for (const m of String(plan?.price ?? "").matchAll(/₹\s?([\d,]+)/g)) out.add(`₹${m[1]}`);
+  }
+  return [...out];
+}
 
 /** Colour and screen words: a hot email says what TeamGrid shows, never what its screen looks like. */
 export function screenWords(text: string): string[] {

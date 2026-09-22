@@ -182,8 +182,8 @@ have been read.
   how much this group is trying new ideas.
   Read writing.lead_type before anything else: it says what kind of people this campaign
   holds and how hard to push. In a hot campaign (they filled in our own form and asked
-  about the product) every step leads to signing up, and every email should make them
-  think "no way, it can do that?". writing.lead_type.sequence lists the hooks, each
+  about the product) every step leads to signing up or a call: each email sells one
+  result in about 50 words, with the price. writing.lead_type.sequence lists the hooks, each
   marked sent or not: daily_question, hidden_bill, office_habit, just_ask,
   found_out_late, no_watching, closing. Plan two not yet sent that fit this lead best
   (not a fixed order), after_days 1 and 2, with hook set to its name and a theme that
@@ -298,82 +298,65 @@ A rolling campaign (lead_card goal.rolling true) is where the writing matters mo
 The step names an idea (its theme) and renders through a frame that adds only the
 greeting, the button, the sign-off and the unsubscribe line. Write it in parts, not
 one block of text, because a wall of paragraphs is skimmed and ignored:
-  subject    required; see below.
-  preheader  under 90 characters, adds to the subject (shown in letter and html only).
-  opening    one sentence under 90 characters, the idea's sharpest line in their world.
-             Bold in HTML; in plain text it is the inbox preview beside the subject, so
-             it adds to the subject and never repeats it.
-  scene      one or two short paragraphs that make the idea a scene they recognise
-             from their own week: the pattern in the shape that fits them, never the
-             bank's wording retold. At most two **bold** phrases, on the words that
-             carry the cost or the pain.
-  cost_lines up to three lines: label is the situation with its numbers, under 40
-             characters ("₹4 lakh order × 5 days waiting"); value is the result, under
-             50 ("5 days a farmer loses before sowing"). A number that is not a fact is
-             an example; cost_intro defaults to "For example:".
-  shows      up to three lines under 50 characters on what they would see, only what
-             writing.facts supports and nothing from facts.unverified.
-  limit      one line on what is not recorded, only where the fit is partial.
-  question   one line they can answer. Bold in HTML.
+  Nobody reads a long mail (the manager's review, 2026-09-22): the subject and the first
+  line are the hook, and the whole mail is about 50 words, never more than 75.
+  subject    required: a ₹ figure or their own problem in their words, 25 to 55
+             characters ("Is 1 client costing you ₹1.68 lakh a year?").
+  preheader  optional, under 90 characters, adds to the subject.
+  opening    the problem and what it costs, one line under 90 characters. Bold; in
+             plain text it is the inbox preview, so it never repeats the subject.
+  scene      1 or 2 short lines: the ₹ example, said to be an example. At most two
+             **bold** figures.
+  reveal     1 or 2 lines on what TeamGrid does about it, as a result they get, saying
+             once that it is a small app on their office computers. Shown between thin
+             lines with TeamGrid's name in the brand shade.
+  question   on a link ask, the price from writing.facts.plans, shown bold in a box:
+             "₹299 per person a month." with the total for their team size when known,
+             or "No card needed to try." ₹649 for anything on the Advanced plan; the price,
+             never the plan name. On a reply ask, one question they can answer in a line.
+  ps         "P.S. Reply "call" and we will call you." (or the free trial, where the
+             question already asks for the call).
+  limit      only where most of their work is away from a computer (site visits),
+             one short line. The privacy line (no screenshots, nothing people type is
+             recorded) only in the no_watching email or to someone who asked.
+  cta_text   "Try it free for 7 days" (the default on a link ask): the words say where
+             the button goes.
   link_page  on a link ask, a page from writing.context when it fits this lead better
              than the start link: pages_for_this_lead first, the comparison page for a
              tool they use, pricing when cost is the question. The button goes there.
              Leave it out when nothing fits; compose_batch refuses a page not listed.
-  ps         optional, one line, no link.
   timeline / reply_options
              two layouts on test. lead_card writing.layout_tests gives this lead's arm
              for each, fixed for good; follow it. Timeline (story ideas only): 2 to 4
              moments, {when: "Monday", what: "the drawing waits for approval."}.
              Reply options (reply asks only): 2 to 4 short answers to the question,
              shown as "Reply with one number:" and "1 = ..." lines.
-             In HTML the cost lines become a tinted box and shows a check list; in
-             plain text each cost line is the situation with "→ result" under it, and
-             shows are dash lines. Open on their world (their main problem, what the
-             company does, team size). The examples on the card show the standard;
-             write better than them for this person.
-  Plain-text rules, from what respected senders do: quantities as digits ("5 days",
-  "9 hours", "3 of 9 hours"), the whole body within 125 words including lists, and
-  only these symbols: → – × ÷ = ₹ • ✓ (never ✔ ☑ ➡ ▶ ⚠ ™, styled letters or emoji).
-  Simple and clear, because a busy owner reads it once: say what the product is in
-  one plain line (writing.product_in_one_line), usually as shows_intro, for example
-  "TeamGrid shows how your office team spends its day on the computer. You would
-  see:". Short sentences, one idea each, never over 20 words. Everyday words, no
-  wordplay or metaphor; name the problem the way they would say it ("orders wait
-  for approval"), and use the plain word from writing.plain_words ("approval", not
-  "sign-off"; "stuck", not "blocked").
+  No shows list and no cost_lines box in hot or warm emails: a list of features reads
+  as a brochure, and the numbers belong in the bold lines.
+  Plain-text rules: quantities as digits ("5 days", "9 hours"), only these symbols:
+  → – × ÷ = ₹ • ✓ (never ✔ ☑ ➡ ▶ ⚠ ™, styled letters or emoji).
+  Words a shop owner uses, sentences of 16 words or fewer: customer, not lead or
+  enquiry; price, not quote; "keeps track of every customer", not CRM; "nobody has
+  replied", not "goes quiet"; "too busy", not overloaded; "new people", not new hires;
+  "fill any sheet", not timesheet; and the plain word from writing.plain_words. No
+  feature names (Founder's Report, Anomaly Feed): say what they get.
   lead_type  read writing.lead_type first; its default_ask, rules and sequence override
-             the defaults here. A hot email makes them think "no way, it can do that?"
-             in five small blocks with blank lines between: their moment (opening,
-             scene), the hidden truth (scene, or one cost line for money), reveal (what
-             TeamGrid already knows or does, 1 to 3 short lines, true), limit (no
-             screenshots, nothing people type is recorded), question (one short closing
-             line). 60 to 110 words; add a line rather than lengthen one. Pick the hook
-             and the idea that fit this lead. Humor is an add-on: one light line only
-             where it fits naturally, most emails none, never about people. Indian office
-             words ("any update?", WFH, late mark, appraisal, ₹ lakh) from
-             writing.phrases. No colours or screen words, no spy words, no customer
-             quotes; survey numbers name their source (facts.external). ask "link",
-             format by the rule below, cta_text from the allowed list naming what they
-             will see. The reveal names what TeamGrid hands them about this moment (the
-             line tonight's summary carries, the hours that client took, the flag that
-             fires), never a feature description alone.
-             writing.hook_examples show the bar. compose_batch refuses a hot email with no
-             reveal, no safety line, screen words, or a reply-only ask outside "closing".
-             Show, do not describe: where the step's idea has a card (summary, apps or
-             day, on writing.ideas), add receipt after the reveal, titled as a sample
-             ("A sample 6pm summary:"), 2 to 4 lines using only the figures in
-             writing.facts.samples. Nouns may fit their business ("GST filings" for a CA
-             firm); the times, hours and percentages stay as the sample shows them. It
-             renders plain, in the same section as the reveal, and counts in the words.
-  format     decided per person and per mail, in this order:
+             the defaults here. Pick the hook and the idea that fit this lead, then write
+             the short selling email above. Indian office words ("any update?", WFH,
+             late mark, ₹ lakh) from writing.phrases. No colours or screen words, no spy
+             words, no customer quotes, no thinking questions ("Which buyer would top
+             that list?"). compose_batch refuses a hot or warm link email with no reveal,
+             no price, a shows list, screen words, or a reply-only ask outside the hooks
+             the type allows. A sample card (receipt) only in a designed ("html") email,
+             2 to 3 lines from writing.facts.samples, counted in the words.
+  format     decided per person and per mail; every format carries the same short words:
              1 "text" for a reply-only ask: a plain note, no link, reads as a person.
              2 their own record (lead_card engagement_by_format): reuse a format they
                clicked; after two or more sends, prefer the one they open.
-             3 "letter" (HTML that looks typed, one button) when the story carries the
-               mail with nothing to show, and always for trust and privacy topics.
-             4 "html" (the designed layout, with a picture for the topic) when the mail
-               shows something: a receipt sample, two or more cost lines, a timeline or
-               a list of what they would see.
+             3 "html" (the designed look, a picture on top that shows the problem in
+               numbers) for a lead who has opened our mail before.
+             4 "letter" (HTML that looks typed, one button) for a lead who has not
+               opened anything yet, and always for trust and privacy topics.
              When unsure, letter. format_why names the rule and the evidence.
   theme      the plan step's idea, reworded only if your writing sharpened it.
   hook       story, rupee_math, question, comparison, proof, or your own word.

@@ -24,7 +24,7 @@ import { writingBriefFor } from "../../engine/writingBrief.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, ideaLeadCount, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, type InventedIdea } from "../../engine/ideas.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -1515,8 +1515,9 @@ export const TOOLS: ToolDef[] = [
               reveal: {
                 type: "string",
                 description:
-                  "Hot emails: the no-way part, 1 to 3 short lines (blank line between) saying what TeamGrid already knows or " +
-                  "does about the moment above, plainly and truly. Shown between two thin lines with TeamGrid's name in the brand shade.",
+                  "Hot and warm emails: 1 or 2 short lines on what TeamGrid does about the problem above, as a result they get " +
+                  "(\"TeamGrid is a small app on your office computers. It shows how many hours go to each client.\"). " +
+                  "Shown between two thin lines with TeamGrid's name in the brand shade.",
               },
               receipt: {
                 type: "object",
@@ -1537,7 +1538,7 @@ export const TOOLS: ToolDef[] = [
               cta_text: {
                 type: "string",
                 enum: [...CTA_TEXTS],
-                description: "Optional words on the button. The reveal (\"See the first day\") rather than the signup, except on the hidden bill email.",
+                description: `Optional words on the button; they must say where it goes. Defaults to "${TRIAL_CTA}" on a link ask.`,
               },
               reply_options: {
                 type: "array",
@@ -1556,12 +1557,13 @@ export const TOOLS: ToolDef[] = [
                   "(under 50). A tinted box in HTML; in plain text the label, then \"→ value\" on the line under it.",
               },
               shows_intro: { type: "string", description: "Optional line over the list. Defaults to \"What TeamGrid would show you:\"." },
-              shows: { type: "array", items: { type: "string" }, description: "Up to 3 lines under 50 characters on what they would see. A check list in HTML, dashes in plain text." },
-              limit: { type: "string", description: "Optional one line on what is not recorded, where the fit is partial." },
+              shows: { type: "array", items: { type: "string" }, description: "Up to 3 lines under 50 characters on what they would see. A check list in HTML, dashes in plain text. Not in hot or warm emails: a list of features reads as a brochure." },
+              limit: { type: "string", description: "Optional one line on what is not recorded, only where most of their work is away from a computer." },
               question: {
                 type: "string",
                 description:
-                  "The closing question, one line they can answer; shown bold in HTML. On a WhatsApp template with a " +
+                  "The closing line, shown bold (a tinted box in the designed look). On a link ask it is the price from writing.facts.plans " +
+                  "(\"₹299 per person a month. No card needed to try.\"); on a reply ask, one question they can answer in a line. On a WhatsApp template with a " +
                   `{{question}}, it fills that: one line of at most ${WRITTEN_QUESTION_MAX_WORDS} words ending in a question mark.`,
               },
               theme: { type: "string", description: "The idea in words. Defaults to the plan step's theme." },
@@ -1857,7 +1859,7 @@ export const TOOLS: ToolDef[] = [
           ...(options.length ? { options } : {}),
           ...(receiptLines.length ? { receipt: { title: receiptTitle, items: receiptLines } } : {}),
           ...(revealText ? { reveal: revealText } : {}),
-          ...(ctaText ? { ctaText } : {}),
+          ...(ctaText ? { ctaText } : ask === "link" ? { ctaText: TRIAL_CTA } : {}),
           layout: `${base}${receiptLines.length ? "+receipt" : ""}${timeline.length ? "+timeline" : ""}${options.length ? "+options" : ""}`,
         });
       }
@@ -1905,6 +1907,7 @@ export const TOOLS: ToolDef[] = [
       const wordsAvoid = (plainWriting.wordsAvoid ?? []).filter((w) => w && w.word);
       const oneLine = String(plainWriting.oneLine ?? "").trim();
       const samples = (((writer?.config as { writing?: { facts?: { samples?: unknown[] } } } | undefined)?.writing?.facts?.samples) ?? []).map(String).filter(Boolean);
+      const prices = planPriceFigures((writer?.config as { writing?: { facts?: unknown } } | undefined)?.writing?.facts);
       const lead = await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) });
       const companyWords = companyTokens(lead);
       const warnings: string[] = [];
@@ -1941,6 +1944,7 @@ export const TOOLS: ToolDef[] = [
           // nobody is watched. Without the first the reader nods and deletes; without the second
           // it reads as spyware. The closing note is exempt.
           const sp = structuredParts.get(t);
+          const everythingRaw = [t.subject, t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n").replace(/₹\s+/g, "₹");
           if (profile.reveal && sp && !profile.replyHooks.includes(hookNow)) {
             if (!sp.reveal && !sp.receipt) {
               throw new Error(`step ${step} is a ${profile.label.toLowerCase()} email with no reveal. Add reveal: 1 to 3 short lines on what TeamGrid already knows or does about this moment. Nothing was written.`);
@@ -1949,8 +1953,13 @@ export const TOOLS: ToolDef[] = [
             if (screen.length) {
               throw new Error(`step ${step} says "${screen[0]}". Say what TeamGrid shows, never what its screen looks like: no colours or screen words. Nothing was written.`);
             }
-            if (!/screenshot/i.test(sp.limit) || !/\btype|typed|typing\b/i.test(sp.limit)) {
-              throw new Error(`step ${step} needs the safety line in limit, before the button: no screenshots, and nothing people type is recorded. Nothing was written.`);
+            // The manager's review (2026-09-22): a selling email gives the price and never lists
+            // features. The privacy line is no longer required; the no_watching email carries it.
+            if (sp.shows) {
+              throw new Error(`step ${step} lists what they would see (shows). A list of features reads as a brochure: say the one result in reveal and leave shows out. Nothing was written.`);
+            }
+            if (askNow === "link" && prices.length && !prices.some((p) => everythingRaw.includes(p))) {
+              throw new Error(`step ${step} never gives the price. Put it in question, bold: ${prices.join(" or ")} per person a month, from writing.facts.plans. Nothing was written.`);
             }
           }
           if (profile.ask === "link" && askNow === "reply" && !profile.replyHooks.includes(hookNow)) {

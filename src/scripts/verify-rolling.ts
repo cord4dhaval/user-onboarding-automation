@@ -4,7 +4,7 @@
  *
  *   MASTER_KEY_B64=$(openssl rand -base64 32) npx tsx src/scripts/verify-rolling.ts
  */
-import { CHECKPOINT_PLAN_WAIT_MS, LEAD_TYPE_PROFILES, avoidedWord, screenWords, unprovenClaims, checkpoint, clickedRecently, companyTokens, emojiProneSymbols, paceBand, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
+import { CHECKPOINT_PLAN_WAIT_MS, CTA_TEXTS, TRIAL_CTA, planPriceFigures, LEAD_TYPE_PROFILES, avoidedWord, screenWords, unprovenClaims, checkpoint, clickedRecently, companyTokens, emojiProneSymbols, paceBand, leadTypeOf, longSentences, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, teamBand, themeSlug, unlabelledNumbers, watchWindowMs } from "../engine/rolling";
 import { crossChannelGap } from "../engine/cadence";
 import { readTemp } from "../engine/temp";
 import { applyTextTracking } from "../engine/tracking";
@@ -84,7 +84,7 @@ console.log("temperature");
 check("hot email watched 24 h: 30 h after send asks", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39), leadType: "hot" }).kind === "ask");
 check("the same without a lead type still watches (48 h)", checkpoint({ now, lastSentAt: ago(30), lastChannel: "email", askedAt: ago(40), planWrittenAt: ago(39) }).kind === "watch");
 check("hot asks for the link, closing hook may ask for a reply", LEAD_TYPE_PROFILES.hot.ask === "link" && LEAD_TYPE_PROFILES.hot.replyHooks.includes("closing"));
-check("warm follows up with the same no-way email, paced warm", LEAD_TYPE_PROFILES.warm.reveal === true && LEAD_TYPE_PROFILES.warm.band === "warm" && LEAD_TYPE_PROFILES.warm.sequence === LEAD_TYPE_PROFILES.hot.sequence && LEAD_TYPE_PROFILES.warm.maxWords === 110);
+check("warm follows up with the same short selling email, paced warm", LEAD_TYPE_PROFILES.warm.reveal === true && LEAD_TYPE_PROFILES.warm.band === "warm" && LEAD_TYPE_PROFILES.warm.sequence === LEAD_TYPE_PROFILES.hot.sequence && LEAD_TYPE_PROFILES.warm.maxWords === 75);
 check("warm keeps a reply ask for a short question", LEAD_TYPE_PROFILES.warm.replyHooks.includes("question"));
 
 console.log("mode");
@@ -257,7 +257,11 @@ console.log("reveal emails");
   check("the card's title is its small header", branded.includes("SAMPLE HOUR IN TEAMGRID") && !branded.includes("A sample hour in TeamGrid:"));
   check("sample card carries no colour words' colours", !branded.includes("#2563eb") && !branded.includes("#80868b"));
   check("button carries the reveal words", branded.includes("See the first day &rarr;</a>"));
-  check("hot emails stay short", LEAD_TYPE_PROFILES.hot.maxWords === 110 && LEAD_TYPE_PROFILES.cold.maxWords === 125 && LEAD_TYPE_PROFILES.hot.reveal === true);
+  check("every email stays short: about 50 words, never more than 75", Object.values(LEAD_TYPE_PROFILES).every((p) => p.maxWords === 75) && LEAD_TYPE_PROFILES.hot.reveal === true);
+  check("the plan prices are read from the facts", planPriceFigures({ plans: [{ price: "₹299 per user per month" }, { price: "₹649 per user per month" }, { price: "Custom, annual billing" }] }).join(",") === "₹299,₹649");
+  check("every link button says where it goes", CTA_TEXTS[0] === TRIAL_CTA && !CTA_TEXTS.some((c) => /^See (the first day|your|who|where|tomorrow)/.test(c)));
+  check("hot and warm rules sell with the price and a call offer", [LEAD_TYPE_PROFILES.hot, LEAD_TYPE_PROFILES.warm].every((p) => p.rules.some((r) => r.includes("writing.facts.plans")) && p.rules.some((r) => r.includes("P.S. Reply"))));
+  check("sentences stay at 16 words or fewer", longSentences("Some clients take much more of your team's time than they pay for every single month.").length === 0 && longSentences("Some clients take much more of your team's time than they pay for, and most firms find out late.").length === 1);
   check("hot hooks start with the daily question and end on the closing note", LEAD_TYPE_PROFILES.hot.sequence?.[0]?.hook === "daily_question" && LEAD_TYPE_PROFILES.hot.sequence?.at(-1)?.hook === "closing");
   const noWay = {
     slotText: "Here is the funny part. The update already exists.",
