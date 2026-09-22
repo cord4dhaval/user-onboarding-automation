@@ -9,13 +9,16 @@ import {
   holdForAbsence,
   holdOf,
   pauseCompanyMates,
+  REPLIED_REASON,
   resumeAtFor,
   returnDateFrom,
+  skipForReply,
   stopForMeeting,
+  writtenBeforeReply,
 } from "../engine/campaignRules.js";
 
 /**
- * The three campaign rules (engine/campaignRules.ts): the pure readers first, then the
+ * The four campaign rules (engine/campaignRules.ts): the pure readers first, then the
  * database side on a throwaway org that is deleted at the end.
  *
  *   npm run verify:rules
@@ -72,6 +75,20 @@ check("a hold in the future holds", holdOf({ holdUntil: new Date(Date.now() + DA
 check("a hold in the past is over", holdOf({ holdUntil: new Date(Date.now() - 1000) }) === null);
 check("no hold", holdOf({}) === null && holdOf(null) === null);
 
+console.log("\nthey wrote back");
+{
+  // The 21 September case: written in the morning, reply at night, approved next morning.
+  const morning = ObjectId.createFromTime(Math.floor(new Date("2026-09-21T06:22:50Z").getTime() / 1000));
+  const reply = { lastReplyAt: new Date("2026-09-21T17:40:52Z") };
+  check("a mail written before the reply is stale", writtenBeforeReply({ _id: morning, angle: "loss_first" }, reply));
+  check("approving it later does not freshen it", writtenBeforeReply({ _id: morning, angle: "loss_first", reviewedAt: new Date("2026-09-22T04:56:12Z") }, reply));
+  check("a rewrite after the reply is fresh", !writtenBeforeReply({ _id: morning, angle: "loss_first", rewrittenAt: new Date("2026-09-22T07:00:00Z") }, reply));
+  const evening = ObjectId.createFromTime(Math.floor(new Date("2026-09-22T06:00:00Z").getTime() / 1000));
+  check("a mail written after the reply goes", !writtenBeforeReply({ _id: evening, angle: "next_touch" }, reply));
+  check("an answer to them is never stale", !writtenBeforeReply({ _id: morning, angle: "reply" }, reply));
+  check("nobody replied, nothing is stale", !writtenBeforeReply({ _id: morning, angle: "loss_first" }, {}));
+}
+
 // ── database ────────────────────────────────────────────────────────────────
 console.log("\ndatabase (throwaway org)");
 const db = await getDb();
@@ -119,6 +136,25 @@ try {
   const stopped = await db.collection(C.goalInstances).findOne({ _id: gmailB.gi });
   check("a booking skips what was waiting and stops the sequence", stop.skipped === 1 && stop.stopped === 1 && Boolean(stopped?.handedOverAt) && stopped?.status === "active");
   check("booking again changes nothing", (await stopForMeeting({ orgId, productId, personId: gmailB.id, source: "booking page", now })).stopped === 0);
+
+  // Rule 4: every waiting campaign message goes, in Review and approved alike; an answer stays.
+  const wrote = await person("vinit@studio.in", "studio.in");
+  const add = async (fields: Record<string, unknown>) => {
+    const _id = new ObjectId();
+    await db.collection(C.actions).insertOne({ _id, orgId, productId, personId: wrote.id, goalInstanceId: String(wrote.gi), angle: "x", idempotencyKey: `${orgId}:${String(_id)}`, dueAt: now, ...fields });
+    return _id;
+  };
+  const inReview = await add({ status: "awaiting_approval" });
+  const approved = await add({ status: "queued", reviewedAt: now });
+  const channelHeld = await add({ status: "held" });
+  const answer = await add({ status: "awaiting_approval", angle: "reply" });
+  const alreadySent = await add({ status: "sent", sentAt: now });
+  const dropped = await skipForReply({ orgId, productId, personId: wrote.id });
+  const statusOf = async (id: ObjectId) => (await db.collection(C.actions).findOne({ _id: id }))?.status;
+  check("the queued, in-Review, approved and held messages are all dropped", dropped === 4 && (await statusOf(inReview)) === "skipped" && (await statusOf(approved)) === "skipped" && (await statusOf(channelHeld)) === "skipped" && (await statusOf(wrote.action)) === "skipped", String(dropped));
+  check("with the reason the person page explains", (await db.collection(C.actions).findOne({ _id: inReview }))?.skipReason === REPLIED_REASON);
+  check("the answer to them is kept", (await statusOf(answer)) === "awaiting_approval");
+  check("what already went is untouched", (await statusOf(alreadySent)) === "sent");
 } finally {
   for (const c of [C.people, C.goalInstances, C.actions, C.events]) await db.collection(c).deleteMany({ orgId });
 }

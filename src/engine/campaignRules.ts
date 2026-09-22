@@ -5,7 +5,7 @@ import { isFreeProvider } from "./mailbox.js";
 import { HOME_TIMEZONE } from "./time.js";
 
 /**
- * Three rules every campaign follows, whatever its settings, because breaking any of them
+ * Four rules every campaign follows, whatever its settings, because breaking any of them
  * reads to the lead as nobody paying attention:
  *
  *   1. Someone at a company writes back: everyone else we are writing to at that company
@@ -13,6 +13,8 @@ import { HOME_TIMEZONE } from "./time.js";
  *   2. An out-of-office reply is not a reply. The lead's campaign waits until the day after
  *      they are back, and nothing else about them changes.
  *   3. A lead who books a meeting is out of the sequence, whichever page they booked on.
+ *   4. A lead who writes back gets an answer, not the next campaign message: whatever was
+ *      written for them before their reply is dropped, wherever it is waiting.
  *
  * Rules 1 and 2 share one mechanism: a hold on the lead's campaign until a date
  * (goal_instances.holdUntil, holdReason, holdKind). While it lasts the engine plans nothing
@@ -391,4 +393,60 @@ export async function stopForMeeting(input: {
     },
   );
   return { skipped: skipped.modifiedCount, stopped: stopped.modifiedCount };
+}
+
+// ── rule 4: they wrote back ───────────────────────────────────────────────────
+
+/** The skip reason for rule 4; the person page reads it as "waits for you to answer them". */
+export const REPLIED_REASON = "they replied; waiting on a human answer";
+
+/**
+ * When a message's words were written: when it was queued, or when it was last rewritten.
+ * Approval is not writing. A reviewer approving seventy-five mails at once has not read the
+ * reply that came in overnight, and their click does not make the words answer it.
+ */
+export function writtenAt(action: Document): Date {
+  const created = ObjectId.isValid(String(action._id)) ? new ObjectId(String(action._id)).getTimestamp() : new Date(0);
+  const rewritten = action.rewrittenAt ? new Date(String(action.rewrittenAt)) : null;
+  return rewritten && rewritten > created ? rewritten : created;
+}
+
+/**
+ * Whether a message was written for a conversation that has since moved on: the lead wrote
+ * back after its words were written. An answer to what they wrote is never stale.
+ */
+export function writtenBeforeReply(action: Document, person: Document): boolean {
+  if (String(action.angle) === "reply") return false;
+  const repliedAt = person.lastReplyAt ? new Date(String(person.lastReplyAt)) : null;
+  return Boolean(repliedAt && repliedAt > writtenAt(action));
+}
+
+/**
+ * Drops every campaign message still waiting for someone who has just written back, on
+ * every channel: unreviewed, in Review, approved, or held for a channel. Only an answer to
+ * what they wrote is kept.
+ *
+ * Matching unreviewed queued messages alone missed the one waiting in Review. On 21
+ * September a lead replied at 23:10 asking for payment details; the "You pay for 9 hours"
+ * mail written that morning stayed in Review, was approved with 74 others at 10:26, and went
+ * out inside their quotation thread.
+ */
+export async function skipForReply(input: {
+  orgId: string;
+  productId: string;
+  personId: string;
+  reason?: string;
+}): Promise<number> {
+  const db = await getDb();
+  const skipped = await db.collection(C.actions).updateMany(
+    {
+      orgId: input.orgId,
+      productId: input.productId,
+      personId: input.personId,
+      status: { $in: ["queued", "awaiting_approval", "held"] },
+      angle: { $ne: "reply" },
+    },
+    { $set: { status: "skipped", skipReason: input.reason ?? REPLIED_REASON } },
+  );
+  return skipped.modifiedCount;
 }

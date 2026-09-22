@@ -11,7 +11,7 @@ import { mailOwner } from "./ownerMail.js";
 import { looksLikeOptOut } from "./inbound.js";
 import { unsubscribePerson } from "./unsubscribe.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
-import { pauseCompanyMates } from "./campaignRules.js";
+import { pauseCompanyMates, skipForReply } from "./campaignRules.js";
 
 /**
  * What LinkedIn will not push to us, read on a clock: who accepted an invite, whose invite
@@ -303,10 +303,7 @@ export async function recordLinkedInReply(input: {
   await db.collection(C.people).updateOne({ _id: new ObjectId(personId) }, { $set: { lastReplyAt: at } });
   // Every channel stops, not only LinkedIn: someone who wrote back anywhere is in a
   // conversation now, and a scripted email arriving beside it reads as nobody listening.
-  await db.collection(C.actions).updateMany(
-    { orgId, productId, personId, status: "queued", reviewedAt: { $exists: false } },
-    { $set: { status: "skipped", skipReason: "they replied on LinkedIn; waiting on a human answer" } },
-  );
+  await skipForReply({ orgId, productId, personId, reason: "they replied on LinkedIn; waiting on a human answer" });
   // And their colleagues wait two weeks, so the company hears from one conversation.
   await pauseCompanyMates({ orgId, productId, personId, channel: "LinkedIn" });
   const who = String(person?.name ?? "A lead");

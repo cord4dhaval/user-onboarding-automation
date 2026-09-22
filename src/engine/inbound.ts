@@ -11,7 +11,7 @@ import { suppress } from "./suppression.js";
 import { grantedCapabilities } from "../auth/google.js";
 import { detectMovement } from "./detect.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
-import { autoReplyKind, holdForAbsence, pauseCompanyMates } from "./campaignRules.js";
+import { autoReplyKind, holdForAbsence, pauseCompanyMates, skipForReply } from "./campaignRules.js";
 
 /**
  * Reads replies.
@@ -568,11 +568,9 @@ export async function pollReplies(
         ],
         href: `/products/${productId}/library/${personId}`,
       });
-      const held = await db.collection(C.actions).updateMany(
-        { orgId, productId, personId, status: "queued", reviewedAt: { $exists: false } },
-        { $set: { status: "skipped", skipReason: "they replied; waiting on a human answer" } },
-      );
-      summary.heldForReply += held.modifiedCount;
+      // Everything written for them before this reply, wherever it waits: Review, approved,
+      // or queued. Only an answer to an earlier message of theirs is kept.
+      summary.heldForReply += await skipForReply({ orgId, productId, personId });
 
       // Then the answer itself is queued as urgent work, which bypasses fairness entirely.
       if (intent) {

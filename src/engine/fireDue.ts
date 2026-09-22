@@ -28,7 +28,7 @@ import { groupFor, paceBand } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
 import { HOME_TIMEZONE, localHour, nextSendableAt } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
-import { holdOf } from "./campaignRules.js";
+import { holdOf, REPLIED_REASON, writtenBeforeReply } from "./campaignRules.js";
 import { pathAndQuery, providerParams } from "./providerParams.js";
 
 export interface FireSummary {
@@ -304,6 +304,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         channel,
         op,
         isReply: String(action.angle) === "reply",
+        staleForReply: writtenBeforeReply(action, person),
         now,
       });
       if (block) {
@@ -901,12 +902,19 @@ async function blockedReason(args: {
   /** The LinkedIn action this send will be, which has limits of its own. */
   op?: string;
   isReply?: boolean;
+  /** Written before the lead's latest reply (engine/campaignRules.ts, rule 4). */
+  staleForReply?: boolean;
   now: Date;
 }): Promise<Blocked | null> {
   if (await isSuppressed(args.orgId, [args.address])) return { reason: "on the suppression list" };
 
   const gi = args.goalInstance as { status: string; deadline: Date; spent: { touches: number }; goalKey: string };
   if (gi.status !== "active") return { reason: `goal instance is ${gi.status}` };
+  // The last check before a campaign message reaches someone who has written back since it
+  // was written. The reply poller drops these the minute it reads the reply; this catches
+  // whatever it could not, approved or not. An approval does not count: on 22 September a
+  // mail approved in bulk went to a lead who had asked for payment details the night before.
+  if (args.staleForReply) return { reason: REPLIED_REASON };
   // A campaign on hold (a colleague replied, or they are out of office) keeps its message,
   // approval and all, until the hold lifts. An answer to something they wrote still goes.
   const hold = holdOf(args.goalInstance, args.now);
