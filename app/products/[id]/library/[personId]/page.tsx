@@ -336,6 +336,42 @@ export default async function PersonPage({
     // A WhatsApp message written to the sales team, not to the campaign: kept, but not ours.
     if (type === "whatsapp_chat") continue;
 
+    // An automatic reply is shown for what it is, never as "they replied".
+    if (type === "auto_reply") {
+      const away = payload.kind === "absence";
+      past.push({
+        at,
+        lane: "person",
+        node: (
+          <>
+            <strong><Clock size={13} /> {away ? "Out-of-office reply" : "Automatic reply"}</strong>
+            <div className="muted t-detail">
+              {away
+                ? payload.holdUntil
+                  ? `Not a reply from them. Their campaign waits until ${istDay(payload.holdUntil as string)}${payload.returnDateInMessage ? ", the day after the date in their message" : "; the message gave no date, so one week"}.`
+                  : "Not a reply from them."
+                : "Sent by their mail system, not by them. Nothing changes."}
+            </div>
+            {payload.text ? <blockquote className="t-quote">{String(payload.text).slice(0, 400)}</blockquote> : null}
+          </>
+        ),
+      });
+      continue;
+    }
+
+    if (type === "campaign_held") {
+      past.push({
+        at,
+        node: (
+          <>
+            <strong><Clock size={13} /> Campaign paused until {istDay(payload.until as string)}</strong>
+            <div className="muted t-detail">{sentence(String(payload.reason ?? "on hold"))}</div>
+          </>
+        ),
+      });
+      continue;
+    }
+
     // LinkedIn has no inbox signal for an invite: the accept check reads who became a
     // connection, and gives up on an invite after the channel's limit.
     if (type === "linkedin_accepted") {
@@ -630,6 +666,14 @@ export default async function PersonPage({
                         <div className="muted cell-note">ends {istDay(c.deadline)}</div>
                       ) : null}
                       {c.outcome ? <div className="muted cell-note">{String(c.outcome)}</div> : null}
+                      {/* A campaign rule at work (engine/campaignRules.ts): why nothing is
+                          going out, and until when, on the row the reader is looking at. */}
+                      {c.status === "active" && c.holdUntil && new Date(String(c.holdUntil)) > new Date() ? (
+                        <div className="cell-note">Paused until {istDay(c.holdUntil)}: {String(c.holdReason ?? "on hold")}</div>
+                      ) : null}
+                      {c.status === "active" && c.handedOverAt ? (
+                        <div className="cell-note">Sequence stopped: {String(c.handedOverReason ?? "handed to a person")}</div>
+                      ) : null}
                     </td>
                   </tr>
                 );

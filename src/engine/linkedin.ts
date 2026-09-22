@@ -11,6 +11,7 @@ import { mailOwner } from "./ownerMail.js";
 import { looksLikeOptOut } from "./inbound.js";
 import { unsubscribePerson } from "./unsubscribe.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
+import { pauseCompanyMates } from "./campaignRules.js";
 
 /**
  * What LinkedIn will not push to us, read on a clock: who accepted an invite, whose invite
@@ -306,6 +307,8 @@ export async function recordLinkedInReply(input: {
     { orgId, productId, personId, status: "queued", reviewedAt: { $exists: false } },
     { $set: { status: "skipped", skipReason: "they replied on LinkedIn; waiting on a human answer" } },
   );
+  // And their colleagues wait two weeks, so the company hears from one conversation.
+  await pauseCompanyMates({ orgId, productId, personId, channel: "LinkedIn" });
   const who = String(person?.name ?? "A lead");
   await notify({
     orgId,

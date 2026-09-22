@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { verifyCampaign } from "./verify.js";
+import { MEETING_EVENTS, stopForMeeting } from "./campaignRules.js";
 
 /**
  * A fact a page reports about a person: they reached the thank-you page, they booked.
@@ -47,6 +48,10 @@ export async function recordSiteEvent(personId: string, event: string, referer: 
     payload: { event: name, referer },
     ts: now,
   });
+
+  // A meeting they booked on the customer's own page ends the sequence the same way our
+  // booking page does: the next chase landing after they picked a time says nobody noticed.
+  if (MEETING_EVENTS.has(name)) await stopForMeeting({ orgId, productId, personId, source: referer ? `booked on ${referer.slice(0, 80)}` : "booked on your site" });
 
   const active = await db
     .collection(C.goalInstances)

@@ -1204,7 +1204,7 @@ Decisions (Dhaval, 2026-09-21 and 22):
 | CX3 | Writers see the context | lead_card shows facts, ideas and examples | `writing.context` on lead_card, cut to the lead's segment, with rules: facts win over the site, sample proof is only an example and never named, competitors only when the lead uses one | done 2026-09-22 |
 | CX4 | The context goes stale when the site changes | Nothing reads the site again | `setup_gaps` raises `no_context` and `context_stale` (30 days); Maintain 5.1 reads the site again and records what changed; a conflict with facts goes to the owner | code done 2026-09-22; the Maintain trigger prompt needs pushing after deploy |
 | CX5 | A person reads and confirms the context | Only as raw JSON on Settings | A Context page: sections, proof to confirm, page map | todo, UI pass |
-| CX6 | Campaign rules: pause the company on a reply, out-of-office, stop on a meeting | Seven reply intents; none of the three | New intent `out_of_office` with a return date; company pause; meeting stop | todo |
+| CX6 | Campaign rules: pause the company on a reply, out-of-office, stop on a meeting | Seven reply intents; none of the three | `engine/campaignRules.ts`: a hold on a lead's campaigns until a date (`holdUntil`, `holdReason`, `holdKind`) that fireDue waits out without losing approval and advance/plan requests/nudges skip. A real reply by email, WhatsApp or LinkedIn holds colleagues at the same company (not free-mail domains) for 14 days. An out-of-office reply (Auto-Submitted, X-Autoreply or an automatic-reply subject) is recorded as `auto_reply`, not a reply, and holds the lead until 09:30 IST the day after the return date it names (Indian date order), or one week. A booking on our page or a `booked` event from the customer's site skips what was waiting and stops the sequence; a meeting sales logs in the CRM does not (decision 2026-09-21). Shown on the lead page and in Review. `npm run verify:rules` | done 2026-09-22 |
 | CX7 | Deliverability basics | SES DNS only; bounces recorded, never watched | DNS check for any domain, email check before the first send, bounce auto-pause, own tracking domain, rented warm-up | todo |
 | CX8 | One reply stream across Gmail, WhatsApp and LinkedIn | Replies live on each lead's timeline; LinkedIn inbox read is off | One list with intent tags that React answers from | todo |
 | CX9 | LinkedIn fully on | Visit, invite, message, comment | Inbox read, withdraw, like and follow before invite | todo |
@@ -1327,7 +1327,7 @@ Decisions (Dhaval, 2026-09-21 and 22):
 | 102 | Company context v2: site map, page text, page map, proof, competitors, trust, markets; writers read it; a button can go to the fitting page | CX1–CX3 | done 2026-09-22 |
 | 103 | Monthly re-read of the site by Maintain, with what changed | CX4 | code done 2026-09-22; trigger prompt to push |
 | 104 | Context page to read the context and confirm proof | CX5 | todo, UI pass |
-| 105 | Campaign rules: company pause on reply, out-of-office, stop on meeting | CX6 | todo |
+| 105 | Campaign rules: company pause on reply, out-of-office, stop on meeting | CX6 | done 2026-09-22 |
 | 106 | Deliverability basics: DNS check, email check before first send, bounce auto-pause, tracking domain, rented warm-up | CX7, merges with 12 and 75 | todo |
 | 107 | One reply stream across Gmail, WhatsApp and LinkedIn | CX8 | todo |
 | 108 | LinkedIn fully on: inbox read, withdraw, like and follow before invite | CX9, merges with 97 and 99 | todo |

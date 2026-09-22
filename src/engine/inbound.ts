@@ -11,6 +11,7 @@ import { suppress } from "./suppression.js";
 import { grantedCapabilities } from "../auth/google.js";
 import { detectMovement } from "./detect.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
+import { autoReplyKind, holdForAbsence, pauseCompanyMates } from "./campaignRules.js";
 
 /**
  * Reads replies.
@@ -43,6 +44,12 @@ export interface InboundSummary {
   heldForReply: number;
   /** One-word replies the engine answered itself (\"call\", \"later\"). */
   autoAnswered: number;
+  /** Out-of-office replies: not counted as replies; the lead's campaign waits until they are back. */
+  outOfOffice: number;
+  /** Other automatic replies ("we got your mail"): recorded, and nothing else. */
+  autoReplies: number;
+  /** Campaigns of colleagues held because someone at their company replied. */
+  companyHeld: number;
   unsubscribed: number;
   /** Hard bounces found and suppressed. Soft ones are counted nowhere: they mean nothing yet. */
   bounced: number;
@@ -335,7 +342,7 @@ export async function pollReplies(
     examined: 0,
     matched: 0,
     recorded: 0,
-    heldForReply: 0, autoAnswered: 0,
+    heldForReply: 0, autoAnswered: 0, outOfOffice: 0, autoReplies: 0, companyHeld: 0,
     unsubscribed: 0,
     bounced: 0,
     errors: [],
@@ -395,7 +402,7 @@ export async function pollReplies(
       (
         await db
           .collection(C.events)
-          .find({ orgId, type: "reply_received", "payload.messageId": { $in: ids } })
+          .find({ orgId, type: { $in: ["reply_received", "auto_reply"] }, "payload.messageId": { $in: ids } })
           .project({ "payload.messageId": 1 })
           .toArray()
       ).map((e) => String((e.payload as { messageId?: unknown })?.messageId)),
@@ -408,7 +415,8 @@ export async function pollReplies(
       const message =
         (await gmail(`/messages/${id}?format=full`, mailbox.token)) ??
         (await gmail(
-          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Message-ID`,
+          `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Message-ID` +
+            `&metadataHeaders=Auto-Submitted&metadataHeaders=X-Autoreply&metadataHeaders=X-Autorespond&metadataHeaders=Precedence`,
           mailbox.token,
         ));
       if (!message) continue;
@@ -435,6 +443,37 @@ export async function pollReplies(
       const personId = String(person._id);
       const at = message.internalDate ? new Date(Number(message.internalDate)) : new Date();
       const text = newTextOnly(bodyOf(message));
+
+      // An automatic reply is not the person writing back. Counted as a reply it would stop
+      // their sequence, tell the owner someone answered, and park a rolling campaign waiting
+      // for a conversation nobody is having. An away message holds their campaign until the
+      // day after they are back; any other automatic reply is recorded and changes nothing.
+      const subject = headerOf(message.payload, "Subject") ?? "";
+      const auto = autoReplyKind((name) => headerOf(message.payload, name), subject, text);
+      if (auto) {
+        const away = auto === "absence" ? await holdForAbsence({ orgId, productId, personId, text: `${subject}\n${text}`, sent: at }) : null;
+        await db.collection(C.events).insertOne({
+          orgId,
+          productId,
+          personId,
+          type: "auto_reply",
+          channel: "email",
+          ts: at,
+          payload: {
+            messageId: id,
+            threadId: message.threadId,
+            mailbox: mailbox.email,
+            from,
+            subject,
+            text: text.slice(0, 2000),
+            kind: auto,
+            ...(away ? { holdUntil: away.until, returnDateInMessage: away.fromMessage, campaignsHeld: away.held } : {}),
+          },
+        });
+        if (away) summary.outOfOffice++;
+        else summary.autoReplies++;
+        continue;
+      }
 
       // The touch this answers: ours in the same thread, else the last email we sent them.
       // Kept on the event, with its channel, so every signal in the lead's history says which
@@ -472,6 +511,11 @@ export async function pollReplies(
         },
       });
       summary.recorded++;
+
+      // Everyone else we write to at their company waits two weeks, so the company hears
+      // from one conversation (engine/campaignRules.ts). Done before anything else here,
+      // because a colleague's message could be due in this same minute.
+      summary.companyHeld += (await pauseCompanyMates({ orgId, productId, personId, channel: "email" })).held;
 
       // Honoured here rather than left for a routine. A person who asked to be left alone
       // should not still be receiving mail because a scheduled session has not run yet, and

@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { activeInstanceFor } from "./instances.js";
 import { PRIORITY, enqueue, enqueueMany } from "./queue.js";
 import { claudePlansLinkedIn } from "./linkedin.js";
+import { notHeld } from "./campaignRules.js";
 
 /**
  * Noticing what needs a session's attention, on the minute clock, without a model.
@@ -133,6 +134,7 @@ export async function detectWork(
         goalKey: { $in: perLead.map((g) => String(g.key)) },
         currentPlanId: { $exists: true },
         handedOverAt: { $exists: false },
+        ...notHeld(),
       })
       .project({ _id: 1, goalKey: 1, personId: 1, currentPlanId: 1 })
       .limit(BATCH)

@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { activeInstanceFor } from "./instances.js";
+import { holdOf } from "./campaignRules.js";
 
 const HOUR = 3_600_000;
 
@@ -65,6 +66,7 @@ export async function nudgeStartedRegistrations(
     const instance = await activeInstanceFor({ orgId, productId, personId });
     if (!instance) { skip("no open campaign"); continue; }
     if (instance.handedOverAt) { skip("handed over to a person"); continue; }
+    if (holdOf(instance)) { skip(`on hold: ${String(instance.holdReason ?? "")}`); continue; }
 
     const finished = await db
       .collection(C.events)

@@ -28,6 +28,7 @@ import { groupFor, paceBand } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
 import { HOME_TIMEZONE, localHour, nextSendableAt } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
+import { holdOf } from "./campaignRules.js";
 import { pathAndQuery, providerParams } from "./providerParams.js";
 
 export interface FireSummary {
@@ -903,6 +904,10 @@ async function blockedReason(args: {
 
   const gi = args.goalInstance as { status: string; deadline: Date; spent: { touches: number }; goalKey: string };
   if (gi.status !== "active") return { reason: `goal instance is ${gi.status}` };
+  // A campaign on hold (a colleague replied, or they are out of office) keeps its message,
+  // approval and all, until the hold lifts. An answer to something they wrote still goes.
+  const hold = holdOf(args.goalInstance, args.now);
+  if (hold && !args.isReply) return { reason: hold.reason, retryAt: hold.until };
   if (new Date(gi.deadline) < args.now) return { reason: "goal deadline passed" };
 
   const db = await getDb();

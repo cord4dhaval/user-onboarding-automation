@@ -11,6 +11,7 @@ import { mailOwner } from "./ownerMail.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
 import { suppress } from "./suppression.js";
 import { unsubscribePerson } from "./unsubscribe.js";
+import { pauseCompanyMates } from "./campaignRules.js";
 
 /**
  * What a WhatsApp provider tells us after a send: that a lead wrote something, or what
@@ -223,6 +224,8 @@ export async function applyWhatsAppEvent(
     { orgId, productId, personId, status: "queued", reviewedAt: { $exists: false } },
     { $set: { status: "skipped", skipReason: "they replied on WhatsApp; waiting on an answer" } },
   );
+  // And their colleagues wait two weeks, so the company hears from one conversation.
+  await pauseCompanyMates({ orgId, productId, personId, channel: "WhatsApp" });
 
   const who = String(person.name ?? event.senderName ?? "A lead");
   const said = event.button

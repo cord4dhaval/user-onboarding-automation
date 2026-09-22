@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { resolveSecret } from "../crypto/broker.js";
 import { notify } from "./notify.js";
 import { recordSiteEvent } from "./siteEvents.js";
+import { stopForMeeting } from "./campaignRules.js";
 
 /**
  * Booking a call, on a calendar we can read and write.
@@ -281,14 +282,13 @@ export async function book(input: {
   // noticed — and the campaign stays open so the signup check can still close it. Not a
   // check of its own: success requires every check to pass, and a booking is a route to
   // signing up, not a second finish line.
-  await db.collection(C.actions).updateMany(
-    { orgId: input.orgId, productId: input.productId, personId: input.personId, status: { $in: ["queued", "awaiting_approval", "held"] } },
-    { $set: { status: "skipped", skipReason: "booked_call" } },
-  );
-  await db.collection(C.goalInstances).updateMany(
-    { orgId: input.orgId, productId: input.productId, personId: input.personId, status: "active" },
-    { $set: { handedOverAt: new Date(), handedOverReason: "booked a call", lastReviewNote: `Booked ${booking.label}; sequence stopped, a person takes it from here.` } },
-  );
+  await stopForMeeting({
+    orgId: input.orgId,
+    productId: input.productId,
+    personId: input.personId,
+    source: "booking page",
+    note: `Booked ${booking.label}; sequence stopped, a person takes it from here.`,
+  });
   // The event is recorded for the record and for any campaign whose finish line is the call.
   await recordSiteEvent(input.personId, "booked", "booking page");
   await notify({

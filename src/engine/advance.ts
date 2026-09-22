@@ -9,6 +9,7 @@ import type { ChannelKey } from "../schemas/common.js";
 import { checkpoint, clickedRecently, frameKeyOf, isRolling, isRollingPlan, leadTypeOf, paceBand, perLeadPlanOf, type CheckpointDecision } from "./rolling.js";
 import { claudePlansLinkedIn } from "./linkedin.js";
 import { newsSincePlan, staleReason } from "./news.js";
+import { holdOf } from "./campaignRules.js";
 
 /**
  * Turning a plan into messages, on the clock, for everybody.
@@ -151,7 +152,7 @@ export async function advance(
     .collection(C.goalInstances)
     .find(
       { ...s, status: "active", currentPlanId: { $exists: true } },
-      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1, startedAt: 1, createdAt: 1, handedOverAt: 1, checkpointAskedAt: 1 } },
+      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1, startedAt: 1, createdAt: 1, handedOverAt: 1, checkpointAskedAt: 1, holdUntil: 1, holdReason: 1 } },
     )
     .sort({ lastAdvancedAt: 1, startedAt: 1 })
     .limit(limit)
@@ -337,6 +338,12 @@ export async function advance(
     // chase would land in the middle of it. The campaign stays open so its checks can still
     // close it; only the sequence stops.
     if (instance.handedOverAt) {
+      summary.parked++;
+      continue;
+    }
+    // On hold until a date: a colleague at their company replied, or they are out of office
+    // (engine/campaignRules.ts). Nothing is planned or asked for until it lifts.
+    if (holdOf(instance, now)) {
       summary.parked++;
       continue;
     }

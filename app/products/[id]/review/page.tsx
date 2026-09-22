@@ -135,8 +135,14 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
   const status = String(action.status);
   const validation = action.validation as { hardFails?: string[] } | undefined;
   switch (status) {
-    case "awaiting_approval":
-      return { label: "Pending", tone: "" };
+    case "awaiting_approval": {
+      // A campaign rule moved it (a colleague replied, they are out of office): say until
+      // when, so approving it now does not look like it will go now.
+      const waits = action.deferReason && action.dueAt && new Date(String(action.dueAt)) > new Date();
+      return waits
+        ? { label: "Pending", tone: "", detail: `waits until ${ist(action.dueAt as string)} — ${String(action.deferReason)}` }
+        : { label: "Pending", tone: "" };
+    }
     case "queued": {
       // "queued" is where every message starts, not only where an approved one waits. A
       // row that nobody has looked at read as "approved · in the send queue", which is the
@@ -145,7 +151,10 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
       // message, so there is always a window where both meanings share one status, and
       // reviewedAt is the only thing that tells them apart.
       if (!action.reviewedAt) {
-        return { label: "Scheduled", tone: "", detail: "dated for later, no decision yet" };
+        const waits = action.deferReason && action.dueAt && new Date(String(action.dueAt)) > new Date();
+        return waits
+          ? { label: "Scheduled", tone: "", detail: `waits until ${ist(action.dueAt as string)} — ${String(action.deferReason)}` }
+          : { label: "Scheduled", tone: "", detail: "dated for later, no decision yet" };
       }
       // A message waiting out a full window is not the same as one about to go, and the
       // difference is the only thing anyone wants to know from this row. The date it is
@@ -192,6 +201,10 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
       // plan sends its own step instead. Red "Failed" on it read as an error that was not.
       if (isReplacedPlan(action.skipReason)) {
         return { label: "Replaced", tone: "", detail: "the lead's new plan sends its own message instead" };
+      }
+      // Not a failure: they booked a meeting, which is what the mail was for.
+      if (action.skipReason === "booked_call") {
+        return { label: "Stopped", tone: "", detail: "they booked a meeting; a person takes it from here" };
       }
       return action.skipReason
         ? { label: "Failed", tone: "bad", detail: String(action.skipReason), origin: "ours" }
