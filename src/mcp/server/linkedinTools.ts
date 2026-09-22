@@ -6,6 +6,7 @@ import { claudePlansLinkedIn, linkedinNeed, type LinkedInNeed } from "../../engi
 import { linkedinTextProblems, sentenceKey, sentencesOf, type LinkedInTextKind } from "../../engine/linkedinWriting.js";
 import { ideasFor, ideasHadBy } from "../../engine/ideas.js";
 import { themeSlug } from "../../engine/rolling.js";
+import { contextForLead, contextOf, linkPageProblem } from "../../engine/siteContext.js";
 import type { ToolCtx, ToolDef } from "./tools.js";
 
 /**
@@ -211,7 +212,10 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
           chars: rules.targetChars ?? null,
           gap_days: rules.gapDays ?? null,
           max_unanswered: rules.maxUnanswered ?? 3,
-          links: "Only {{trial_link}}, with ask \"link\": after they have answered, or on the last message allowed. {{first_name}} is the only other field.",
+          links:
+            "Only {{trial_link}}, with ask \"link\": after they have answered, or on the last message allowed. {{first_name}} is the only other field. " +
+            "With a link ask, link_page may name a page from product.context (pages_for_this_lead first) that fits them better than the start link: " +
+            "their segment's solution page, the comparison with a tool they use, pricing when they asked about cost, security when they asked about data. {{trial_link}} then goes there.",
         },
         product: {
           one_liner: config.oneLiner ?? null,
@@ -219,6 +223,9 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
           facts: writing.facts ?? null,
           phrases: writing.phrases ?? null,
           words_avoid: writing.wordsAvoid ?? null,
+          // What the product's website says, cut to this lead (engine/siteContext.ts). The
+          // truth sheet (facts) wins where they disagree; proof is only ever an example.
+          context: contextForLead(contextOf(product), segment),
         },
         ideas,
         linkedin_results_by_idea: [...byIdea.entries()].map(([n, s]) => ({ n, ...s })),
@@ -310,6 +317,7 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
               after_days: { type: "number", description: "Days after the previous touch (the accept, for a first message)." },
               text: { type: "string", description: "The message as sent. {{first_name}} and, with ask \"link\", {{trial_link}} are the only fields." },
               ask: { type: "string", enum: ["reply", "link"] },
+              link_page: { type: "string", description: "Optional, link asks only: a page url from linkedin_card product.context that {{trial_link}} goes to instead of the start link." },
               idea_refs: { type: "array", items: { type: "number" } },
               theme: { type: "string", description: "The idea in a few words, for results." },
               hook: { type: "string" },
@@ -353,6 +361,9 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
         const lastAllowed = unanswered + i + 1 === max;
         if (ask === "link" && !hasReplied && !lastAllowed) problems.push(`${label}: a link waits until they have answered, or the last message allowed`);
         for (const p of linkedinTextProblems(String(step.text ?? ""), { rules, kind, ask, person, usedSentences: used })) problems.push(`${label}: ${p}`);
+        const page = String(step.link_page ?? "").trim();
+        const pageProblem = page ? linkPageProblem(lead.product, page, ask) : null;
+        if (pageProblem) problems.push(`${label}: ${pageProblem}`);
         if (!String(step.why ?? "").trim()) problems.push(`${label}: say why, in one sentence`);
         const refs = (Array.isArray(step.idea_refs) ? step.idea_refs : []).map(Number).filter(Number.isFinite);
         if (bank.length) {
@@ -406,7 +417,15 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
           cost: 0,
           signals: [],
           next: {},
-          content: { bodyMd: text, slotText: text, ask: step.ask === "link" ? "link" : "reply", personalizationUsed: [], claimsMade: [], wordCount: text.split(/\s+/).length },
+          content: {
+            bodyMd: text,
+            slotText: text,
+            ask: step.ask === "link" ? "link" : "reply",
+            ...(String(step.link_page ?? "").trim() ? { linkPage: String(step.link_page).trim() } : {}),
+            personalizationUsed: [],
+            claimsMade: [],
+            wordCount: text.split(/\s+/).length,
+          },
           assetIds: [],
           idempotencyKey: `${goalInstanceId}:linkedin:${id}`,
           createdAt: now,
@@ -445,6 +464,7 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
         event_id: { type: "string" },
         text: { type: "string" },
         ask: { type: "string", enum: ["reply", "link"] },
+        link_page: { type: "string", description: "Optional, link asks only: a page url from linkedin_card product.context that answers what they asked (pricing, security, a comparison)." },
         why: { type: "string" },
       },
       required: ["goal_instance_id", "event_id", "text", "ask", "why"],
@@ -464,6 +484,9 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
         usedSentences: await usedSentences(ctx.orgId, String(lead.instance.productId), String(lead.person._id)),
       });
       if (!String(args.why ?? "").trim()) problems.push("say why, in one sentence");
+      const page = String(args.link_page ?? "").trim();
+      const pageProblem = page ? linkPageProblem(lead.product, page, ask) : null;
+      if (pageProblem) problems.push(pageProblem);
       if (problems.length) refuse(problems);
 
       const db = await getDb();
@@ -489,7 +512,7 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
         cost: 0,
         signals: [],
         next: {},
-        content: { bodyMd: text, slotText: text, ask, personalizationUsed: [], claimsMade: [], wordCount: text.split(/\s+/).length },
+        content: { bodyMd: text, slotText: text, ask, ...(page ? { linkPage: page } : {}), personalizationUsed: [], claimsMade: [], wordCount: text.split(/\s+/).length },
         assetIds: [],
         answersEventId: eventId,
         idempotencyKey: `${String(lead.instance._id)}:linkedin:answer:${eventId}`,

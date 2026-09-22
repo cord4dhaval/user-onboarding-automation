@@ -262,6 +262,19 @@ export function contextAgeDays(context: SiteContext | undefined, now = Date.now(
   return Number.isFinite(at) ? Math.floor((now - at) / 86_400_000) : null;
 }
 
+/**
+ * Why a page cannot carry a message's link, or null when it can: it goes with a link ask
+ * only, and it has to be a page the product's context lists, spelled as listed. Shared by
+ * every tool that takes a link_page, so email and LinkedIn refuse the same things.
+ */
+export function linkPageProblem(product: Document | null | undefined, page: string, ask: string): string | null {
+  if (ask !== "link") return 'link_page goes with ask "link" only';
+  const pages = contextOf(product)?.pages ?? [];
+  if (!pages.length) return "this product has no company context yet, so there are no pages to link; leave link_page out";
+  if (!pages.some((p) => p.url === page)) return `link_page "${page.slice(0, 80)}" is not a page in this product's context; use a url exactly as the card lists it, or leave it out`;
+  return null;
+}
+
 /** How often the site is read again. A pricing change should not wait a quarter to reach the mails. */
 export const CONTEXT_REFRESH_DAYS = 30;
 

@@ -315,6 +315,10 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
              writing.facts supports and nothing from facts.unverified.
   limit      one line on what is not recorded, only where the fit is partial.
   question   one line they can answer. Bold in HTML.
+  link_page  on a link ask, a page from writing.context when it fits this lead better
+             than the start link: pages_for_this_lead first, the comparison page for a
+             tool they use, pricing when cost is the question. The button goes there.
+             Leave it out when nothing fits; compose_batch refuses a page not listed.
   ps         optional, one line, no link.
   timeline / reply_options
              two layouts on test. lead_card writing.layout_tests gives this lead's arm
@@ -662,7 +666,9 @@ never invent a capability, a customer or a number.
               from their week the idea describes, then one question they can answer in
               a line;
             - no link and no pitch until they have answered; ask "link" with
-              {{trial_link}} only after they answered, or on the last message allowed;
+              {{trial_link}} only after they answered, or on the last message allowed,
+              and set link_page to a page from product.context when one fits them
+              better than the start link;
             - one question, plain sentences, no list, bold, emoji or sign-off;
             - a different idea and different words from every earlier message, and no
               sentence another lead got this week.
@@ -674,7 +680,9 @@ never invent a capability, a customer or a number.
 
   answer  They wrote back. Read their words in linkedin.open_replies and the history,
           and answer what they asked with answer_linkedin, plainly and from
-          product.facts. Where they ask to try it, ask "link". Where they say not now,
+          product.facts. Where they ask to try it, ask "link". Where they ask about
+          price or how data is kept, ask "link" with link_page set to the pricing or
+          security page from product.context. Where they say not now,
           thank them and ask nothing. Where the facts cannot answer them, say we will
           find out rather than guess.
 
