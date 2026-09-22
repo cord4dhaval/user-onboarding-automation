@@ -14,6 +14,12 @@ export interface ComposedContent {
   ctaUrl?: string;
   /** "reply" renders the message without the template's call to action. See schemas/action.ts. */
   ask?: "reply" | "link";
+  /**
+   * One of the product's own pages (from its company context) that this message's button
+   * goes to instead of the start link: the accounting page for an accounting firm, the
+   * comparison for a lead on a competitor. See engine/siteContext.ts.
+   */
+  linkPage?: string;
   personalizationUsed: string[];
   claimsMade: string[];
   wordCount: number;

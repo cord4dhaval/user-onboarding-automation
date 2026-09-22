@@ -1141,6 +1141,78 @@ Status: 21 draft mails written, one per capability. They are ideas 89 to 109 and
 
 ---
 
+## 2026-09-21 — lemlist, probed end to end (competitor)
+
+Source: lemlist.com, lemlist.com/pricing and a 14-day trial account, walked page by page on 2026-09-21. We asked its AI agent (lemAgent) to plan a TeamGrid campaign for founders of Indian IT services firms with 50–200 people, searched its people database for the same audience, opened the campaign builder, settings, inbox, reports, deliverability, signal agents, enrichment, tasks, calls and the AI context center, and generated a company context from teamgrid.ai.
+
+What lemlist is: a sales outreach tool built around a 650M-contact database, a visual sequence builder (email, LinkedIn, calls, SMS, WhatsApp) with condition branches, and a deliverability suite. Price: $69 a month for email only; multichannel is $109 per user a month ($87 yearly); WhatsApp and credits cost extra.
+
+What we saw:
+
+- **Finding leads.** One sentence found 5,837 founders of Indian IT services firms with 51–200 people. Emails and phones are found per lead for credits, through a waterfall of 25+ data providers.
+- **AI agent.** It wrote a sensible brief and one fixed sequence for everyone: LinkedIn visit, invite, three emails and a gate on "invite accepted". The plan included a "Pune founder story" that TeamGrid never gave it, so it looks invented. Creating the campaign needs a paid plan, and the message carousel's next button did not work.
+- **Builder.** A canvas with "wait N days" on each step and Yes/No branches. Clicking a step opens its editor on the right. Before launch, errors show on the broken step. Steps include email, LinkedIn visit, invite, message, voice note, InMail, like, follow, comment, endorse and withdraw, plus WhatsApp, SMS, call, manual task, API call and send-to-campaign. Conditions include opened, clicked, replied, accepted invite, booked a meeting, has email, has phone and is connected.
+- **Campaign settings.**
+  - On click, reply or meeting: continue, pause or end the lead, and pause everyone at the same company.
+  - AI scores the tone of a reply and handles out-of-office replies.
+  - Timezone-based schedule, sender rotation and matching the email provider.
+  - Tracking switches, with warnings that tracking hurts deliverability.
+- **Deliverability.**
+  - Warm-up (lemwarm) and inbox-placement tests you can schedule.
+  - Bounce rate by provider, mailbox and domain.
+  - Alerts with thresholds, a tech-setup audit, and domains and mailboxes you can buy.
+- **Signal agents.** 20+ buying signals: website visitors, job changes, hiring, funding, LinkedIn engagement with competitors or influencers, tech changes, news. The "Engage" and weekly "Optimize" agents say "Coming soon", so their learning loop is not live.
+- **AI context center.** Paste the website and it writes one readable document:
+  - overview and positioning;
+  - offerings, value proposition, segments and personas;
+  - markets and pains;
+  - a map of the site's feature, solution, comparison and pricing pages;
+  - mission and security claims;
+  - customer stories. It copied the site's testimonials as if they were real.
+
+  It is used by every AI feature. Our product setup already goes deeper on truth: plans, what the product never does, unverified claims and the idea bank. We had no page map, proof list, competitors, trust claims or markets, and nothing refreshes it.
+- **Everything else.**
+  - A unified inbox with interested / not interested / to-unsubscribe filters.
+  - Task queues for calls, hot leads and replies.
+  - Widget dashboards.
+  - Native HubSpot, Salesforce and Pipedrive integrations.
+  - An API, an MCP server and a CLI.
+  - A meeting recorder.
+
+Where the engine is ahead:
+- a plan for each lead, not one path for all;
+- learning across leads through the idea bank;
+- the review queue;
+- one URL building config, brand, templates and campaigns;
+- AI voice calls;
+- WhatsApp through the official API;
+- branded letter and designed mail;
+- pacing by lead type;
+- pre-send validation that refuses invented proof.
+
+Decisions (Dhaval, 2026-09-21 and 22):
+- No in-app AI chat box: the routines do that work.
+- Finding leads and writing back to the CRM are future scope.
+- Own buying signals, team invites and roles come later.
+- The UI/UX pass comes after the feature work.
+- Company context v2 is first.
+
+| # | Finding | Engine today | Build | Status |
+|---|---|---|---|---|
+| CX1 | A context read from the whole site: page map, proof, competitors, trust, markets | `add_product` fills one line, value props, segments, voice and forbidden claims; the truth sheet and ideas are filled by hand; nothing maps the site | `config.context` (schemas/product.ts), `read_site` (sitemap or home links, then page text; JavaScript-built pages read through a rendering reader, `SITE_READER_URL`), `save_context` (every page and source on the product's own site, segments must exist, proof always saved as sample, previous context kept in audit) | done 2026-09-22 |
+| CX2 | A mail's button can go to the page that fits the lead | Every button goes to the start link | `link_page` on compose_batch, checked against the page map; `mergeVarsFor` sends the button and every link in that mail to the page, with the person and visit token | done 2026-09-22 |
+| CX3 | Writers see the context | lead_card shows facts, ideas and examples | `writing.context` on lead_card, cut to the lead's segment, with rules: facts win over the site, sample proof is only an example and never named, competitors only when the lead uses one | done 2026-09-22 |
+| CX4 | The context goes stale when the site changes | Nothing reads the site again | `setup_gaps` raises `no_context` and `context_stale` (30 days); Maintain 5.1 reads the site again and records what changed; a conflict with facts goes to the owner | code done 2026-09-22; the Maintain trigger prompt needs pushing after deploy |
+| CX5 | A person reads and confirms the context | Only as raw JSON on Settings | A Context page: sections, proof to confirm, page map | todo, UI pass |
+| CX6 | Campaign rules: pause the company on a reply, out-of-office, stop on a meeting | Seven reply intents; none of the three | New intent `out_of_office` with a return date; company pause; meeting stop | todo |
+| CX7 | Deliverability basics | SES DNS only; bounces recorded, never watched | DNS check for any domain, email check before the first send, bounce auto-pause, own tracking domain, rented warm-up | todo |
+| CX8 | One reply stream across Gmail, WhatsApp and LinkedIn | Replies live on each lead's timeline; LinkedIn inbox read is off | One list with intent tags that React answers from | todo |
+| CX9 | LinkedIn fully on | Visit, invite, message, comment | Inbox read, withdraw, like and follow before invite | todo |
+| CX10 | Lead database, email finder, CRM write-back | none | — | skip for now: future scope (2026-09-22) |
+| CX11 | Own buying signals; team invites and roles | Site events exist (`/api/e`); owner role only | — | later (2026-09-22) |
+
+---
+
 ## Merged backlog, by priority
 
 | Priority | Item | From | Status |
@@ -1252,3 +1324,10 @@ Status: 21 draft mails written, one per capability. They are ideas 89 to 109 and
 | 99 | LinkedIn: approved comments before invites; founder posts and their engagers | LI9, LI11 | todo |
 | 100 | One campaign across channels; Claude picks the channel per step | LI10 | todo |
 | 101 | Loss-first mails: rewrite waiting v3 mails, voice rule, ideas 89–109 in the bank, template 4 (picture + short text) in the engine | LF1–LF5 | done 2026-09-21 except the voice rule (LF2) and letting the writer pick template 4 itself |
+| 102 | Company context v2: site map, page text, page map, proof, competitors, trust, markets; writers read it; a button can go to the fitting page | CX1–CX3 | done 2026-09-22 |
+| 103 | Monthly re-read of the site by Maintain, with what changed | CX4 | code done 2026-09-22; trigger prompt to push |
+| 104 | Context page to read the context and confirm proof | CX5 | todo, UI pass |
+| 105 | Campaign rules: company pause on reply, out-of-office, stop on meeting | CX6 | todo |
+| 106 | Deliverability basics: DNS check, email check before first send, bounce auto-pause, tracking domain, rented warm-up | CX7, merges with 12 and 75 | todo |
+| 107 | One reply stream across Gmail, WhatsApp and LinkedIn | CX8 | todo |
+| 108 | LinkedIn fully on: inbox read, withdraw, like and follow before invite | CX9, merges with 97 and 99 | todo |

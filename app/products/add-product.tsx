@@ -28,8 +28,12 @@ Read the site first, then:
 2. get_brand, then upsert_template for the rest of the ladder — activation_nudge,
    value_proof, objection, last_call — plus a segment variant wherever the angle
    genuinely differs. All drafts. Check each with preview_template.
-3. draft_campaign four or five times, for campaigns that suit this product.
-4. setup_gaps, then tell me what you drafted and what is waiting on me.`;
+3. read_site for the site map, then read_site with the selling pages a few at a
+   time — home, features, solutions, comparisons, pricing, security, about — and
+   save_context with the page map, proof, competitors, trust claims and markets.
+   Tag each solution page with the segments it is written for.
+4. draft_campaign four or five times, for campaigns that suit this product.
+5. setup_gaps, then tell me what you drafted and what is waiting on me.`;
 
   return (
     <>
@@ -51,8 +55,9 @@ Read the site first, then:
           <div>
             <strong>Let Claude build it</strong>
             <p className="hint">
-              It reads the site and writes the config, the segments, the brand kit, a full template ladder and
-              four or five draft campaigns. Nothing it creates is active — you approve everything.
+              It reads the site and writes the config, the segments, the brand kit, the company context (page map,
+              proof, competitors), a full template ladder and four or five draft campaigns. Nothing it creates is
+              active — you approve everything.
             </p>
           </div>
         </div>

@@ -20,6 +20,8 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
+import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
+import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, ideaLeadCount, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, type InventedIdea } from "../../engine/ideas.js";
 import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
@@ -1505,6 +1507,14 @@ export const TOOLS: ToolDef[] = [
                   "sample (default \"A sample hour in TeamGrid:\"); 2 to 5 lines under 48 characters, for example " +
                   "\"14:00–15:00 · score 40%\", \"meetings in blue · idle in grey\", \"09:04 standup · 18m\".",
               },
+              link_page: {
+                type: "string",
+                description:
+                  "Optional, link asks only. A page from lead_card writing.context (pages_for_this_lead, pages or " +
+                  "other_solution_pages) that fits this lead better than the start link: their segment's solution page, " +
+                  "the comparison with a tool they use, pricing when cost is the question. The button, and every link in " +
+                  "the mail, goes there instead. Omit to send them to the start link.",
+              },
               cta_text: {
                 type: "string",
                 enum: [...CTA_TEXTS],
@@ -2067,6 +2077,28 @@ export const TOOLS: ToolDef[] = [
       // product's own words on the card; a session that read them and still wrote in the
       // first person singular is told so here rather than after somebody approved it.
       const productDoc = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { config: 1 } });
+      // A page for the button has to be one the product's context lists: a URL a session
+      // made up, or one taken off the site, is a broken link in a mail somebody approved.
+      {
+        const pageUrls = new Set((contextOf(productDoc)?.pages ?? []).map((p) => p.url));
+        for (const t of touches) {
+          const page = String(t.link_page ?? "").trim();
+          if (!page) continue;
+          if (String(t.ask ?? "link") === "reply") {
+            throw new Error(`step ${String(t.step_id)}: link_page goes with ask "link" only; a reply ask has no button. Nothing was written.`);
+          }
+          if (providerTouch.has(t)) {
+            throw new Error(`step ${String(t.step_id)}: an approved provider template carries its own buttons; leave link_page out. Nothing was written.`);
+          }
+          if (!pageUrls.has(page)) {
+            throw new Error(
+              pageUrls.size
+                ? `step ${String(t.step_id)}: link_page "${page.slice(0, 80)}" is not a page in this product's context. Use a url exactly as lead_card writing.context lists it, or leave it out. Nothing was written.`
+                : `step ${String(t.step_id)}: this product has no company context yet, so there are no pages to link. Leave link_page out. Nothing was written.`,
+            );
+          }
+        }
+      }
       const voiceText = JSON.stringify((productDoc?.config as { voice?: unknown } | undefined)?.voice ?? {});
       if (/first person plural/i.test(voiceText)) {
         const singular = /(^|[^\w'])(I|I'm|I've|I'd|I'll|me|my|mine|myself)(?=[^\w']|$)/;
@@ -2400,6 +2432,7 @@ export const TOOLS: ToolDef[] = [
                     slots: String(t.ps ?? "").trim() ? { ps: psLine(String(t.ps).trim()) } : undefined,
                   }),
               ask: String(t.ask ?? "") === "reply" ? "reply" : undefined,
+              ...(String(t.link_page ?? "").trim() ? { linkPage: String(t.link_page).trim() } : {}),
               personalizationUsed: [],
               claimsMade: [...new Set([...((t.claims_made ?? []) as string[]), ...assetClaims])],
               wordCount: body.split(/\s+/).filter(Boolean).length,
@@ -3354,13 +3387,14 @@ TOOLS.push({
     const db = await getDb();
     const s = { orgId: ctx.orgId, productId };
 
-    const [templates, goals, sources, channels, brandSources, kit] = await Promise.all([
+    const [templates, goals, sources, channels, brandSources, kit, productDoc] = await Promise.all([
       db.collection(C.templates).find(s).project({ key: 1, channel: 1, status: 1, createdAt: 1 }).toArray(),
       db.collection(C.goals).find(s).toArray(),
       db.collection(C.sources).countDocuments({ ...s, enabled: true }),
       db.collection(C.channels).countDocuments({ ...s, enabled: true }),
       db.collection(C.brandSources).countDocuments(s),
       db.collection(C.brandKits).findOne(s),
+      db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { "config.context": 1, "config.website": 1 } }),
     ]);
 
     const haveKeys = new Set(templates.map((t) => String(t.key)));
@@ -3387,6 +3421,25 @@ TOOLS.push({
         detail: `Campaign "${String(goal.name ?? goal.key)}" cannot tell whether anyone succeeded.`,
         fix: "verifiers then set_checks",
       });
+    }
+    // The site changes — a new price, a new comparison page — and mails quoting last
+    // quarter's page are wrong in a way nobody reviewing one mail would catch.
+    if ((productDoc?.config as { website?: string } | undefined)?.website) {
+      const context = contextOf(productDoc);
+      const age = contextAgeDays(context);
+      if (!context) {
+        yours.push({
+          gap: "no_context",
+          detail: "The product's website has never been read into a company context, so writers have no page map, proof, competitors or trust claims, and every button goes to the start link.",
+          fix: "read_site for the map, read_site with the selling pages a few at a time, then save_context",
+        });
+      } else if (age !== null && age >= CONTEXT_REFRESH_DAYS) {
+        yours.push({
+          gap: "context_stale",
+          detail: `The website was last read ${age} days ago.`,
+          fix: "read_site for the map (new pages show in_context false), read the selling pages again, then save_context with a change_note saying what moved",
+        });
+      }
     }
 
     if (!branded) {
@@ -3488,7 +3541,7 @@ TOOLS.push({
 TOOLS.push({
   name: "add_product",
   description:
-    "Create a product from what you read on its website, and lay the groundwork: it reads the brand off the same site and writes the deterministic starter templates. Follow it with upsert_template to improve those and draft_campaign to propose campaigns. Read the site before calling this — a config guessed without reading is worse than no config.",
+    "Create a product from what you read on its website, and lay the groundwork: it reads the brand off the same site and writes the deterministic starter templates. Follow it with upsert_template to improve those, save_context for the company context (page map, proof, competitors) and draft_campaign to propose campaigns. Read the site before calling this — read_site works before the product exists, and a config guessed without reading is worse than no config.",
   inputSchema: {
     type: "object",
     properties: {
@@ -3712,6 +3765,272 @@ TOOLS.push({
     );
 
     return { key, name, enabled: false, needs };
+  },
+});
+
+// ── company context: what the product's own website says ─────────────────────
+
+TOOLS.push({
+  name: "read_site",
+  description:
+    `Read a product's own website. Without pages: the site map (from its sitemap, or the home page's links) with a first guess at each page's kind, and how old the product's saved context is. With pages: the words of up to ${READ_BATCH_MAX} of those pages; call again for the next few. ` +
+    "Pages built in the browser are read through a rendering reader, so a JavaScript site still returns its text. Read the pages that sell — home, features, solutions, comparisons, pricing, security, about — before save_context; blog posts rarely add anything. Read-only.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string", description: "The product whose site to read. Give this or website." },
+      website: { type: "string", description: "A site to read before its product exists, during onboarding." },
+      pages: { type: "array", items: { type: "string" }, description: `Up to ${READ_BATCH_MAX} page URLs from the map to read now.` },
+    },
+  },
+  async handler(args, ctx) {
+    let website = str(args.website)?.trim();
+    let product: Record<string, unknown> | null = null;
+    if (args.product_id) {
+      await assertProduct(String(args.product_id), ctx);
+      const db = await getDb();
+      product = await db.collection(C.products).findOne({ _id: new ObjectId(String(args.product_id)) }, { projection: { config: 1 } });
+      website = String((product?.config as { website?: string } | undefined)?.website ?? "") || website;
+    }
+    if (!website) throw new Error("give product_id (with a website on its config) or website");
+    try {
+      website = new URL(/^https?:\/\//.test(website) ? website : `https://${website}`).origin;
+    } catch {
+      throw new Error(`"${website}" is not a website address`);
+    }
+
+    const wanted = ((args.pages ?? []) as unknown[]).map((u) => normalisePageUrl(String(u)));
+    if (wanted.length) {
+      if (wanted.length > READ_BATCH_MAX) throw new Error(`read at most ${READ_BATCH_MAX} pages per call; you asked for ${wanted.length}. Ask again for the rest.`);
+      const off = wanted.filter((u) => !onSite(u, website!));
+      if (off.length) throw new Error(`not pages of ${website}: ${off.join(", ")}. read_site reads the product's own site only.`);
+      const read = await readPages(wanted);
+      return {
+        website,
+        pages: read.map((p) => ({
+          url: p.url,
+          kind_guess: kindFromPath(p.url),
+          ...(p.title ? { title: p.title } : {}),
+          read: p.via,
+          text: p.text,
+        })),
+        note: read.some((p) => p.via === "failed")
+          ? "A page that failed could not be read either way. Leave it out of the context rather than describing it from its address."
+          : undefined,
+      };
+    }
+
+    const map = await siteMap(website);
+    const context = contextOf(product);
+    const mapped = new Set((context?.pages ?? []).map((p) => p.url));
+    const age = contextAgeDays(context);
+    return {
+      website,
+      map_from: map.from,
+      page_count: map.pages.length,
+      truncated: map.truncated,
+      pages: map.pages.map((p) => ({ url: p.url, kind_guess: p.kind, ...(product ? { in_context: mapped.has(p.url) } : {}) })),
+      context: product
+        ? context
+          ? { read_at: context.readAt, age_days: age, pages_read: context.pagesRead, pages_in_context: context.pages.length, due_for_refresh: (age ?? 0) >= CONTEXT_REFRESH_DAYS }
+          : { none: true }
+        : undefined,
+      next: `Call read_site again with pages: up to ${READ_BATCH_MAX} URLs at a time, the selling pages first. Then save_context.`,
+    };
+  },
+});
+
+TOOLS.push({
+  name: "save_context",
+  description:
+    "Save what the product's website says as its company context: an overview, its positioning, the page map (every selling page with its kind, a one-line summary and the segments it is written for), proof (customer quotes, case studies, logos, numbers, awards), competitors and how the product differs, security and compliance claims, and markets. " +
+    "Writers read it on every lead_card, and a mail's button can go to one of these pages. Replaces the whole context, so send everything, not only what changed; on a refresh, change_note says what moved since the last read. " +
+    "Proof is saved as a sample: what a marketing page shows is not a confirmed customer result, and only a person can confirm it. Write only what the pages you read say.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      overview: { type: "string", description: "Two or three sentences: what the product is and does, in the site's words." },
+      positioning: { type: "string", description: "Two or three sentences: what it sets itself against, and how." },
+      pages: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+            title: { type: "string", description: "Short: the page's own heading, not the site-wide <title>." },
+            kind: { type: "string", enum: [...SITE_PAGE_KINDS] },
+            summary: { type: "string", description: "One line: what a reader sees there." },
+            segments: { type: "array", items: { type: "string" }, description: "Keys of this product's segments the page is written for." },
+            competitor: { type: "string", description: "Comparison pages: the competitor's name." },
+          },
+          required: ["url", "title", "kind"],
+        },
+      },
+      proof: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            text: { type: "string" },
+            who: { type: "string", description: "As the site prints it. Kept for a person to check; never put in a mail." },
+            kind: { type: "string", enum: ["quote", "case", "logo", "number", "award"] },
+            source: { type: "string", description: "The page it is on." },
+          },
+          required: ["text", "kind", "source"],
+        },
+      },
+      competitors: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            differ: { type: "array", items: { type: "string" }, description: "How the product differs, as the site claims it. One line each." },
+            page: { type: "string", description: "Its comparison page, from pages." },
+          },
+          required: ["name", "differ"],
+        },
+      },
+      trust: {
+        type: "array",
+        items: { type: "object", properties: { text: { type: "string" }, source: { type: "string" } }, required: ["text"] },
+      },
+      markets: {
+        type: "object",
+        properties: {
+          home: { type: "string", description: "The country the company is based in, with how you know." },
+          served: { type: "array", items: { type: "string" } },
+          currency: { type: "string" },
+          languages: { type: "array", items: { type: "string" } },
+        },
+      },
+      pages_read: { type: "number", description: "How many pages you read for this." },
+      change_note: { type: "string", description: "Required when a context already exists: what changed since the last read, in one or two lines (\"pricing page now shows $10.99 for Advanced\"), or \"no change\"." },
+    },
+    required: ["product_id", "overview", "positioning", "pages", "pages_read"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    await assertProduct(productId, ctx);
+    const db = await getDb();
+    const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { config: 1 } });
+    const config = (product?.config ?? {}) as { website?: string; segments?: Array<{ key: string }> };
+    const website = String(config.website ?? "");
+    if (!website) throw new Error("this product has no website on its config, so there is no site to describe");
+    const previous = contextOf(product);
+    const changeNote = str(args.change_note)?.trim();
+    if (previous && !changeNote) throw new Error('this product already has a context: say what changed since the last read in change_note ("no change" is an answer). Nothing was saved.');
+
+    const segmentKeys = new Set((config.segments ?? []).map((s) => String(s.key)));
+    const problems: string[] = [];
+
+    const seen = new Set<string>();
+    const pages = ((args.pages ?? []) as Array<Record<string, unknown>>).flatMap((p) => {
+      const url = normalisePageUrl(String(p.url ?? ""));
+      if (!onSite(url, website)) {
+        problems.push(`page ${url} is not on ${website}`);
+        return [];
+      }
+      if (seen.has(url)) return [];
+      seen.add(url);
+      const segments = ((p.segments ?? []) as unknown[]).map(String);
+      const unknown = segments.filter((s) => !segmentKeys.has(s));
+      if (unknown.length) problems.push(`page ${url} names segments this product does not have: ${unknown.join(", ")} (it has: ${[...segmentKeys].join(", ") || "none"})`);
+      return [{
+        url,
+        title: String(p.title ?? "").trim(),
+        kind: String(p.kind ?? ""),
+        summary: String(p.summary ?? "").trim(),
+        segments,
+        ...(str(p.competitor)?.trim() ? { competitor: String(p.competitor).trim() } : {}),
+      }];
+    });
+    if (!pages.length) problems.push("no pages: the page map is the point of the context");
+
+    // A proof item a person already confirmed stays confirmed when the site still says it;
+    // everything else is what a marketing page shows, and arrives as a sample.
+    const confirmed = new Set((previous?.proof ?? []).filter((p) => p.status === "confirmed").map((p) => p.text.trim().toLowerCase()));
+    const proof = ((args.proof ?? []) as Array<Record<string, unknown>>).flatMap((p) => {
+      const source = normalisePageUrl(String(p.source ?? ""));
+      if (!onSite(source, website)) {
+        problems.push(`proof "${String(p.text ?? "").slice(0, 50)}" cites ${source}, which is not a page of ${website}`);
+        return [];
+      }
+      const text = String(p.text ?? "").trim();
+      return [{
+        text,
+        ...(str(p.who)?.trim() ? { who: String(p.who).trim() } : {}),
+        kind: String(p.kind ?? ""),
+        source,
+        status: confirmed.has(text.toLowerCase()) ? "confirmed" : "sample",
+      }];
+    });
+
+    const pageSet = new Set(pages.map((p) => p.url));
+    const competitors = ((args.competitors ?? []) as Array<Record<string, unknown>>).map((c) => {
+      const page = str(c.page) ? normalisePageUrl(String(c.page)) : undefined;
+      if (page && !pageSet.has(page)) problems.push(`competitor ${String(c.name)} points at ${page}, which is not in pages`);
+      return {
+        name: String(c.name ?? "").trim(),
+        differ: ((c.differ ?? []) as unknown[]).map(String).map((d) => d.trim()).filter(Boolean),
+        ...(page ? { page } : {}),
+      };
+    });
+
+    const trust = ((args.trust ?? []) as Array<Record<string, unknown>>).map((t) => {
+      const source = str(t.source) ? normalisePageUrl(String(t.source)) : undefined;
+      if (source && !onSite(source, website)) problems.push(`trust "${String(t.text).slice(0, 50)}" cites ${source}, which is not a page of ${website}`);
+      return { text: String(t.text ?? "").trim(), ...(source ? { source } : {}) };
+    });
+
+    if (problems.length) throw new Error(`Nothing was saved. Fix these and send the whole context again:\n- ${problems.join("\n- ")}`);
+
+    const at = new Date().toISOString();
+    const markets = (args.markets ?? {}) as Record<string, unknown>;
+    const parsed = siteContext.safeParse({
+      overview: String(args.overview ?? "").trim(),
+      positioning: String(args.positioning ?? "").trim(),
+      pages,
+      proof,
+      competitors,
+      trust,
+      markets: {
+        ...(str(markets.home) ? { home: String(markets.home) } : {}),
+        served: ((markets.served ?? []) as unknown[]).map(String),
+        ...(str(markets.currency) ? { currency: String(markets.currency) } : {}),
+        languages: ((markets.languages ?? []) as unknown[]).map(String),
+      },
+      readAt: at,
+      pagesRead: Math.max(0, Math.round(Number(args.pages_read ?? 0))),
+      changes: [{ at, note: changeNote ?? "first read" }, ...(previous?.changes ?? [])].slice(0, 12),
+    });
+    if (!parsed.success) {
+      throw new Error(`Nothing was saved: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    }
+
+    // The context it replaces is kept, so a refresh that dropped something can be put back.
+    if (previous) {
+      await db.collection(C.audit).insertOne({ orgId: ctx.orgId, at: new Date(), type: "product_context_replaced", productId, previous });
+    }
+    // Only this one field: re-parsing the whole config would drop keys the schema does not
+    // name, and older products carry some.
+    await db.collection(C.products).updateOne({ _id: new ObjectId(productId), orgId: ctx.orgId }, { $set: { "config.context": parsed.data } });
+
+    const kinds: Record<string, number> = {};
+    for (const p of parsed.data.pages) kinds[p.kind] = (kinds[p.kind] ?? 0) + 1;
+    const untagged = parsed.data.pages.filter((p) => p.kind === "solution" && !p.segments.length).map((p) => p.url);
+    return {
+      saved: true,
+      read_at: at,
+      pages: parsed.data.pages.length,
+      by_kind: kinds,
+      proof: parsed.data.proof.length,
+      proof_confirmed: parsed.data.proof.filter((p) => p.status === "confirmed").length,
+      competitors: parsed.data.competitors.map((c) => c.name),
+      trust: parsed.data.trust.length,
+      ...(untagged.length ? { solution_pages_without_segment: untagged, note: "A solution page with no segment is only offered to a writer as an other page. Tag it if one of the segments fits." } : {}),
+    };
   },
 });
 

@@ -59,8 +59,8 @@ export async function previewContent(
       });
   if (!template) throw new Error(`no active ${String(action.channel)} template${rungKey ? ` "${rungKey}"` : ""} for this product`);
 
-  const vars = mergeVarsFor(person, product);
   const prior = action.content as Partial<ComposedContent> | undefined;
+  const vars = mergeVarsFor(person, product, prior);
   // A reviewer has to see what they are approving, and half the decision on a message that
   // carries something is the thing it carries. Loaded the same way the sender loads it.
   const toRender = {

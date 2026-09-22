@@ -3,6 +3,7 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
 import { TRIAL_LEADS, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, rankIdeas } from "./ideas.js";
+import { contextForLead, contextOf } from "./siteContext.js";
 import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand } from "./rolling.js";
 
 /**
@@ -26,6 +27,8 @@ export interface WritingBrief {
   group: string;
   their_words: Record<string, unknown>;
   facts: unknown;
+  /** What the product's website says, cut to what this lead needs. See engine/siteContext.ts. */
+  context: Record<string, unknown> | null;
   examples: string[];
   examples_note: string;
   ideas: {
@@ -184,6 +187,7 @@ export async function writingBriefFor(input: {
       website: person.companyDomain ?? form.website ?? null,
     },
     facts: writing.facts ?? null,
+    context: contextForLead(contextOf(product), (person.belief as { segment?: string } | undefined)?.segment),
     examples,
     ideas,
     examples_note:
@@ -258,6 +262,10 @@ export async function writingBriefFor(input: {
       `Plan at most ${ROLLING_MAX_STEPS} touches. The engine watches the result and asks again.`,
       "Invent the idea for this person: a real moment from their week, with its cost in rupees or hours.",
       "State only what product_config.writing.facts supports. Never quote anything in facts.unverified.",
+      "context is what the product's website says. Where facts and context disagree, facts wins: a person checked it.",
+      "context.proof with status sample is what a marketing page shows, not a confirmed result: use it only as an example and say so, never as a real customer's result, and never with a name. Only status confirmed may be told as something that happened.",
+      "context.competitors: use one only when this lead uses or names that tool, and say the difference the way the site does, without running the other tool down.",
+      "On a link ask, set link_page when a page in context fits this lead better than the start link: pages_for_this_lead first, the comparison page for a tool they use, pricing when cost is the question. Otherwise leave it out.",
       "A number that is not a fact is an example, and the sentence says so ('for example', 'a team of 30 on ₹25,000').",
       "Never print their company's name or any person's name. Describe what they do instead.",
       "Never say how they arrived or point back at what they submitted: no 'you clicked', 'you signed up', 'you asked', 'you named', 'you mentioned', 'your form'. Write about their situation as a fact of their business.",

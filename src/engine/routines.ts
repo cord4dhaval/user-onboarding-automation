@@ -568,6 +568,13 @@ actually happened, and asks for what only a person can give — once, not daily.
   design, then upsert_template, always status "draft", checked with preview_template
   before you move on. A campaign with no verification plan gets verifiers then
   set_checks.
+  A no_context or context_stale gap means reading the product's website: read_site
+  for the map, then read_site with the selling pages (home, features, solutions,
+  comparisons, pricing, security, about) a few at a time, then save_context with
+  everything they say. Tag each solution page with the segments it is written for.
+  Write only what the pages say. On a refresh, change_note names what moved — a new
+  price, a new page, a claim gone — and anything that contradicts writing.facts goes
+  to 5.4 as a question for the owner; never change the facts yourself.
   Everything you write stays a draft. This routine never activates anything — a
   campaign that starts sending because a scheduled session decided it was ready is
   the worst possible surprise.

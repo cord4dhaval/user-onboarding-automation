@@ -340,7 +340,8 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   // Close decides whether someone is done, and repairs the checks that decide it.
   close: [...ALWAYS_ALLOWED, "mark_state", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
   // Maintain finishes setup, and raises the one notification for what only a human can give.
-  maintain: [...ALWAYS_ALLOWED, "propose_idea", "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works", "save_learning", "verifiers", "set_checks"],
+  // It also reads the product's website again once a month into its company context.
+  maintain: [...ALWAYS_ALLOWED, "propose_idea", "setup_gaps", "notify_owner", "get_brand", "upsert_template", "preview_template", "draft_campaign", "upsert_playbook", "what_works", "save_learning", "verifiers", "set_checks", "read_site", "save_context"],
   // LinkedIn decides, in campaigns that hand it their LinkedIn touches, who to invite, what
   // to write after an accept, and how to answer. Its own tools only: the email planner and
   // writer are not its to call.

@@ -383,7 +383,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 
       // Shared with the review screen, so what a reviewer reads is rendered from the same
       // variables the recipient's copy is.
-      const vars: MergeVars = mergeVarsFor(person, product);
+      const vars: MergeVars = mergeVarsFor(person, product, action.content as Partial<ComposedContent> | undefined);
       // Tagged with the campaign and the mail, so the product's own analytics can say what
       // brought a signup. Only the trial link: the booking page and the opt-out are this
       // app's own pages, and tagging them would count our traffic as theirs.

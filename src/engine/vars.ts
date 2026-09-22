@@ -1,6 +1,7 @@
 import type { Document } from "mongodb";
 import type { MergeVars } from "./compose.js";
 import { greetingName } from "./names.js";
+import { contextOf, pageLinkFor } from "./siteContext.js";
 import { shortUnsubscribeUrl, unsubscribeUrl } from "./unsubscribe.js";
 import { tokenFor } from "./tracking.js";
 
@@ -74,11 +75,19 @@ export function withUtm(url: string, campaign: string, content: string, channel 
   return parsed.toString();
 }
 
-export function mergeVarsFor(person: Document, product: Document | null): MergeVars {
+/**
+ * @param content The message being rendered, when there is one. A written touch may name
+ *   one of the product's own pages for its button (`linkPage`); the start link is then that
+ *   page for this message, so every place the mail links goes to the same one.
+ */
+export function mergeVarsFor(person: Document, product: Document | null, content?: { linkPage?: string } | null): MergeVars {
   const config = (product?.config ?? {}) as { trialLinkTemplate?: string; website?: string };
   const site = (config.website ?? "https://example.com").replace(/\/$/, "");
   const personId = String(person._id);
   const name = String(person.name ?? "");
+  // Checked again here, not only when it was written: a page taken off the map since then
+  // must not go out, and the start link is always a safe place to fall back to.
+  const page = content?.linkPage && contextOf(product)?.pages.some((p) => p.url === content.linkPage) ? content.linkPage : undefined;
 
   const origin = appOrigin();
   return {
@@ -88,9 +97,11 @@ export function mergeVarsFor(person: Document, product: Document | null): MergeV
     person_id: personId,
     // The template may carry the visit token too, so a page on the customer's site can
     // report the person back to /api/e/<event>; both merge fields are filled here.
-    trial_link: (config.trialLinkTemplate ?? `${site}/register?p={{person_id}}`)
-      .replace("{{person_id}}", personId)
-      .replace("{{visit_token}}", tokenFor("e", personId)),
+    trial_link: page
+      ? pageLinkFor(page, personId, tokenFor("e", personId))
+      : (config.trialLinkTemplate ?? `${site}/register?p={{person_id}}`)
+          .replace("{{person_id}}", personId)
+          .replace("{{visit_token}}", tokenFor("e", personId)),
     // Points at this app, not the product's website. The marketing site has no access
     // to this database, so a link there is a door painted on a wall: the reader
     // believes they have left and the mail keeps coming. Falls back to the old form

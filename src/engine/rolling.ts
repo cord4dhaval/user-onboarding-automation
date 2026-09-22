@@ -501,6 +501,10 @@ export const CTA_TEXTS = [
   "See the Monday report",
   "See who is carrying the work",
   "See how it works",
+  // For a button that goes to one of the product's pages (link_page) rather than the start link.
+  "See the comparison",
+  "See the plans",
+  "See how your data stays safe",
 ] as const;
 
 /** Colour and screen words: a hot email says what TeamGrid shows, never what its screen looks like. */
