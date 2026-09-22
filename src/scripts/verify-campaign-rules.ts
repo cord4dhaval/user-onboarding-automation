@@ -16,6 +16,7 @@ import {
   stopForMeeting,
   writtenBeforeReply,
 } from "../engine/campaignRules.js";
+import { advance } from "../engine/advance.js";
 
 /**
  * The four campaign rules (engine/campaignRules.ts): the pure readers first, then the
@@ -155,8 +156,35 @@ try {
   check("with the reason the person page explains", (await db.collection(C.actions).findOne({ _id: inReview }))?.skipReason === REPLIED_REASON);
   check("the answer to them is kept", (await statusOf(answer)) === "awaiting_approval");
   check("what already went is untouched", (await statusOf(alreadySent)) === "sent");
+
+  // And no new campaign mail is planned for them until they have been answered, whether the
+  // plan has steps left or not; a reply marked answered by a person counts as the answer.
+  await db.collection(C.goals).insertOne({ orgId, productId, key: "reply-pause", allowedChannels: ["email"] });
+  const planned = async (email: string, fields: { startedAt: Date; lastReplyAt?: Date; lastContactedAt?: Date }) => {
+    const pid = new ObjectId();
+    const planId = new ObjectId();
+    const gi = new ObjectId();
+    await db.collection(C.people).insertOne({ _id: pid, orgId, productId, primaryEmail: email, identities: [{ kind: "email", value: email }], lifecycle: "active", ...(fields.lastReplyAt ? { lastReplyAt: fields.lastReplyAt } : {}), ...(fields.lastContactedAt ? { lastContactedAt: fields.lastContactedAt } : {}) });
+    await db.collection(C.plans).insertOne({ _id: planId, orgId, productId, steps: [{ id: 1, channel: "email", angle: "one", offsetDays: 0 }, { id: 2, channel: "email", angle: "two", offsetDays: 0 }] });
+    await db.collection(C.goalInstances).insertOne({ _id: gi, orgId, productId, personId: String(pid), goalKey: "reply-pause", status: "active", currentPlanId: String(planId), startedAt: fields.startedAt, deadline: new Date(now.getTime() + 10 * DAY), spent: { touches: 1 } });
+    return { id: String(pid), gi: String(gi) };
+  };
+  const reasonFor = async (gi: string) => (await advance(orgId, productId, 50, now)).skipped.find((x) => x.goalInstanceId === gi)?.reason ?? "";
+  const PAUSED = "they replied; the conversation is being answered first";
+  const repliedLead = await planned("mid@plan.in", { startedAt: new Date(now.getTime() - 5 * DAY), lastContactedAt: new Date(now.getTime() - 2 * DAY), lastReplyAt: new Date(now.getTime() - DAY) });
+  await db.collection(C.events).insertOne({ orgId, productId, personId: repliedLead.id, type: "reply_received", channel: "email", ts: new Date(now.getTime() - DAY), handled: true, handledAt: new Date(now.getTime() - DAY + 3_600_000) });
+  check("a plan with steps left still waits for the answer", (await reasonFor(repliedLead.gi)) === PAUSED);
+  await db.collection(C.events).updateOne({ orgId, personId: repliedLead.id, type: "reply_received" }, { $set: { handledBy: "person", handledAt: new Date(now.getTime() - 3_600_000) } });
+  check("marked answered by a person, the campaign carries on", (await reasonFor(repliedLead.gi)) !== PAUSED);
+  await db.collection(C.events).insertOne({ orgId, productId, personId: repliedLead.id, type: "reply_received", channel: "email", ts: new Date(now.getTime() - 60_000), handled: false });
+  await db.collection(C.people).updateOne({ _id: new ObjectId(repliedLead.id) }, { $set: { lastReplyAt: new Date(now.getTime() - 60_000) } });
+  check("a newer reply waits again", (await reasonFor(repliedLead.gi)) === PAUSED);
+  const answeredLead = await planned("sent@plan.in", { startedAt: new Date(now.getTime() - 5 * DAY), lastReplyAt: new Date(now.getTime() - DAY), lastContactedAt: new Date(now.getTime() - 3_600_000) });
+  check("an answer sent from any campaign counts", (await reasonFor(answeredLead.gi)) !== PAUSED);
+  const before = await planned("old@plan.in", { startedAt: new Date(now.getTime() - DAY), lastReplyAt: new Date(now.getTime() - 30 * DAY) });
+  check("a reply from before the campaign started does not pause it", (await reasonFor(before.gi)) !== PAUSED);
 } finally {
-  for (const c of [C.people, C.goalInstances, C.actions, C.events]) await db.collection(c).deleteMany({ orgId });
+  for (const c of [C.people, C.goalInstances, C.actions, C.events, C.goals, C.plans, C.workQueue]) await db.collection(c).deleteMany({ orgId });
 }
 
 console.log(failed ? `\n${failed} check(s) failed.` : "\nAll checks passed.");

@@ -157,3 +157,15 @@ export function timezoneFor(hints: { timezone?: unknown; phone?: string; email?:
   const tld = String(hints.email ?? "").trim().toLowerCase().split(".").pop() ?? "";
   return ZONE_BY_TLD[tld] ?? HOME_TIMEZONE;
 }
+
+/** The most recent of several timestamps, in whatever shape they were stored. */
+export function latestOf(values: unknown[]): Date | null {
+  let best: Date | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const date = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(date.getTime())) continue;
+    if (!best || date > best) best = date;
+  }
+  return best;
+}

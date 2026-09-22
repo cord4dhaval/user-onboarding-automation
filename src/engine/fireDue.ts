@@ -26,7 +26,7 @@ import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
 import { groupFor, paceBand } from "./rolling.js";
 import { bumpPrior } from "./outcomes.js";
-import { HOME_TIMEZONE, localHour, nextSendableAt } from "./time.js";
+import { HOME_TIMEZONE, latestOf, localHour, nextSendableAt } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
 import { holdOf, REPLIED_REASON, writtenBeforeReply } from "./campaignRules.js";
 import { pathAndQuery, providerParams } from "./providerParams.js";
@@ -59,18 +59,6 @@ const STALE_CLAIM_MS = 15 * 60_000;
 const SEND_CONCURRENCY = 8;
 const DAY_MS = 86_400_000;
 
-
-/** The most recent of several timestamps, in whatever shape they were stored. */
-function latestOf(values: unknown[]): Date | null {
-  let best: Date | null = null;
-  for (const value of values) {
-    if (!value) continue;
-    const date = value instanceof Date ? value : new Date(String(value));
-    if (Number.isNaN(date.getTime())) continue;
-    if (!best || date > best) best = date;
-  }
-  return best;
-}
 
 function gapLabel(days: number): string {
   if (days < 1) return `${Math.round(days * 24)}-hour`;

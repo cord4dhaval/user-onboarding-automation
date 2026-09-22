@@ -10,6 +10,7 @@ import { checkpoint, clickedRecently, frameKeyOf, isRolling, isRollingPlan, lead
 import { claudePlansLinkedIn } from "./linkedin.js";
 import { newsSincePlan, staleReason } from "./news.js";
 import { holdOf } from "./campaignRules.js";
+import { latestOf } from "./time.js";
 
 /**
  * Turning a plan into messages, on the clock, for everybody.
@@ -210,6 +211,25 @@ export async function advance(
     .toArray();
   const composeAskedAt = new Map(composeJobs.map((j) => [String(j.subjectId), new Date(String(j.createdAt)).getTime()]));
 
+  // Replies a person marked answered (from Gmail, a call, WhatsApp by hand) on the Replies
+  // page. The engine never sees that answer go, so without this the lead waited for ever.
+  // Only the latest reply counts: a newer one has not been answered yet.
+  const repliers = people.filter((p) => p.lastReplyAt).map((p) => String(p._id));
+  const answeredByPerson = new Map<string, Date>();
+  if (repliers.length > 0) {
+    const latest = await db
+      .collection(C.events)
+      .aggregate([
+        { $match: { orgId, personId: { $in: repliers }, productId, type: "reply_received" } },
+        { $sort: { ts: -1 } },
+        { $group: { _id: "$personId", ts: { $first: "$ts" }, handledBy: { $first: "$handledBy" }, handledAt: { $first: "$handledAt" } } },
+      ])
+      .toArray();
+    for (const r of latest) {
+      if (r.handledBy === "person" && r.handledAt) answeredByPerson.set(String(r._id), new Date(String(r.handledAt)));
+    }
+  }
+
   const goalByKey = new Map(goals.map((g) => [String(g.key), g]));
   const personById = new Map(people.map((p) => [String(p._id), p]));
   const planById = new Map(plans.map((p) => [String(p._id), p]));
@@ -409,6 +429,22 @@ export async function advance(
     // the next one or two are asked for. A lead read as outside the product's customers is
     // planned too: the planner is told to ask one short question rather than pitch, which
     // is what the old re-qualify playbook did with less to go on.
+    // Somebody who wrote back is in a conversation, and React answers it. A planned touch
+    // arriving beside that answer reads as nobody having read what they wrote. Checked
+    // before any step is picked: asked only when a rolling plan had run out, a plan with a
+    // step left went on writing the next campaign mail straight after their reply. The
+    // conversation is answered once anything of ours has gone out to them since, in any
+    // campaign, or a person marked it answered; from then the window runs from that moment.
+    // A reply from before this campaign started was known when they were put in it.
+    const repliedAt = person.lastReplyAt ? new Date(String(person.lastReplyAt)) : null;
+    const lastSent = lastSentBy.get(goalInstanceId);
+    const lastTouchAt = latestOf([lastSent?.at, person.lastContactedAt, answeredByPerson.get(String(person._id))]);
+    const lastTouch = lastTouchAt ? { at: lastTouchAt, channel: lastSent?.channel ?? "email" } : undefined;
+    if (repliedAt && repliedAt.getTime() >= startedAt && (!lastTouch || repliedAt >= lastTouch.at)) {
+      summary.skipped.push({ goalInstanceId, reason: "they replied; the conversation is being answered first" });
+      continue;
+    }
+
     const rolling = isRolling(goal);
     let step: Document | null;
     let fallback = false;
@@ -422,15 +458,7 @@ export async function advance(
         : null;
       if (!step) {
         const askedAt = instance.checkpointAskedAt ? new Date(String(instance.checkpointAskedAt)) : null;
-        const last = lastSentBy.get(goalInstanceId);
-        // Somebody who wrote back is in a conversation, and React answers it. A planned touch
-        // arriving beside that answer reads as nobody having read what they wrote. Once the
-        // answer has gone out it is the last touch, and the window runs from there.
-        const repliedAt = person.lastReplyAt ? new Date(String(person.lastReplyAt)) : null;
-        if (repliedAt && (!last || repliedAt >= last.at)) {
-          summary.skipped.push({ goalInstanceId, reason: "they replied; the conversation is being answered first" });
-          continue;
-        }
+        const last = lastTouch;
         // The first ask does not wait out a window: the welcome is not a question the next
         // plan depends on, and a lead who just arrived is the one most worth a quick second touch.
         // News since the plan asks at once, unless the ask already went out after it.
