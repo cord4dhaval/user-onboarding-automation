@@ -22,6 +22,7 @@ import { grantedCapabilities } from "@/auth/google.js";
 import { tokenFor } from "@/engine/tracking.js";
 import { appOrigin } from "@/engine/vars.js";
 import ReconnectGoogle from "./reconnect-google";
+import ReconnectLinkedIn from "./reconnect-linkedin";
 import SesRecords from "./ses-records";
 import { requireSession, scope } from "../../../tenant";
 import ConfirmButton from "../../../ui/confirm";
@@ -331,6 +332,16 @@ export default async function Channels({
                       : addressIn(c.from)
                 }
                 action={startGoogleOAuth}
+                urgent={connection.status !== "healthy" || c.status !== "healthy"}
+              />
+            )}
+            {/* A LinkedIn session ends on logout, a password change or a sign-in check, and a
+                fresh one is pasted here. Edit holds the limits, not the session. */}
+            {connection?.provider === "linkedin" && (
+              <ReconnectLinkedIn
+                productId={id}
+                account={String((connection.linkedin as { memberName?: string } | undefined)?.memberName ?? c.from ?? "")}
+                action={createLinkedInChannel}
                 urgent={connection.status !== "healthy" || c.status !== "healthy"}
               />
             )}
