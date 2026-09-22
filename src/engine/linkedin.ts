@@ -12,16 +12,14 @@ import { looksLikeOptOut } from "./inbound.js";
 import { unsubscribePerson } from "./unsubscribe.js";
 import { PRIORITY, enqueueMany } from "./queue.js";
 import { pauseForReply } from "./campaignRules.js";
+import { identityValue } from "./address.js";
 
 /**
  * What LinkedIn will not push to us, read on a clock: who accepted an invite, whose invite
- * has waited too long, and whether the account's invites are being accepted often enough
- * to keep sending them. Runs from the tick for every LinkedIn channel, each account on its
- * own random cadence, so the checks look like a person opening the site, not a timer.
- *
- * Reading new messages belongs here too. It waits on the messaging query ids being copied
- * from a live session (endpoints.ts); `recordLinkedInReply` below is what each new message
- * will go through once they are.
+ * has waited too long, whether the account's invites are being accepted often enough to
+ * keep sending them, and who wrote back. Runs from the tick for every LinkedIn channel, each
+ * account on its own random cadence, so the checks look like a person opening the site, not
+ * a timer.
  */
 
 /** The reason a message waits for an accept. The accept check brings these forward. */
@@ -33,12 +31,13 @@ export interface LinkedInPollSummary {
   accepted: number;
   expired: number;
   invitesPaused: number;
+  replies: number;
   errors: string[];
 }
 
 export async function pollLinkedIn(orgId: string, productId: string, now = new Date()): Promise<LinkedInPollSummary> {
   const db = await getDb();
-  const summary: LinkedInPollSummary = { accounts: 0, checked: 0, accepted: 0, expired: 0, invitesPaused: 0, errors: [] };
+  const summary: LinkedInPollSummary = { accounts: 0, checked: 0, accepted: 0, expired: 0, invitesPaused: 0, replies: 0, errors: [] };
 
   const channels = await db
     .collection(C.channels)
@@ -50,30 +49,138 @@ export async function pollLinkedIn(orgId: string, productId: string, now = new D
 
   for (const channel of channels) {
     summary.accounts++;
-    const next = (channel.linkedinPoll as { nextAcceptsAt?: Date } | undefined)?.nextAcceptsAt;
-    if (next && new Date(next) > now) continue;
+    // Two clocks per account: the inbox every half hour or so, since someone who wrote back
+    // is waiting; accepts every few hours, since nothing waits on them but the next message.
+    const poll = (channel.linkedinPoll ?? {}) as { nextAcceptsAt?: Date; nextInboxAt?: Date; lastInboxAt?: Date };
+    const acceptsDue = !poll.nextAcceptsAt || new Date(poll.nextAcceptsAt) <= now;
+    const inboxDue = !poll.nextInboxAt || new Date(poll.nextInboxAt) <= now;
+    if (!acceptsDue && !inboxDue) continue;
     summary.checked++;
 
+    const who = String(channel.from ?? channel._id);
+    // A dead session found by a read is the same fault as one found by a send.
+    const fault = async (err: unknown) => {
+      if (err instanceof SessionError) await takeChannelDown(orgId, String(channel._id), err.message, err.kind !== "restricted");
+      summary.errors.push(`${who}: ${err instanceof Error ? err.message : String(err)}`);
+    };
+    let client: LinkedInClient;
     try {
-      summary.accepted += await recordAccepts(orgId, productId, channel, await clientFor(orgId, channel), now);
+      client = await clientFor(orgId, channel);
     } catch (err) {
-      // A dead session found by a read is the same fault as one found by a send.
-      if (err instanceof SessionError) {
-        await takeChannelDown(orgId, String(channel._id), err.message, err.kind !== "restricted");
-      }
-      summary.errors.push(`${String(channel.from ?? channel._id)}: ${err instanceof Error ? err.message : String(err)}`);
+      await fault(err);
+      continue;
     }
-    summary.expired += await expireInvites(orgId, productId, channel, rules, now);
-    if (await guardAcceptRate(orgId, productId, channel, rules, now)) summary.invitesPaused++;
 
-    const [minH, maxH] = rules.pollEvery?.acceptsHours ?? [3, 5];
-    const hours = minH + Math.random() * Math.max(0, maxH - minH);
-    await db.collection(C.channels).updateOne(
-      { _id: channel._id },
-      { $set: { "linkedinPoll.lastAcceptsAt": now, "linkedinPoll.nextAcceptsAt": new Date(now.getTime() + hours * 3_600_000) } },
-    );
+    if (inboxDue) {
+      const [minM, maxM] = rules.pollEvery?.inboxMinutes ?? [20, 40];
+      const next = new Date(now.getTime() + (minM + Math.random() * Math.max(0, maxM - minM)) * 60_000);
+      try {
+        summary.replies += await recordInbox(orgId, productId, channel, client, poll.lastInboxAt ? new Date(poll.lastInboxAt) : undefined, now);
+        await db.collection(C.channels).updateOne(
+          { _id: channel._id },
+          { $set: { "linkedinPoll.lastInboxAt": now, "linkedinPoll.nextInboxAt": next }, $unset: { "linkedinPoll.inboxError": "" } },
+        );
+      } catch (err) {
+        await fault(err);
+        if (err instanceof SessionError) continue;
+        // The read failed but the session is fine: most likely a query id LinkedIn rotated.
+        // lastInboxAt stays where it was, so the replies in between are read once it works
+        // again; the owner hears once, because a reply nobody sees is the costly failure.
+        const reason = err instanceof Error ? err.message : String(err);
+        await db.collection(C.channels).updateOne(
+          { _id: channel._id },
+          { $set: { "linkedinPoll.nextInboxAt": next, "linkedinPoll.inboxError": reason } },
+        );
+        await notify({
+          orgId,
+          productId,
+          severity: "action",
+          dedupeKey: `linkedin:inbox-broken:${String(channel._id)}`,
+          title: `LinkedIn replies on ${who} cannot be read`,
+          body: `${reason}. Replies are not being seen until this is fixed; check the account's inbox by hand meanwhile.`,
+          href: `/products/${productId}/channels`,
+        });
+      }
+    }
+
+    if (acceptsDue) {
+      try {
+        summary.accepted += await recordAccepts(orgId, productId, channel, client, now);
+      } catch (err) {
+        await fault(err);
+        if (err instanceof SessionError) continue;
+      }
+      summary.expired += await expireInvites(orgId, productId, channel, rules, client, now);
+      if (await guardAcceptRate(orgId, productId, channel, rules, now)) summary.invitesPaused++;
+
+      const [minH, maxH] = rules.pollEvery?.acceptsHours ?? [3, 5];
+      const hours = minH + Math.random() * Math.max(0, maxH - minH);
+      await db.collection(C.channels).updateOne(
+        { _id: channel._id },
+        { $set: { "linkedinPoll.lastAcceptsAt": now, "linkedinPoll.nextAcceptsAt": new Date(now.getTime() + hours * 3_600_000) } },
+      );
+    }
   }
   return summary;
+}
+
+/**
+ * New messages from our leads since the last look, each recorded as a reply. Only the
+ * conversations that moved since then are opened, and only with people the account has
+ * written to: a quiet inbox costs one call, and a chat with a colleague is never read.
+ */
+async function recordInbox(
+  orgId: string,
+  productId: string,
+  channel: Document,
+  client: Pick<LinkedInClient, "conversations" | "messages" | "ownMemberId">,
+  since: Date | undefined,
+  now: Date,
+): Promise<number> {
+  const db = await getDb();
+  const contacted = await db
+    .collection(C.actions)
+    .countDocuments({ orgId, channelId: String(channel._id), channel: "linkedin", status: "sent", sentAt: { $gte: new Date(now.getTime() - 60 * 86_400_000) } }, { limit: 1 });
+  if (!contacted) return 0;
+
+  // A first look reaches back two days rather than to the start of the inbox.
+  const from = since ?? new Date(now.getTime() - 2 * 86_400_000);
+  const moved = (await client.conversations(20)).filter((c) => c.lastActivityAt > from);
+  if (moved.length === 0) return 0;
+
+  const own = await client.ownMemberId();
+  const others = [...new Set(moved.flatMap((c) => c.memberIds).filter((id) => id && id !== own))];
+  const people = await db
+    .collection(C.people)
+    .find({
+      orgId,
+      productId,
+      "linkedin.providerId": { $in: others.flatMap((id) => [id, `urn:li:fsd_profile:${id}`, `urn:li:fs_miniProfile:${id}`]) },
+    })
+    .project({ linkedin: 1 })
+    .toArray();
+  const personByMember = new Map(people.map((p) => [memberIdOf(String((p.linkedin as { providerId: string }).providerId)), String(p._id)]));
+
+  let recorded = 0;
+  for (const conversation of moved) {
+    const memberId = conversation.memberIds.find((id) => id !== own && personByMember.has(id));
+    if (!memberId) continue;
+    const personId = personByMember.get(memberId)!;
+    for (const message of await client.messages(conversation.urn, 10)) {
+      if (message.fromMemberId !== memberId || message.at <= from || !message.text.trim()) continue;
+      const result = await recordLinkedInReply({
+        orgId,
+        productId,
+        personId,
+        text: message.text,
+        at: message.at,
+        messageUrn: message.urn,
+        conversationUrn: conversation.urn,
+      });
+      if (result !== "duplicate") recorded++;
+    }
+  }
+  return recorded;
 }
 
 async function clientFor(orgId: string, channel: Document): Promise<LinkedInClient> {
@@ -90,7 +197,7 @@ async function latestInvites(orgId: string, channelId: string, filter: Document)
     .collection(C.actions)
     .find({ orgId, channelId, channel: "linkedin", op: "invite", status: "sent", ...filter })
     .sort({ sentAt: -1 })
-    .project({ personId: 1, sentAt: 1 })
+    .project({ personId: 1, sentAt: 1, providerMessageId: 1 })
     .toArray();
   const out = new Map<string, Document>();
   for (const row of rows) if (!out.has(String(row.personId))) out.set(String(row.personId), row);
@@ -156,10 +263,18 @@ export async function recordAccepts(
 
 /**
  * An invite nobody accepted in the rule's number of days is given up on: the lead's
- * LinkedIn messages are skipped with that reason, and the lead's record says so. Withdrawing
- * the invite on LinkedIn itself waits on that endpoint being captured from a live session.
+ * LinkedIn messages are skipped with that reason, the lead's record says so, and the invite
+ * is withdrawn on LinkedIn, since a pile of old pending invites is itself a signal LinkedIn
+ * reads against an account. The withdraw is best effort and its outcome sits on the invite.
  */
-async function expireInvites(orgId: string, productId: string, channel: Document, rules: ChannelRules, now: Date): Promise<number> {
+async function expireInvites(
+  orgId: string,
+  productId: string,
+  channel: Document,
+  rules: ChannelRules,
+  client: Pick<LinkedInClient, "withdrawInvite">,
+  now: Date,
+): Promise<number> {
   const db = await getDb();
   const days = rules.withdrawAfterDays ?? 21;
   const stale = await latestInvites(orgId, String(channel._id), { sentAt: { $lte: new Date(now.getTime() - days * 86_400_000) } });
@@ -183,17 +298,27 @@ async function expireInvites(orgId: string, productId: string, channel: Document
       { orgId, productId, personId, channel: "linkedin", status: { $in: ["queued", "awaiting_approval"] } },
       { $set: { status: "skipped", skipReason: reason }, $unset: { deferReason: "" } },
     );
+    const invite = stale.get(personId)!;
     await db.collection(C.events).insertOne({
       orgId,
       productId,
       personId,
       type: "linkedin_invite_expired",
       channel: "linkedin",
-      actionId: String(stale.get(personId)!._id),
+      actionId: String(invite._id),
       ts: now,
       handled: true,
       payload: { days },
     });
+    const urn = String(invite.providerMessageId ?? "");
+    if (urn) {
+      try {
+        const outcome = await client.withdrawInvite(urn);
+        await db.collection(C.actions).updateOne({ _id: invite._id }, { $set: { withdrawnAt: now, withdrawOutcome: outcome } });
+      } catch (err) {
+        await db.collection(C.actions).updateOne({ _id: invite._id }, { $set: { withdrawError: err instanceof Error ? err.message : String(err) } });
+      }
+    }
   }
   return people.length;
 }
@@ -333,11 +458,26 @@ export function claudePlansLinkedIn(goal: Document | null | undefined): boolean 
 // ── what Claude is asked to do (routine 6) ─────────────────────────────────────
 
 export type LinkedInNeed =
+  | { kind: "find" }
   | { kind: "pick" }
   | { kind: "answer"; eventId: string }
   | { kind: "plan"; reason: "accepted" | "no_reply" }
   | { kind: "wait"; why: string }
   | { kind: "end"; why: string };
+
+/**
+ * How a lead's LinkedIn profile was found, kept on the person (their profile is theirs in
+ * every campaign). sure and likely become the lead's linkedin identity at once; unsure is a
+ * candidate a person confirms on the lead page; none ends LinkedIn for them.
+ */
+export interface LinkedInFind {
+  status?: "sure" | "likely" | "unsure" | "none" | "confirmed";
+  url?: string;
+  why?: string;
+  evidence?: string;
+  at?: Date;
+  by?: "claude" | "person" | "import";
+}
 
 /**
  * What one lead needs from Claude right now, read from their record and their history. The
@@ -360,8 +500,22 @@ export function linkedinNeed(input: {
   const waitingSend = actions.some((a) => ["queued", "awaiting_approval", "sending"].includes(String(a.status)));
 
   if (openReplies[0]) return { kind: "answer", eventId: String(openReplies[0]._id) };
+  // Nobody can be invited without their profile. Most leads arrive from a form with an email
+  // and no LinkedIn, so finding it is the first thing asked; an unsure match waits for a
+  // person, and "none" is a verdict with its reason.
+  if (!identityValue(person, "linkedin")) {
+    const find = (person.linkedinFind ?? {}) as LinkedInFind;
+    if (find.status === "none") return { kind: "end", why: `no LinkedIn profile found: ${find.why ?? "no reason given"}` };
+    if (find.status === "unsure") return { kind: "wait", why: "waiting for a person to confirm the LinkedIn profile Claude found" };
+    return { kind: "find" };
+  }
+  const sent = actions.some((a) => a.status === "sent");
+  const failed = actions.find((a) => a.status === "failed");
+  if (!sent && failed && !waitingSend) {
+    return { kind: "end", why: `the invite could not be sent: ${String(failed.error ?? failed.validation ?? "no reason recorded")}` };
+  }
   if (!mine.pick) {
-    return actions.some((a) => a.status === "sent") ? { kind: "wait", why: "invited before Claude picked" } : { kind: "pick" };
+    return sent ? { kind: "wait", why: "invited before Claude picked" } : { kind: "pick" };
   }
   if (mine.pick === "skip") return { kind: "end", why: "Claude chose not to invite them" };
   if (li.inviteExpiredAt && !li.connectedAt) return { kind: "end", why: "the invite was not accepted" };
@@ -405,7 +559,7 @@ export async function detectLinkedInWork(orgId: string, productId: string, now =
 
   const [people, actions, replies] = await Promise.all([
     db.collection(C.people).find({ _id: { $in: personIds.map((id) => new ObjectId(id)) } }).toArray(),
-    db.collection(C.actions).find({ orgId, goalInstanceId: { $in: ids }, channel: "linkedin" }).project({ goalInstanceId: 1, op: 1, status: 1, sentAt: 1, angle: 1 }).toArray(),
+    db.collection(C.actions).find({ orgId, goalInstanceId: { $in: ids }, channel: "linkedin" }).project({ goalInstanceId: 1, op: 1, status: 1, sentAt: 1, angle: 1, error: 1, validation: 1 }).toArray(),
     db.collection(C.events).find({ orgId, productId, personId: { $in: personIds }, type: "reply_received", channel: "linkedin", handled: false }).sort({ ts: 1 }).toArray(),
   ]);
   const personById = new Map(people.map((p) => [String(p._id), p]));

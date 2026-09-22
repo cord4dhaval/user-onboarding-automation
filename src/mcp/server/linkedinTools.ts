@@ -7,6 +7,8 @@ import { linkedinTextProblems, sentenceKey, sentencesOf, type LinkedInTextKind }
 import { ideasFor, ideasHadBy } from "../../engine/ideas.js";
 import { themeSlug } from "../../engine/rolling.js";
 import { contextForLead, contextOf, linkPageProblem } from "../../engine/siteContext.js";
+import { FindRefused, saveLinkedInFind, type FindStatus } from "../../engine/linkedinFind.js";
+import { identityValue } from "../../engine/address.js";
 import type { ToolCtx, ToolDef } from "./tools.js";
 
 /**
@@ -116,7 +118,7 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
   {
     name: "linkedin_card",
     description:
-      "Everything needed to decide one lead's next LinkedIn step: what the engine says they need now (pick, plan or answer), their LinkedIn state, every touch and signal on every channel, the channel's rules, the product's voice, facts and ideas (ideas they already had are left out), and how each idea has done on LinkedIn. Read it before pick_linkedin, plan_linkedin or answer_linkedin.",
+      "Everything needed to decide one lead's next LinkedIn step: what the engine says they need now (find, pick, plan or answer), their LinkedIn state and how their profile was found, every touch and signal on every channel, the channel's rules, the product's voice, facts and ideas (ideas they already had are left out), and how each idea has done on LinkedIn. Read it before save_linkedin, pick_linkedin, plan_linkedin or answer_linkedin.",
     inputSchema: { type: "object", properties: { goal_instance_id: { type: "string" } }, required: ["goal_instance_id"] },
     async handler(args, ctx) {
       const lead = await leadContext(String(args.goal_instance_id), ctx);
@@ -179,13 +181,17 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
           name: person.name ?? null,
           role: person.role ?? null,
           company_site: person.companyDomain ?? null,
+          // Where they work, when the address says so: the first clue a profile search has.
+          email_domain: person.emailKind === "personal" ? null : String(person.primaryEmail ?? "").split("@")[1] || null,
           segment: segment ?? null,
           fit: (person.belief as { icpFit?: number } | undefined)?.icpFit ?? null,
           said: (person.enrichment as { form?: unknown } | undefined)?.form ?? null,
           site_text: String((person.enrichment as { siteText?: string } | undefined)?.siteText ?? "").slice(0, 800) || null,
         },
         linkedin: {
-          profile: li.slug ?? null,
+          profile: identityValue(person, "linkedin") || null,
+          // How the profile was found, or why none was; see save_linkedin.
+          find: person.linkedinFind ?? null,
           invited_at: li.invitedAt ?? null,
           connected_at: li.connectedAt ?? null,
           invite_expired_at: li.inviteExpiredAt ?? null,
@@ -234,6 +240,48 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
   },
 
   {
+    name: "save_linkedin",
+    description:
+      "Record the LinkedIn profile you found for this lead. Only when linkedin_card says needs.kind is \"find\". Search the web first: site:linkedin.com/in with their name and company (lead.said, lead.company_site, lead.email_domain), then their first name with the company, or the company's own LinkedIn page and its people. Compare what the result shows with the lead. confidence: sure (name and current company both match), likely (name matches and the company, city or role fits, and nothing contradicts it), unsure (a plausible profile you could not confirm; a person checks it on the lead page), none (nothing found, or only people who are plainly someone else). sure and likely become the lead's profile at once and the card then asks you to pick; unsure waits for a person; none ends LinkedIn for this lead. Never guess a URL you did not see in a result.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goal_instance_id: { type: "string" },
+        confidence: { type: "string", enum: ["sure", "likely", "unsure", "none"] },
+        url: { type: "string", description: "The profile URL as the result showed it (https://www.linkedin.com/in/...). Not for none." },
+        why: { type: "string", description: "One sentence a person reading the lead page understands: what matched, or why nothing did." },
+        evidence: { type: "string", description: "What you judged on: the result's title and headline, as shown." },
+      },
+      required: ["goal_instance_id", "confidence", "why"],
+    },
+    async handler(args, ctx) {
+      const lead = await leadContext(String(args.goal_instance_id), ctx);
+      if (lead.need.kind !== "find") refuse([`this lead does not need a profile found now (${lead.need.kind === "wait" || lead.need.kind === "end" ? lead.need.why : lead.need.kind})`]);
+      const status = String(args.confidence ?? "");
+      if (!["sure", "likely", "unsure", "none"].includes(status)) refuse(['confidence is "sure", "likely", "unsure" or "none"']);
+      try {
+        const saved = await saveLinkedInFind({
+          orgId: ctx.orgId,
+          productId: String(lead.instance.productId),
+          personId: String(lead.person._id),
+          status: status as FindStatus,
+          url: args.url ? String(args.url) : undefined,
+          why: String(args.why ?? ""),
+          evidence: args.evidence ? String(args.evidence) : undefined,
+          by: "claude",
+        });
+        return {
+          ...saved,
+          next: saved.usable ? "read linkedin_card again: it now asks you to pick" : saved.status === "unsure" ? "a person confirms it on the lead page" : "LinkedIn ends for this lead",
+        };
+      } catch (err) {
+        if (err instanceof FindRefused) refuse(err.problems);
+        throw err;
+      }
+    },
+  },
+
+  {
     name: "pick_linkedin",
     description:
       "Decide whether to invite this lead on LinkedIn at all, with the reason in one sentence a person reading the lead page understands. \"skip\" ends their LinkedIn sequence (a company page, a poor fit, someone who should not be contacted). A note is used only where the account can add one (Premium); otherwise the invite goes without a note.",
@@ -271,9 +319,49 @@ export const LINKEDIN_TOOLS: ToolDef[] = [
         return { decision, skipped_messages: waiting.length };
       }
 
+      // The invite is normally queued when they join the campaign. One that was never queued
+      // (the invite template was not active yet) is queued here, or "invite" would leave
+      // them waiting on an accept for an invite that does not exist.
+      let invite = waiting[0];
+      if (!invite && !lead.actions.some((a) => a.status === "sent")) {
+        const productId = String(lead.instance.productId);
+        const key = String((lead.goal.firstTouch as { templateKey?: string } | undefined)?.templateKey ?? "li_invite");
+        const template = await db.collection(C.templates).findOne({ orgId: ctx.orgId, productId, key, channel: "linkedin", status: "active" });
+        if (!template) refuse([`the campaign's invite template "${key}" is not active; a person has to turn it on`]);
+        const goalInstanceId = String(instanceId);
+        const row = {
+          _id: new ObjectId(),
+          orgId: ctx.orgId,
+          productId,
+          goalInstanceId,
+          personId: String(lead.person._id),
+          channel: "linkedin",
+          channelId: await linkedinChannelId(ctx.orgId, productId, lead.instance),
+          templateId: String(template!._id),
+          firstTouch: true,
+          angle: "welcome",
+          rationale: `Invite for ${String(lead.goal.key)}, queued when Claude chose to invite.`,
+          idempotencyKey: `${goalInstanceId}:first_touch:${key}`,
+          status: "queued",
+          dueAt: now,
+          cost: 0,
+          signals: [],
+          next: {},
+          content: { bodyMd: "", personalizationUsed: [], claimsMade: [], wordCount: 0 },
+          assetIds: [],
+          createdAt: now,
+        };
+        try {
+          await db.collection(C.actions).insertOne(row);
+          invite = row;
+        } catch {
+          // Already queued by a run that got there first; the unique key is the guard.
+          invite = (await db.collection(C.actions).findOne({ idempotencyKey: row.idempotencyKey })) ?? undefined;
+        }
+      }
+
       // A note only where the account can carry one; checked like any other LinkedIn words.
       const note = String(args.note ?? "").trim();
-      const invite = waiting[0];
       let noteUsed = false;
       if (note && invite) {
         const channel = await db.collection(C.channels).findOne({ _id: new ObjectId(String(invite.channelId)) });

@@ -51,8 +51,13 @@ export const PROFILE_BY_IDENTITY = (identity: string) =>
  */
 export const INVITATION_CREATE = `${BASE}/voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2`;
 export const INVITATION_SENT = `${BASE}/relationships/sentInvitationViewsV2`;
-export const INVITATION_WITHDRAW = (invitationUrnId: string) =>
-  `${BASE}/voyagerRelationshipsDashMemberRelationships/${encodeURIComponent(invitationUrnId)}`;
+/**
+ * Withdrawing a sent invite. MED: read from the web app's invitation code (2026-09-21), which
+ * POSTs `voyagerRelationshipsDashInvitations/<fsd_invitation urn>?action=withdraw` with the
+ * invitation type in the body; not yet seen answering from a live session.
+ */
+export const INVITATION_WITHDRAW = (invitationUrn: string) =>
+  `${BASE}/voyagerRelationshipsDashInvitations/${encodeURIComponent(invitationUrn)}?action=withdraw`;
 
 /**
  * First-degree connections. CONFIRMED (2026-09-18): the REST path still answers, with a
@@ -73,11 +78,22 @@ export const RECENT_CONNECTIONS = (count: number) => `${RELATIONS}?count=${count
  */
 export const GRAPHQL = `${BASE}/graphql`;
 export const MESSAGING_GRAPHQL = `${BASE}/voyagerMessagingGraphQL/graphql`;
+/**
+ * Read from linkedin.com's own messaging code (2026-09-21), not from a capture: the
+ * "find-conversations-by-category" and "get-messages-by-conversation" queries the web inbox
+ * runs. Variables, from the same code: conversations take (category, count, mailboxUrn) and
+ * answer in `data.messengerConversationsByCategory`; messages take (conversationUrn, count)
+ * and answer in `data.messengerMessagesByConversation`. The ids rotate: when either starts
+ * answering 400, read the current one out of the web app's scripts again.
+ */
 export const QUERY_IDS = {
-  /** LOW placeholders — replace from a live session. */
-  conversations: "messengerConversations.PLACEHOLDER",
-  messages: "messengerMessages.PLACEHOLDER",
+  conversations: "messengerConversations.db23ac94a546670956b37f89cf64a070",
+  messages: "messengerMessages.1561582483b8a511147478d8c099b03d",
 } as const;
+export const CONVERSATIONS = (mailboxUrn: string, count: number) =>
+  `${MESSAGING_GRAPHQL}?queryId=${QUERY_IDS.conversations}&variables=(category:PRIMARY_INBOX,count:${count},mailboxUrn:${encodeURIComponent(mailboxUrn)})`;
+export const CONVERSATION_MESSAGES = (conversationUrn: string, count: number) =>
+  `${MESSAGING_GRAPHQL}?queryId=${QUERY_IDS.messages}&variables=(conversationUrn:${encodeURIComponent(conversationUrn)},count:${count})`;
 
 /**
  * Sending a message. CONFIRMED (2026-09-17): POST as `text/plain;charset=UTF-8` with body

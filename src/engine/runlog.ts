@@ -345,7 +345,7 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   // LinkedIn decides, in campaigns that hand it their LinkedIn touches, who to invite, what
   // to write after an accept, and how to answer. Its own tools only: the email planner and
   // writer are not its to call.
-  linkedin: [...ALWAYS_ALLOWED, "linkedin_card", "pick_linkedin", "plan_linkedin", "answer_linkedin"],
+  linkedin: [...ALWAYS_ALLOWED, "linkedin_card", "save_linkedin", "pick_linkedin", "plan_linkedin", "answer_linkedin"],
 };
 
 /** Which routine, if any, this session is currently running as. Ad-hoc sessions return null. */

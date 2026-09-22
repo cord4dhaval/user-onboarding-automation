@@ -623,8 +623,9 @@ actually happened, and asks for what only a person can give — once, not daily.
       human: "every hour, at :40",
       // Only products with a campaign that hands its LinkedIn touches to Claude need it.
       essential: false,
-      job: "In campaigns that hand LinkedIn to Claude: who to invite, what to write once they accept, and how to answer when they write back.",
+      job: "In campaigns that hand LinkedIn to Claude: find each lead's profile, who to invite, what to write once they accept, and how to answer when they write back.",
       example: [
+        "Twelve form leads arrive with only an email: nine profiles are found by name and company, two wait for a person to confirm, one has none.",
         "A list of forty profiles arrives: thirty-six are founders and managers and are invited; four are company pages and recruiters and are skipped, each with its reason.",
         "Meera accepted this morning: her first message names the evening update calls a twelve-person agency makes, and asks how she hears what got finished.",
         "Arjun wrote back asking how hours are counted: the answer comes from the product's facts and waits in Review.",
@@ -650,6 +651,18 @@ never invent a capability, a customer or a number.
   to twenty-five, until the slice is done. Each one reads linkedin_card for the item's
   goal_instance_id and acts on needs.kind, not on the item's reason, which can be older
   than the card:
+
+  find    They have no LinkedIn profile on record; most leads arrive from a form with
+          only an email. Find it with WebSearch: site:linkedin.com/in "<name>" "<company>",
+          the company taken from lead.said, lead.company_site or lead.email_domain
+          (acme-solar.in is "Acme Solar"); then the first name with the company; then
+          the company's LinkedIn page and its people. Read each result's title and
+          headline against the lead: same name and current company is sure; same name
+          with a company, city or role that fits and nothing against it is likely; a
+          plausible one you cannot confirm is unsure; nothing, or only people who are
+          plainly someone else, is none. Record it with save_linkedin, with the result's
+          title as evidence. Never make up or complete a URL you did not see in a result.
+          After sure or likely, read linkedin_card again and do the pick below.
 
   pick    Decide whether to invite them at all, with pick_linkedin. Invite anyone who
           plausibly runs or manages a team the product serves (lead.role, lead.segment,
@@ -691,8 +704,9 @@ never invent a capability, a customer or a number.
   finish_work each item once its lead is done.
 
 6.2 notes
-  One line of run notes: how many were invited and skipped, how many messages planned,
-  how many answers written, and any refusal you could not fix, with its reason.`,
+  One line of run notes: how many profiles were found (sure, likely, unsure, none), how
+  many were invited and skipped, how many messages planned, how many answers written, and
+  any refusal you could not fix, with its reason.`,
     },
   ];
 }

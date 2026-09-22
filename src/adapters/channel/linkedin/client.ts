@@ -26,6 +26,20 @@ export interface Me {
 
 export type Distance = "SELF" | "DISTANCE_1" | "DISTANCE_2" | "DISTANCE_3" | "OUT_OF_NETWORK";
 
+export interface InboxConversation {
+  urn: string;
+  /** Every participant's member id, the account's own included. */
+  memberIds: string[];
+  lastActivityAt: Date;
+}
+
+export interface InboxMessage {
+  urn: string;
+  fromMemberId: string;
+  text: string;
+  at: Date;
+}
+
 export interface Profile {
   providerId: string;
   publicIdentifier: string;
@@ -168,8 +182,24 @@ export class LinkedInClient {
     return { invitationUrn: urn, already: false };
   }
 
-  async withdrawInvite(_invitationUrn: string): Promise<void> {
-    throw new Error("withdrawInvite: confirm against a live session before enabling");
+  /**
+   * Withdraw a connection invite nobody accepted. The urn is the one `sendInvite` returned
+   * (`urn:li:fsd_invitation:<id>`; an older `urn:li:invitation:<id>` is rewritten to it).
+   * An invite that is already gone (accepted, withdrawn by hand, expired on LinkedIn's side)
+   * answers 4xx, which is the outcome wanted, so it is not an error.
+   */
+  async withdrawInvite(invitationUrn: string): Promise<"withdrawn" | "gone"> {
+    const id = invitationUrn.match(/(\d+)\)?$/)?.[1];
+    if (!id) throw new Error(`not an invitation urn: ${invitationUrn}`);
+    const res = await voyagerFetch(this.session, E.INVITATION_WITHDRAW(`urn:li:fsd_invitation:${id}`), {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=UTF-8" },
+      body: JSON.stringify({ invitationType: "CONNECTION" }),
+    });
+    if (res.ok) return "withdrawn";
+    if (res.status === 400 || res.status === 404 || res.status === 409) return "gone";
+    const text = await res.text().catch(() => "");
+    throw new Error(`LinkedIn withdraw answered HTTP ${res.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
   }
 
   /**
@@ -191,12 +221,56 @@ export class LinkedInClient {
   }
 
   /**
-   * New messages in the account's inbox. Not wired yet: messaging reads only through
-   * GraphQL query ids that must be copied from a live session (QUERY_IDS in endpoints.ts),
-   * and until they are, this says so rather than guessing.
+   * The account's newest conversations: who is in each and when it last moved. The inbox
+   * check reads messages only from the ones that moved since it last looked, so a quiet
+   * inbox costs one call.
    */
-  async inbox(): Promise<never> {
-    throw new NotConfiguredError("reading LinkedIn messages needs the messaging query ids from a live session");
+  async conversations(count = 20): Promise<InboxConversation[]> {
+    const res = await voyagerFetch(this.session, E.CONVERSATIONS(await this.ownUrn(), count), { headers: { accept: "application/graphql" } });
+    const body = await voyagerJson<{ data?: { messengerConversationsByCategory?: { elements?: unknown[] } } }>(res, "conversations");
+    const elements = body.data?.messengerConversationsByCategory?.elements;
+    // A missing collection is a changed response, not an empty inbox. Saying so is what
+    // keeps a rotated query id from silently turning into "nobody ever replies".
+    if (!Array.isArray(elements)) throw new Error("LinkedIn conversations answered without messengerConversationsByCategory; the query id may have rotated");
+    return elements.map((raw) => {
+      const c = raw as Record<string, unknown>;
+      const participants = ((c.conversationParticipants ?? []) as Array<{ hostIdentityUrn?: string }>)
+        .map((p) => String(p.hostIdentityUrn ?? ""))
+        .filter(Boolean);
+      return {
+        urn: String(c.entityUrn ?? c.backendUrn ?? ""),
+        memberIds: participants.map(memberIdOf),
+        lastActivityAt: new Date(Number(c.lastActivityAt ?? 0)),
+      };
+    }).filter((c) => c.urn);
+  }
+
+  /** The newest messages in one conversation, oldest first, each with who sent it. */
+  async messages(conversationUrn: string, count = 10): Promise<InboxMessage[]> {
+    const res = await voyagerFetch(this.session, E.CONVERSATION_MESSAGES(conversationUrn, count), { headers: { accept: "application/graphql" } });
+    const body = await voyagerJson<{ data?: { messengerMessagesByConversation?: { elements?: unknown[] } } }>(res, "messages");
+    const elements = body.data?.messengerMessagesByConversation?.elements;
+    if (!Array.isArray(elements)) throw new Error("LinkedIn messages answered without messengerMessagesByConversation; the query id may have rotated");
+    return elements
+      .map((raw) => {
+        const m = raw as Record<string, unknown>;
+        // The web app reads the sender from `sender`, older payloads from `actor`; both
+        // carry the member's fsd_profile urn as hostIdentityUrn.
+        const from = (m.sender ?? m.actor) as { hostIdentityUrn?: string } | undefined;
+        return {
+          urn: String(m.entityUrn ?? m.backendUrn ?? ""),
+          fromMemberId: memberIdOf(String(from?.hostIdentityUrn ?? "")),
+          text: String((m.body as { text?: string } | undefined)?.text ?? ""),
+          at: new Date(Number(m.deliveredAt ?? 0)),
+        };
+      })
+      .filter((m) => m.urn && m.fromMemberId)
+      .sort((a, b) => a.at.getTime() - b.at.getTime());
+  }
+
+  /** The connected account's own member id, as the inbox check compares senders against it. */
+  async ownMemberId(): Promise<string> {
+    return memberIdOf(await this.ownUrn());
   }
 
   /**

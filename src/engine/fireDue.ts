@@ -20,7 +20,7 @@ import { ChannelDownError, RetryableSendError, type ChannelAdapter } from "../ad
 import { ConsoleAdapter } from "../adapters/channel/console.js";
 import { limitsFor, nextSpacedSlot, opLimitsFor, rateBlock, rateHeadroom, spacedUntil } from "./governor.js";
 import { channelDownHold, takeChannelDown } from "./channelHealth.js";
-import { WAITING_FOR_ACCEPT, claudePlansLinkedIn } from "./linkedin.js";
+import { WAITING_FOR_ACCEPT, claudePlansLinkedIn, type LinkedInFind } from "./linkedin.js";
 import { bandFor, crossChannelGap, lastOnChannel, type CadenceBand } from "./cadence.js";
 import { creditTemplate, resolveTemplateFor } from "./templates.js";
 import { applyTextTracking, applyTracking, trackingAllowed } from "./tracking.js";
@@ -253,6 +253,26 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
       // address it could only reject, one message at a time, with nothing on the row to
       // explain it.
       const address = addressFor(person, String(action.channel));
+      if (!address && String(action.channel) === "linkedin") {
+        // Most leads arrive without their LinkedIn profile. Where Claude runs the campaign it
+        // looks for it first (routine 6), so the invite waits for that rather than being
+        // thrown away the minute it is queued; "none found" is the verdict that skips it.
+        const goal = await db.collection(C.goals).findOne({ orgId: opts.orgId, key: String(goalInstance.goalKey) });
+        const find = (person.linkedinFind ?? {}) as LinkedInFind;
+        if (claudePlansLinkedIn(goal) && find.status !== "none") {
+          const waitingOn = find.status === "unsure" ? "a person to confirm the LinkedIn profile Claude found" : "Claude to find their LinkedIn profile";
+          await db.collection(C.actions).updateOne(
+            { _id: action._id },
+            { $set: { status: "queued", dueAt: new Date(now.getTime() + 3_600_000), deferReason: `waiting for ${waitingOn}` }, $unset: { claimedAt: "" } },
+          );
+          summary.deferred++;
+          continue;
+        }
+        const reason = find.status === "none" ? `no LinkedIn profile found: ${find.why ?? "no reason given"}` : "no LinkedIn profile on this person";
+        await release(action._id, "skipped", { skipReason: reason });
+        summary.blocked.push({ person: name || label, reason: "no LinkedIn profile" });
+        continue;
+      }
       if (!address) {
         const kind = String(action.channel) === "email" ? "email address" : "phone number";
         await release(action._id, "skipped", { skipReason: `no ${kind} on this person` });

@@ -25,6 +25,7 @@ import { LEAD_TYPES, paceBand, type LeadType } from "@/engine/rolling.js";
 import { LinkedInClient } from "@/adapters/channel/linkedin/client.js";
 import { SessionError, type LinkedInSession } from "@/adapters/channel/linkedin/session.js";
 import { linkedinCapabilities, linkedinGovernor } from "@/adapters/channel/linkedin/limits.js";
+import { FindRefused, saveLinkedInFind } from "@/engine/linkedinFind.js";
 import { rulesFor } from "@/channels/rules.js";
 import { buildAuthorizeUrl, createPkce, discoverAuthServer, randomState, registerClient } from "@/mcp/oauth.js";
 import {
@@ -2491,6 +2492,47 @@ export async function importPeople(formData: FormData) {
   });
 
   revalidatePath(`/products/${productId}/library`);
+}
+
+/**
+ * A person answers for a lead's LinkedIn profile: uses the one Claude was unsure of, puts in
+ * the right one, or says they have none. The same rules as Claude's save_linkedin apply (a
+ * profile URL, one lead per profile), and the answer is marked as a person's.
+ */
+export async function confirmFoundLinkedIn(productId: string, personId: string, _formData?: FormData) {
+  const db = await getDb();
+  const orgId = await currentOrg();
+  const person = await db.collection(C.people).findOne({ _id: new ObjectId(personId), orgId, productId }, { projection: { linkedinFind: 1 } });
+  const url = String((person?.linkedinFind as { url?: string } | undefined)?.url ?? "");
+  if (!url) return;
+  await saveLinkedInFind({ orgId, productId, personId, status: "confirmed", url, why: "Confirmed by a person on the lead page.", by: "person" });
+  revalidatePath(`/products/${productId}/library/${personId}`);
+}
+
+export async function setLinkedInProfile(
+  productId: string,
+  personId: string,
+  _prev: { error?: string; done?: boolean },
+  formData: FormData,
+): Promise<{ error?: string; done?: boolean }> {
+  const orgId = await currentOrg();
+  const none = formData.get("none") === "1";
+  try {
+    await saveLinkedInFind({
+      orgId,
+      productId,
+      personId,
+      status: none ? "none" : "confirmed",
+      url: none ? undefined : String(formData.get("url") ?? ""),
+      why: none ? "A person said they have no LinkedIn profile we can use." : "Set by a person on the lead page.",
+      by: "person",
+    });
+  } catch (err) {
+    if (err instanceof FindRefused) return { error: err.problems.join(". ") };
+    throw err;
+  }
+  revalidatePath(`/products/${productId}/library/${personId}`);
+  return { done: true };
 }
 
 export async function suppressPerson(productId: string, personId: string, _formData?: FormData) {

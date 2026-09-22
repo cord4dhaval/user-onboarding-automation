@@ -24,7 +24,11 @@ import { whatsAppSent } from "@/engine/whatsappInbound.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { signalsOf } from "@/engine/engagement.js";
-import { heldMessage, suppressPerson } from "../../../../actions";
+import { confirmFoundLinkedIn, heldMessage, setLinkedInProfile, suppressPerson } from "../../../../actions";
+import { claudePlansLinkedIn, type LinkedInFind } from "@/engine/linkedin.js";
+import { profileUrl } from "@/engine/linkedinFind.js";
+import { identityValue } from "@/engine/address.js";
+import LinkedInCard, { type LinkedInView } from "./linkedin";
 import { requireSession } from "../../../../tenant";
 import ConfirmButton from "../../../../ui/confirm";
 import ClaudeBadge from "../../../../ui/claude-badge";
@@ -113,6 +117,37 @@ export default async function PersonPage({
   const email = who.email;
   const role = person.role ? humanize(person.role) : "";
   const site = siteOf(person.companyDomain);
+
+  // Their LinkedIn profile and how it was found. Shown to anyone in a campaign where Claude
+  // runs LinkedIn, and to anyone who has a profile or a search result on record.
+  const liFind = person.linkedinFind as LinkedInFind | undefined;
+  const liRecord = (person.linkedin ?? {}) as { invitedAt?: Date; connectedAt?: Date; inviteExpiredAt?: Date };
+  const liSearched = campaigns.some((c) => c.status === "active" && claudePlansLinkedIn(names.goals.get(String(c.goalKey))));
+  const liProfile = identityValue(person, "linkedin");
+  const linkedin: LinkedInView | null =
+    liProfile || liFind || liSearched
+      ? {
+          profile: liProfile ? profileUrl(liProfile) : null,
+          find: liFind?.status
+            ? {
+                status: liFind.status,
+                url: liFind.url ?? null,
+                why: liFind.why ?? null,
+                evidence: liFind.evidence ?? null,
+                by: liFind.by ?? null,
+                at: liFind.at ? new Date(liFind.at).toISOString() : null,
+              }
+            : null,
+          state: liRecord.connectedAt
+            ? `connected ${ist(liRecord.connectedAt)}`
+            : liRecord.inviteExpiredAt
+              ? "invite not accepted"
+              : sentOnLinkedIn(actions)
+                ? "invite sent"
+                : null,
+          searched: liSearched,
+        }
+      : null;
 
   const campaignName = new Map(campaigns.map((c) => [String(c._id), goalName(names.goals, c.goalKey)]));
   const planById = new Map(plans.map((p) => [String(p._id), p]));
@@ -592,6 +627,17 @@ export default async function PersonPage({
         </div>
       ) : (
         <p className="sub"><ClaudeBadge note="not sorted yet" /> Claude sorts new leads into a group on its next run.</p>
+      )}
+
+      {linkedin && (
+        <>
+          <h2>LinkedIn</h2>
+          <LinkedInCard
+            view={linkedin}
+            confirm={confirmFoundLinkedIn.bind(null, id, personId)}
+            save={setLinkedInProfile.bind(null, id, personId)}
+          />
+        </>
       )}
 
       {objections.length > 0 && (
@@ -1375,4 +1421,9 @@ function notSentLabel(action: Record<string, unknown>): { text: string; bad: boo
   };
   if (known[reason]) return known[reason];
   return { text: reason ? `Reason: ${humanize(reason)}.` : "It was turned down in review.", bad: true };
+}
+
+/** Whether anything has gone to them on LinkedIn: the first thing that goes is the invite. */
+function sentOnLinkedIn(actions: Document[]): boolean {
+  return actions.some((a) => a.channel === "linkedin" && a.status === "sent");
 }
