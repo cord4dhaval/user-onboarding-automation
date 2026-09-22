@@ -303,6 +303,31 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             : ("invite" as const)
           : undefined;
 
+      const goal = await db
+        .collection(C.goals)
+        .findOne({ orgId: opts.orgId, productId: opts.productId, key: String(goalInstance.goalKey) });
+
+      const schedule = goal?.schedule as { approvalMode?: string; firstTouchApproval?: string } | undefined;
+      // The campaign's first message can be let through on its own while the rest are read
+      // first. Anything but an explicit "auto_send" there defers to the campaign's mode.
+      const approvalMode =
+        action.firstTouch === true && schedule?.firstTouchApproval === "auto_send"
+          ? "auto_send"
+          : (schedule?.approvalMode ?? "gate_on");
+      // An asset can demand review on its own, and that demand outranks the campaign's
+      // mode. Auto-send is a decision about routine copy; "hold anything carrying this" is
+      // a decision about one particular thing, usually a way to reach a human.
+      //
+      // Only an explicit "auto_send" skips review. A missing or unrecognised mode holds, so a
+      // bad write can cost a delay but never sends mail nobody agreed to send unread.
+      const gated =
+        approvalMode !== "auto_send" ||
+        (await assetsNeedApproval(opts.orgId, opts.productId, action.assetIds));
+      // Held for review before anything else. Its sending hours and limits are for the send,
+      // which only follows an approval, so they no longer keep it out of Review: a LinkedIn
+      // invite queued in the afternoon used to reach Review only the next morning.
+      const reviewFirst = gated && !action.reviewedAt && !dryRun;
+
       const block = await blockedReason({
         orgId: opts.orgId,
         address,
@@ -313,6 +338,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         op,
         isReply: String(action.angle) === "reply",
         staleForReply: writtenBeforeReply(action, goalInstance),
+        reviewFirst,
         now,
       });
       if (block) {
@@ -344,16 +370,13 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         continue;
       }
 
-      const goal = await db
-        .collection(C.goals)
-        .findOne({ orgId: opts.orgId, productId: opts.productId, key: String(goalInstance.goalKey) });
-
       // One message per person per gap, enforced at the one point nothing can bypass. A
       // plan, a compose call and a reviewer can each put a second message in front of
       // someone before the first has had its gap; every one of them passes through here.
       // An answer to something they wrote is exempt: that is a conversation, not a
-      // campaign touch, and holding it for the band would be the worse rudeness.
-      if (String(action.angle) !== "reply") {
+      // campaign touch, and holding it for the band would be the worse rudeness. A message
+      // going to Review first is held to the gap when it comes back approved, not before.
+      if (String(action.angle) !== "reply" && !reviewFirst) {
         // Paced at this campaign's lead type (a click or silence on top), the same band the
         // due date was set from.
         const pace = paceBand(person, goal);
@@ -511,25 +534,9 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         continue;
       }
 
-      const schedule = goal?.schedule as { approvalMode?: string; firstTouchApproval?: string } | undefined;
-      // The campaign's first message can be let through on its own while the rest are read
-      // first. Anything but an explicit "auto_send" there defers to the campaign's mode.
-      const approvalMode =
-        action.firstTouch === true && schedule?.firstTouchApproval === "auto_send"
-          ? "auto_send"
-          : (schedule?.approvalMode ?? "gate_on");
-      // An asset can demand review on its own, and that demand outranks the campaign's
-      // mode. Auto-send is a decision about routine copy; "hold anything carrying this" is
-      // a decision about one particular thing, usually a way to reach a human.
-      //
-      // Only an explicit "auto_send" skips review. A missing or unrecognised mode holds, so a
-      // bad write can cost a delay but never sends mail nobody agreed to send unread.
-      const gated =
-        approvalMode !== "auto_send" ||
-        (await assetsNeedApproval(opts.orgId, opts.productId, action.assetIds));
       // The gate is for content nobody has looked at. Re-holding a message a human already
       // approved would loop it back to review forever, and nothing would ever send.
-      if (gated && !action.reviewedAt && !dryRun) {
+      if (reviewFirst) {
         await db.collection(C.actions).updateOne(
           { _id: action._id },
           { $set: { status: "awaiting_approval", content, validation: check } },
@@ -914,6 +921,13 @@ async function blockedReason(args: {
   isReply?: boolean;
   /** Written before the lead replied in this campaign (engine/campaignRules.ts, rule 4). */
   staleForReply?: boolean;
+  /**
+   * Nobody has read it yet and it will be held for review. The clocks (sending hours, rate
+   * limits, spacing, paused invites) then wait until after approval, so it reaches Review at
+   * once rather than only inside the channel's sending window; once approved it comes back
+   * through here and every clock applies to the send.
+   */
+  reviewFirst?: boolean;
   now: Date;
 }): Promise<Blocked | null> {
   if (await isSuppressed(args.orgId, [args.address])) return { reason: "on the suppression list" };
@@ -960,30 +974,32 @@ async function blockedReason(args: {
   // the lead's timezone. An answer to something they wrote is a conversation and does not
   // wait for the morning.
   const quiet = (args.channel.policy as { quietHours?: [number, number] } | undefined)?.quietHours;
-  if (quiet && !args.isReply) {
+  if (quiet && !args.isReply && !args.reviewFirst) {
     const opens = nextSendableAt(args.now, String(args.person.timezone ?? HOME_TIMEZONE), "batch", quiet);
     if (opens > args.now) return { reason: "outside this channel's sending hours in the lead's timezone", retryAt: opens };
   }
 
   // Provider limits are enforced here, in code, from what was actually sent.
   const channelId = String(args.channel._id);
-  const limits = await limitsFor(args.orgId, channelId);
-  const rate = await rateBlock(args.orgId, channelId, limits, args.now);
-  if (rate) return { reason: rate.reason, retryAt: rate.retryAt };
-
-  // Then the limit for this kind of action, where the channel has one: invites are held to
-  // far fewer a day than messages, and a weekly ceiling on top.
   const governor = args.channel.governor as Record<string, unknown> | undefined;
-  const perOp = args.op ? opLimitsFor(governor, args.op, args.now) : null;
-  if (perOp) {
-    const opRate = await rateBlock(args.orgId, channelId, perOp.limits, args.now, perOp.scope);
-    if (opRate) return { reason: opRate.reason, retryAt: opRate.retryAt };
-  }
+  if (!args.reviewFirst) {
+    const limits = await limitsFor(args.orgId, channelId);
+    const rate = await rateBlock(args.orgId, channelId, limits, args.now);
+    if (rate) return { reason: rate.reason, retryAt: rate.retryAt };
 
-  // Invites stop while too few of them are accepted; the accept check lifts it.
-  const invitesPaused = (governor as { invitesPausedReason?: string } | undefined)?.invitesPausedReason;
-  if (args.op === "invite" && invitesPaused) {
-    return { reason: invitesPaused, retryAt: new Date(args.now.getTime() + 24 * 3_600_000) };
+    // Then the limit for this kind of action, where the channel has one: invites are held to
+    // far fewer a day than messages, and a weekly ceiling on top.
+    const perOp = args.op ? opLimitsFor(governor, args.op, args.now) : null;
+    if (perOp) {
+      const opRate = await rateBlock(args.orgId, channelId, perOp.limits, args.now, perOp.scope);
+      if (opRate) return { reason: opRate.reason, retryAt: opRate.retryAt };
+    }
+
+    // Invites stop while too few of them are accepted; the accept check lifts it.
+    const invitesPaused = (governor as { invitesPausedReason?: string } | undefined)?.invitesPausedReason;
+    if (args.op === "invite" && invitesPaused) {
+      return { reason: invitesPaused, retryAt: new Date(args.now.getTime() + 24 * 3_600_000) };
+    }
   }
   // A LinkedIn message goes to a connection only. Asking LinkedIn to find out costs a call
   // and an error per retry, so the lead's record decides: expired is a verdict, not yet
@@ -995,7 +1011,7 @@ async function blockedReason(args: {
   }
 
   // A clock like the rest: the channel drew a random wait after its last send.
-  const spaced = spacedUntil(governor, args.now);
+  const spaced = args.reviewFirst ? null : spacedUntil(governor, args.now);
   if (spaced) return { reason: "waiting for the channel's next randomly spaced send slot", retryAt: spaced };
 
   return null;
