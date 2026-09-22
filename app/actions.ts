@@ -2879,13 +2879,20 @@ export async function createLinkedInChannel(formData: FormData) {
     );
     await db.collection(C.connections).updateOne(
       { _id: existing._id },
-      { $set: { status: "healthy", "linkedin.memberName": memberName }, $unset: { lastError: "", lastErrorAt: "" } },
+      {
+        $set: { status: "healthy", "linkedin.memberName": memberName, "linkedin.publicIdentifier": me.publicIdentifier },
+        $unset: { lastError: "", lastErrorAt: "" },
+      },
     );
     // The plan can change between connections: an account that went Premium may now write a
-    // note on every invite.
+    // note on every invite. So can the name: an account renamed on LinkedIn keeps its member
+    // id, so it reconnects onto the same channel, and the channel shows the name it has now.
     await db
       .collection(C.channels)
-      .updateMany({ orgId, connectionId }, { $set: { "capabilities.inviteNote": linkedinCapabilities(me.premium, product).inviteNote } });
+      .updateMany(
+        { orgId, connectionId },
+        { $set: { "capabilities.inviteNote": linkedinCapabilities(me.premium, product).inviteNote, from: memberName } },
+      );
     const channels = await db.collection(C.channels).find({ orgId, connectionId }).project({ _id: 1 }).toArray();
     for (const c of channels) {
       const health = await refreshChannelHealth(orgId, String(c._id));
