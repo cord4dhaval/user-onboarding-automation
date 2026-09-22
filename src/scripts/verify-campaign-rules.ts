@@ -12,7 +12,7 @@ import {
   REPLIED_REASON,
   resumeAtFor,
   returnDateFrom,
-  skipForReply,
+  pauseForReply,
   stopForMeeting,
   writtenBeforeReply,
 } from "../engine/campaignRules.js";
@@ -80,6 +80,7 @@ console.log("\nthey wrote back");
 {
   // The 21 September case: written in the morning, reply at night, approved next morning.
   const morning = ObjectId.createFromTime(Math.floor(new Date("2026-09-21T06:22:50Z").getTime() / 1000));
+  // The reply is on the campaign it answered.
   const reply = { lastReplyAt: new Date("2026-09-21T17:40:52Z") };
   check("a mail written before the reply is stale", writtenBeforeReply({ _id: morning, angle: "loss_first" }, reply));
   check("approving it later does not freshen it", writtenBeforeReply({ _id: morning, angle: "loss_first", reviewedAt: new Date("2026-09-22T04:56:12Z") }, reply));
@@ -87,7 +88,7 @@ console.log("\nthey wrote back");
   const evening = ObjectId.createFromTime(Math.floor(new Date("2026-09-22T06:00:00Z").getTime() / 1000));
   check("a mail written after the reply goes", !writtenBeforeReply({ _id: evening, angle: "next_touch" }, reply));
   check("an answer to them is never stale", !writtenBeforeReply({ _id: morning, angle: "reply" }, reply));
-  check("nobody replied, nothing is stale", !writtenBeforeReply({ _id: morning, angle: "loss_first" }, {}));
+  check("nobody replied in this campaign, nothing is stale", !writtenBeforeReply({ _id: morning, angle: "loss_first" }, {}));
 }
 
 // ── database ────────────────────────────────────────────────────────────────
@@ -138,11 +139,14 @@ try {
   check("a booking skips what was waiting and stops the sequence", stop.skipped === 1 && stop.stopped === 1 && Boolean(stopped?.handedOverAt) && stopped?.status === "active");
   check("booking again changes nothing", (await stopForMeeting({ orgId, productId, personId: gmailB.id, source: "booking page", now })).stopped === 0);
 
-  // Rule 4: every waiting campaign message goes, in Review and approved alike; an answer stays.
+  // Rule 4: the campaign they answered drops what it had waiting, in Review and approved
+  // alike; an answer stays, and their campaign on another channel is not touched.
   const wrote = await person("vinit@studio.in", "studio.in");
-  const add = async (fields: Record<string, unknown>) => {
+  const whatsappGi = new ObjectId();
+  await db.collection(C.goalInstances).insertOne({ _id: whatsappGi, orgId, productId, personId: wrote.id, goalKey: "wa", status: "active", deadline: new Date(now.getTime() + 3 * DAY), spent: { touches: 1 } });
+  const add = async (fields: Record<string, unknown>, gi = wrote.gi) => {
     const _id = new ObjectId();
-    await db.collection(C.actions).insertOne({ _id, orgId, productId, personId: wrote.id, goalInstanceId: String(wrote.gi), angle: "x", idempotencyKey: `${orgId}:${String(_id)}`, dueAt: now, ...fields });
+    await db.collection(C.actions).insertOne({ _id, orgId, productId, personId: wrote.id, goalInstanceId: String(gi), angle: "x", idempotencyKey: `${orgId}:${String(_id)}`, dueAt: now, ...fields });
     return _id;
   };
   const inReview = await add({ status: "awaiting_approval" });
@@ -150,39 +154,47 @@ try {
   const channelHeld = await add({ status: "held" });
   const answer = await add({ status: "awaiting_approval", angle: "reply" });
   const alreadySent = await add({ status: "sent", sentAt: now });
-  const dropped = await skipForReply({ orgId, productId, personId: wrote.id });
+  const otherCampaign = await add({ status: "awaiting_approval", channel: "whatsapp" }, whatsappGi);
+  const replyEvent = new ObjectId();
+  await db.collection(C.events).insertOne({ _id: replyEvent, orgId, productId, personId: wrote.id, type: "reply_received", channel: "email", actionId: String(alreadySent), ts: now, handled: false });
+  const paused = await pauseForReply({ orgId, productId, answeredActionId: String(alreadySent), eventId: replyEvent, at: now });
   const statusOf = async (id: ObjectId) => (await db.collection(C.actions).findOne({ _id: id }))?.status;
-  check("the queued, in-Review, approved and held messages are all dropped", dropped === 4 && (await statusOf(inReview)) === "skipped" && (await statusOf(approved)) === "skipped" && (await statusOf(channelHeld)) === "skipped" && (await statusOf(wrote.action)) === "skipped", String(dropped));
+  check("the queued, in-Review, approved and held messages are all dropped", paused.skipped === 4 && (await statusOf(inReview)) === "skipped" && (await statusOf(approved)) === "skipped" && (await statusOf(channelHeld)) === "skipped" && (await statusOf(wrote.action)) === "skipped", String(paused.skipped));
   check("with the reason the person page explains", (await db.collection(C.actions).findOne({ _id: inReview }))?.skipReason === REPLIED_REASON);
   check("the answer to them is kept", (await statusOf(answer)) === "awaiting_approval");
   check("what already went is untouched", (await statusOf(alreadySent)) === "sent");
+  check("their campaign on another channel runs on", (await statusOf(otherCampaign)) === "awaiting_approval");
+  check("the reply is on the campaign it answered", String((await db.collection(C.goalInstances).findOne({ _id: wrote.gi }))?.lastReplyAt) === String(now) && !(await db.collection(C.goalInstances).findOne({ _id: whatsappGi }))?.lastReplyAt);
+  check("and the reply names its campaign", (await db.collection(C.events).findOne({ _id: replyEvent }))?.goalInstanceId === String(wrote.gi));
+  check("a reply to nothing of ours pauses nothing", (await pauseForReply({ orgId, productId, at: now })).goalInstanceId === null);
 
-  // And no new campaign mail is planned for them until they have been answered, whether the
-  // plan has steps left or not; a reply marked answered by a person counts as the answer.
+  // And that campaign plans nothing new until they have been answered, whether its plan has
+  // steps left or not; a reply marked answered by a person counts as the answer.
   await db.collection(C.goals).insertOne({ orgId, productId, key: "reply-pause", allowedChannels: ["email"] });
-  const planned = async (email: string, fields: { startedAt: Date; lastReplyAt?: Date; lastContactedAt?: Date }) => {
+  const planned = async (email: string, lastReplyAt?: Date) => {
     const pid = new ObjectId();
     const planId = new ObjectId();
     const gi = new ObjectId();
-    await db.collection(C.people).insertOne({ _id: pid, orgId, productId, primaryEmail: email, identities: [{ kind: "email", value: email }], lifecycle: "active", ...(fields.lastReplyAt ? { lastReplyAt: fields.lastReplyAt } : {}), ...(fields.lastContactedAt ? { lastContactedAt: fields.lastContactedAt } : {}) });
+    await db.collection(C.people).insertOne({ _id: pid, orgId, productId, primaryEmail: email, identities: [{ kind: "email", value: email }], lifecycle: "active", ...(lastReplyAt ? { lastReplyAt } : {}) });
     await db.collection(C.plans).insertOne({ _id: planId, orgId, productId, steps: [{ id: 1, channel: "email", angle: "one", offsetDays: 0 }, { id: 2, channel: "email", angle: "two", offsetDays: 0 }] });
-    await db.collection(C.goalInstances).insertOne({ _id: gi, orgId, productId, personId: String(pid), goalKey: "reply-pause", status: "active", currentPlanId: String(planId), startedAt: fields.startedAt, deadline: new Date(now.getTime() + 10 * DAY), spent: { touches: 1 } });
+    await db.collection(C.goalInstances).insertOne({ _id: gi, orgId, productId, personId: String(pid), goalKey: "reply-pause", status: "active", currentPlanId: String(planId), startedAt: new Date(now.getTime() - 5 * DAY), deadline: new Date(now.getTime() + 10 * DAY), spent: { touches: 1 }, ...(lastReplyAt ? { lastReplyAt } : {}) });
     return { id: String(pid), gi: String(gi) };
   };
   const reasonFor = async (gi: string) => (await advance(orgId, productId, 50, now)).skipped.find((x) => x.goalInstanceId === gi)?.reason ?? "";
   const PAUSED = "they replied; the conversation is being answered first";
-  const repliedLead = await planned("mid@plan.in", { startedAt: new Date(now.getTime() - 5 * DAY), lastContactedAt: new Date(now.getTime() - 2 * DAY), lastReplyAt: new Date(now.getTime() - DAY) });
-  await db.collection(C.events).insertOne({ orgId, productId, personId: repliedLead.id, type: "reply_received", channel: "email", ts: new Date(now.getTime() - DAY), handled: true, handledAt: new Date(now.getTime() - DAY + 3_600_000) });
+  const dayAgo = new Date(now.getTime() - DAY);
+  const repliedLead = await planned("mid@plan.in", dayAgo);
+  await db.collection(C.events).insertOne({ orgId, productId, personId: repliedLead.id, goalInstanceId: repliedLead.gi, type: "reply_received", channel: "email", ts: dayAgo, handled: true, handledAt: new Date(dayAgo.getTime() + 3_600_000) });
   check("a plan with steps left still waits for the answer", (await reasonFor(repliedLead.gi)) === PAUSED);
   await db.collection(C.events).updateOne({ orgId, personId: repliedLead.id, type: "reply_received" }, { $set: { handledBy: "person", handledAt: new Date(now.getTime() - 3_600_000) } });
   check("marked answered by a person, the campaign carries on", (await reasonFor(repliedLead.gi)) !== PAUSED);
-  await db.collection(C.events).insertOne({ orgId, productId, personId: repliedLead.id, type: "reply_received", channel: "email", ts: new Date(now.getTime() - 60_000), handled: false });
-  await db.collection(C.people).updateOne({ _id: new ObjectId(repliedLead.id) }, { $set: { lastReplyAt: new Date(now.getTime() - 60_000) } });
+  const minuteAgo = new Date(now.getTime() - 60_000);
+  await db.collection(C.events).insertOne({ orgId, productId, personId: repliedLead.id, goalInstanceId: repliedLead.gi, type: "reply_received", channel: "email", ts: minuteAgo, handled: false });
+  await db.collection(C.goalInstances).updateOne({ _id: new ObjectId(repliedLead.gi) }, { $set: { lastReplyAt: minuteAgo } });
   check("a newer reply waits again", (await reasonFor(repliedLead.gi)) === PAUSED);
-  const answeredLead = await planned("sent@plan.in", { startedAt: new Date(now.getTime() - 5 * DAY), lastReplyAt: new Date(now.getTime() - DAY), lastContactedAt: new Date(now.getTime() - 3_600_000) });
-  check("an answer sent from any campaign counts", (await reasonFor(answeredLead.gi)) !== PAUSED);
-  const before = await planned("old@plan.in", { startedAt: new Date(now.getTime() - DAY), lastReplyAt: new Date(now.getTime() - 30 * DAY) });
-  check("a reply from before the campaign started does not pause it", (await reasonFor(before.gi)) !== PAUSED);
+  const elsewhere = await planned("wa@plan.in");
+  await db.collection(C.people).updateOne({ _id: new ObjectId(elsewhere.id) }, { $set: { lastReplyAt: dayAgo } });
+  check("a reply in their other campaign does not pause this one", (await reasonFor(elsewhere.gi)) !== PAUSED);
 } finally {
   for (const c of [C.people, C.goalInstances, C.actions, C.events, C.goals, C.plans, C.workQueue]) await db.collection(c).deleteMany({ orgId });
 }

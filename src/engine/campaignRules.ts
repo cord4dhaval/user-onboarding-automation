@@ -13,8 +13,9 @@ import { HOME_TIMEZONE } from "./time.js";
  *   2. An out-of-office reply is not a reply. The lead's campaign waits until the day after
  *      they are back, and nothing else about them changes.
  *   3. A lead who books a meeting is out of the sequence, whichever page they booked on.
- *   4. A lead who writes back gets an answer, not the next campaign message: whatever was
- *      written for them before their reply is dropped, wherever it is waiting.
+ *   4. A lead who writes back gets an answer, not the next campaign message: whatever that
+ *      campaign wrote for them before their reply is dropped, and it plans nothing more
+ *      until they are answered. Their other campaigns are not touched.
  *
  * Rules 1 and 2 share one mechanism: a hold on the lead's campaign until a date
  * (goal_instances.holdUntil, holdReason, holdKind). While it lasts the engine plans nothing
@@ -413,40 +414,65 @@ export function writtenAt(action: Document): Date {
 
 /**
  * Whether a message was written for a conversation that has since moved on: the lead wrote
- * back after its words were written. An answer to what they wrote is never stale.
+ * back, in this campaign, after its words were written. Read off the campaign, not the
+ * person: a reply to the email campaign says nothing about a WhatsApp or LinkedIn campaign
+ * running beside it for another purpose. An answer to what they wrote is never stale.
  */
-export function writtenBeforeReply(action: Document, person: Document): boolean {
+export function writtenBeforeReply(action: Document, goalInstance: Document): boolean {
   if (String(action.angle) === "reply") return false;
-  const repliedAt = person.lastReplyAt ? new Date(String(person.lastReplyAt)) : null;
+  const repliedAt = goalInstance.lastReplyAt ? new Date(String(goalInstance.lastReplyAt)) : null;
   return Boolean(repliedAt && repliedAt > writtenAt(action));
 }
 
 /**
- * Drops every campaign message still waiting for someone who has just written back, on
- * every channel: unreviewed, in Review, approved, or held for a channel. Only an answer to
- * what they wrote is kept.
+ * Pauses the one campaign a reply answers: the campaign of the message they wrote back to.
+ * Its waiting messages are dropped (unreviewed, in Review, approved, or held for a channel),
+ * and the campaign remembers when they replied, which is what keeps it from planning again
+ * until they are answered (engine/advance.ts). Only an answer to what they wrote is kept.
+ * Their other campaigns run on: each channel is its own campaign, often for another purpose.
+ *
+ * A reply that answers nothing of ours pauses nothing. The reply event is stamped with the
+ * campaign, so marking it answered on the Replies page lets that campaign carry on.
  *
  * Matching unreviewed queued messages alone missed the one waiting in Review. On 21
  * September a lead replied at 23:10 asking for payment details; the "You pay for 9 hours"
  * mail written that morning stayed in Review, was approved with 74 others at 10:26, and went
  * out inside their quotation thread.
  */
-export async function skipForReply(input: {
+export async function pauseForReply(input: {
   orgId: string;
   productId: string;
-  personId: string;
+  /** The message of ours they wrote back to. */
+  answeredActionId?: string;
+  /** The reply as stored, stamped with the campaign it belongs to. */
+  eventId?: ObjectId;
+  at: Date;
   reason?: string;
-}): Promise<number> {
+}): Promise<{ goalInstanceId: string | null; skipped: number }> {
   const db = await getDb();
+  const answered =
+    input.answeredActionId && ObjectId.isValid(input.answeredActionId)
+      ? await db.collection(C.actions).findOne({ _id: new ObjectId(input.answeredActionId), orgId: input.orgId }, { projection: { goalInstanceId: 1 } })
+      : null;
+  const goalInstanceId = answered?.goalInstanceId ? String(answered.goalInstanceId) : null;
+  if (!goalInstanceId || !ObjectId.isValid(goalInstanceId)) return { goalInstanceId: null, skipped: 0 };
+
+  if (input.eventId) await db.collection(C.events).updateOne({ _id: input.eventId }, { $set: { goalInstanceId } });
+  await db
+    .collection(C.goalInstances)
+    .updateOne(
+      { _id: new ObjectId(goalInstanceId), $or: [{ lastReplyAt: { $exists: false } }, { lastReplyAt: { $lt: input.at } }] },
+      { $set: { lastReplyAt: input.at } },
+    );
   const skipped = await db.collection(C.actions).updateMany(
     {
       orgId: input.orgId,
       productId: input.productId,
-      personId: input.personId,
+      goalInstanceId,
       status: { $in: ["queued", "awaiting_approval", "held"] },
       angle: { $ne: "reply" },
     },
     { $set: { status: "skipped", skipReason: input.reason ?? REPLIED_REASON } },
   );
-  return skipped.modifiedCount;
+  return { goalInstanceId, skipped: skipped.modifiedCount };
 }

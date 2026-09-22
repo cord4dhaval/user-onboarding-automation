@@ -11,7 +11,7 @@ import { mailOwner } from "./ownerMail.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
 import { suppress } from "./suppression.js";
 import { unsubscribePerson } from "./unsubscribe.js";
-import { holdForAbsence, pauseCompanyMates, skipForReply, whatsAppAutoReplyKind } from "./campaignRules.js";
+import { holdForAbsence, pauseCompanyMates, pauseForReply, whatsAppAutoReplyKind } from "./campaignRules.js";
 
 /**
  * What a WhatsApp provider tells us after a send: that a lead wrote something, or what
@@ -248,8 +248,8 @@ export async function applyWhatsAppEvent(
   // The reply window is WhatsApp's own. lastReplyAt stays the "they wrote to us" every
   // channel reads; repliedOn.whatsapp is what lets free text go on WhatsApp for 24 hours.
   await db.collection(C.people).updateOne({ _id: person._id }, { $set: { lastReplyAt: event.at, "repliedOn.whatsapp": event.at } });
-  // Every channel stops, not only WhatsApp: someone who wrote back is in a conversation now.
-  await skipForReply({ orgId, productId, personId, reason: "they replied on WhatsApp; waiting on an answer" });
+  // The campaign they answered pauses until they are answered; their other campaigns run on.
+  await pauseForReply({ orgId, productId, answeredActionId: String(answered._id), eventId: recorded.insertedId, at: event.at, reason: "they replied on WhatsApp; waiting on an answer" });
   // And their colleagues wait two weeks, so the company hears from one conversation.
   await pauseCompanyMates({ orgId, productId, personId, channel: "WhatsApp" });
 

@@ -292,7 +292,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
         channel,
         op,
         isReply: String(action.angle) === "reply",
-        staleForReply: writtenBeforeReply(action, person),
+        staleForReply: writtenBeforeReply(action, goalInstance),
         now,
       });
       if (block) {
@@ -892,7 +892,7 @@ async function blockedReason(args: {
   /** The LinkedIn action this send will be, which has limits of its own. */
   op?: string;
   isReply?: boolean;
-  /** Written before the lead's latest reply (engine/campaignRules.ts, rule 4). */
+  /** Written before the lead replied in this campaign (engine/campaignRules.ts, rule 4). */
   staleForReply?: boolean;
   now: Date;
 }): Promise<Blocked | null> {
@@ -900,9 +900,9 @@ async function blockedReason(args: {
 
   const gi = args.goalInstance as { status: string; deadline: Date; spent: { touches: number }; goalKey: string };
   if (gi.status !== "active") return { reason: `goal instance is ${gi.status}` };
-  // The last check before a campaign message reaches someone who has written back since it
-  // was written. The reply poller drops these the minute it reads the reply; this catches
-  // whatever it could not, approved or not. An approval does not count: on 22 September a
+  // The last check before a campaign message reaches someone who has written back in this
+  // campaign since it was written. The reply poller drops these the minute it reads the
+  // reply; this catches whatever it could not, approved or not. An approval does not count: on 22 September a
   // mail approved in bulk went to a lead who had asked for payment details the night before.
   if (args.staleForReply) return { reason: REPLIED_REASON };
   // A campaign on hold (a colleague replied, or they are out of office) keeps its message,

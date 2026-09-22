@@ -11,7 +11,7 @@ import { suppress } from "./suppression.js";
 import { grantedCapabilities } from "../auth/google.js";
 import { detectMovement } from "./detect.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
-import { autoReplyKind, holdForAbsence, pauseCompanyMates, skipForReply } from "./campaignRules.js";
+import { autoReplyKind, holdForAbsence, pauseCompanyMates, pauseForReply } from "./campaignRules.js";
 
 /**
  * Reads replies.
@@ -568,9 +568,11 @@ export async function pollReplies(
         ],
         href: `/products/${productId}/library/${personId}`,
       });
-      // Everything written for them before this reply, wherever it waits: Review, approved,
-      // or queued. Only an answer to an earlier message of theirs is kept.
-      summary.heldForReply += await skipForReply({ orgId, productId, personId });
+      // The campaign they answered pauses: everything it wrote for them before this reply
+      // is dropped, wherever it waits. Their other campaigns run on.
+      summary.heldForReply += (
+        await pauseForReply({ orgId, productId, answeredActionId: answered ? String(answered._id) : undefined, eventId: recorded.insertedId, at })
+      ).skipped;
 
       // Then the answer itself is queued as urgent work, which bypasses fairness entirely.
       if (intent) {

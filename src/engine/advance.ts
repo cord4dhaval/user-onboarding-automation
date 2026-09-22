@@ -153,7 +153,7 @@ export async function advance(
     .collection(C.goalInstances)
     .find(
       { ...s, status: "active", currentPlanId: { $exists: true } },
-      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1, startedAt: 1, createdAt: 1, handedOverAt: 1, checkpointAskedAt: 1, holdUntil: 1, holdReason: 1 } },
+      { projection: { personId: 1, goalKey: 1, currentPlanId: 1, spent: 1, deadline: 1, startedAt: 1, createdAt: 1, handedOverAt: 1, checkpointAskedAt: 1, holdUntil: 1, holdReason: 1, lastReplyAt: 1 } },
     )
     .sort({ lastAdvancedAt: 1, startedAt: 1 })
     .limit(limit)
@@ -212,21 +212,28 @@ export async function advance(
   const composeAskedAt = new Map(composeJobs.map((j) => [String(j.subjectId), new Date(String(j.createdAt)).getTime()]));
 
   // Replies a person marked answered (from Gmail, a call, WhatsApp by hand) on the Replies
-  // page. The engine never sees that answer go, so without this the lead waited for ever.
-  // Only the latest reply counts: a newer one has not been answered yet.
-  const repliers = people.filter((p) => p.lastReplyAt).map((p) => String(p._id));
-  const answeredByPerson = new Map<string, Date>();
-  if (repliers.length > 0) {
-    const latest = await db
+  // page, by campaign. The engine never sees that answer go, so without this the campaign
+  // waited for ever. Only the campaign's latest reply counts: a newer one is not answered yet.
+  // A reply read before replies were stamped with their campaign is found by the message it
+  // answered.
+  const replied = instances.filter((i) => i.lastReplyAt);
+  const answeredByHand = new Map<string, Date>();
+  if (replied.length > 0) {
+    const campaignOfAction = new Map(actionRows.map((a) => [String(a._id), String(a.goalInstanceId)]));
+    const replies = await db
       .collection(C.events)
-      .aggregate([
-        { $match: { orgId, personId: { $in: repliers }, productId, type: "reply_received" } },
-        { $sort: { ts: -1 } },
-        { $group: { _id: "$personId", ts: { $first: "$ts" }, handledBy: { $first: "$handledBy" }, handledAt: { $first: "$handledAt" } } },
-      ])
+      .find(
+        { orgId, personId: { $in: replied.map((i) => String(i.personId)) }, productId, type: "reply_received" },
+        { projection: { goalInstanceId: 1, actionId: 1, handledBy: 1, handledAt: 1 } },
+      )
+      .sort({ ts: -1 })
       .toArray();
-    for (const r of latest) {
-      if (r.handledBy === "person" && r.handledAt) answeredByPerson.set(String(r._id), new Date(String(r.handledAt)));
+    const seen = new Set<string>();
+    for (const r of replies) {
+      const campaign = r.goalInstanceId ? String(r.goalInstanceId) : campaignOfAction.get(String(r.actionId ?? ""));
+      if (!campaign || seen.has(campaign)) continue;
+      seen.add(campaign);
+      if (r.handledBy === "person" && r.handledAt) answeredByHand.set(campaign, new Date(String(r.handledAt)));
     }
   }
 
@@ -432,15 +439,15 @@ export async function advance(
     // Somebody who wrote back is in a conversation, and React answers it. A planned touch
     // arriving beside that answer reads as nobody having read what they wrote. Checked
     // before any step is picked: asked only when a rolling plan had run out, a plan with a
-    // step left went on writing the next campaign mail straight after their reply. The
-    // conversation is answered once anything of ours has gone out to them since, in any
-    // campaign, or a person marked it answered; from then the window runs from that moment.
-    // A reply from before this campaign started was known when they were put in it.
-    const repliedAt = person.lastReplyAt ? new Date(String(person.lastReplyAt)) : null;
+    // step left went on writing the next campaign mail straight after their reply.
+    // Campaign by campaign: the reply belongs to the campaign they answered, and their other
+    // campaigns run on. It is answered once this campaign has sent them anything since, or a
+    // person marked it answered; from then the window runs from that moment.
+    const repliedAt = instance.lastReplyAt ? new Date(String(instance.lastReplyAt)) : null;
     const lastSent = lastSentBy.get(goalInstanceId);
-    const lastTouchAt = latestOf([lastSent?.at, person.lastContactedAt, answeredByPerson.get(String(person._id))]);
+    const lastTouchAt = latestOf([lastSent?.at, answeredByHand.get(goalInstanceId)]);
     const lastTouch = lastTouchAt ? { at: lastTouchAt, channel: lastSent?.channel ?? "email" } : undefined;
-    if (repliedAt && repliedAt.getTime() >= startedAt && (!lastTouch || repliedAt >= lastTouch.at)) {
+    if (repliedAt && (!lastTouch || repliedAt >= lastTouch.at)) {
       summary.skipped.push({ goalInstanceId, reason: "they replied; the conversation is being answered first" });
       continue;
     }

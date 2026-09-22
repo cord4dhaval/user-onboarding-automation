@@ -91,19 +91,31 @@ export async function answerSimpleReply(intent: ReplyIntent, input: SimpleReplyI
   const db = await getDb();
   const { orgId, productId, personId, at } = input;
 
-  // The campaign whose message they are answering.
-  const instance = await instanceOfLastSend({ orgId, productId, personId });
+  // The campaign whose message they are answering: the one the reply was matched to, so a
+  // "call" to the email campaign does not hand over a WhatsApp campaign that sent last.
+  // Their last send only when the reply could not be matched.
+  const event = input.eventId ? await db.collection(C.events).findOne({ _id: input.eventId }, { projection: { actionId: 1 } }) : null;
+  const answeredSend =
+    event?.actionId && ObjectId.isValid(String(event.actionId))
+      ? await db.collection(C.actions).findOne({ _id: new ObjectId(String(event.actionId)), orgId, productId, personId })
+      : null;
+  const instance =
+    (answeredSend?.goalInstanceId
+      ? await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(answeredSend.goalInstanceId)), status: "active" })
+      : null) ?? (await instanceOfLastSend({ orgId, productId, personId }));
   if (!instance) return null;
   const person = await db.collection(C.people).findOne({ _id: new ObjectId(personId) });
   if (!person) return null;
 
   // From the address they are already talking to, so the answer lands in the same thread.
-  const lastSend = await db
-    .collection(C.actions)
-    .find({ orgId, productId, personId, status: { $in: ["sent", "dispatched"] }, channelId: { $exists: true } })
-    .sort({ sentAt: -1 })
-    .limit(1)
-    .next();
+  const lastSend =
+    (answeredSend?.channelId ? answeredSend : null) ??
+    (await db
+      .collection(C.actions)
+      .find({ orgId, productId, personId, status: { $in: ["sent", "dispatched"] }, channelId: { $exists: true } })
+      .sort({ sentAt: -1 })
+      .limit(1)
+      .next());
   const channel =
     (lastSend?.channelId
       ? await db.collection(C.channels).findOne({ _id: new ObjectId(String(lastSend.channelId)), enabled: true, status: "healthy" })
