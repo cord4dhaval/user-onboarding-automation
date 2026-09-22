@@ -16,7 +16,7 @@ import {
 import { advance } from "../engine/advance.js";
 
 /**
- * The three campaign rules (engine/campaignRules.ts): the pure readers first, then the
+ * The three campaign rules, each for one campaign at a time (engine/campaignRules.ts): the pure readers first, then the
  * database side on a throwaway org that is deleted at the end.
  *
  *   npm run verify:rules
@@ -123,10 +123,25 @@ try {
   const mateAction = await db.collection(C.actions).findOne({ _id: mate.action });
   check("a colleague's campaign runs on", !(await db.collection(C.goalInstances).findOne({ _id: mate.gi }))?.holdUntil && mateAction?.status === "queued" && !mateAction?.deferReason);
 
-  const stop = await stopForMeeting({ orgId, productId, personId: gmailB.id, source: "booked on your site", now });
-  const stopped = await db.collection(C.goalInstances).findOne({ _id: gmailB.gi });
-  check("a booking skips what was waiting and stops the sequence", stop.skipped === 1 && stop.stopped === 1 && Boolean(stopped?.handedOverAt) && stopped?.status === "active");
-  check("booking again changes nothing", (await stopForMeeting({ orgId, productId, personId: gmailB.id, source: "booking page", now })).stopped === 0);
+  // Rule 2: a booking stops the campaign they clicked through from, and only that one.
+  const booker = gmailB;
+  const bookerWa = new ObjectId();
+  await db.collection(C.goalInstances).insertOne({ _id: bookerWa, orgId, productId, personId: booker.id, goalKey: "wa", status: "active", deadline: new Date(now.getTime() + 3 * DAY), spent: { touches: 1 } });
+  const clickedMail = new ObjectId();
+  await db.collection(C.actions).insertOne({ _id: clickedMail, orgId, productId, personId: booker.id, goalInstanceId: String(booker.gi), status: "sent", sentAt: new Date(now.getTime() - 2 * DAY), firstClickedAt: new Date(now.getTime() - DAY), angle: "x", idempotencyKey: `${orgId}:${String(clickedMail)}`, dueAt: now });
+  const laterWa = new ObjectId();
+  await db.collection(C.actions).insertOne({ _id: laterWa, orgId, productId, personId: booker.id, goalInstanceId: String(bookerWa), channel: "whatsapp", status: "sent", sentAt: new Date(now.getTime() - 3_600_000), angle: "x", idempotencyKey: `${orgId}:${String(laterWa)}`, dueAt: now });
+  const waWaiting = new ObjectId();
+  await db.collection(C.actions).insertOne({ _id: waWaiting, orgId, productId, personId: booker.id, goalInstanceId: String(bookerWa), channel: "whatsapp", status: "awaiting_approval", angle: "x", idempotencyKey: `${orgId}:${String(waWaiting)}`, dueAt: now });
+  const stop = await stopForMeeting({ orgId, productId, personId: booker.id, source: "booked on your site", now });
+  const stopped = await db.collection(C.goalInstances).findOne({ _id: booker.gi });
+  check("a booking stops the campaign they clicked through from", stop.goalInstanceId === String(booker.gi) && stop.skipped === 1 && stop.stopped === 1 && Boolean(stopped?.handedOverAt) && stopped?.status === "active", JSON.stringify(stop));
+  check("their campaign on another channel runs on", !(await db.collection(C.goalInstances).findOne({ _id: bookerWa }))?.handedOverAt && (await db.collection(C.actions).findOne({ _id: waWaiting }))?.status === "awaiting_approval");
+  check("booking again changes nothing", (await stopForMeeting({ orgId, productId, personId: booker.id, source: "booking page", now })).stopped === 0);
+  const noClick = await person("n@plan.in");
+  const lastMail = new ObjectId();
+  await db.collection(C.actions).insertOne({ _id: lastMail, orgId, productId, personId: noClick.id, goalInstanceId: String(noClick.gi), status: "sent", sentAt: now, angle: "x", idempotencyKey: `${orgId}:${String(lastMail)}`, dueAt: now });
+  check("with no click, the campaign that wrote last", (await stopForMeeting({ orgId, productId, personId: noClick.id, source: "booking page", now })).goalInstanceId === String(noClick.gi));
 
   // Rule 3: the campaign they answered drops what it had waiting, in Review and approved
   // alike; an answer stays, and their campaign on another channel is not touched.

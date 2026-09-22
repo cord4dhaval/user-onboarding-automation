@@ -9,13 +9,14 @@ import { HOME_TIMEZONE } from "./time.js";
  *
  *   1. An out-of-office reply is not a reply. The campaign it answered waits until the day
  *      after they are back, and nothing else about them changes.
- *   2. A lead who books a meeting is out of the sequence, whichever page they booked on.
+ *   2. A lead who books a meeting is out of the campaign that brought them there, whichever
+ *      page they booked on.
  *   3. A lead who writes back gets an answer, not the next campaign message: whatever that
  *      campaign wrote for them before their reply is dropped, and it plans nothing more
  *      until they are answered.
  *
- * Rules 1 and 3 are campaign by campaign: they act on the campaign whose message the lead
- * answered. Each channel runs as its own campaign, often for another purpose, and a reply
+ * All three are campaign by campaign: they act on the campaign whose message the lead
+ * answered or clicked through from. Each channel runs as its own campaign, often for another purpose, and a reply
  * to one says nothing about the others. Each lead is also their own: someone at the same
  * company replying changes nothing for anyone else (decided 2026-09-22).
  *
@@ -295,9 +296,10 @@ async function campaignOf(orgId: string, actionId: string | undefined): Promise<
 // ── rule 2: a meeting was booked ──────────────────────────────────────────────
 
 /**
- * Takes a lead who booked a meeting out of the sequence: everything still waiting for them
- * is skipped and no further step is planned. The campaign stays open, so a check such as
- * "signed up" can still close it as a success. Safe to call twice.
+ * Takes a lead who booked a meeting out of the campaign the booking came from: everything
+ * it still has waiting for them is skipped and no further step is planned. The campaign
+ * stays open, so a check such as "signed up" can still close it as a success. Their other
+ * campaigns run on. Safe to call twice.
  */
 export async function stopForMeeting(input: {
   orgId: string;
@@ -306,15 +308,17 @@ export async function stopForMeeting(input: {
   source: string;
   note?: string;
   now?: Date;
-}): Promise<{ skipped: number; stopped: number }> {
+}): Promise<{ goalInstanceId: string | null; skipped: number; stopped: number }> {
   const db = await getDb();
   const now = input.now ?? new Date();
+  const goalInstanceId = await campaignOfBooking(input.orgId, input.productId, input.personId);
+  if (!goalInstanceId) return { goalInstanceId: null, skipped: 0, stopped: 0 };
   const skipped = await db.collection(C.actions).updateMany(
-    { orgId: input.orgId, productId: input.productId, personId: input.personId, status: { $in: ["queued", "awaiting_approval", "held"] } },
+    { orgId: input.orgId, productId: input.productId, goalInstanceId, status: { $in: ["queued", "awaiting_approval", "held"] } },
     { $set: { status: "skipped", skipReason: "booked_call" } },
   );
-  const stopped = await db.collection(C.goalInstances).updateMany(
-    { orgId: input.orgId, productId: input.productId, personId: input.personId, status: "active", handedOverAt: { $exists: false } },
+  const stopped = await db.collection(C.goalInstances).updateOne(
+    { _id: new ObjectId(goalInstanceId), status: "active", handedOverAt: { $exists: false } },
     {
       $set: {
         handedOverAt: now,
@@ -323,7 +327,32 @@ export async function stopForMeeting(input: {
       },
     },
   );
-  return { skipped: skipped.modifiedCount, stopped: stopped.modifiedCount };
+  return { goalInstanceId, skipped: skipped.modifiedCount, stopped: stopped.modifiedCount };
+}
+
+/**
+ * The campaign a booking came from. A booking link names only the person, so it is read off
+ * what they did: the campaign whose message they clicked last, else the one that wrote to
+ * them last. Only an open campaign counts; one that has ended has nothing left to stop.
+ */
+async function campaignOfBooking(orgId: string, productId: string, personId: string): Promise<string | null> {
+  const db = await getDb();
+  const open = new Set(
+    (
+      await db.collection(C.goalInstances).find({ orgId, productId, personId, status: "active" }).project({ _id: 1 }).toArray()
+    ).map((i) => String(i._id)),
+  );
+  if (open.size === 0) return null;
+  const sent = await db
+    .collection(C.actions)
+    .find({ orgId, productId, personId, status: { $in: ["sent", "dispatched"] }, goalInstanceId: { $in: [...open] } })
+    .project({ goalInstanceId: 1, sentAt: 1, firstClickedAt: 1 })
+    .toArray();
+  const time = (d: unknown) => (d ? new Date(String(d instanceof Date ? d.toISOString() : d)).getTime() : 0);
+  const clicked = sent.filter((a) => a.firstClickedAt).sort((x, y) => time(y.firstClickedAt) - time(x.firstClickedAt))[0];
+  const last = [...sent].sort((x, y) => time(y.sentAt) - time(x.sentAt))[0];
+  const pick = clicked ?? last;
+  return pick ? String(pick.goalInstanceId) : null;
 }
 
 // ── rule 3: they wrote back ───────────────────────────────────────────────────

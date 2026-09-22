@@ -277,9 +277,10 @@ export async function book(input: {
     { _id: person._id },
     { $set: { booking: { ...booking, connectionId: input.settings.connectionId, bookedAt: new Date() } } },
   );
-  // A booking hands the person to a human. Everything still scheduled for them is skipped
-  // — the next chase landing an hour after they picked a time would tell them nobody
-  // noticed — and the campaign stays open so the signup check can still close it. Not a
+  // A booking hands the person to a human. Everything the campaign it came from still has
+  // scheduled for them is skipped — the next chase landing an hour after they picked a time
+  // would tell them nobody noticed — and the campaign stays open so the signup check can
+  // still close it. Their other campaigns run on. Not a
   // check of its own: success requires every check to pass, and a booking is a route to
   // signing up, not a second finish line.
   await stopForMeeting({
