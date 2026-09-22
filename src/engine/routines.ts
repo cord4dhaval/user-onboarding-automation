@@ -385,7 +385,7 @@ question they can answer in ten seconds is the cheaper thing to ask for; their a
 also tells the next mail what to lead with. Pass ask "reply", end the body on a
 question answerable in one line, and the button is left off the rendered mail.
 After any click or reply, every later mail is a link ask again. Never both asks in one
-message; compose_batch refuses a reply ask that does not end on a question, and the
+message (the P.S. offer to reply "call" is a second route, not a second ask); compose_batch refuses a reply ask that does not end on a question, and the
 engine refuses one that carries a link.
 
 The subject. Twenty to sixty characters, carrying a number, their own metric or a
