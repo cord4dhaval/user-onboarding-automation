@@ -90,10 +90,18 @@ export const QUERY_IDS = {
   conversations: "messengerConversations.db23ac94a546670956b37f89cf64a070",
   messages: "messengerMessages.1561582483b8a511147478d8c099b03d",
 } as const;
+/**
+ * A value inside GraphQL `variables=(…)`. Brackets are the syntax of that list, so a urn that
+ * carries its own — every conversation urn does — must have them escaped too, which
+ * encodeURIComponent leaves alone. Unescaped, LinkedIn answers a bare 400. The web app's own
+ * encoder does exactly this.
+ */
+const variable = (value: string) => encodeURIComponent(value).replace(/\(/g, "%28").replace(/\)/g, "%29");
+
 export const CONVERSATIONS = (mailboxUrn: string, count: number) =>
-  `${MESSAGING_GRAPHQL}?queryId=${QUERY_IDS.conversations}&variables=(category:PRIMARY_INBOX,count:${count},mailboxUrn:${encodeURIComponent(mailboxUrn)})`;
+  `${MESSAGING_GRAPHQL}?queryId=${QUERY_IDS.conversations}&variables=(category:PRIMARY_INBOX,count:${count},mailboxUrn:${variable(mailboxUrn)})`;
 export const CONVERSATION_MESSAGES = (conversationUrn: string, count: number) =>
-  `${MESSAGING_GRAPHQL}?queryId=${QUERY_IDS.messages}&variables=(conversationUrn:${encodeURIComponent(conversationUrn)},count:${count})`;
+  `${MESSAGING_GRAPHQL}?queryId=${QUERY_IDS.messages}&variables=(conversationUrn:${variable(conversationUrn)},count:${count})`;
 
 /**
  * Sending a message. CONFIRMED (2026-09-17): POST as `text/plain;charset=UTF-8` with body
