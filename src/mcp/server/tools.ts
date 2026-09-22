@@ -1186,6 +1186,17 @@ export const TOOLS: ToolDef[] = [
           const usage = await ideaUsage({ orgId: ctx.orgId, productId: String(instance.productId), goalKey: String(instance.goalKey), excludeInstanceId: String(instance._id) });
           const had = await ideasHadBy({ orgId: ctx.orgId, goalInstanceId: String(instance._id) });
           const { cap } = await ideaLimitsFor({ orgId: ctx.orgId, productId: String(instance.productId), goalKey: String(instance.goalKey), bank });
+          // The ideas of this lead's messages still waiting to go out. A plan that replaces one
+          // with the same idea is a rewrite, not another lead taking the idea, so the weekly cap
+          // does not apply to it (2026-09-22: every waiting mail was rewritten to the short
+          // selling shape, and nearly every idea was already at its cap).
+          const waitingIdeas = new Set<number>();
+          for (const a of await db
+            .collection(C.actions)
+            .find({ orgId: ctx.orgId, goalInstanceId: String(instance._id), status: { $in: ["queued", "awaiting_approval"] }, sentAt: { $exists: false } }, { projection: { ideaRefs: 1 } })
+            .toArray()) {
+            for (const n of (a.ideaRefs ?? []) as unknown[]) if (Number.isFinite(Number(n))) waitingIdeas.add(Number(n));
+          }
           for (const st of planSteps as Array<Record<string, unknown>>) {
             const refs = (Array.isArray(st.idea_refs) ? st.idea_refs : []).map(Number).filter((n) => Number.isFinite(n));
             if (refs.length === 0) {
@@ -1205,7 +1216,7 @@ export const TOOLS: ToolDef[] = [
                 throw new Error(`step ${String(st.id)} uses #${n}, a trial idea already planned for ${leads} leads. It waits for their results before anyone else gets it. Pick another idea. Nothing was written.`);
               }
             }
-            if (refs.every((n) => (usage.get(n) ?? 0) >= cap)) {
+            if (refs.every((n) => (usage.get(n) ?? 0) >= cap && !waitingIdeas.has(n))) {
               throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, already planned for ${cap} or more other leads in this campaign this week. Pick another idea that fits this lead. Nothing was written.`);
             }
             st.idea_refs = refs;
