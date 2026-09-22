@@ -3,12 +3,9 @@ import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import {
   ABSENCE_DEFAULT_DAYS,
-  COMPANY_HOLD_DAYS,
   autoReplyKind,
-  companyKeyOf,
   holdForAbsence,
   holdOf,
-  pauseCompanyMates,
   REPLIED_REASON,
   resumeAtFor,
   returnDateFrom,
@@ -19,7 +16,7 @@ import {
 import { advance } from "../engine/advance.js";
 
 /**
- * The four campaign rules (engine/campaignRules.ts): the pure readers first, then the
+ * The three campaign rules (engine/campaignRules.ts): the pure readers first, then the
  * database side on a throwaway org that is deleted at the end.
  *
  *   npm run verify:rules
@@ -35,13 +32,6 @@ const DAY = 86_400_000;
 
 // A Tuesday, 11:00 in India.
 const sent = new Date("2026-09-22T05:30:00Z");
-
-console.log("\ncompany");
-check("a plain domain", companyKeyOf("acme.in") === "acme.in");
-check("a form's URL", companyKeyOf("https://www.Acme.in/about") === "acme.in");
-check("gmail is nobody's company", companyKeyOf("gmail.com") === null);
-check("empty is nobody's company", companyKeyOf("") === null && companyKeyOf(undefined) === null);
-check("not a domain", companyKeyOf("www.abc") === null);
 
 console.log("\nautomatic replies");
 const h = (headers: Record<string, string>) => (name: string) => headers[name];
@@ -107,39 +97,38 @@ try {
     await db.collection(C.actions).insertOne({ _id: action, orgId, productId, personId: String(_id), goalInstanceId: String(gi), status: "queued", angle: "x", idempotencyKey: `${orgId}:${String(action)}`, dueAt: new Date(now.getTime() + 3_600_000) });
     return { id: String(_id), gi, action };
   };
-  const replier = await person("asha@acme.in", "acme.in");
-  const mate = await person("ravi@acme.in", "https://www.acme.in/");
-  const mateByEmail = await person("neha@acme.in");
-  const other = await person("sam@other.in", "other.in");
-  const gmailA = await person("a@gmail.com", "gmail.com");
   const gmailB = await person("b@gmail.com", "gmail.com");
 
-  const result = await pauseCompanyMates({ orgId, productId, personId: replier.id, channel: "email", now });
-  check("both colleagues held, by domain and by email", result.domain === "acme.in" && result.held === 2, JSON.stringify(result));
-  const heldMate = await db.collection(C.goalInstances).findOne({ _id: mate.gi });
-  const until = new Date(now.getTime() + COMPANY_HOLD_DAYS * DAY);
-  check("hold lasts two weeks", heldMate?.holdUntil?.getTime() === until.getTime());
-  check("deadline moved past the hold", new Date(heldMate?.deadline).getTime() > until.getTime());
-  const movedAction = await db.collection(C.actions).findOne({ _id: mate.action });
-  check("colleague's message kept and moved, with the reason", movedAction?.status === "queued" && movedAction?.dueAt?.getTime() === until.getTime() && /colleague at acme\.in/.test(String(movedAction?.deferReason)));
-  check("the replier is not held by this rule", !(await db.collection(C.goalInstances).findOne({ _id: replier.gi }))?.holdUntil);
-  check("another company is untouched", !(await db.collection(C.goalInstances).findOne({ _id: other.gi }))?.holdUntil);
-  const g = await pauseCompanyMates({ orgId, productId, personId: gmailA.id, channel: "email", now });
-  check("a gmail reply holds nobody", g.domain === null && g.held === 0 && !(await db.collection(C.goalInstances).findOne({ _id: gmailB.gi }))?.holdUntil);
-  check("event on the colleague's timeline", (await db.collection(C.events).countDocuments({ orgId, personId: mate.id, type: "campaign_held" })) === 1);
-  check("a second reply does not stack events", (await pauseCompanyMates({ orgId, productId, personId: replier.id, channel: "email", now })).held === 0);
+  // Rule 1: an away reply holds the campaign it came back on, and only that one.
+  const away1 = await person("sam@other.in", "other.in");
+  const sentMail = new ObjectId();
+  await db.collection(C.actions).insertOne({ _id: sentMail, orgId, productId, personId: away1.id, goalInstanceId: String(away1.gi), status: "sent", sentAt: now, angle: "x", idempotencyKey: `${orgId}:${String(sentMail)}`, dueAt: now });
+  const theirWhatsApp = new ObjectId();
+  await db.collection(C.goalInstances).insertOne({ _id: theirWhatsApp, orgId, productId, personId: away1.id, goalKey: "wa", status: "active", deadline: new Date(now.getTime() + 3 * DAY), spent: { touches: 1 } });
+  const away = await holdForAbsence({ orgId, productId, answeredActionId: String(sentMail), text: "Automatic reply: out of office until 5 October", sent: now, now });
+  const awayGi = await db.collection(C.goalInstances).findOne({ _id: away1.gi });
+  check("out of office holds the campaign it came back on", away.held === 1 && awayGi?.holdKind === "absence" && /out of office/.test(String(awayGi?.holdReason)));
+  check("deadline moved past the hold", new Date(awayGi?.deadline).getTime() > away.until.getTime());
+  check("its message waits for the return", (await db.collection(C.actions).findOne({ _id: away1.action }))?.dueAt?.getTime() === away.until.getTime());
+  check("their campaign on another channel is not held", !(await db.collection(C.goalInstances).findOne({ _id: theirWhatsApp }))?.holdUntil);
+  check("event on their timeline", (await db.collection(C.events).countDocuments({ orgId, personId: away1.id, type: "campaign_held" })) === 1);
+  check("an away reply to nothing of ours holds nothing", (await holdForAbsence({ orgId, productId, text: "Out of office until 5 October", sent: now, now })).held === 0);
 
-  const away = await holdForAbsence({ orgId, productId, personId: other.id, text: "Automatic reply: out of office until 5 October", sent: now, now });
-  const awayGi = await db.collection(C.goalInstances).findOne({ _id: other.gi });
-  check("out of office holds their own campaign", away.held === 1 && awayGi?.holdKind === "absence" && /out of office/.test(String(awayGi?.holdReason)));
-  check("their message waits for the return", (await db.collection(C.actions).findOne({ _id: other.action }))?.dueAt?.getTime() === away.until.getTime());
+  // No colleague rule: someone at the same company replying changes nothing for anyone else.
+  const replier = await person("asha@acme.in", "acme.in");
+  const mate = await person("ravi@acme.in", "acme.in");
+  const replierSent = new ObjectId();
+  await db.collection(C.actions).insertOne({ _id: replierSent, orgId, productId, personId: replier.id, goalInstanceId: String(replier.gi), status: "sent", sentAt: now, angle: "x", idempotencyKey: `${orgId}:${String(replierSent)}`, dueAt: now });
+  await pauseForReply({ orgId, productId, answeredActionId: String(replierSent), at: now });
+  const mateAction = await db.collection(C.actions).findOne({ _id: mate.action });
+  check("a colleague's campaign runs on", !(await db.collection(C.goalInstances).findOne({ _id: mate.gi }))?.holdUntil && mateAction?.status === "queued" && !mateAction?.deferReason);
 
   const stop = await stopForMeeting({ orgId, productId, personId: gmailB.id, source: "booked on your site", now });
   const stopped = await db.collection(C.goalInstances).findOne({ _id: gmailB.gi });
   check("a booking skips what was waiting and stops the sequence", stop.skipped === 1 && stop.stopped === 1 && Boolean(stopped?.handedOverAt) && stopped?.status === "active");
   check("booking again changes nothing", (await stopForMeeting({ orgId, productId, personId: gmailB.id, source: "booking page", now })).stopped === 0);
 
-  // Rule 4: the campaign they answered drops what it had waiting, in Review and approved
+  // Rule 3: the campaign they answered drops what it had waiting, in Review and approved
   // alike; an answer stays, and their campaign on another channel is not touched.
   const wrote = await person("vinit@studio.in", "studio.in");
   const whatsappGi = new ObjectId();

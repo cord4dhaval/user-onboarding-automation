@@ -11,7 +11,7 @@ import { suppress } from "./suppression.js";
 import { grantedCapabilities } from "../auth/google.js";
 import { detectMovement } from "./detect.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
-import { autoReplyKind, holdForAbsence, pauseCompanyMates, pauseForReply } from "./campaignRules.js";
+import { autoReplyKind, holdForAbsence, pauseForReply } from "./campaignRules.js";
 
 /**
  * Reads replies.
@@ -44,12 +44,10 @@ export interface InboundSummary {
   heldForReply: number;
   /** One-word replies the engine answered itself (\"call\", \"later\"). */
   autoAnswered: number;
-  /** Out-of-office replies: not counted as replies; the lead's campaign waits until they are back. */
+  /** Out-of-office replies: not counted as replies; the campaign they came back on waits until they are back. */
   outOfOffice: number;
   /** Other automatic replies ("we got your mail"): recorded, and nothing else. */
   autoReplies: number;
-  /** Campaigns of colleagues held because someone at their company replied. */
-  companyHeld: number;
   unsubscribed: number;
   /** Hard bounces found and suppressed. Soft ones are counted nowhere: they mean nothing yet. */
   bounced: number;
@@ -342,7 +340,7 @@ export async function pollReplies(
     examined: 0,
     matched: 0,
     recorded: 0,
-    heldForReply: 0, autoAnswered: 0, outOfOffice: 0, autoReplies: 0, companyHeld: 0,
+    heldForReply: 0, autoAnswered: 0, outOfOffice: 0, autoReplies: 0,
     unsubscribed: 0,
     bounced: 0,
     errors: [],
@@ -444,20 +442,38 @@ export async function pollReplies(
       const at = message.internalDate ? new Date(Number(message.internalDate)) : new Date();
       const text = newTextOnly(bodyOf(message));
 
+      // The touch this answers: ours in the same thread, else the last email we sent them.
+      // Kept on the event, with its channel, so every signal in the lead's history says which
+      // message on which channel drew it, the same shape on every channel.
+      const answered =
+        (message.threadId
+          ? await db
+              .collection(C.actions)
+              .findOne({ orgId, personId, channel: "email", "thread.id": message.threadId, status: "sent" }, { sort: { sentAt: -1 }, projection: { _id: 1 } })
+          : null) ??
+        (await db
+          .collection(C.actions)
+          .findOne({ orgId, personId, channel: "email", status: "sent", sentAt: { $lte: at } }, { sort: { sentAt: -1 }, projection: { _id: 1 } }));
+
       // An automatic reply is not the person writing back. Counted as a reply it would stop
       // their sequence, tell the owner someone answered, and park a rolling campaign waiting
-      // for a conversation nobody is having. An away message holds their campaign until the
-      // day after they are back; any other automatic reply is recorded and changes nothing.
+      // for a conversation nobody is having. An away message holds the campaign it came back
+      // on until the day after they are back; any other automatic reply is recorded and
+      // changes nothing.
       const subject = headerOf(message.payload, "Subject") ?? "";
       const auto = autoReplyKind((name) => headerOf(message.payload, name), subject, text);
       if (auto) {
-        const away = auto === "absence" ? await holdForAbsence({ orgId, productId, personId, text: `${subject}\n${text}`, sent: at }) : null;
+        const away =
+          auto === "absence"
+            ? await holdForAbsence({ orgId, productId, answeredActionId: answered ? String(answered._id) : undefined, text: `${subject}\n${text}`, sent: at })
+            : null;
         await db.collection(C.events).insertOne({
           orgId,
           productId,
           personId,
           type: "auto_reply",
           channel: "email",
+          ...(answered ? { actionId: String(answered._id) } : {}),
           ts: at,
           payload: {
             messageId: id,
@@ -474,19 +490,6 @@ export async function pollReplies(
         else summary.autoReplies++;
         continue;
       }
-
-      // The touch this answers: ours in the same thread, else the last email we sent them.
-      // Kept on the event, with its channel, so every signal in the lead's history says which
-      // message on which channel drew it, the same shape on every channel.
-      const answered =
-        (message.threadId
-          ? await db
-              .collection(C.actions)
-              .findOne({ orgId, personId, channel: "email", "thread.id": message.threadId, status: "sent" }, { sort: { sentAt: -1 }, projection: { _id: 1 } })
-          : null) ??
-        (await db
-          .collection(C.actions)
-          .findOne({ orgId, personId, channel: "email", status: "sent", sentAt: { $lte: at } }, { sort: { sentAt: -1 }, projection: { _id: 1 } }));
 
       const recorded = await db.collection(C.events).insertOne({
         orgId,
@@ -511,11 +514,6 @@ export async function pollReplies(
         },
       });
       summary.recorded++;
-
-      // Everyone else we write to at their company waits two weeks, so the company hears
-      // from one conversation (engine/campaignRules.ts). Done before anything else here,
-      // because a colleague's message could be due in this same minute.
-      summary.companyHeld += (await pauseCompanyMates({ orgId, productId, personId, channel: "email" })).held;
 
       // Honoured here rather than left for a routine. A person who asked to be left alone
       // should not still be receiving mail because a scheduled session has not run yet, and

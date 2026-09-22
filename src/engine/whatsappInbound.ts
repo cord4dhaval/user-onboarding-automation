@@ -11,7 +11,7 @@ import { mailOwner } from "./ownerMail.js";
 import { answerSimpleReply, replyIntent } from "./replyIntents.js";
 import { suppress } from "./suppression.js";
 import { unsubscribePerson } from "./unsubscribe.js";
-import { holdForAbsence, pauseCompanyMates, pauseForReply, whatsAppAutoReplyKind } from "./campaignRules.js";
+import { holdForAbsence, pauseForReply, whatsAppAutoReplyKind } from "./campaignRules.js";
 
 /**
  * What a WhatsApp provider tells us after a send: that a lead wrote something, or what
@@ -181,12 +181,15 @@ export async function applyWhatsAppEvent(
 
   // Their business account answering by itself is not them writing back, the same rule as an
   // automatic email reply: kept on their history, and nothing stops, pauses or escalates. An
-  // away message holds their campaigns until they are back. It still opens Meta's 24-hour
-  // window, since Meta opens it on any message from their number.
+  // away message holds the campaign it came back on until they are back. It still opens
+  // Meta's 24-hour window, since Meta opens it on any message from their number.
   const msAfterSend = answered?.sentAt ? event.at.getTime() - new Date(answered.sentAt as Date).getTime() : undefined;
   const auto = event.button ? null : whatsAppAutoReplyKind(event.text, msAfterSend);
   if (auto) {
-    const away = auto === "absence" ? await holdForAbsence({ orgId, productId, personId, text: event.text, sent: event.at }) : null;
+    const away =
+      auto === "absence"
+        ? await holdForAbsence({ orgId, productId, answeredActionId: answered ? String(answered._id) : undefined, text: event.text, sent: event.at })
+        : null;
     await db.collection(C.events).insertOne({
       orgId,
       productId,
@@ -250,8 +253,6 @@ export async function applyWhatsAppEvent(
   await db.collection(C.people).updateOne({ _id: person._id }, { $set: { lastReplyAt: event.at, "repliedOn.whatsapp": event.at } });
   // The campaign they answered pauses until they are answered; their other campaigns run on.
   await pauseForReply({ orgId, productId, answeredActionId: String(answered._id), eventId: recorded.insertedId, at: event.at, reason: "they replied on WhatsApp; waiting on an answer" });
-  // And their colleagues wait two weeks, so the company hears from one conversation.
-  await pauseCompanyMates({ orgId, productId, personId, channel: "WhatsApp" });
 
   const who = String(person.name ?? event.senderName ?? "A lead");
   const said = event.button

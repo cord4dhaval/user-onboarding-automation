@@ -1,27 +1,28 @@
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { isFreeProvider } from "./mailbox.js";
 import { HOME_TIMEZONE } from "./time.js";
 
 /**
- * Four rules every campaign follows, whatever its settings, because breaking any of them
+ * Three rules every campaign follows, whatever its settings, because breaking any of them
  * reads to the lead as nobody paying attention:
  *
- *   1. Someone at a company writes back: everyone else we are writing to at that company
- *      waits two weeks, so the company hears from one conversation, not a chorus.
- *   2. An out-of-office reply is not a reply. The lead's campaign waits until the day after
- *      they are back, and nothing else about them changes.
- *   3. A lead who books a meeting is out of the sequence, whichever page they booked on.
- *   4. A lead who writes back gets an answer, not the next campaign message: whatever that
+ *   1. An out-of-office reply is not a reply. The campaign it answered waits until the day
+ *      after they are back, and nothing else about them changes.
+ *   2. A lead who books a meeting is out of the sequence, whichever page they booked on.
+ *   3. A lead who writes back gets an answer, not the next campaign message: whatever that
  *      campaign wrote for them before their reply is dropped, and it plans nothing more
- *      until they are answered. Their other campaigns are not touched.
+ *      until they are answered.
  *
- * Rules 1 and 2 share one mechanism: a hold on the lead's campaign until a date
- * (goal_instances.holdUntil, holdReason, holdKind). While it lasts the engine plans nothing
- * for them, and a message that comes due waits for the date instead of being thrown away;
- * the approval a human gave it still stands. When the date passes the campaign carries on
- * by itself.
+ * Rules 1 and 3 are campaign by campaign: they act on the campaign whose message the lead
+ * answered. Each channel runs as its own campaign, often for another purpose, and a reply
+ * to one says nothing about the others. Each lead is also their own: someone at the same
+ * company replying changes nothing for anyone else (decided 2026-09-22).
+ *
+ * Rule 1 is a hold on the campaign until a date (goal_instances.holdUntil, holdReason,
+ * holdKind). While it lasts the engine plans nothing for them, and a message that comes due
+ * waits for the date instead of being thrown away; the approval a human gave it still
+ * stands. When the date passes the campaign carries on by itself.
  *
  * Sales activity is deliberately not here: a meeting the sales team logs in the CRM is
  * context for the next message, never a reason to stop (see crm/sync.ts).
@@ -29,8 +30,6 @@ import { HOME_TIMEZONE } from "./time.js";
 
 const DAY = 86_400_000;
 
-/** How long colleagues of someone who replied wait. Long enough for that conversation to go somewhere. */
-export const COMPANY_HOLD_DAYS = 14;
 /** How long an out-of-office reply holds a lead when it names no return date. */
 export const ABSENCE_DEFAULT_DAYS = 7;
 /** A return date further away than this is misread or a sabbatical; the hold stops here. */
@@ -41,69 +40,39 @@ const DEADLINE_MARGIN_DAYS = 5;
 /** Site events that mean the lead booked a meeting themselves. */
 export const MEETING_EVENTS = new Set(["booked", "meeting_booked", "demo_booked", "call_booked", "meeting_scheduled", "demo_scheduled"]);
 
-// ── company ───────────────────────────────────────────────────────────────────
-
-/**
- * The company a domain names, as one spelling, or null when it names nobody in particular:
- * nothing stored, a free mail provider (everyone at gmail.com is not one company), or text
- * that is not a domain. Forms store "https://www.acme.in/" as readily as "acme.in".
- */
-export function companyKeyOf(domain: unknown): string | null {
-  const host = String(domain ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/^www\./, "")
-    .split(/[/?#]/)[0] ?? "";
-  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return null;
-  if (isFreeProvider(host)) return null;
-  return host;
-}
-
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 // ── the hold ──────────────────────────────────────────────────────────────────
 
 export interface HoldInput {
   orgId: string;
   productId: string;
-  personIds: string[];
+  goalInstanceIds: string[];
   until: Date;
   reason: string;
-  kind: "company" | "absence";
-  /** The person whose reply caused a company hold. */
-  by?: string;
+  kind: "absence";
   now?: Date;
 }
 
 /**
- * Holds every active campaign of these people until `until`. A hold already running past
- * that date is left as it is; a shorter one is extended. Waiting messages move to the new
- * date with the reason beside them, so the lead page and Review say why and until when.
- * Answers to something a person wrote are not moved: those are a conversation.
+ * Holds these campaigns until `until`. A hold already running past that date is left as it
+ * is; a shorter one is extended. Waiting messages move to the new date with the reason
+ * beside them, so the lead page and Review say why and until when. Answers to something a
+ * person wrote are not moved: those are a conversation.
  */
 export async function holdCampaigns(input: HoldInput): Promise<number> {
-  if (!input.personIds.length) return 0;
+  const ids = input.goalInstanceIds.filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+  if (!ids.length) return 0;
   const db = await getDb();
   const now = input.now ?? new Date();
   const instances = await db
     .collection(C.goalInstances)
-    .find({ orgId: input.orgId, productId: input.productId, personId: { $in: input.personIds }, status: "active" })
+    .find({ _id: { $in: ids }, orgId: input.orgId, productId: input.productId, status: "active" })
     .project({ _id: 1, personId: 1, deadline: 1, holdUntil: 1 })
     .toArray();
 
   let held = 0;
   for (const instance of instances) {
     if (instance.holdUntil && new Date(instance.holdUntil) >= input.until) continue;
-    const $set: Document = {
-      holdUntil: input.until,
-      holdReason: input.reason,
-      holdKind: input.kind,
-      holdSetAt: now,
-      ...(input.by ? { holdBy: input.by } : {}),
-    };
+    const $set: Document = { holdUntil: input.until, holdReason: input.reason, holdKind: input.kind, holdSetAt: now };
     // The deadline would otherwise end the campaign while it waits, and the waiting message
     // would be skipped as "goal deadline passed" the moment the hold lifts.
     const needed = new Date(input.until.getTime() + DEADLINE_MARGIN_DAYS * DAY);
@@ -127,7 +96,7 @@ export async function holdCampaigns(input: HoldInput): Promise<number> {
       goalInstanceId: String(instance._id),
       source: "engine",
       type: "campaign_held",
-      payload: { kind: input.kind, until: input.until, reason: input.reason, ...(input.by ? { by: input.by } : {}) },
+      payload: { kind: input.kind, until: input.until, reason: input.reason },
       ts: now,
     });
     held++;
@@ -147,59 +116,7 @@ export function notHeld(now = new Date()): Document {
   return { $or: [{ holdUntil: { $exists: false } }, { holdUntil: null }, { holdUntil: { $lte: now } }] };
 }
 
-// ── rule 1: a colleague replied ───────────────────────────────────────────────
-
-/**
- * Holds the campaigns of everyone else at the replier's company. The company comes from
- * the person's companyDomain, or their work email's domain when that is all there is.
- */
-export async function pauseCompanyMates(input: {
-  orgId: string;
-  productId: string;
-  personId: string;
-  channel: string;
-  now?: Date;
-}): Promise<{ domain: string | null; held: number }> {
-  const db = await getDb();
-  const now = input.now ?? new Date();
-  const person = await db
-    .collection(C.people)
-    .findOne({ _id: new ObjectId(input.personId) }, { projection: { companyDomain: 1, primaryEmail: 1 } });
-  if (!person) return { domain: null, held: 0 };
-  const domain = companyKeyOf(person.companyDomain) ?? companyKeyOf(String(person.primaryEmail ?? "").split("@")[1]);
-  if (!domain) return { domain: null, held: 0 };
-
-  const d = escapeRegex(domain);
-  const mates = await db
-    .collection(C.people)
-    .find({
-      orgId: input.orgId,
-      productId: input.productId,
-      _id: { $ne: person._id },
-      $or: [
-        { companyDomain: { $regex: `^(https?://)?(www\\.)?${d}/?$`, $options: "i" } },
-        { primaryEmail: { $regex: `@${d}$`, $options: "i" } },
-      ],
-    })
-    .project({ _id: 1 })
-    .limit(500)
-    .toArray();
-  if (!mates.length) return { domain, held: 0 };
-
-  const held = await holdCampaigns({
-    orgId: input.orgId,
-    productId: input.productId,
-    personIds: mates.map((m) => String(m._id)),
-    until: new Date(now.getTime() + COMPANY_HOLD_DAYS * DAY),
-    reason: `a colleague at ${domain} replied by ${input.channel}`,
-    kind: "company",
-    by: input.personId,
-    now,
-  });
-  return { domain, held };
-}
-
-// ── rule 2: out of office ─────────────────────────────────────────────────────
+// ── rule 1: out of office ─────────────────────────────────────────────────────
 
 /** Words that say the writer is away, as opposed to an automatic "we got your mail". */
 const ABSENCE =
@@ -344,25 +261,38 @@ export function dayLabel(at: Date): string {
 export async function holdForAbsence(input: {
   orgId: string;
   productId: string;
-  personId: string;
+  /** The message of ours the away reply came back on; its campaign is the one held. */
+  answeredActionId?: string;
   text: string;
   sent: Date;
   now?: Date;
 }): Promise<{ until: Date; fromMessage: boolean; held: number }> {
   const { at, fromMessage } = resumeAtFor(input.text, input.sent);
-  const held = await holdCampaigns({
-    orgId: input.orgId,
-    productId: input.productId,
-    personIds: [input.personId],
-    until: at,
-    reason: fromMessage ? `out of office; back after ${dayLabel(new Date(at.getTime() - DAY))}` : "out of office; no return date given, so one week",
-    kind: "absence",
-    now: input.now,
-  });
+  const goalInstanceId = await campaignOf(input.orgId, input.answeredActionId);
+  const held = goalInstanceId
+    ? await holdCampaigns({
+        orgId: input.orgId,
+        productId: input.productId,
+        goalInstanceIds: [goalInstanceId],
+        until: at,
+        reason: fromMessage ? `out of office; back after ${dayLabel(new Date(at.getTime() - DAY))}` : "out of office; no return date given, so one week",
+        kind: "absence",
+        now: input.now,
+      })
+    : 0;
   return { until: at, fromMessage, held };
 }
 
-// ── rule 3: a meeting was booked ──────────────────────────────────────────────
+/** The campaign a message of ours belongs to, or null. */
+async function campaignOf(orgId: string, actionId: string | undefined): Promise<string | null> {
+  if (!actionId || !ObjectId.isValid(actionId)) return null;
+  const db = await getDb();
+  const action = await db.collection(C.actions).findOne({ _id: new ObjectId(actionId), orgId }, { projection: { goalInstanceId: 1 } });
+  const id = action?.goalInstanceId ? String(action.goalInstanceId) : null;
+  return id && ObjectId.isValid(id) ? id : null;
+}
+
+// ── rule 2: a meeting was booked ──────────────────────────────────────────────
 
 /**
  * Takes a lead who booked a meeting out of the sequence: everything still waiting for them
@@ -396,9 +326,9 @@ export async function stopForMeeting(input: {
   return { skipped: skipped.modifiedCount, stopped: stopped.modifiedCount };
 }
 
-// ── rule 4: they wrote back ───────────────────────────────────────────────────
+// ── rule 3: they wrote back ───────────────────────────────────────────────────
 
-/** The skip reason for rule 4; the person page reads it as "waits for you to answer them". */
+/** The skip reason for rule 3; the person page reads it as "waits for you to answer them". */
 export const REPLIED_REASON = "they replied; waiting on a human answer";
 
 /**
@@ -450,12 +380,8 @@ export async function pauseForReply(input: {
   reason?: string;
 }): Promise<{ goalInstanceId: string | null; skipped: number }> {
   const db = await getDb();
-  const answered =
-    input.answeredActionId && ObjectId.isValid(input.answeredActionId)
-      ? await db.collection(C.actions).findOne({ _id: new ObjectId(input.answeredActionId), orgId: input.orgId }, { projection: { goalInstanceId: 1 } })
-      : null;
-  const goalInstanceId = answered?.goalInstanceId ? String(answered.goalInstanceId) : null;
-  if (!goalInstanceId || !ObjectId.isValid(goalInstanceId)) return { goalInstanceId: null, skipped: 0 };
+  const goalInstanceId = await campaignOf(input.orgId, input.answeredActionId);
+  if (!goalInstanceId) return { goalInstanceId: null, skipped: 0 };
 
   if (input.eventId) await db.collection(C.events).updateOne({ _id: input.eventId }, { $set: { goalInstanceId } });
   await db

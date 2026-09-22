@@ -905,7 +905,7 @@ async function blockedReason(args: {
   // reply; this catches whatever it could not, approved or not. An approval does not count: on 22 September a
   // mail approved in bulk went to a lead who had asked for payment details the night before.
   if (args.staleForReply) return { reason: REPLIED_REASON };
-  // A campaign on hold (a colleague replied, or they are out of office) keeps its message,
+  // A campaign on hold (they are out of office) keeps its message,
   // approval and all, until the hold lifts. An answer to something they wrote still goes.
   const hold = holdOf(args.goalInstance, args.now);
   if (hold && !args.isReply) return { reason: hold.reason, retryAt: hold.until };

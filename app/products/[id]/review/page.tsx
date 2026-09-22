@@ -136,7 +136,7 @@ function statusOf(action: Document): { label: string; tone: string; detail?: str
   const validation = action.validation as { hardFails?: string[] } | undefined;
   switch (status) {
     case "awaiting_approval": {
-      // A campaign rule moved it (a colleague replied, they are out of office): say until
+      // A campaign rule moved it (they are out of office): say until
       // when, so approving it now does not look like it will go now.
       const waits = action.deferReason && action.dueAt && new Date(String(action.dueAt)) > new Date();
       return waits

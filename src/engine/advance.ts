@@ -368,8 +368,8 @@ export async function advance(
       summary.parked++;
       continue;
     }
-    // On hold until a date: a colleague at their company replied, or they are out of office
-    // (engine/campaignRules.ts). Nothing is planned or asked for until it lifts.
+    // On hold until a date: they are out of office (engine/campaignRules.ts). Nothing is
+    // planned or asked for until it lifts.
     if (holdOf(instance, now)) {
       summary.parked++;
       continue;
