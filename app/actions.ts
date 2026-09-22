@@ -1749,7 +1749,13 @@ export async function decide(formData: FormData) {
     // click Approve on a scheduled message and have nothing happen at all — no change, no
     // error, no explanation. Deciding early on a message you have read is a real decision,
     // and the system should keep it rather than quietly discard it.
-    $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
+    // Not one still waiting on Claude or a person to settle it (a LinkedIn invite with no
+    // profile found yet); the Review list leaves those out, and a page loaded earlier must not
+    // approve them either.
+    $or: [
+      { status: "awaiting_approval" },
+      { status: "queued", reviewedAt: { $exists: false }, deferReason: { $not: /^waiting for (Claude|a person) to / } },
+    ],
   };
 
   // The stored HTML is the version the writer picked. A reviewer who switched to another one

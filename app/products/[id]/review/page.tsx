@@ -42,8 +42,14 @@ const VIEWS = {
     // a column, not a tab. What that split actually produced was a reviewer approving a
     // message, seeing a new one appear under Scheduled for the same person, and reading it
     // as the decision having been lost. One queue, with the date on the row.
+    // Not one that is still waiting on Claude or a person to settle what it is: a LinkedIn
+    // invite before anyone has found the lead's profile, or decided to invite them, has no
+    // recipient yet, and approving it would approve an invite to nobody in particular.
     match: {
-      $or: [{ status: "awaiting_approval" }, { status: "queued", reviewedAt: { $exists: false } }],
+      $or: [
+        { status: "awaiting_approval" },
+        { status: "queued", reviewedAt: { $exists: false }, deferReason: { $not: /^waiting for (Claude|a person) to / } },
+      ],
     },
     blurb: "Waiting on a decision. Approving sends each one on its date — today's go within the minute.",
   },
@@ -510,6 +516,12 @@ export default async function Review({
     // The pace this message goes at: its own campaign's lead type, a click or silence on top.
     const temp = { band: paceBand(person, goals.find((g) => String(g.key) === goalKey)) };
     const due = isDue(action);
+    // A LinkedIn invite from an account without Premium carries no words at all: the lead
+    // sees only the request. Its row says that, with the profile it goes to, rather than
+    // reading as a message nobody has written yet.
+    const linkedinInvite = String(action.channel) === "linkedin" && action.firstTouch === true && !content.slotText;
+    // LinkedIn sends only inside its morning hours in the lead's zone, approved or not.
+    const sendsWhen = String(action.channel) === "linkedin" ? "7–11 am their time" : null;
 
     const preview = (
       <PreviewDrawer
@@ -524,7 +536,7 @@ export default async function Review({
           { label: "Campaign", value: campaignLabel },
           { label: "Channel", value: `${String(action.channel)} · ${sender}` },
           decidable
-            ? { label: "Sends", value: due ? "Now, once approved" : (istLong(action.dueAt as string) ?? "—") }
+            ? { label: "Sends", value: due ? (sendsWhen ? `Once approved, ${sendsWhen}` : "Now, once approved") : (istLong(action.dueAt as string) ?? "—") }
             : { label: "Updated", value: istLong(when as string) ?? "—" },
         ]}
         fetchMessage={heldMessage}
@@ -542,6 +554,7 @@ export default async function Review({
           body={String(action.channel) === "email" ? undefined : content.bodyMd}
           channel={String(action.channel)}
           campaign={campaignLabel}
+          linkedinInvite={linkedinInvite ? address : undefined}
         />
         <div>
           <Signal temp={temp} engagement={engagement} />
@@ -553,7 +566,9 @@ export default async function Review({
                 puts mail in front of someone within the minute, approving a dated one
                 does not. */}
             <div className="q-when" title={istLong(action.dueAt as string)}>
-              {due ? (
+              {due && sendsWhen ? (
+                <span className="pill">{sendsWhen}</span>
+              ) : due ? (
                 <span className="pill hot">Due now</span>
               ) : (
                 `${istWeekday(action.dueAt as string)}, ${istTime(action.dueAt as string)}`
@@ -979,6 +994,7 @@ function MessageLine({
   body,
   channel,
   campaign,
+  linkedinInvite,
 }: {
   subject?: string;
   slotText?: string;
@@ -986,8 +1002,18 @@ function MessageLine({
   body?: string;
   channel?: string;
   campaign: string;
+  /** A LinkedIn connection invite with no note: the profile slug it goes to. */
+  linkedinInvite?: string;
 }) {
   const tail = <span className="q-tail"> — {campaign}</span>;
+  if (linkedinInvite !== undefined) {
+    return (
+      <div className="q-msg" title={`Connection invite to linkedin.com/in/${linkedinInvite}, sent without a note — ${campaign}`}>
+        <span className="pill">LinkedIn invite</span> <span className="q-subject">no note · linkedin.com/in/{linkedinInvite}</span>
+        {tail}
+      </div>
+    );
+  }
   // No subject on WhatsApp: its first line is what the chat list shows, so it stands in for
   // one here. The fixed template it came from is already written, not "not written yet".
   const firstLine = body
