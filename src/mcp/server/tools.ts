@@ -371,6 +371,41 @@ function trimForWriting(card: Record<string, unknown>, hasOpened: boolean): void
       ...notes.filter((n) => n.status === "retired").map((n) => ({ status: "retired", themes: n.themes })),
     ];
     delete w.similar_leads;
+    // How to choose and propose ideas is for planning; the step already names its idea.
+    const ideas = w.ideas as Record<string, unknown> | null | undefined;
+    if (ideas) {
+      delete ideas.note;
+      delete ideas.used_a_lot_this_week;
+    }
+    // A competitor is used only when this lead uses or names that tool (writing.rules), so the
+    // notes stay only where their words or site mention one.
+    const said = JSON.stringify([(card.person as Record<string, unknown> | undefined)?.enrichment, w.their_words]).toLowerCase();
+    if (w.context && typeof w.context === "object") {
+      const c = w.context as Record<string, unknown>;
+      const named = (Array.isArray(c.competitors) ? (c.competitors as Array<Record<string, unknown>>) : []).filter((x) => said.includes(String(x.name ?? "").toLowerCase()));
+      c.competitors = named;
+    }
+  }
+  const person = card.person as Record<string, unknown> | undefined;
+  if (person) {
+    delete person.arrivals;
+    delete person.consent;
+    const enrichment = person.enrichment as Record<string, unknown> | undefined;
+    // Their site as fetched: the first part says what they do; the rest is menus and footers.
+    if (enrichment && typeof enrichment.siteText === "string") enrichment.siteText = enrichment.siteText.slice(0, 1000);
+  }
+  const pc = card.product_config as Record<string, unknown> | null | undefined;
+  // The belief names their segment; the list of every segment is for classifying.
+  if (pc) delete pc.segments;
+  const goal = card.goal as Record<string, unknown> | undefined;
+  // plan_from lists feature emails for campaigns that do not roll; a rolling step is written, not picked.
+  if (goal && goal.rolling === true) delete goal.plan_from;
+  // Only the channels the plan writes on.
+  const planChannels = new Set(
+    (((goal?.plan as Record<string, unknown> | undefined)?.steps ?? []) as Array<Record<string, unknown>>).map((st) => String(st.channel ?? "email")),
+  );
+  if (Array.isArray(card.channels) && planChannels.size) {
+    card.channels = (card.channels as Array<Record<string, unknown>>).filter((c) => planChannels.has(String(c.key)) || [...planChannels].some((pc2) => String(c.key).startsWith(pc2)));
   }
   // An asset only rides in the designed format, which goes to a lead who has opened our mail.
   if (!hasOpened) card.assets_available = [];
