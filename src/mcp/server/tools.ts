@@ -23,7 +23,7 @@ import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
-import { TRIAL_LEADS, TRIAL_OPEN_MAX, ideaLeadCount, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, type InventedIdea } from "../../engine/ideas.js";
+import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLeadCount, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, type InventedIdea } from "../../engine/ideas.js";
 import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
@@ -1185,7 +1185,9 @@ export const TOOLS: ToolDef[] = [
           const known = new Map(bank.map((idea) => [idea.n, idea]));
           const usage = await ideaUsage({ orgId: ctx.orgId, productId: String(instance.productId), goalKey: String(instance.goalKey), excludeInstanceId: String(instance._id) });
           const had = await ideasHadBy({ orgId: ctx.orgId, goalInstanceId: String(instance._id) });
-          const { cap } = await ideaLimitsFor({ orgId: ctx.orgId, productId: String(instance.productId), goalKey: String(instance.goalKey), bank });
+          const limits = await ideaLimitsFor({ orgId: ctx.orgId, productId: String(instance.productId), goalKey: String(instance.goalKey), bank });
+          // The same per-lead cap lead_card lists by, so what the card offers is what is accepted.
+          const cap = capFor(limits.cap, usage, bank.filter((idea) => idea.usable !== false && idea.status !== "trial" && !had.has(idea.n)).map((idea) => idea.n));
           // The ideas of this lead's messages still waiting to go out. A plan that replaces one
           // with the same idea is a rewrite, not another lead taking the idea, so the weekly cap
           // does not apply to it (2026-09-22: every waiting mail was rewritten to the short

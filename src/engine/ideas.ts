@@ -107,6 +107,22 @@ export function ideaLimits(activeLeads: number, usableIdeas: number): IdeaLimits
   return { cap, busyAt: Math.max(IDEA_BUSY_AT, Math.ceil(cap * 0.6)) };
 }
 
+/**
+ * The cap as it applies to one lead: never lower than the least-used idea this lead can still
+ * have, plus one.
+ *
+ * The cap spreads ideas; it must never leave a lead with nothing to plan. When every idea the
+ * lead has not had is at the cap (rolling plans re-plan the same lead within a week, so demand
+ * outruns the even-spread estimate), the least-used ones stay open. Without this the planner
+ * was refused on every pick and retried until its run ran out (2026-09-22: 191 refusals in one
+ * run, one lead planned).
+ */
+export function capFor(cap: number, usage: Map<number, number>, open: Iterable<number>): number {
+  let least = Infinity;
+  for (const n of open) least = Math.min(least, usage.get(n) ?? 0);
+  return Number.isFinite(least) ? Math.max(cap, least + 1) : cap;
+}
+
 /** ideaLimits for one campaign, counting the leads it is still writing to. */
 export async function ideaLimitsFor(input: { orgId: string; productId: string; goalKey: string; bank: Idea[] }): Promise<IdeaLimits> {
   const db = await getDb();

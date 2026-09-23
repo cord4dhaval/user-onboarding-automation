@@ -2,7 +2,7 @@ import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
-import { TRIAL_LEADS, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, rankIdeas } from "./ideas.js";
+import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas } from "./ideas.js";
 import { contextForLead, contextOf } from "./siteContext.js";
 import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand } from "./rolling.js";
 
@@ -137,10 +137,20 @@ export async function writingBriefFor(input: {
       .join(" ")
       .slice(0, 2000);
     const ranked = rankIdeas(bank, { text: leadText, said: input.said, segment: (person.belief as { segment?: string } | undefined)?.segment }, usage, had, limits, results ? ideaRecords(results, group) : undefined);
-    const fresh = ranked.filter((i) => !i.already_had);
+    // Only what plan_goal will accept. An idea at the cap used to be ranked low but still shown,
+    // and the planner picked it, was refused, and tried again — most of a run's calls went there.
+    const unhad = ranked.filter((i) => !i.already_had);
+    // Trial ideas have their own gate, so only bank ideas set how far the cap stretches.
+    const cap = capFor(limits.cap, usage, unhad.filter((i) => i.status !== "trial").map((i) => i.n));
+    const fresh = unhad.filter((i) => i.status === "trial" || i.used_this_week < cap);
+    const trialsFull = inventedOf(product).filter((i) => i.status === "trial").length >= TRIAL_OPEN_MAX;
     ideas = {
       note: loop
-        ? `${IDEAS_ARE_TEACHING} best_fit is ranked for this lead from their words and segment and from what each idea has earned (record: sends, clicks and replies, from leads like this one once there are a few), with ideas the campaign leaned on this week pushed down and untested ones given a small push. Your own reading of the lead matters more than the rank. You may blend two ideas. If no pattern here fits this lead, call propose_idea with a new one built on a verified fact, then plan with the number it returns: a new idea reaches 5 leads, and their results decide whether it stays.`
+        ? `${IDEAS_ARE_TEACHING} best_fit is ranked for this lead from their words and segment and from what each idea has earned (record: sends, clicks and replies, from leads like this one once there are a few), with ideas the campaign leaned on this week pushed down and untested ones given a small push. Your own reading of the lead matters more than the rank. You may blend two ideas. Every idea listed here is open to this lead; ideas at this week's cap are left out, so do not plan one that is not listed. ${
+            trialsFull
+              ? `Do not call propose_idea: ${TRIAL_OPEN_MAX} new ideas are already on trial, so it would be refused.`
+              : "If no pattern here fits this lead, call propose_idea with a new one built on a verified fact, then plan with the number it returns: a new idea reaches 5 leads, and their results decide whether it stays."
+          }`
         : `${IDEAS_ARE_TEACHING} best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. You may blend two ideas; name every idea you learned from.`,
       best_fit: fresh.slice(0, 8).map((i) => ({
         n: i.n, title: i.title, detail: i.detail, pattern: i.pattern, also: i.also, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week,
