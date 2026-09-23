@@ -417,7 +417,9 @@ name in it on its own.
 
 2.1 compose-tier1
   next_work("compose") with limit 15. One sub-agent per person, all in one wave.
-  Each one: lead_card for context, then compose_batch for the step it names.
+  Each one: lead_card with view "write" for context, then compose_batch for the step it
+  names. The write view is the card cut to what a mail is built from, small enough to
+  read in one go: read it whole, never piece by piece with jq or scripts.
   compose_batch counts the words, the sentence lengths and the symbols itself and
   lists every problem in one reply, so never write a script to count or check them:
   send the mail, fix everything the reply lists, and send it again.

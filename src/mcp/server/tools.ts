@@ -333,6 +333,49 @@ async function assertProduct(productId: string, ctx: ToolCtx): Promise<string> {
  * on the same object instead of inferring interest from a scanner.
  */
 /** Sent, opened and clicked per format, people only: a gateway scan is not a reader. */
+/**
+ * The card as a writer needs it, once the plan is made (lead_card view "write").
+ *
+ * A writer read the whole planning card, about 24k tokens, for a 50-word mail, and the card
+ * was too big to arrive whole, so each writer spent more steps reading it in pieces with jq
+ * (2026-09-23). Everything a mail is built from stays: their words, what they had, the facts
+ * and price, the lead type and its rules, the layout arms, plain words and phrases, the
+ * step's idea. What goes is what planning uses and writing does not: the rest of the site,
+ * similar leads, unconfirmed learning notes, and assets for a lead who will get a letter.
+ */
+function trimForWriting(card: Record<string, unknown>, hasOpened: boolean): void {
+  const w = card.writing as Record<string, unknown> | undefined;
+  if (w) {
+    const ctx = w.context as Record<string, unknown> | null | undefined;
+    if (ctx) {
+      // The pages a link may go to stay: the ones for this lead, and pricing, security and the
+      // comparison pages the ask rules name. Competitors and trust lines stay for comparison
+      // and privacy mails. Sample quotes go: a mail never carries a customer quote.
+      const linkPages = (Array.isArray(ctx.pages) ? (ctx.pages as Array<Record<string, unknown>>) : [])
+        .filter((pg) => pg.kind !== "feature")
+        .map((pg) => ({ url: pg.url, title: pg.title, kind: pg.kind }));
+      w.context = {
+        overview: ctx.overview,
+        positioning: ctx.positioning,
+        pages_for_this_lead: ctx.pages_for_this_lead,
+        link_pages: linkPages,
+        competitors: ctx.competitors,
+        trust: ctx.trust,
+        note: "Cut for writing: the pages that fit this lead, and the pricing, security and comparison pages.",
+      };
+    }
+    const notes = (Array.isArray(w.learning_notes) ? w.learning_notes : []) as Array<Record<string, unknown>>;
+    // Confirmed findings shape the mail; retired ones say what not to repeat, so their themes stay.
+    w.learning_notes = [
+      ...notes.filter((n) => n.status === "confirmed").slice(0, 3),
+      ...notes.filter((n) => n.status === "retired").map((n) => ({ status: "retired", themes: n.themes })),
+    ];
+    delete w.similar_leads;
+  }
+  // An asset only rides in the designed format, which goes to a lead who has opened our mail.
+  if (!hasOpened) card.assets_available = [];
+}
+
 function engagementByFormat(actions: Array<Record<string, unknown>>): Record<string, { sent: number; opened: number; clicked: number }> {
   const out: Record<string, { sent: number; opened: number; clicked: number }> = {};
   for (const a of actions) {
@@ -714,6 +757,12 @@ export const TOOLS: ToolDef[] = [
           description:
             "The campaign to show, when the work item names one. A lead can be in several campaigns; without this the card shows the one being planned, and lists the others under other_campaigns.",
         },
+        view: {
+          type: "string",
+          enum: ["full", "write"],
+          description:
+            "\"write\" when you are writing the next message of a plan already made: the website cut to the pages for this lead plus pricing, security and comparison pages, confirmed learning notes only, no similar leads, and assets only for a lead who has opened our mail. Everything the message is built from stays. Leave it out to plan.",
+        },
       },
       required: ["product_id", "person_id"],
     },
@@ -783,7 +832,7 @@ export const TOOLS: ToolDef[] = [
           })
         : undefined;
 
-      return {
+      const card = {
         person: {
           person_id: String(person._id),
           email: person.primaryEmail,
@@ -921,7 +970,9 @@ export const TOOLS: ToolDef[] = [
         engagement_by_format: engagementByFormat(actions),
         events: events.map((e) => ({ type: e.type, ts: e.ts, payload: e.payload })),
         // The writing brief travels in `writing` above, once, and only where it applies.
-        product_config: product?.config ? { ...(product.config as Record<string, unknown>), writing: undefined, email: undefined } : null,
+        // `context` is left out: writing.context carries it, cut to this lead. Both used to go,
+        // and the full copy alone was 17k characters of every card (2026-09-23).
+        product_config: product?.config ? { ...(product.config as Record<string, unknown>), writing: undefined, email: undefined, context: undefined } : null,
         // What each channel can actually carry. Without this, copy gets written to an
         // email's shape and sent as a WhatsApp message, where it lands badly.
         channels: (
@@ -944,6 +995,8 @@ export const TOOLS: ToolDef[] = [
           };
         }),
       };
+      if (args.view === "write") trimForWriting(card, actions.some((a) => a.firstOpenedAt));
+      return card;
     },
   },
 
