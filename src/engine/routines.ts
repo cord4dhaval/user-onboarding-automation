@@ -37,14 +37,20 @@ export interface RoutineDef {
  * The minutes spread them so five sessions do not open on the same database at the same
  * second. Maintain is daily because setup gaps are a day-scale problem — hourly would mean
  * twenty-four notifications about the same missing lead source.
+ *
+ * Every run costs tokens even when it finds nothing, so only Acquire and Advance run round
+ * the clock: a lead who arrives at night is planned before morning, and a step Advance has
+ * not written within six hours goes out as a fixed email. React, close and linkedin run
+ * every second hour in Indian working hours, 10:00–21:15 IST (2026-09-23: about a hundred
+ * empty runs a day were a large share of the plan). Crons are UTC.
  */
 export const DEFAULT_CRONS: Record<RoutineKey, string> = {
-  acquire: "0 * * * *",
+  acquire: "34 * * * *",
   advance: "15 * * * *",
-  react: "30 * * * *",
-  close: "45 * * * *",
+  react: "30 4-14/2 * * *",
+  close: "45 5-15/2 * * *",
   maintain: "50 7 * * *",
-  linkedin: "40 * * * *",
+  linkedin: "40 4-14/2 * * *",
 };
 
 /**
@@ -71,9 +77,9 @@ export function routineCatalog(productId?: string): RoutineDef[] {
     : `You work across every product this token owns. Do not pass product_id unless you are deliberately narrowing to one — the engine has already balanced the work across products and campaigns, and narrowing undoes that.`;
 
   const registration = (key: RoutineKey) =>
-    `Start by calling register_routine with routine "${key}" and the cron you scheduled this
-session on${productId ? `, and product_id "${productId}"` : ""}. It is what lets the console show when you last ran and
-when you are due next. If you are late, that is how anyone finds out.`;
+    `Start by calling register_routine with routine "${key}", cron "${DEFAULT_CRONS[key]}"${productId ? ` and product_id "${productId}"` : ""},
+in the same turn as your first next_work. The cron is given here so you never have to look
+it up. It is what lets the console show when you last ran and when you are due next.`;
 
   const contract = `How work reaches you:
 
@@ -87,10 +93,12 @@ when you are due next. If you are late, that is how anyone finds out.`;
 - A refused call is not a reason to loop. Fix it and try once more; after a second
   refusal on the same item, leave it and move on. Retrying past that spends the
   run on one item while the rest wait, and the same refusal comes back each time.
-- If next_work returns nothing, say so in one line and stop. An empty slice with a
-  non-zero still_waiting means the dispatcher has more coming next round, not that
-  you should go and find it yourself.
-- Before you finish, call backlog_report and say what is still waiting. A backlog
+- If every next_work returns nothing, say so in one line and stop. Call no other tool:
+  not backlog_report, not routine_status, nothing to check health. An empty run should
+  cost two calls. An empty slice with a non-zero still_waiting means the dispatcher has
+  more coming next round, not that you should go and find it yourself.
+- When you did work, or still_waiting was not zero, call backlog_report before you finish
+  and say what is still waiting. A backlog
   nobody reports is a backlog nobody fixes — this system once hid nine thousand
   unplanned people behind a routine that cheerfully said "nothing to do".
 
@@ -108,7 +116,7 @@ that runs out, and once it does the rest of the hour's work is lost.`;
       key: "acquire",
       name: "1 — Acquire",
       cron: DEFAULT_CRONS.acquire,
-      human: "every hour, on the hour",
+      human: "every hour, at :34",
       essential: true,
       job: "Turn arrivals into people with a working sequence: read who they are, and make sure their segment has a playbook to run.",
       example: [
@@ -415,7 +423,8 @@ name in it on its own.
   claim — no invented capability, no number the product cannot back.
 
 2.2 buffer-check
-  Call backlog_report. If the compose queue is empty but people are still in flight,
+  On your first run of the day, and on any run that composed someone, call
+  backlog_report; skip it on other empty runs. If the compose queue is empty but people are still in flight,
   that is worth a line in your notes: it usually means the engine is serving them
   from their playbook, which is correct, but it is also what a silent breakage looks
   like. Say which of the two you think it is.
@@ -429,7 +438,7 @@ name in it on its own.
       key: "react",
       name: "3 — React",
       cron: DEFAULT_CRONS.react,
-      human: "every hour, at :30",
+      human: "every 2 hours at :30, 10:00–20:00 IST",
       essential: true,
       job: "The people who did something. Smallest volume, highest value, and the only routine that rewrites one person's plan.",
       example: [
@@ -490,7 +499,7 @@ is the judgment, and that is yours.
       key: "close",
       name: "4 — Close",
       cron: DEFAULT_CRONS.close,
-      human: "every hour, at :45",
+      human: "every 2 hours at :45, 11:15–21:15 IST",
       essential: true,
       job: "Decide who is done, who is finished with, and who is still running — and keep the checks that decide it honest.",
       example: [
@@ -536,7 +545,7 @@ ${contract}
       key: "maintain",
       name: "5 — Maintain",
       cron: DEFAULT_CRONS.maintain,
-      human: "once a day, 07:50",
+      human: "once a day, 07:50 UTC (13:20 IST)",
       essential: false,
       job: "Finish what setup left half-done, learn from what has actually worked, and ask for the rest exactly once.",
       example: [
@@ -552,6 +561,8 @@ ${contract}
 
 This runs once a day. It finishes setup nobody came back to, learns from what has
 actually happened, and asks for what only a person can give — once, not daily.
+It takes no next_work slice, so the rule about stopping on an empty slice does not
+apply here: register, then run every step below.
 
 5.1 gaps-filler
   setup_gaps for each product. If gaps is empty, say "setup is complete" and move on.
@@ -607,7 +618,7 @@ actually happened, and asks for what only a person can give — once, not daily.
       key: "linkedin",
       name: "6 — LinkedIn",
       cron: DEFAULT_CRONS.linkedin,
-      human: "every hour, at :40",
+      human: "every 2 hours at :40, 10:10–20:10 IST",
       // Only products with a campaign that hands its LinkedIn touches to Claude need it.
       essential: false,
       job: "In campaigns that hand LinkedIn to Claude: find each lead's profile, who to invite, what to write once they accept, and how to answer when they write back.",
