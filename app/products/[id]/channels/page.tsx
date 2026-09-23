@@ -32,6 +32,13 @@ import ChannelCards from "./channel-cards";
 import ChannelSettingsDrawer from "./channel-settings";
 import { WINDOW_LABEL, windowTime, type UsageWindow } from "./windows";
 
+/**
+ * Providers that push replies and delivery back to us, and so have an address to show on
+ * the channel's page. Route folder names match these words, so a provider added here needs
+ * `app/api/webhooks/<provider>/` to exist.
+ */
+const WEBHOOK_PROVIDERS = ["wati", "meta"];
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -306,12 +313,15 @@ export default async function Channels({
                 sendTool: send ? `${String(c.connectionId)}::${send.tool}` : undefined,
                 sendArgs: send?.args,
                 returnMessageId: send?.returns?.message_id,
-                // Where WATI reports replies and delivery. Signed per connection, because
-                // WATI cannot sign its own calls and a STOP posted here is permanent.
+                // Where the provider reports replies and delivery. Signed per connection
+                // rather than by the provider, because a STOP posted here is permanent and
+                // neither can prove itself: WATI does not sign its calls at all, and Meta
+                // signs with an app-wide secret we would have to keep beside every tenant.
                 webhookUrl:
-                  connection?.provider === "wati" && appOrigin()
-                    ? `${appOrigin()}/api/webhooks/wati/${String(connection._id)}/${tokenFor("w", String(connection._id))}`
+                  connection && WEBHOOK_PROVIDERS.includes(String(connection.provider)) && appOrigin()
+                    ? `${appOrigin()}/api/webhooks/${String(connection.provider)}/${String(connection._id)}/${tokenFor("w", String(connection._id))}`
                     : undefined,
+                webhookProvider: connection ? String(connection.provider) : undefined,
               }}
               usage={usage}
               toolChoices={toolChoices}

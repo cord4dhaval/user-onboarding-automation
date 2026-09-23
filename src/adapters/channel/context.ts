@@ -68,6 +68,14 @@ export function sendContext(message: OutboundMessage): Record<string, unknown> {
        * second variable went out with it blank.
        */
       paramList: Object.entries(message.providerTemplate?.params ?? {}).map(([name, value]) => ({ name, value })),
+      /**
+       * The same parameters as `{ type: "text", text }`, in order and without their names —
+       * the shape Meta's Cloud API takes for a template whose variables are positional,
+       * which every template of ours is. Order comes from the template row's own mapping,
+       * so a row that lists its variables out of order sends them out of order; there is
+       * nothing in a positional template to check that against.
+       */
+      paramTexts: Object.values(message.providerTemplate?.params ?? {}).map((value) => ({ type: "text", text: value })),
     },
     /** Our id for this message, for a provider that echoes one back on its status events. */
     message: { id: message.ref ?? "" },

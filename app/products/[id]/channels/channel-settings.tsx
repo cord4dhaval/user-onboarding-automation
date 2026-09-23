@@ -34,6 +34,8 @@ export interface ChannelSettings {
   assignedLeads: number;
   /** Where the provider reports replies and delivery back, for a provider that pushes them. */
   webhookUrl?: string;
+  /** Which provider it is, because where the address gets pasted differs entirely. */
+  webhookProvider?: string;
 }
 
 const AUDIENCES = [
@@ -83,10 +85,22 @@ export default function ChannelSettingsDrawer({
               Replies and delivery
               <input readOnly value={channel.webhookUrl} onFocus={(event) => event.currentTarget.select()} />
               <span className="muted">
-                Paste this into WATI under Integrations, then Webhooks, and tick Message received, Template
-                message sent, Template message failed, Sent message delivered and Sent message read. Replies,
-                button taps and STOP then reach the engine, and each message shows whether it was
-                delivered or read. Keep it private: anyone with it can post replies for your leads.
+                {channel.webhookProvider === "meta" ? (
+                  <>
+                    Paste this into your Meta app under WhatsApp, then Configuration, as the callback URL, and
+                    subscribe to the messages field. The verify token there can be anything; this address is
+                    already signed. The app must be published, or Meta delivers nothing outside its own test
+                    button. Replies, button taps and STOP then reach the engine, and each message shows whether
+                    it was delivered or read. Keep it private: anyone with it can post replies for your leads.
+                  </>
+                ) : (
+                  <>
+                    Paste this into WATI under Integrations, then Webhooks, and tick Message received, Template
+                    message sent, Template message failed, Sent message delivered and Sent message read. Replies,
+                    button taps and STOP then reach the engine, and each message shows whether it was
+                    delivered or read. Keep it private: anyone with it can post replies for your leads.
+                  </>
+                )}
               </span>
             </label>
           ) : null}

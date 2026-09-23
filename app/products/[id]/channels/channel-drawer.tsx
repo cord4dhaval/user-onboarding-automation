@@ -31,21 +31,23 @@ export interface ConnectionTools {
  */
 const EXAMPLE_PAYLOADS: Record<string, unknown> = {
   email: { from: "$channel.from", to: "$person.email", subject: "$content.subject", text: "$content.body" },
-  // Wati's v3 shape, which Gupshup and AiSensy differ from only in field names. The
-  // recipient travels in the body, so the endpoint stays the same for every person.
+  // Meta's Cloud API shape. The recipient travels in the body, so the endpoint stays the
+  // same for every person; the number in the endpoint is the sender's phone number id.
+  // A reseller — Wati, Gupshup, AiSensy — differs only in field names, and its variables go
+  // as "$template.paramList" instead, which carries their names.
   whatsapp: {
-    channel: "$channel.from",
-    template_name: "$template.name",
-    broadcast_name: "$content.subject",
-    recipients: [
-      {
-        phone_number: "$person.phoneDigits",
-        // Our id, which Wati echoes on every delivery event for this message.
-        local_message_id: "$message.id",
-        // Every variable of whichever template this touch sends, filled from its row.
-        custom_params: "$template.paramList",
-      },
-    ],
+    messaging_product: "whatsapp",
+    to: "$person.phoneDigits",
+    type: "template",
+    template: {
+      name: "$template.name",
+      // Meta matches on the template's registered language, not the lead's, and refuses a
+      // send where the two differ. Every template on one connection must share this code.
+      language: { code: "en" },
+      // Positional variables, in the order the template row lists them. Meta returns its own
+      // message id on the send, so nothing of ours needs to travel here to be echoed back.
+      components: [{ type: "body", parameters: "$template.paramTexts" }],
+    },
   },
   sms: { to: "$person.phoneDigits", from: "$channel.from", body: "$content.body" },
 };
@@ -58,12 +60,13 @@ const HTTP_HINTS: Record<string, { provider: string; endpoint: string } | undefi
   email: { provider: string; endpoint: string };
 } = {
   email: { provider: "resend", endpoint: "https://api.resend.com/emails" },
-  // No tenant in the path. Wati's v1 routes live under /<tenant>/api/v1, but its v3 routes
-  // answer only at the host root and read the account from the token: with the tenant
-  // added, v3 returns 404 while the same path without it returns 401.
+  // Meta direct rather than a reseller: the endpoint takes JSON with a bearer token, which
+  // is what this transport already sends, and there is no platform fee or markup between us
+  // and the same delivery. The number in the path is the sender's phone number id — a long
+  // number from the WhatsApp account, not the phone number itself.
   whatsapp: {
-    provider: "wati",
-    endpoint: "https://live-mt-server.wati.io/api/ext/v3/messageTemplates/send",
+    provider: "meta",
+    endpoint: "https://graph.facebook.com/v23.0/PHONE_NUMBER_ID/messages",
   },
   sms: { provider: "twilio", endpoint: "https://api.twilio.com/2010-04-01/Messages.json" },
 };

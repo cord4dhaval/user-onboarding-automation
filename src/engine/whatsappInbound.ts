@@ -112,6 +112,120 @@ export function parseWati(body: Record<string, unknown>): WhatsAppEvent | null {
   };
 }
 
+/**
+ * Meta's own status words. The Cloud API sends the state itself where WATI sent the name of
+ * an event ("sentMessageDELIVERED"), so this table is a pass-through and exists only so an
+ * unknown word is dropped rather than written to a row.
+ */
+const META_STATUS: Record<string, "sent" | "delivered" | "read" | "failed"> = {
+  sent: "sent",
+  delivered: "delivered",
+  read: "read",
+  failed: "failed",
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function asList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/** Seconds since the epoch, which Meta sends as a string rather than a number. */
+function metaTime(value: unknown): Date {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds > 0 ? new Date(seconds * 1000) : new Date();
+}
+
+/** A string at `path` inside `record`, or undefined for anything else. */
+function text(record: Record<string, unknown> | null, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+/**
+ * A Meta Cloud API webhook body as our events.
+ *
+ * A list, where parseWati returns one. Meta batches everything that happened to a number
+ * into a single call, so one POST routinely carries a reply and several delivery receipts;
+ * reading only the first would drop the rest in silence, and a dropped "failed" is exactly
+ * the row that tells someone a message arrived when it never did.
+ *
+ * Nothing else changes for the engine. A status is matched on Meta's own message id, which
+ * is what the send stored as providerMessageId — WATI needed our id echoed back because its
+ * own was not returned on the send.
+ */
+export function parseMeta(body: Record<string, unknown>): WhatsAppEvent[] {
+  const events: WhatsAppEvent[] = [];
+
+  for (const entry of asList(body.entry)) {
+    for (const change of asList(asRecord(entry)?.changes)) {
+      const value = asRecord(asRecord(change)?.value);
+      if (!value) continue;
+
+      // The sender's WhatsApp profile name arrives beside the message rather than inside
+      // it, keyed by the number the message comes from.
+      const names = new Map<string, string>();
+      for (const contact of asList(value.contacts)) {
+        const record = asRecord(contact);
+        const name = text(asRecord(record?.profile), "name");
+        if (record?.wa_id && name) names.set(String(record.wa_id), name);
+      }
+
+      for (const item of asList(value.messages)) {
+        const message = asRecord(item);
+        if (!message) continue;
+        const phone = String(message.from ?? "").replace(/\D/g, "");
+        if (!phone) continue;
+
+        const interactive = asRecord(message.interactive);
+        const button =
+          text(asRecord(message.button), "text") ??
+          text(asRecord(interactive?.button_reply), "title") ??
+          text(asRecord(interactive?.list_reply), "title");
+        const words = text(asRecord(message.text), "body") ?? button ?? "";
+        const messageType = String(message.type ?? "text");
+        const senderName = names.get(String(message.from ?? ""));
+
+        events.push({
+          kind: "message",
+          id: String(message.id ?? ""),
+          ...(message.id ? { ref: String(message.id) } : {}),
+          phone,
+          text: words.trim(),
+          ...(messageType !== "text" && !button ? { messageType } : {}),
+          ...(button ? { button } : {}),
+          ...(senderName ? { senderName } : {}),
+          at: metaTime(message.timestamp),
+        });
+      }
+
+      for (const item of asList(value.statuses)) {
+        const update = asRecord(item);
+        const status = META_STATUS[String(update?.status ?? "")];
+        if (!update || !status || !update.id) continue;
+
+        // Meta puts the reason in an errors list, keyed on the same numbers META_REASONS
+        // already knows: a 131049 reads here exactly as it did through WATI.
+        const error = asRecord(asList(update.errors)[0]);
+        const detail = text(asRecord(error?.error_data), "details") ?? text(error, "message") ?? text(error, "title");
+
+        events.push({
+          kind: "status",
+          ref: String(update.id),
+          status,
+          ...(error?.code ? { code: String(error.code) } : {}),
+          ...(detail ? { detail } : {}),
+          at: metaTime(update.timestamp),
+        });
+      }
+    }
+  }
+
+  return events;
+}
+
 const ORDER = { sent: 0, delivered: 1, read: 2, failed: 3 } as const;
 
 /**
