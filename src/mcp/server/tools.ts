@@ -1721,6 +1721,59 @@ export const TOOLS: ToolDef[] = [
       const CAPS_OK = new Set(["CRM", "HRMS", "MIS", "KPI", "KPIS", "GST", "TDS", "ITR", "HVAC", "OEM", "CTC", "SLA", "ERP", "SAAS", "B2B", "D2C", "HR", "IT", "AI", "CEO", "COO", "CFO", "CA", "USA", "UAE", "NOC", "RERA", "AMC", "MEP", "ICU", "OPD", "BPO", "KPO", "FMCG", "TAT", "PAN", "GSTIN", "EMI", "CAD", "BOQ", "RFQ", "PO", "QA", "QC", "UPI", "NBFC"]);
       // Which arm of each layout test this lead sits in, for good (docs/learnings.md PT8).
       const armFor = (test: LayoutTest) => layoutArm(String(instance.personId), test);
+
+      // Every text rule a writer usually trips on, checked together before the one-at-a-time
+      // checks below, so a mail with three small faults comes back with all three at once.
+      // Each refusal used to name one problem, so writers counted words in scripts before
+      // every try: 3 to 6 extra steps per mail, each re-reading the whole card (2026-09-23).
+      // The checks below still run and stay the authority.
+      const lintGoal = await db.collection(C.goals).findOne({ orgId, productId, key: String(instance.goalKey) });
+      const lintType = leadTypeOf(lintGoal);
+      const lintFrameKey = frameKeyOf(lintGoal);
+      const lintProblems: string[] = [];
+      for (const t of touches) {
+        if (providerTouch.has(t)) continue;
+        if (!["opening", "scene", "question", "cost_lines", "shows", "receipt", "reveal"].some((k) => t[k] !== undefined)) continue;
+        const step = String(t.step_id);
+        const part = (k: string) => String(t[k] ?? "").trim();
+        const opening = part("opening");
+        const question = part("question");
+        const reveal = part("reveal");
+        const timelineWhats = (Array.isArray(t.timeline) ? (t.timeline as Array<Record<string, unknown>>) : []).map((r) => String(r?.what ?? "").trim());
+        const options = (Array.isArray(t.reply_options) ? (t.reply_options as unknown[]) : []).map((x) => String(x ?? "").trim());
+        const rows = (Array.isArray(t.cost_lines) ? (t.cost_lines as Array<Record<string, unknown>>) : []).map((r) => `${String(r?.label ?? "")} ${String(r?.value ?? "")}`.trim());
+        const items = (Array.isArray(t.shows) ? (t.shows as unknown[]) : []).map((x) => String(x ?? "").trim());
+        const receipt = (t.receipt ?? null) as { title?: unknown; lines?: unknown } | null;
+        const receiptLines = (Array.isArray(receipt?.lines) ? (receipt!.lines as unknown[]) : []).map((x) => String(x ?? "").trim());
+        const say = (msg: string) => lintProblems.push(`step ${step}: ${msg}`);
+        if (/\*\*/.test(opening) || /\*\*/.test(question)) say("leave the ** off opening and question; the frame already sets them bold.");
+        if (/\*\*/.test(reveal)) say("leave ** off reveal; the frame sets TeamGrid's name apart.");
+        if (opening.length > OPENING_MAX_CHARS) say(`opening is ${opening.length} characters; keep it under ${OPENING_MAX_CHARS}.`);
+        const bold = ((part("scene") + part("limit")).match(/\*\*[^*]+\*\*/g) ?? []).length;
+        if (bold > 2) say(`${bold} bold phrases in the scene; at most two.`);
+        for (const s of longSentences([opening, part("scene"), reveal, part("limit"), question, ...timelineWhats].join("\n"))) {
+          say(`sentence over ${SENTENCE_MAX_WORDS} words: "${s}". Split it.`);
+        }
+        const text = [part("subject"), part("preheader"), opening, part("scene"), reveal, part("limit"), question, part("ps"), ...timelineWhats, ...options, ...rows, ...items, ...receiptLines].join("\n");
+        const prone = emojiProneSymbols(text);
+        if (prone.length) say(`uses ${prone.join(" ")}; use → – × = ₹ • ✓ instead.`);
+        else if (/\p{Extended_Pictographic}/u.test(text)) say("carries an emoji; keep the register professional.");
+        const shouting = (text.match(/\b[A-Z]{4,}\b/g) ?? []).filter((w) => !CAPS_OK.has(w));
+        if (shouting.length) say(`"${shouting[0]}" is in capitals; use normal case.`);
+        const spelled = spelledQuantities(text);
+        if (spelled.length) say(`spells out ${spelled.map((x) => `"${x}"`).join(", ")}; write quantities as digits.`);
+        const stepRow = planStepFor.get(Number(t.step_id));
+        if (isRolling(lintGoal) && String(stepRow?.templateKey ?? "") === lintFrameKey) {
+          const limit = lintType ? LEAD_TYPE_PROFILES[lintType].maxWords : FRAME_BODY_MAX_WORDS;
+          const words = [opening, ...timelineWhats, part("scene"), ...rows, reveal, ...items, ...receiptLines, part("limit"), question, ...options]
+            .join(" ").split(/\s+/).filter(Boolean).length;
+          if (words > limit) say(`about ${words} words; your part is at most ${limit}.`);
+        }
+      }
+      if (lintProblems.length) {
+        throw new Error(`Fix all of these, then send again:\n- ${lintProblems.join("\n- ")}\nNothing was written.`);
+      }
+
       for (const t of touches) {
         if (providerTouch.has(t)) continue;
         const step = String(t.step_id);

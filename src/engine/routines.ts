@@ -110,7 +110,13 @@ where the steps are independent, and give each one only the slice it needs. Ask 
 to return a short summary — counts, and anything a person would want to know — never
 its full working. Your own job is to split the work, read the summaries and write one
 line of run notes. Do not do the per-person work yourself: your context is the thing
-that runs out, and once it does the rest of the hour's work is lost.`;
+that runs out, and once it does the rest of the hour's work is lost.
+
+Start a wave's sub-agents together in one message, each with run_in_background false,
+so their reports come back to you together when the wave ends. Never poll while they
+work: no ReadNotifications, ListAgents, ScheduleWakeup or sleeps between checks. Every
+check re-reads your whole context, and a run that checked every few seconds spent more
+on waiting than on the work (2026-09-23).`;
 
   return [
     {
@@ -174,11 +180,11 @@ have been read.
   Gaps for lead campaigns are 1, 2, 2, 3, 3 days — never even, never a week.
 
 1.3 lead-planner
-  Run this on every run. next_work("plan") with limit 50. Each item is one lead in a
+  Run this on every run. next_work("plan") with limit 20. Each item is one lead in a
   campaign that plans every person. plan_goal is this routine's tool: before
   2026-09-16 it was wrongly refused to Acquire, so errors in routine_status or run
   history saying otherwise are out of date and are not a reason to skip this step.
-  One sub-agent per lead, in parallel waves of up to twenty-five, until the slice is
+  One sub-agent per lead, all in one wave, until the slice is
   done. Each one: lead_card, then plan_goal, then finish_work for that job. If
   plan_goal refuses a plan, read the reason, fix the plan and call it again. When the
   same reason comes back after you fixed it, or after five refusals, leave that lead:
@@ -410,9 +416,11 @@ subject with "welcome" to somebody who has not signed up, and never put their fi
 name in it on its own.
 
 2.1 compose-tier1
-  next_work("compose") with limit 50. One sub-agent per person, in parallel waves of
-  up to twenty-five, until the slice is done.
+  next_work("compose") with limit 15. One sub-agent per person, all in one wave.
   Each one: lead_card for context, then compose_batch for the step it names.
+  compose_batch counts the words, the sentence lengths and the symbols itself and
+  lists every problem in one reply, so never write a script to count or check them:
+  send the mail, fix everything the reply lists, and send it again.
   Write to the channel's shape. lead_card lists each channel's real limits: an email
   carries a subject, a few hundred words, a link and an opt-out; a WhatsApp message
   is a couple of sentences with no link, and outside its reply window it must use an
@@ -647,8 +655,7 @@ lead's company name and never how they arrived. Every fact comes from product.fa
 never invent a capability, a customer or a number.
 
 6.1 leads
-  next_work("linkedin") with limit 25. One sub-agent per lead, in parallel waves of up
-  to twenty-five, until the slice is done. Each one reads linkedin_card for the item's
+  next_work("linkedin") with limit 15. One sub-agent per lead, all in one wave. Each one reads linkedin_card for the item's
   goal_instance_id and acts on needs.kind, not on the item's reason, which can be older
   than the card:
 
