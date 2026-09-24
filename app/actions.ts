@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { openSecret, sealSecret, type SealedSecret } from "@/crypto/envelope.js";
-import { exchangeMetaCode, metaApp, saveMetaConnection, subscribeMetaApp } from "@/channels/metaConnect.js";
+import { metaApp } from "@/channels/metaConnect.js";
 import { tokenFor } from "@/engine/tracking.js";
 import { reverifyConnection } from "@/mcp/reverify.js";
 import {
@@ -3864,27 +3864,4 @@ export async function metaLoginConfig(
     ? `${app.signupUrl}${app.signupUrl.includes("?") ? "&" : "?"}state=${encodeURIComponent(state)}`
     : "";
   return { appId: app.id, configId: app.configId, signupLink: link };
-}
-
-/**
- * Finishes an Embedded Signup that ran inside our own page.
- *
- * The browser hands back a code and the ids the business chose; everything after that happens
- * here, because the token is the credential for someone's WhatsApp account and a page that
- * has held one has leaked it. The code is worth 30 seconds, so this runs immediately or not
- * at all. The redirect route does the same work for the Meta-hosted flow.
- */
-export async function connectMetaWhatsApp(formData: FormData) {
-  const orgId = await currentOrg();
-  const productId = String(formData.get("productId"));
-  const code = String(formData.get("code") ?? "").trim();
-  const wabaId = String(formData.get("wabaId") ?? "").trim();
-  const phoneNumberId = String(formData.get("phoneNumberId") ?? "").trim();
-  if (!code || !wabaId || !phoneNumberId) throw new Error("The sign-in did not complete — start it again.");
-
-  const token = await exchangeMetaCode(code);
-  await subscribeMetaApp(token, wabaId);
-  await saveMetaConnection({ orgId, productId, token, wabaId, phoneNumberId });
-
-  revalidatePath(`/products/${productId}/channels`);
 }

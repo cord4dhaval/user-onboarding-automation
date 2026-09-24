@@ -5,7 +5,6 @@ import { channelUsage, limitsFor, opLimitsFor, spacedUntil, type OpLimit } from 
 import { channelTypeLabel, providerLabel, transportLabel } from "@/channels/catalog.js";
 import type { McpTool } from "@/mcp/client.js";
 import {
-  connectMetaWhatsApp,
   connectSesDomain,
   createChannel,
   createHttpChannel,
@@ -572,7 +571,6 @@ export default async function Channels({
         bolnaAction={createBolnaChannel}
         linkedinAction={createLinkedInChannel}
         googleAction={startGoogleOAuth}
-        metaAction={connectMetaWhatsApp}
         metaConfig={await metaLoginConfig(id).catch(() => null)}
         sesAction={connectSesDomain}
       />

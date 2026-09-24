@@ -111,7 +111,6 @@ export default function ChannelDrawer({
   bolnaAction,
   linkedinAction,
   googleAction,
-  metaAction,
   metaConfig,
   sesAction,
   googleReady,
@@ -130,8 +129,6 @@ export default function ChannelDrawer({
   bolnaAction: (formData: FormData) => void | Promise<void>;
   linkedinAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
-  /** connectMetaWhatsApp — what Embedded Signup posts its code and ids to. */
-  metaAction: (formData: FormData) => void | Promise<void>;
   /** The Meta app this deployment signs in through, or null where none is configured. */
   metaConfig: { appId: string; configId: string; signupLink: string } | null;
   sesAction: (formData: FormData) => void | Promise<void>;
@@ -245,17 +242,13 @@ export default function ChannelDrawer({
               coexistence: they keep answering clients on the phone, and campaigns go out over the API on the same
               number.
             </p>
-            {metaConfig.configId ? (
-              <ConnectMeta productId={productId} appId={metaConfig.appId} configId={metaConfig.configId} action={metaAction} />
-            ) : null}
-            {/* Meta will host the flow for us. Worth offering: it needs no Login configuration
-                and no script on this page, and Meta hands the result back to our redirect. */}
             {metaConfig.signupLink ? (
+              <ConnectMeta href={metaConfig.signupLink} />
+            ) : (
               <p className="sub tight">
-                <a href={metaConfig.signupLink}>Open Meta&rsquo;s own sign-in page</a> instead, if the button above does
-                not open.
+                Set <code>META_SIGNUP_URL</code> to the onboarding link from your Meta app, under Become Tech Provider.
               </p>
-            ) : null}
+            )}
           </div>
         ) : (
           <div className="empty drawer-block">
