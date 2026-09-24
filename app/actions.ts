@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { openSecret, sealSecret, type SealedSecret } from "@/crypto/envelope.js";
+import { exchangeMetaCode, metaApp, saveMetaConnection, subscribeMetaApp } from "@/channels/metaConnect.js";
+import { tokenFor } from "@/engine/tracking.js";
 import { reverifyConnection } from "@/mcp/reverify.js";
 import {
   associateWithTenant,
@@ -3846,42 +3848,33 @@ export async function deleteAsset(productId: string, assetId: string, _formData?
 }
 
 /**
- * The Meta app this tenant's WhatsApp goes through, from the environment.
+ * What the sign-in needs on the page: the app to initialise, the configuration that decides
+ * which flow opens, and a Meta-hosted link for a deployment that would rather not run the
+ * flow in its own page. The app secret stays on the server.
  *
- * Ours rather than the tenant's: Embedded Signup is a flow our app runs on their business,
- * which is the whole point — the alternative is what we did by hand once, walking someone
- * through system users, asset assignment and a token generator that needs a second admin to
- * approve it. Nobody onboards a customer that way twice.
+ * The link carries a signed product id, because the redirect comes back from Meta with no
+ * session behind it and the channel has to land on the product someone chose.
  */
-function metaApp(): { id: string; secret: string; configId: string } {
-  const id = process.env.META_APP_ID ?? "";
-  const secret = process.env.META_APP_SECRET ?? "";
-  const configId = process.env.META_LOGIN_CONFIG_ID ?? "";
-  if (!id || !secret || !configId) throw new Error("WhatsApp sign-in is not configured on this deployment.");
-  return { id, secret, configId };
-}
-
-/** The config id the browser needs to open the flow. Not a secret; the app secret never leaves here. */
-export async function metaLoginConfig(): Promise<{ appId: string; configId: string }> {
-  const { id, configId } = metaApp();
-  return { appId: id, configId };
+export async function metaLoginConfig(
+  productId: string,
+): Promise<{ appId: string; configId: string; signupLink: string }> {
+  const app = metaApp();
+  const state = `${productId}.${tokenFor("s", productId)}`;
+  const link = app.signupUrl
+    ? `${app.signupUrl}${app.signupUrl.includes("?") ? "&" : "?"}state=${encodeURIComponent(state)}`
+    : "";
+  return { appId: app.id, configId: app.configId, signupLink: link };
 }
 
 /**
- * Finishes an Embedded Signup: the browser hands back a code and the ids the business chose,
- * and everything after that happens here.
+ * Finishes an Embedded Signup that ran inside our own page.
  *
- * The code is exchanged rather than the token being read in the browser, because the token
- * is the credential for someone's WhatsApp account and a page that has held one has leaked
- * it. It also expires 30 seconds after the flow closes, so this runs immediately or not at
- * all.
- *
- * The phone number is deliberately not registered. On a coexistence onboarding the number is
- * already live — it is running in someone's WhatsApp Business app, which is the reason to use
- * this flow at all — and calling register on it is how you log that person out.
+ * The browser hands back a code and the ids the business chose; everything after that happens
+ * here, because the token is the credential for someone's WhatsApp account and a page that
+ * has held one has leaked it. The code is worth 30 seconds, so this runs immediately or not
+ * at all. The redirect route does the same work for the Meta-hosted flow.
  */
 export async function connectMetaWhatsApp(formData: FormData) {
-  const db = await getDb();
   const orgId = await currentOrg();
   const productId = String(formData.get("productId"));
   const code = String(formData.get("code") ?? "").trim();
@@ -3889,110 +3882,9 @@ export async function connectMetaWhatsApp(formData: FormData) {
   const phoneNumberId = String(formData.get("phoneNumberId") ?? "").trim();
   if (!code || !wabaId || !phoneNumberId) throw new Error("The sign-in did not complete — start it again.");
 
-  const app = metaApp();
-  const exchange = await fetch(
-    `https://graph.facebook.com/v23.0/oauth/access_token?client_id=${encodeURIComponent(app.id)}&client_secret=${encodeURIComponent(app.secret)}&code=${encodeURIComponent(code)}`,
-    { signal: AbortSignal.timeout(20_000) },
-  );
-  const granted = (await exchange.json()) as { access_token?: string; error?: { message?: string } };
-  if (!exchange.ok || !granted.access_token) {
-    // Meta's message is the useful half; the body also carries the code back, so it is not
-    // reported whole.
-    throw new Error(`WhatsApp sign-in failed: ${granted.error?.message ?? `HTTP ${exchange.status}`}`);
-  }
-  const token = granted.access_token;
-
-  // Without this the account is readable and unsendable: templates and numbers answer, and
-  // every send comes back "(#200) You do not have the necessary permissions".
-  const subscribed = await fetch(`https://graph.facebook.com/v23.0/${encodeURIComponent(wabaId)}/subscribed_apps`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!subscribed.ok) {
-    const said = (await subscribed.json().catch(() => ({}))) as { error?: { message?: string } };
-    throw new Error(`Connected, but this app could not be subscribed to the account: ${said.error?.message ?? `HTTP ${subscribed.status}`}`);
-  }
-
-  const connectionId = new ObjectId();
-  await db.collection(C.connections).insertOne({
-    _id: connectionId,
-    orgId,
-    productId,
-    key: "http",
-    provider: "meta",
-    authType: "bearer",
-    endpointUrl: `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`,
-    waba: { id: wabaId, phoneNumberId },
-    http: {
-      endpointUrl: `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`,
-      method: "POST",
-      payloadTemplate: {
-        messaging_product: "whatsapp",
-        to: "$person.phoneDigits",
-        type: "template",
-        template: {
-          name: "$template.name",
-          language: { code: "en" },
-          components: [{ type: "body", parameters: "$template.paramTexts" }],
-        },
-      },
-      // Free words inside the reply window go to the same endpoint, as a different type.
-      session: {
-        payloadTemplate: {
-          messaging_product: "whatsapp",
-          to: "$person.phoneDigits",
-          type: "text",
-          text: { body: "$content.body" },
-        },
-      },
-      messageIdPath: "$.messages.0.id",
-      errorPaths: ["$.error.message"],
-    },
-    scopes: ["whatsapp_business_messaging", "whatsapp_business_management"],
-    status: "healthy",
-    directions: ["out", "in"],
-    createdBy: orgId,
-    createdAt: new Date(),
-  });
-
-  await db.collection(C.credentials).insertOne({
-    _id: new ObjectId(),
-    orgId,
-    connectionId: String(connectionId),
-    authType: "bearer",
-    ...sealSecret(token),
-    status: "verified",
-  });
-
-  await db.collection(C.channels).insertOne({
-    _id: new ObjectId(),
-    orgId,
-    productId,
-    connectionId: String(connectionId),
-    key: "whatsapp",
-    kind: "native",
-    capabilities: {
-      send: true,
-      html: false,
-      trackingOpens: false,
-      trackingClicks: false,
-      bounceWebhook: false,
-      // True here where the hand-configured route has to leave it false: this connection
-      // comes with the webhook already subscribed, so replies and delivery do come back.
-      inboundReplies: true,
-      consentRequired: true,
-      windowRules: "24h",
-      fromDomain: "caller_controlled",
-    },
-    governor: { dailyCap: 250 },
-    // Meta bans the number rather than filtering the message, and the ban takes every warm
-    // conversation on it — including, on a coexistence number, a colleague's live client
-    // chats. So a new WhatsApp channel serves people who opted in until someone widens it.
-    policy: { audience: ["warm_lead", "existing_user"] },
-    status: "healthy",
-    enabled: false,
-  });
+  const token = await exchangeMetaCode(code);
+  await subscribeMetaApp(token, wabaId);
+  await saveMetaConnection({ orgId, productId, token, wabaId, phoneNumberId });
 
   revalidatePath(`/products/${productId}/channels`);
 }

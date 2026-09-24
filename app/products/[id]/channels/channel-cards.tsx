@@ -77,7 +77,7 @@ export default function ChannelCards({
   /** connectMetaWhatsApp — Embedded Signup's landing point. */
   metaAction: (formData: FormData) => void | Promise<void>;
   /** The Meta app this deployment signs in through, or null where none is configured. */
-  metaConfig: { appId: string; configId: string } | null;
+  metaConfig: { appId: string; configId: string; signupLink: string } | null;
   sesAction: (formData: FormData) => void | Promise<void>;
 }) {
   // Which channel is being connected, or nothing. Keyed remount below resets the transport

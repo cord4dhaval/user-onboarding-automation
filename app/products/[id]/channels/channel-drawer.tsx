@@ -133,7 +133,7 @@ export default function ChannelDrawer({
   /** connectMetaWhatsApp — what Embedded Signup posts its code and ids to. */
   metaAction: (formData: FormData) => void | Promise<void>;
   /** The Meta app this deployment signs in through, or null where none is configured. */
-  metaConfig: { appId: string; configId: string } | null;
+  metaConfig: { appId: string; configId: string; signupLink: string } | null;
   sesAction: (formData: FormData) => void | Promise<void>;
   /** Whether this deployment has an OAuth client at all. Checked on the server: the id is
    * not a secret, but a client component has no way to read it. */
@@ -245,7 +245,17 @@ export default function ChannelDrawer({
               coexistence: they keep answering clients on the phone, and campaigns go out over the API on the same
               number.
             </p>
-            <ConnectMeta productId={productId} appId={metaConfig.appId} configId={metaConfig.configId} action={metaAction} />
+            {metaConfig.configId ? (
+              <ConnectMeta productId={productId} appId={metaConfig.appId} configId={metaConfig.configId} action={metaAction} />
+            ) : null}
+            {/* Meta will host the flow for us. Worth offering: it needs no Login configuration
+                and no script on this page, and Meta hands the result back to our redirect. */}
+            {metaConfig.signupLink ? (
+              <p className="sub tight">
+                <a href={metaConfig.signupLink}>Open Meta&rsquo;s own sign-in page</a> instead, if the button above does
+                not open.
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="empty drawer-block">

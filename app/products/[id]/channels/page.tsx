@@ -573,7 +573,7 @@ export default async function Channels({
         linkedinAction={createLinkedInChannel}
         googleAction={startGoogleOAuth}
         metaAction={connectMetaWhatsApp}
-        metaConfig={await metaLoginConfig().catch(() => null)}
+        metaConfig={await metaLoginConfig(id).catch(() => null)}
         sesAction={connectSesDomain}
       />
     </>
