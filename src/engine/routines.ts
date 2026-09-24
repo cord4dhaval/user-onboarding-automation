@@ -326,8 +326,14 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   preheader  optional, under 90 characters, adds to the subject.
   opening    the problem and what it costs, one line under 90 characters. Bold; in
              plain text it is the inbox preview, so it never repeats the subject.
-  scene      1 or 2 short lines: the ₹ example, said to be an example. At most two
-             **bold** figures.
+  scene      1 or 2 short lines showing the working, never a bare figure. Three
+             things the reader can check: how many people, how much time each
+             loses, what an hour costs. "6 people × 5 minutes a day = 30 minutes
+             a day. Over 22 working days that is 11 hours. If an hour of their
+             time costs ₹200, about ₹2,200 a month." Hours first, rupees second;
+             the rate is said to be an assumption; the team size is the one they
+             gave us. At most two **bold** figures. A rupee figure with no
+             working reads as invented and loses the reader for the whole mail.
   reveal     1 or 2 lines on what TeamGrid does about it, as a result they get, saying
              once that it is a small app on their office computers. Shown between thin
              lines with TeamGrid's name in the brand shade.

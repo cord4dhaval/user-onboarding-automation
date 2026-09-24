@@ -156,6 +156,21 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
     }
   }
 
+  // A rupee figure the reader cannot rebuild is a figure they do not believe. The price
+  // lines are exempt: those are facts, not arithmetic. Soft, because a salary or a deal
+  // size is sometimes quoted as itself rather than derived.
+  if (ctx.channelKey === "email") {
+    const withoutPrices = content.bodyMd.replace(/₹\s?(299|649|1,495)[^\n]*/g, "");
+    const hasMoney = /₹\s?[\d][\d,.]*/.test(withoutPrices);
+    const showsTime = /\b\d+\s*(hours?|minutes?|days?)\b/i.test(withoutPrices);
+    const showsRate = /(an hour|per hour|a month per|each)/i.test(withoutPrices);
+    if (hasMoney && !(showsTime && showsRate)) {
+      softFails.push(
+        "a rupee figure appears without its working; show the people, the time each loses and what an hour costs, then the money",
+      );
+    }
+  }
+
   // The five words that kept appearing in composed mail in the fortnight to 2026-09-24
   // although the brief already asked for a shop owner's words: 41 of 200 mails carried one.
   // Soft, because the product genuinely does mark who came in and fill the hours sheet, and
