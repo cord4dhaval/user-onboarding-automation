@@ -64,8 +64,12 @@ const SLEEPERS = new Set<LostBucket>(["competitor", "refused"]);
  * whoever is lost next, and leaves the leads that prompted the change decided the old way —
  * which is how a lead who said "not interested" kept two queued messages after the rule that
  * would have stopped them was already written.
+ *
+ * Bumped for a fix to what a verdict does, too, not only to what the words mean: a verdict
+ * whose effects never landed is not in force, whatever the record says. Version 3 is version
+ * 2's rule with a drop that no longer skips itself on a second reading.
  */
-export const LOST_RULE_VERSION = 2;
+export const LOST_RULE_VERSION = 3;
 
 /** How long a lead who bought elsewhere, or said no, is left alone. About the length of a trial they just started. */
 export const REVIVE_AFTER_DAYS = 90;
