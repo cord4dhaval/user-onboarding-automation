@@ -169,8 +169,15 @@ Per connection, so another product can choose differently:
 ```
 crm.write.enabled     false by default
 crm.write.events      ["email_sent", "whatsapp_sent", "linkedin_sent", "opened", "clicked", "replied"]
+crm.write.campaigns   ["teamgrid_leads_v3"] — empty means every campaign
 crm.write.actorUserId the outreach user in their CRM
 ```
+
+The campaign list is how this starts: one campaign is enough to judge the idea by, and an
+event that cannot name its campaign is not written rather than guessed at. On the week this
+was built, all of it on would have been 83 notes on the busiest day across 77 leads — about
+one line per lead per day, and four minutes of their rate limit. The list is there to keep
+the first week answerable, not because the volume is a problem.
 
 ## Size
 

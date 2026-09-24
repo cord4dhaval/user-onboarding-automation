@@ -113,7 +113,7 @@ async function record(
       },
       {
         returnDocument: "after",
-        projection: { orgId: 1, productId: 1, personId: 1, channel: 1, variant: 1, assetIds: 1, "content.subject": 1 },
+        projection: { orgId: 1, productId: 1, personId: 1, channel: 1, variant: 1, assetIds: 1, goalInstanceId: 1, "content.subject": 1 },
       },
     );
     if (!result) return;
@@ -175,10 +175,14 @@ async function record(
     // The sales team's CRM hears that a person read us, or followed a link — the half of a
     // lead they cannot see, and the half that decides whether a rep calls again. Opens are
     // one line a day; a click is always its own, because a click is what they act on.
+    const instance = result.goalInstanceId
+      ? await db.collection(C.goalInstances).findOne({ _id: new ObjectId(String(result.goalInstanceId)) }, { projection: { goalKey: 1 } })
+      : null;
     const crm = {
       orgId: String(result.orgId),
       productId: String(result.productId),
       personId: String(result.personId),
+      campaignKey: instance?.goalKey ? String(instance.goalKey) : undefined,
     };
     if (type === "opened") await noteOpenedToday(crm).catch(() => false);
     if (type === "clicked") {
