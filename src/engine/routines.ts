@@ -505,7 +505,20 @@ is the judgment, and that is yours.
   When you have seen the same objection end three or more people in one segment,
   that is not a person-level problem. Say so, and fix the segment's playbook with
   upsert_playbook so everybody still running it gets the better sequence. One
-  playbook edit is worth more than thirty rescued individuals.`,
+  playbook edit is worth more than thirty rescued individuals.
+
+3.4 lost-reader
+  sweep("react") carries lost_in_crm: leads the sales team closed as lost whose
+  reason nobody has read yet. Their queued messages keep going out until you do,
+  so read the words the rep typed and call classify_lost for each.
+  The reason is the whole evidence. "Tried a few times, but contact number does
+  not exists" is nobody getting through, not a refusal — that lead is reachable
+  and nothing should change. "IT Company." is not a reason at all, which is also
+  reachable. A named want we do not sell is wrong_need, and its need field records it in
+  their words, because those words are counted across leads and become the case
+  for building it. Bought elsewhere, or happy with what they have, is competitor.
+  Never guess past the words: where they say nothing either way, reachable is the
+  answer that keeps the one channel still reaching them open.`,
     },
     {
       key: "close",

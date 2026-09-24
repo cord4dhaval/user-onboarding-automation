@@ -336,7 +336,7 @@ const ROUTINE_TOOLS: Record<RoutineKey, string[]> = {
   advance: [...ALWAYS_ALLOWED, "compose_batch", "preview_template", "get_brand"],
   // React is the only routine that rewrites one person's plan, because it is the only one
   // that ever sees evidence about one person: a click, a reply, a bounce.
-  react: [...ALWAYS_ALLOWED, "propose_idea", "plan_goal", "compose_batch", "record_reply", "what_works", "upsert_playbook"],
+  react: [...ALWAYS_ALLOWED, "propose_idea", "plan_goal", "compose_batch", "record_reply", "what_works", "upsert_playbook", "classify_lost"],
   // Close decides whether someone is done, and repairs the checks that decide it.
   close: [...ALWAYS_ALLOWED, "mark_state", "resolve_check", "verify_person", "verifiers", "set_checks", "record_reply"],
   // Maintain finishes setup, and raises the one notification for what only a human can give.

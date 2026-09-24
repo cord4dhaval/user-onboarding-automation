@@ -54,7 +54,8 @@ export function unb64url(value: string): string {
  * token in a link and passes it on to whichever page confirms the thing, and a token per
  * page would mean a link per page.
  */
-export type TokenKind = "c" | "o" | "u" | "e" | "w";
+/** "s" signs the state a WhatsApp sign-in carries, so the redirect names a product we chose. */
+export type TokenKind = "c" | "o" | "u" | "e" | "w" | "s";
 
 /** Signs a link this app will have to trust later, with no session behind it. */
 export function tokenFor(kind: TokenKind, id: string, target = ""): string {
