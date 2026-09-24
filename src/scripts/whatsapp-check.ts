@@ -9,7 +9,11 @@
  *   npm run whatsapp:check                       — the connection, the number, the templates
  *   npm run whatsapp:check -- send 919274718574 teamgrid_intro_v1 "Dhaval"
  *   npm run whatsapp:check -- text 919274718574 Hello from the API
+ *   npm run whatsapp:check -- template tg_demo_v1 en "Your report for {{1}} is ready."
  *   npm run whatsapp:check -- register 123456
+ *
+ * WA_PHONE_NUMBER_ID, WA_TOKEN and WA_WABA send from a number this deployment has no
+ * connection for — the test number an app is given while it is in development.
  *
  * `send` is a template message: the only thing WhatsApp accepts when nobody has written to
  * the number in the last 24 hours. `text` is free words, which only work inside that window
@@ -40,6 +44,17 @@ type Connection = {
  * somebody just made is the one they mean to test.
  */
 async function connectionToTest(): Promise<Connection> {
+  // A number and a token straight from the environment, for a phone this deployment has no
+  // connection for: the test number an app is given in development, which is how a send can
+  // be filmed and proved while the real number is still waiting on a provider gate.
+  if (process.env.WA_PHONE_NUMBER_ID && process.env.WA_TOKEN) {
+    return {
+      _id: new ObjectId(),
+      orgId: "",
+      waba: { id: process.env.WA_WABA, phoneNumberId: process.env.WA_PHONE_NUMBER_ID },
+    };
+  }
+
   const db = await getDb();
   const named = process.env.WA_CONNECTION;
   const found = named
@@ -233,10 +248,43 @@ async function register(connection: Connection, token: string, pin: string): Pro
   console.log("registered on Cloud API. Send a template now to confirm.");
 }
 
+/**
+ * Creates a message template on the account.
+ *
+ * Here rather than only in WhatsApp Manager because App Review asks to see a template being
+ * made by the thing under review, and because a template created beside the send that uses
+ * it is a template whose name and language cannot drift apart.
+ */
+async function template(connection: Connection, token: string, name: string, language: string, body: string): Promise<void> {
+  const waba = String(connection.waba?.id);
+  if (!waba || waba === "undefined") throw new Error("Set WA_WABA to the account id when creating a template.");
+
+  // Body placeholders are numbered, and Meta rejects a template whose example list does not
+  // match them one for one.
+  const placeholders = body.match(/\{\{(\d+)\}\}/g) ?? [];
+  const example = placeholders.length
+    ? { body_text: [placeholders.map((_, index) => `Example ${index + 1}`)] }
+    : undefined;
+
+  const result = await graph(token, `${waba}/message_templates`, {
+    method: "POST",
+    body: {
+      name,
+      language,
+      category: "UTILITY",
+      components: [{ type: "BODY", text: body, ...(example ? { example } : {}) }],
+    },
+  });
+  if (!result.ok) throw new Error(explain(result.body));
+  console.log(`created ${name} (${language}) — status ${String(result.body.status ?? "?")}, id ${String(result.body.id ?? "?")}`);
+}
+
 async function main(): Promise<void> {
   const [command = "status", ...rest] = process.argv.slice(2);
   const connection = await connectionToTest();
-  const token = await resolveSecret(String(connection.orgId), String(connection._id), "whatsapp-check");
+  const token =
+    process.env.WA_TOKEN ??
+    (await resolveSecret(String(connection.orgId), String(connection._id), "whatsapp-check"));
 
   if (command === "status") await status(connection, token);
   else if (command === "send") {
@@ -247,10 +295,14 @@ async function main(): Promise<void> {
     const [to, ...words] = rest;
     if (!to || !words.length) throw new Error("text <number> <words...>");
     await text(connection, token, phoneDigits(to), words.join(" "));
+  } else if (command === "template") {
+    const [name, language, ...words] = rest;
+    if (!name || !language || !words.length) throw new Error('template <name> <language> <body text with {{1}} placeholders>');
+    await template(connection, token, name, language, words.join(" "));
   } else if (command === "register") {
     await register(connection, token, rest[0] ?? "");
   } else {
-    throw new Error(`Unknown command ${command}. One of: status, send, text, register.`);
+    throw new Error(`Unknown command ${command}. One of: status, send, text, template, register.`);
   }
 }
 
