@@ -1,5 +1,6 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { crmTick } from "@/engine/crm/sync.js";
+import { drainNotes } from "@/engine/crm/writeBack.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -39,8 +40,16 @@ export async function GET(request: NextRequest) {
   }
 
   const started = new Date();
-  const run = () =>
-    crmTick(started.getTime() + BUDGET_MS).catch((err) => [{ error: err instanceof Error ? err.message : String(err) }]);
+  const deadline = started.getTime() + BUDGET_MS;
+  // Reading first, writing with what is left. Their news is what a plan may be waiting on;
+  // our notes are a record somebody reads later, and a note that waits half an hour costs
+  // nothing. The writes share this run rather than taking their own because they share the
+  // one rate limit, and two clocks against one limit is how a limit gets hit.
+  const run = async () => {
+    const report = await crmTick(deadline).catch((err) => [{ error: err instanceof Error ? err.message : String(err) }]);
+    const notes = await drainNotes(deadline).catch((err) => ({ written: 0, failed: 0, error: err instanceof Error ? err.message : String(err) }));
+    return notes.written || notes.failed || "error" in notes ? [...report, { notes }] : report;
+  };
 
   if (request.nextUrl.searchParams.get("wait") === "1") {
     const report = await run();

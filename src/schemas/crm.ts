@@ -149,6 +149,20 @@ export const crmMap = z.object({
    * has to type is a value nobody can get wrong.
    */
   ours: z.array(z.string()).default([]),
+  /**
+   * How a note is written on a record, when this CRM takes one at all.
+   *
+   * Only notes. Every field on a lead — its status, its owner, its stage — belongs to the
+   * sales team, and an engine that moves a lead to "hot" because somebody opened an email
+   * will be wrong in public in its first week and distrusted for everything afterwards.
+   */
+  write: z
+    .object({
+      note: z.object({ tool: z.string(), args: z.record(z.string(), z.string()).default({}) }).optional(),
+      /** The argument their write tools take an acting user in, when they take one. */
+      actorArg: z.string().optional(),
+    })
+    .optional(),
 });
 export type CrmMap = z.infer<typeof crmMap>;
 

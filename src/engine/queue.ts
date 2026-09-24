@@ -27,7 +27,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
  */
 export const THINKING_KINDS = ["classify", "playbook", "plan", "compose", "escalate", "monitor", "groom", "linkedin", "lost"] as const;
 export type ThinkingKind = (typeof THINKING_KINDS)[number];
-export type JobKind = "ingest_rows" | ThinkingKind;
+export type JobKind = "ingest_rows" | "crm_note" | ThinkingKind;
 
 /**
  * Urgent work is not subject to fairness. A reply or a click is the thing the whole system
@@ -230,8 +230,14 @@ export async function enqueueMany(
  * session does is claimed only from `ready`, because that is the state the dispatcher owns
  * — it is where fairness across products and campaigns is actually applied.
  */
+/**
+ * Work the engine runs itself is claimed straight from the queue; work a session does waits
+ * for the dispatcher to call it ready. Asked of the kind rather than listed one by one, so a
+ * new engine kind is not silently unclaimable — which is how it would fail: no error, no
+ * rows, a lane that fills and never drains.
+ */
 function claimableFrom(kind: JobKind): string[] {
-  return kind === "ingest_rows" ? ["queued", "running"] : ["ready", "running"];
+  return (THINKING_KINDS as readonly string[]).includes(kind) ? ["ready", "running"] : ["queued", "running"];
 }
 
 export async function claim<P = Record<string, unknown>>(
