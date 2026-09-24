@@ -2,8 +2,10 @@ import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { sealSecret } from "../crypto/envelope.js";
+import { appOrigin } from "../engine/vars.js";
 
 const GRAPH = "https://graph.facebook.com/v23.0";
+const DIALOG = "https://www.facebook.com/v23.0/dialog/oauth";
 
 /**
  * The Meta app this deployment signs businesses in through.
@@ -24,6 +26,45 @@ export function metaApp(): { id: string; secret: string; configId: string; signu
   };
 }
 
+/**
+ * The one address Meta redirects back to, used twice and identical both times.
+ *
+ * Meta compares the value sent to the dialog with the value sent to the token exchange and
+ * refuses the code where they differ, so neither caller is allowed to spell it out itself.
+ * It is also the exact string that has to be listed as a valid OAuth redirect URI on the
+ * Meta app, which is why it is built from APP_URL rather than from the request.
+ */
+export function metaRedirectUri(): string {
+  return `${appOrigin()}/api/oauth/meta/callback`;
+}
+
+/**
+ * Where a business is sent to sign in.
+ *
+ * Built here rather than pasted into an environment variable, because the dialog only hands
+ * a code back to us when four things are right at once: the login configuration, a code
+ * response type, the override that makes a Login-for-Business config return one, and a
+ * redirect URI matching the exchange. A hand-written link that misses one of them completes
+ * on Meta's side and returns nobody, which reads as the sign-in doing nothing.
+ *
+ * META_SIGNUP_URL still wins where it is set, for a deployment handed a link by Meta.
+ */
+export function metaSignInUrl(state: string): string {
+  const app = metaApp();
+  if (app.signupUrl) {
+    return `${app.signupUrl}${app.signupUrl.includes("?") ? "&" : "?"}state=${encodeURIComponent(state)}`;
+  }
+  if (!app.configId) return "";
+  const url = new URL(DIALOG);
+  url.searchParams.set("client_id", app.id);
+  url.searchParams.set("config_id", app.configId);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("override_default_response_type", "true");
+  url.searchParams.set("redirect_uri", metaRedirectUri());
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
 /** Meta's error message from a Graph response, without echoing the body back. */
 async function reasonFrom(response: Response): Promise<string> {
   const said = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
@@ -39,7 +80,10 @@ async function reasonFrom(response: Response): Promise<string> {
  */
 export async function exchangeMetaCode(code: string): Promise<string> {
   const app = metaApp();
-  const url = `${GRAPH}/oauth/access_token?client_id=${encodeURIComponent(app.id)}&client_secret=${encodeURIComponent(app.secret)}&code=${encodeURIComponent(code)}`;
+  // redirect_uri belongs here whenever the code arrived on a redirect. The popup flow this
+  // replaced did not send one, and Meta answers a redirect code without it by refusing the
+  // exchange outright rather than by naming the missing field.
+  const url = `${GRAPH}/oauth/access_token?client_id=${encodeURIComponent(app.id)}&client_secret=${encodeURIComponent(app.secret)}&redirect_uri=${encodeURIComponent(metaRedirectUri())}&code=${encodeURIComponent(code)}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   const granted = (await response.json().catch(() => ({}))) as { access_token?: string; error?: { message?: string } };
   if (!response.ok || !granted.access_token) {

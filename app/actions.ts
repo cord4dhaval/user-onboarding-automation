@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { openSecret, sealSecret, type SealedSecret } from "@/crypto/envelope.js";
-import { metaApp } from "@/channels/metaConnect.js";
+import { metaApp, metaSignInUrl } from "@/channels/metaConnect.js";
 import { tokenFor } from "@/engine/tracking.js";
 import { reverifyConnection } from "@/mcp/reverify.js";
 import {
@@ -3860,8 +3860,5 @@ export async function metaLoginConfig(
 ): Promise<{ appId: string; configId: string; signupLink: string }> {
   const app = metaApp();
   const state = `${productId}.${tokenFor("s", productId)}`;
-  const link = app.signupUrl
-    ? `${app.signupUrl}${app.signupUrl.includes("?") ? "&" : "?"}state=${encodeURIComponent(state)}`
-    : "";
-  return { appId: app.id, configId: app.configId, signupLink: link };
+  return { appId: app.id, configId: app.configId, signupLink: metaSignInUrl(state) };
 }

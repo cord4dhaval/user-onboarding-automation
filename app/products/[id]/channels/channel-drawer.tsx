@@ -246,7 +246,8 @@ export default function ChannelDrawer({
               <ConnectMeta href={metaConfig.signupLink} />
             ) : (
               <p className="sub tight">
-                Set <code>META_SIGNUP_URL</code> to the onboarding link from your Meta app, under Become Tech Provider.
+                Set <code>META_LOGIN_CONFIG_ID</code> to the configuration id of a Facebook Login for Business
+                configuration on your Meta app, and <code>APP_URL</code> to this deployment&rsquo;s own address.
               </p>
             )}
           </div>
