@@ -8,26 +8,37 @@ import { notify } from "./notify.js";
 /**
  * What a sales team's "lost" means for our campaigns.
  *
- * The CRM has one word for three different endings, and until now we treated all three the
+ * The CRM has one word for four different endings, and until now we treated all four the
  * same way: we ignored them. Thirteen leads were marked lost on this product and kept being
  * written to — thirty-eight messages, thirteen opens, no replies. Sending more of the same
- * was not working, but stopping everyone would have been worse, because a third of them had
+ * was not working, but stopping everyone would have been worse, because several of them had
  * never said no at all. The rep could simply not get them on the phone.
  *
- * So the reason the rep typed is read once, and it decides which of three things happens:
+ * So the reason the rep typed is read once, and it decides which of four things happens:
  *
- *   reachable   The rep never got through — a dead number, a lead who does not remember
+ *   wrong_need  They wanted something we do not have. The campaigns end, and what they asked
+ *               for is written on the person, so the day we build it there is a list of the
+ *               people who asked. Four of thirteen here wanted to track staff who work away
+ *               from a desk, which is worth more as a product signal than any follow-up.
+ *
+ *   competitor  They bought elsewhere, or what they have is fine. That is a no today and not
+ *               a no forever, so the campaigns sleep. Contracts end.
+ *
+ *   refused     They said no in words, and named neither a want nor an alternative. The
+ *               campaigns sleep exactly as competitor's do: a no is a no whether or not it
+ *               came with a reason we can use.
+ *
+ *   reachable   Nobody ever got through — a dead number, a lead who does not remember
  *               enquiring, a record closed with no reason at all. Nothing changes. Email is
  *               the channel that still reaches these people, and one of them has opened two
  *               of the three messages sent since she was written off.
  *
- *   wrong_need  They wanted something we do not have. The campaigns end, and what they asked
- *               for is written on the person, so the day we build it there is a list of the
- *               people who asked. Four of thirteen here wanted field-staff tracking, which is
- *               worth more as a product signal than any follow-up would have been.
- *
- *   competitor  They bought elsewhere, or what they have is fine. That is a no today and not
- *               a no forever, so the campaigns sleep. Contracts end.
+ * That order is the reading order, and it is not decoration. A rep writes one sentence
+ * carrying two signals — "he is not interested and has not enquired for the product" — and
+ * with an unordered list the refusal loses to the phrase that happens to match an example.
+ * It did: on 2026-09-24 that lead stayed in the campaign with two messages queued, because
+ * the rule said "where they say nothing either way, reachable". A refusal is them saying
+ * something. Only what is left after all three outrank it is nobody having spoken to them.
  *
  * Only the words can tell these apart — "IT Company." is not a reason, and neither is a typo
  * about tracking field employees — so a session reads them and calls classify_lost. The
@@ -38,10 +49,25 @@ import { notify } from "./notify.js";
  * somebody writes on purpose, to people who asked for exactly that.
  */
 
-export const LOST_BUCKETS = ["reachable", "wrong_need", "competitor"] as const;
+/** In reading order: the first one the words support wins. See the note above. */
+export const LOST_BUCKETS = ["wrong_need", "competitor", "refused", "reachable"] as const;
 export type LostBucket = (typeof LOST_BUCKETS)[number];
 
-/** How long a lead who bought elsewhere is left alone. About the length of a trial they just started. */
+/** The buckets that put every campaign to sleep rather than ending or ignoring it. */
+const SLEEPERS = new Set<LostBucket>(["competitor", "refused"]);
+
+/**
+ * Which version of the reading rule a stored verdict was made under.
+ *
+ * Bumped when the buckets or their order change, which puts every already-read lead back in
+ * front of a reader once. A rule that changes without re-reading anything only applies to
+ * whoever is lost next, and leaves the leads that prompted the change decided the old way —
+ * which is how a lead who said "not interested" kept two queued messages after the rule that
+ * would have stopped them was already written.
+ */
+export const LOST_RULE_VERSION = 2;
+
+/** How long a lead who bought elsewhere, or said no, is left alone. About the length of a trial they just started. */
 export const REVIVE_AFTER_DAYS = 90;
 
 /**
@@ -67,6 +93,8 @@ export interface LostLead {
   lost_at: string | null;
   /** What the rep typed. The only thing that can say which bucket this is. */
   reason: string;
+  /** What this lead was read as under an older rule, when they are being re-read. */
+  previous_bucket?: string;
   campaigns: string[];
   /** Messages already written and waiting, which is what this decision is about. */
   queued: number;
@@ -82,7 +110,12 @@ export async function lostNeedingBucket(orgId: string, productId: string, limit 
   const db = await getDb();
   const links = await db
     .collection(C.crmLinks)
-    .find({ orgId, productId, personId: { $exists: true, $ne: null }, lostBucket: { $exists: false }, ...LOST_MATCH })
+    .find({
+      orgId,
+      productId,
+      personId: { $exists: true, $ne: null },
+      $and: [{ $or: [{ lostBucket: { $exists: false } }, { lostRuleVersion: { $ne: LOST_RULE_VERSION } }] }, LOST_MATCH],
+    })
     .sort({ "snapshot.lostAt": 1 })
     .limit(limit)
     .toArray();
@@ -111,6 +144,7 @@ export async function lostNeedingBucket(orgId: string, productId: string, limit 
       reason: String(snapshot.lostReason ?? "").trim(),
       campaigns: instances.map((i) => String(i.goalKey)),
       queued,
+      ...(link.lostBucket ? { previous_bucket: String(link.lostBucket) } : {}),
     });
   }
   return out;
@@ -132,7 +166,7 @@ export interface ApplyLostResult {
   bucket: LostBucket;
   campaigns: number;
   messages_dropped: number;
-  /** When the campaigns wake up again, for competitor. */
+  /** When the campaigns wake up again, for the buckets that sleep. */
   until: string | null;
   need: string | null;
 }
@@ -195,7 +229,7 @@ export async function applyLostBucket(input: ApplyLostInput): Promise<ApplyLostR
     );
   }
 
-  if (input.bucket === "competitor") {
+  if (SLEEPERS.has(input.bucket)) {
     const until = new Date(lostAt.getTime() + REVIVE_AFTER_DAYS * DAY);
     const before = await db.collection(C.actions).countDocuments({
       orgId,
@@ -218,8 +252,13 @@ export async function applyLostBucket(input: ApplyLostInput): Promise<ApplyLostR
     result.until = until.toISOString();
   }
 
-  // reachable changes nothing: they never said no, and email is the door the phone could not
-  // open. The label is written all the same, so the decision is visible and countable.
+  // reachable changes nothing — nobody ever spoke to them, and email is the door the phone
+  // could not open — except where an older reading had put them to sleep. A re-read that is
+  // not acted on is not a re-read. The label is written either way, so the decision is
+  // visible and countable.
+  if (input.bucket === "reachable") {
+    await liftHold({ orgId, productId, personId, kind: "lost", reason: `re-read as reachable: ${input.why}`, now });
+  }
 
   await db.collection(C.crmLinks).updateMany(
     { orgId, productId, personId },
@@ -228,6 +267,7 @@ export async function applyLostBucket(input: ApplyLostInput): Promise<ApplyLostR
         lostBucket: input.bucket,
         lostBucketAt: now,
         lostBucketWhy: input.why,
+        lostRuleVersion: LOST_RULE_VERSION,
         ...(result.need ? { lostNeed: result.need } : {}),
       },
     },

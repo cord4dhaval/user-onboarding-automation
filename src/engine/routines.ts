@@ -509,16 +509,24 @@ is the judgment, and that is yours.
 
 3.4 lost-reader
   sweep("react") carries lost_in_crm: leads the sales team closed as lost whose
-  reason nobody has read yet. Their queued messages keep going out until you do,
-  so read the words the rep typed and call classify_lost for each.
-  The reason is the whole evidence. "Tried a few times, but contact number does
-  not exists" is nobody getting through, not a refusal — that lead is reachable
-  and nothing should change. "IT Company." is not a reason at all, which is also
-  reachable. A named want we do not sell is wrong_need, and its need field records it in
-  their words, because those words are counted across leads and become the case
-  for building it. Bought elsewhere, or happy with what they have, is competitor.
-  Never guess past the words: where they say nothing either way, reachable is the
-  answer that keeps the one channel still reaching them open.`,
+  reason has not been read under the current rule. Their queued messages keep
+  going out until you do, so read the words the rep typed and call classify_lost
+  for each. A row carrying previous_bucket was read under an older rule and is in
+  front of you again; answer it even if the verdict does not change.
+  The reason is the whole evidence, and the buckets are taken in order — stop at
+  the first one the words support, because one sentence often carries two signals:
+    1 wrong_need  a want we do not sell. Its need field records it in their words,
+                  because those words are counted across leads and become the case
+                  for building it.
+    2 competitor  bought elsewhere, or happy with what they have.
+    3 refused     they said no in words and named neither a want nor an
+                  alternative. "He is not interested and has not enquired for the
+                  product" is this, not reachable: the refusal is the signal, and
+                  the rest is the rep explaining it.
+    4 reachable   only what none of the first three fit. "Tried a few times, but
+                  contact number does not exists" is nobody getting through.
+                  "IT Company." is not a reason at all. Nothing changes for these,
+                  which keeps open the one channel still reaching them.`,
     },
     {
       key: "close",

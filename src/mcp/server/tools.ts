@@ -765,10 +765,12 @@ export const TOOLS: ToolDef[] = [
           lost_in_crm: lost.length
             ? {
                 note:
-                  "The sales team closed these as lost. Read the words the rep typed and call classify_lost for each: " +
-                  "\"reachable\" when nobody actually got through (dead number, does not remember enquiring, no reason given) — they never said no and our mail still reaches them; " +
+                  "The sales team closed these as lost. Read the words the rep typed and call classify_lost for each, taking the buckets in order and stopping at the first the words support: " +
                   "\"wrong_need\" when they wanted something we do not sell — say what, in their terms; " +
-                  "\"competitor\" when they bought elsewhere or are happy with what they have. " +
+                  "\"competitor\" when they bought elsewhere or are happy with what they have; " +
+                  "\"refused\" when they said no in words without naming either; " +
+                  "\"reachable\" only when none of those fit — nobody actually got through (dead number, does not remember enquiring, no reason given) — because they never said no and our mail still reaches them. " +
+                  "A row carrying previous_bucket was read under an older rule and is in front of you again to be read under this one; answer it even if you would keep the same verdict. " +
                   "Until you do, everything queued for them keeps going out.",
                 leads: lost,
               }
@@ -3207,7 +3209,7 @@ TOOLS.push({
 TOOLS.push({
   name: "classify_lost",
   description:
-    "Say what a lead's 'lost' in the sales CRM means for our campaigns, after reading the reason the rep typed. Three buckets, and they do very different things. \"reachable\": nobody got through — a dead number, a lead who does not remember enquiring, a record closed with no reason. Nothing changes; they never said no and our mail is the one channel still reaching them. \"wrong_need\": they asked for something we do not sell. Their campaigns end and what they asked for is stored on them, so the day it exists there is a list of who wanted it — put it in `need`, in their terms. \"competitor\": they bought elsewhere or are happy with what they have. Campaigns sleep 90 days from the day they were lost, and whatever was written for them is dropped rather than sent stale. Everything applies across every campaign they are in, email and WhatsApp and LinkedIn alike. A lead the CRM reopens, or who writes to us, wakes up on their own.",
+    "Say what a lead's 'lost' in the sales CRM means for our campaigns, after reading the reason the rep typed. Four buckets, taken in this order — the first one the words support wins, because one sentence often carries two signals. 1 \"wrong_need\": they asked for something we do not sell. Their campaigns end and what they asked for is stored on them, so the day it exists there is a list of who wanted it — put it in `need`, in their terms. 2 \"competitor\": they bought elsewhere or are happy with what they have. Campaigns sleep 90 days from the day they were lost. 3 \"refused\": they said no in words (\"not interested\", \"not looking for this\") and named neither a want nor an alternative. Campaigns sleep the same 90 days: a no is a no whether or not it came with a usable reason. 4 \"reachable\": nobody ever got through — a dead number, a lead who does not remember enquiring, a record closed with no reason at all. Nothing changes; they never said no and our mail is the one channel still reaching them. Only what none of the first three fit is reachable — \"he is not interested and has not enquired\" is a refusal, not a lead nobody reached. Whatever was written for a sleeping lead is dropped rather than sent stale, and everything applies across every campaign they are in, email and WhatsApp and LinkedIn alike. A lead the CRM reopens, or who writes to us, wakes up on their own.",
   inputSchema: {
     type: "object",
     properties: {
