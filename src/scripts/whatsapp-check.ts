@@ -93,7 +93,7 @@ function explain(body: Record<string, unknown>): string {
   const detail = error.error_data?.details ? ` — ${error.error_data.details}` : "";
   const said = `${error.message ?? "refused"}${detail}`;
   if (error.code === 133010 || /not registered/i.test(said)) {
-    return `${said}\n\n  The number is not registered on Cloud API. It is still on the On-Premises platform,\n  which is where a BSP like WATI keeps it. Register it with:\n    npm run whatsapp:check -- register <6-digit-pin>\n  That takes the number over on Cloud API and ends the BSP's connection to it.`;
+    return `${said}\n\n  The number is not sending on Cloud API. Run this script with no arguments first: what to\n  do next depends on whether a phone is using the number, and the two answers are opposite.`;
   }
   if (error.code === 131030) {
     return `${said}\n\n  The recipient is not on this app's allowed list. An app that has not been through App\n  Review can only message numbers added under WhatsApp → API Setup → To.`;
@@ -114,11 +114,22 @@ async function status(connection: Connection, token: string): Promise<void> {
 
   console.log(`connection ${String(connection._id)}  waba ${waba}  number id ${number}`);
 
-  const details = await graph(token, `${number}?fields=display_phone_number,verified_name,quality_rating,platform_type,code_verification_status,throughput`);
+  const details = await graph(token, `${number}?fields=display_phone_number,verified_name,quality_rating,platform_type,code_verification_status,throughput,is_on_biz_app,status,name_status`);
   console.log(details.ok ? `number     ${JSON.stringify(details.body)}` : `number     FAILED ${explain(details.body)}`);
-  if (details.body.platform_type === "ON_PREMISE") {
-    console.log("           This number is on the On-Premises platform. Cloud API sends will be refused");
-    console.log("           until it is registered — see `register` below.");
+
+  // Two numbers that cannot send look identical in a failed send and are opposite here. One
+  // is free to take over on Cloud API; the other is somebody's working phone, and the step
+  // that would make it send is the step that signs that phone out.
+  const onBizApp = details.body.is_on_biz_app === true;
+  const ready = details.body.platform_type === "CLOUD_API" && details.body.status === "CONNECTED";
+  if (!ready && onBizApp) {
+    console.log("           This number is live in the WhatsApp Business app on a phone, and is not");
+    console.log("           sending on Cloud API. Do NOT run `register`: it would take the number over");
+    console.log("           and sign that phone out. Connect it again and choose the coexistence flow,");
+    console.log("           which keeps the phone and needs no PIN.");
+  } else if (!ready) {
+    console.log("           This number is not sending on Cloud API. No phone is using it, so `register`");
+    console.log("           with a six digit PIN is the step that makes it send.");
   }
 
   const subscribed = await graph(token, `${waba}/subscribed_apps`);
@@ -201,6 +212,19 @@ async function text(connection: Connection, token: string, to: string, body: str
 async function register(connection: Connection, token: string, pin: string): Promise<void> {
   if (!/^\d{6}$/.test(pin)) throw new Error("The PIN is six digits. Choose one and keep it — Meta asks for it again.");
   const number = String(connection.waba?.phoneNumberId);
+
+  // Refused rather than warned about. A number in the WhatsApp Business app is somebody
+  // answering clients, and the coexistence flow exists precisely so that this command is
+  // not the way such a number starts sending.
+  const details = await graph(token, `${number}?fields=is_on_biz_app,display_phone_number`);
+  if (details.body.is_on_biz_app === true && process.env.WA_TAKE_OVER_BIZ_APP !== "yes") {
+    throw new Error(
+      `${details.body.display_phone_number ?? number} is in use in the WhatsApp Business app. Registering it here\n` +
+        "signs that phone out and leaves its chat history on the device. Connect the number through the\n" +
+        "coexistence flow instead, which keeps the phone and needs no PIN. To override anyway, re-run with\n" +
+        "WA_TAKE_OVER_BIZ_APP=yes.",
+    );
+  }
   const result = await graph(token, `${number}/register`, {
     method: "POST",
     body: { messaging_product: "whatsapp", pin },
