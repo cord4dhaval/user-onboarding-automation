@@ -263,7 +263,10 @@ export async function detectWork(
           lost: lead,
         },
         productId,
-        campaignKey: lead.campaigns[0] ?? "unassigned",
+        // Left out rather than named when they are in no campaign at all: a lead read after
+        // their campaigns ended still belongs to no lane, and the dispatcher groups a missing
+        // field under its own name.
+        ...(lead.campaigns[0] ? { campaignKey: lead.campaigns[0] } : {}),
         priority: PRIORITY.normal,
       })),
       now,

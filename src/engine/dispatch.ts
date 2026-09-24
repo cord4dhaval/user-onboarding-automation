@@ -1,3 +1,4 @@
+import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { PRIORITY, THINKING_KINDS, type ThinkingKind } from "./queue.js";
@@ -85,6 +86,22 @@ interface Bucket {
   campaignKey: string;
   waiting: number;
   oldest: Date;
+}
+
+/**
+ * The filter for one bucket's field, where "unassigned" is a name the grouping invented for
+ * work that carries no campaign.
+ *
+ * It matches a missing field and the literal word alike, because a queuer that writes
+ * "unassigned" rather than leaving the field out is not wrong — and until today it was
+ * silently starved: the group was counted, granted its share, and then selected with a
+ * "field does not exist" filter that matched none of its rows. Five items sat ready-for-
+ * nobody through four rounds of a lane with a free budget.
+ */
+function unassignedSafe(field: "productId" | "campaignKey", value: string): Document {
+  return value === "unassigned"
+    ? { $or: [{ [field]: { $exists: false } }, { [field]: null }, { [field]: "unassigned" }] }
+    : { [field]: value };
 }
 
 /**
@@ -272,8 +289,7 @@ async function dispatchLane(orgId: string, kind: ThinkingKind, now: Date): Promi
         status: "queued",
         priority: { $ne: PRIORITY.urgent },
         dueAt: { $lte: now },
-        productId: q.productId === "unassigned" ? { $exists: false } : q.productId,
-        campaignKey: q.campaignKey === "unassigned" ? { $exists: false } : q.campaignKey,
+        $and: [unassignedSafe("productId", q.productId), unassignedSafe("campaignKey", q.campaignKey)],
       })
       .sort({ dueAt: 1 })
       .limit(take)
