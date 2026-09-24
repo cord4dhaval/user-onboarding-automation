@@ -2157,9 +2157,14 @@ export const TOOLS: ToolDef[] = [
         if (unproven.length) {
           throw new Error(`step ${step} says "${unproven[0]}". Never quote customers or claim a result nobody measured, and never say anyone was caught or wasting time: the hour had no owner. Nothing was written.`);
         }
-        const named = companyWords.find((token) => everything.includes(token));
+        // The subject may carry their name, where the writer judged it a real one: an inbox
+        // line about their own company is the reason the mail is opened (2026-09-24). Inside
+        // the mail it still reads as a mail merge, so the body, preheader and PS describe
+        // what they do instead.
+        const insideTheMail = [t.preheader, t.body, t.ps].map((v) => String(v ?? "")).join("\n").toLowerCase();
+        const named = companyWords.find((token) => insideTheMail.includes(token));
         if (named) {
-          throw new Error(`step ${step} names their company ("${named}"). Describe what they do instead of printing the name. Nothing was written.`);
+          throw new Error(`step ${step} names their company ("${named}") inside the mail. The subject may carry the name; the body describes what they do instead. Nothing was written.`);
         }
         const numbers = unlabelledNumbers(String(t.body ?? ""));
         if (numbers.length && ((t.asset_ids ?? []) as unknown[]).length === 0) {
