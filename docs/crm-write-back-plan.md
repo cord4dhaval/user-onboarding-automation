@@ -16,7 +16,7 @@ Write only what happened and mattered. Never write plans, and never write failur
 | Email sent | yes |
 | WhatsApp message sent | yes |
 | LinkedIn request or message sent | yes |
-| Email opened (by a person) | yes |
+| Email opened (by a person) | yes — once a day, not once per message |
 | Link clicked | yes |
 | Lead replied | yes — proposed, see open questions |
 | Message planned, queued or waiting for approval | **no** |
@@ -26,22 +26,45 @@ Write only what happened and mattered. Never write plans, and never write failur
 A rep reading a lead should see a short list of real events. Anything that did not reach the
 person is our problem, not theirs.
 
-## What blocks it today
+## What the live test proved (2026-09-24)
 
-Every write tool on the TeamGrid MCP server begins:
+Run against Milan Bhimani (lead `6a9e5051dc4ae9197d2c70ec`, lost, every campaign of his
+already ended). Four notes written, read back, and deleted again.
 
-> MAIN_ADMIN ONLY. Org API keys cannot call this.
+**The credential is not a blocker.** Every write tool warns "MAIN_ADMIN ONLY. Org API keys
+cannot call this", but the key we already hold is one:
 
-Our connection uses an org API key. Before any of this runs we need two things from TeamGrid:
+```
+crm_add_note -> {"ok": true, "actor": {"userId": "68af27a4bcb678eca5866fb9",
+                                       "email": "admin@teamgrid.com"},
+                 "noteId": "6ab4cc68e7f352b7d37aa6e6"}
+```
 
-1. A **MAIN_ADMIN credential** for the outreach engine, stored as its own secret
-   (`crm.write`, separate from the read key `crm.sync`).
-2. A **user id for the writer** — a CRM user such as "TeamGrid Outreach" — passed as
-   `actorUserId` on every call. Every note then shows who wrote it, and we can filter our own
-   notes back out when reading.
+So no new credential is needed. What is still worth asking for is a **dedicated CRM user**
+("TeamGrid Outreach"), because the lead page prints the author on every row and today that
+would read `admin@teamgrid.com` — the admin account appearing to write about emails it never
+sent. Its userId goes in `actorUserId`; nothing else changes.
 
-Without the second one, our notes come back through the sync as team activity, re-plan the
-lead's next email, and the system writes to itself in a loop.
+**The loop is real.** Our own note came straight back on the timeline as
+`NOTE_ADDED by System Administrator`, which our sync maps to kind `note`, which is in
+`NEWS_KINDS`, which re-plans the lead's next message. Every note we write would rewrite the
+mail that wrote it. The guard goes in first.
+
+**The feed truncates at about 60 characters**, and the prefix eats 13 of them:
+
+```
+added note · Email sent — "Which rooftop job took the most design desk ho...
+```
+
+So we trim the subject ourselves, to 45 characters with an ellipsis, rather than letting the
+cut land mid-word.
+
+**An audit row cannot be taken back.** Deleting a note adds `NOTE_DELETED` beside the
+`NOTE_ADDED`; both stay forever. Nothing is ever written to a live lead to try something out.
+
+**Their AI reads this feed.** The lead page offers "Next suggested action — AI can recommend
+what to do next on this lead", so our notes become evidence for their own suggestions. One
+more reason every line is a fact and never a plan.
 
 ## The calls
 
@@ -71,7 +94,7 @@ lead's next email, and the system writes to itself in a loop.
 | WhatsApp sent | `WhatsApp message sent — "{first 60 characters}"` |
 | LinkedIn invite | `LinkedIn connection request sent` |
 | LinkedIn message | `LinkedIn message sent — "{first 60 characters}"` |
-| Email opened | `Email opened — "{subject}"` |
+| Email opened | `Opened our email today` (first human open of the day, one line) |
 | Link clicked | `Link clicked — {page} — from "{subject}"` |
 | Reply | `Replied to our email — "{first 80 characters}"` |
 
@@ -158,5 +181,8 @@ drain, the three trigger points, the loop guard, and the settings.
 
 1. Do replies get a note, or does the sales team see them another way?
 2. Is a follow-up on a click welcome, or does it clutter their task list?
-3. Do they want one note per email, or one digest note a week? One note per event is what
-   this plan does; the volume is roughly 12 notes per lead per week on our current pace.
+3. Do they want a dedicated "TeamGrid Outreach" user, or is the admin account fine as the
+   author?
+
+With opens rolled up to one line a day, an active lead costs about eight notes a week
+(Kusum Sagar Pathak's real week: six sends, one click, one open line) rather than thirteen.
