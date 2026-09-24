@@ -169,12 +169,15 @@ Per connection, so another product can choose differently:
 ```
 crm.write.enabled     false by default
 crm.write.events      ["email_sent", "whatsapp_sent", "linkedin_sent", "opened", "clicked", "replied"]
-crm.write.campaigns   ["teamgrid_leads_v3"] — empty means every campaign
+crm.write.campaigns   ["teamgrid_leads_v3", "whatsapp_intro_hot_leads", "linkedin_hot_leads"]
+                      — empty means every campaign
 crm.write.actorUserId the outreach user in their CRM
 ```
 
-The campaign list is how this starts: one campaign is enough to judge the idea by, and an
-event that cannot name its campaign is not written rather than guessed at. On the week this
+The campaign list is how this starts: the three hot-lead campaigns write, so a lead's page
+shows their whole story across email, WhatsApp and LinkedIn, and the 356 older July-August
+leads stay out until somebody has read a week of the rest. An event that cannot name its
+campaign is not written rather than guessed at. On the week this
 was built, all of it on would have been 83 notes on the busiest day across 77 leads — about
 one line per lead per day, and four minutes of their rate limit. The list is there to keep
 the first week answerable, not because the volume is a problem.
@@ -188,8 +191,8 @@ drain, the three trigger points, the loop guard, and the settings.
 
 1. Do replies get a note, or does the sales team see them another way?
 2. Is a follow-up on a click welcome, or does it clutter their task list?
-3. Do they want a dedicated "TeamGrid Outreach" user, or is the admin account fine as the
-   author?
+3. ~~A dedicated "TeamGrid Outreach" user?~~ Decided 2026-09-24: `admin@teamgrid.com` is
+   fine as the author, so nothing is needed from them.
 
 With opens rolled up to one line a day, an active lead costs about eight notes a week
 (Kusum Sagar Pathak's real week: six sends, one click, one open line) rather than thirteen.
