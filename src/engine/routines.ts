@@ -320,8 +320,9 @@ greeting, the button, the sign-off and the unsubscribe line. Write it in parts, 
 one block of text, because a wall of paragraphs is skimmed and ignored:
   Nobody reads a long mail (the manager's review, 2026-09-22): the subject and the first
   line are the hook, and the whole mail is about 50 words, never more than 75.
-  subject    required: a ₹ figure or their own problem in their words, 25 to 55
-             characters ("Is 1 client costing you ₹1.68 lakh a year?").
+  subject    required: the point of this mail in 3 to 5 talking words, 18 to 45
+             characters ("what your showroom staff did today"). No figure, no
+             question mark, no colon.
   preheader  optional, under 90 characters, adds to the subject.
   opening    the problem and what it costs, one line under 90 characters. Bold; in
              plain text it is the inbox preview, so it never repeats the subject.
@@ -408,12 +409,25 @@ After any click or reply, every later mail is a link ask again. Never both asks 
 message (the P.S. offer to reply "call" is a second route, not a second ask); compose_batch refuses a reply ask that does not end on a question, and the
 engine refuses one that carries a link.
 
-The subject. Twenty to sixty characters, carrying a number, their own metric or a
-question — "TeamGrid on 11 people, week one", not "Welcome to TeamGrid" and not the
-name of a feature. The product name may lead the subject where it earns the open, on a
-first touch or a price mail; it is not a substitute for a reason to open. Never open a
-subject with "welcome" to somebody who has not signed up, and never put their first
-name in it on its own.
+The subject. Eighteen to forty-five characters, three to five words, and every word one
+an owner says out loud to a friend: "what your showroom staff did today", "who is busy
+and who is free", "why work is getting late". Not "₹88,000 a month a punch machine will
+not catch" and not "Is your Monday review costing you a full day?" — a figure loses
+about 46% of opens, a question mark about 56%, and both read as an advertisement. No
+digits, no ? ! or :, no sales words, no feature name.
+
+Words people write but never say are out of the subject: payroll (say salary),
+attendance (who came in), timesheet (hours), overtime (working late), idle (free),
+pipeline (work, orders), productivity (how much work gets done), capacity, visibility,
+bottleneck, loaded. Test each subject by asking whether a shop owner would say that line
+on the phone.
+
+The subject follows the mail, not a list of fields: it is this mail's own point, in the
+fewest plain words. Their company name goes in only when the point itself is about their
+company, and only when we hold a clean name from their site — never one built from a
+domain string, never on a mail about a problem every office has, where a name reads as a
+mail merge. Never open a subject with "welcome" to somebody who has not signed up, and
+never put their first name in it.
 
 2.1 compose-tier1
   next_work("compose") with limit 15. One sub-agent per person, all in one wave.
