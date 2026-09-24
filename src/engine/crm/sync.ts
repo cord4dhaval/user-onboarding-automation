@@ -6,6 +6,7 @@ import type { CrmKind, CrmMap, CrmMatchedBy, CrmMeeting, CrmSnapshot } from "../
 import { CrmClient, RateLimited, dateOf, fingerprint, lowerEmail, phoneKey } from "./client.js";
 import { kindOf } from "./map.js";
 import { NEWS_KINDS, recordNews } from "../news.js";
+import { liftLost, noticeLostButReading } from "../crmLost.js";
 
 /**
  * Keeps our own copy of what the sales team's CRM knows about each of our people.
@@ -190,6 +191,12 @@ async function storeActivity(
       .filter((r) => NEWS_KINDS.has(r.kind))
       .sort((a, b) => b.at.getTime() - a.at.getTime())[0];
     if (fresh) await recordNews(personId, { at: fresh.at, source: "crm", kind: fresh.kind, what: fresh.text ?? fresh.type }, now);
+
+    // A lead the CRM reopens is not lost any more, and a campaign sleeping out the rest of
+    // ninety days would be this system watching for exactly this and then ignoring it.
+    if (Object.keys(result.upsertedIds ?? {}).some((i) => rows[Number(i)]!.kind === "reopened")) {
+      await liftLost(orgId, productId, personId, "the CRM reopened this lead");
+    }
   }
   return result.upsertedCount;
 }
@@ -703,6 +710,11 @@ export async function crmTick(deadline: number, productIds?: string[]): Promise<
         .collection(C.connections)
         .updateOne({ _id: connection._id }, { $set: set, $unset: { "crm.sync.lockedUntil": "" } });
     }
+
+    // Reading goes the other way as well: the CRM tells us who was written off, and we are
+    // the only ones who can tell them which of those people is still opening our mail.
+    const told = await noticeLostButReading(String(connection.orgId), String(connection.productId));
+    if (told) report.push({ crm: connectionId, lost_but_reading: told });
   }
   return report;
 }

@@ -41,6 +41,7 @@ import {
 } from "../../engine/assets.js";
 import { LINKEDIN_TOOLS } from "./linkedinTools.js";
 import { crmForPerson, crmForPlanner } from "../../engine/crm/view.js";
+import { LOST_BUCKETS, applyLostBucket, lostNeedingBucket, type LostBucket } from "../../engine/crmLost.js";
 import { salesChatForPlanner } from "../../engine/whatsappInbound.js";
 import { saidText, sinceLastPlan } from "../../engine/news.js";
 
@@ -714,6 +715,10 @@ export const TOOLS: ToolDef[] = [
         // everyone on this product before anybody noticed.
         const tooEasy = wants("monitor") ? await undiscriminatingChecks(orgId, productId) : [];
 
+        // Leads the sales team marked lost whose reason nobody has read yet. Every one of
+        // them still has messages queued, so leaving the row unread is itself a decision.
+        const lost = wants("monitor") ? await lostNeedingBucket(orgId, productId, limit) : [];
+
         packet.push({
           product_id: productId,
           unclassified: unclassified.map((p) => ({
@@ -757,6 +762,17 @@ export const TOOLS: ToolDef[] = [
             started_at: g.startedAt,
           })),
           verification_too_easy: tooEasy,
+          lost_in_crm: lost.length
+            ? {
+                note:
+                  "The sales team closed these as lost. Read the words the rep typed and call classify_lost for each: " +
+                  "\"reachable\" when nobody actually got through (dead number, does not remember enquiring, no reason given) — they never said no and our mail still reaches them; " +
+                  "\"wrong_need\" when they wanted something we do not sell — say what, in their terms; " +
+                  "\"competitor\" when they bought elsewhere or are happy with what they have. " +
+                  "Until you do, everything queued for them keeps going out.",
+                leads: lost,
+              }
+            : null,
         });
       }
 
@@ -771,7 +787,8 @@ export const TOOLS: ToolDef[] = [
           p.replies_waiting.length +
           p.undetermined_checks.length +
           p.verification_looks_wrong.length +
-          p.verification_too_easy.length,
+          p.verification_too_easy.length +
+          (p.lost_in_crm?.leads.length ?? 0),
         0,
       );
       return { scope, total_work_items: total, products: packet };
@@ -3171,6 +3188,78 @@ TOOLS.push({
       });
 
       applied.push({ goal_instance_id: String(instance._id), state, cooling_days: coolingDays });
+    }
+
+    return { applied: applied.length, verdicts: applied };
+  },
+});
+
+/**
+ * What a "lost" in the sales CRM does to our campaigns.
+ *
+ * The engine cannot read this one. "IT Company." is not a reason, "he wan to track his
+ * employees who aare working on field" is a feature request with typos in it, and "tried a
+ * few times, but contact number does not exists" is not the lead saying anything at all —
+ * she went on to open two of the three mails sent after she was written off. Only the words
+ * separate a lead who refused us from one the phone simply never reached, so the words are
+ * read here and the engine does the rest (engine/crmLost.ts).
+ */
+TOOLS.push({
+  name: "classify_lost",
+  description:
+    "Say what a lead's 'lost' in the sales CRM means for our campaigns, after reading the reason the rep typed. Three buckets, and they do very different things. \"reachable\": nobody got through — a dead number, a lead who does not remember enquiring, a record closed with no reason. Nothing changes; they never said no and our mail is the one channel still reaching them. \"wrong_need\": they asked for something we do not sell. Their campaigns end and what they asked for is stored on them, so the day it exists there is a list of who wanted it — put it in `need`, in their terms. \"competitor\": they bought elsewhere or are happy with what they have. Campaigns sleep 90 days from the day they were lost, and whatever was written for them is dropped rather than sent stale. Everything applies across every campaign they are in, email and WhatsApp and LinkedIn alike. A lead the CRM reopens, or who writes to us, wakes up on their own.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      product_id: { type: "string" },
+      verdicts: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            person_id: { type: "string" },
+            bucket: { type: "string", enum: [...LOST_BUCKETS] },
+            why: { type: "string", description: "What in the rep's words puts them in this bucket. Quote the part that decided it." },
+            need: {
+              type: "string",
+              description:
+                "For wrong_need only: what they asked for that we do not have, in their own terms (\"tracking staff who work in the field\"). This is counted across leads, so keep the words they used rather than a category.",
+            },
+          },
+          required: ["person_id", "bucket", "why"],
+        },
+      },
+    },
+    required: ["product_id", "verdicts"],
+  },
+  async handler(args, ctx) {
+    const productId = String(args.product_id);
+    const orgId = await assertProduct(productId, ctx);
+    const verdicts = (args.verdicts ?? []) as Array<Record<string, unknown>>;
+    const applied: Array<Record<string, unknown>> = [];
+
+    for (const v of verdicts) {
+      const bucket = String(v.bucket) as LostBucket;
+      if (!LOST_BUCKETS.includes(bucket)) {
+        throw new Error(`unknown bucket "${bucket}". Use one of: ${LOST_BUCKETS.join(", ")}.`);
+      }
+      // A need is the whole point of wrong_need: without it the campaigns end and nothing is
+      // left saying why, which is the same as not having read the reason at all.
+      if (bucket === "wrong_need" && !str(v.need)) {
+        throw new Error(
+          "wrong_need needs `need`: what they asked for that we do not sell, in their words. " +
+            "It is the only record of what we are losing deals on, and the list a feature campaign is written from later.",
+        );
+      }
+      const result = await applyLostBucket({
+        orgId,
+        productId,
+        personId: String(v.person_id),
+        bucket,
+        need: str(v.need),
+        why: String(v.why),
+      });
+      applied.push({ person_id: String(v.person_id), ...result });
     }
 
     return { applied: applied.length, verdicts: applied };

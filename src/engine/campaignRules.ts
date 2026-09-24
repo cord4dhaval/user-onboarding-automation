@@ -25,8 +25,14 @@ import { HOME_TIMEZONE } from "./time.js";
  * waits for the date instead of being thrown away; the approval a human gave it still
  * stands. When the date passes the campaign carries on by itself.
  *
- * Sales activity is deliberately not here: a meeting the sales team logs in the CRM is
- * context for the next message, never a reason to stop (see crm/sync.ts).
+ *   4. A lead the sales team marked lost in the CRM is not written to as though nobody had
+ *      spoken to them. What that costs depends on why they were lost, which only the words
+ *      the rep typed can say, so the reason is read once and the campaign is held, ended or
+ *      left alone accordingly (engine/crmLost.ts).
+ *
+ * Everything else the sales team logs stays out of here: a meeting or a note is context for
+ * the next message, never a reason to stop (see crm/sync.ts). Lost is the one exception,
+ * because it is the one entry that says the conversation is over rather than how it went.
  */
 
 const DAY = 86_400_000;
@@ -49,7 +55,16 @@ export interface HoldInput {
   goalInstanceIds: string[];
   until: Date;
   reason: string;
-  kind: "absence";
+  kind: "absence" | "lost";
+  /**
+   * What happens to a message already written and waiting.
+   *
+   * "defer" moves it to the day the hold lifts, which is right for an absence: the message
+   * is still the right message, it is only the week that is wrong. "drop" skips it, which is
+   * right for a lost lead: a message written for someone we believed was interested is not
+   * worth sending three months later, and the planner writes a fresh one when the hold ends.
+   */
+  queued?: "defer" | "drop";
   now?: Date;
 }
 
@@ -85,9 +100,11 @@ export async function holdCampaigns(input: HoldInput): Promise<number> {
         goalInstanceId: String(instance._id),
         status: { $in: ["queued", "awaiting_approval"] },
         angle: { $ne: "reply" },
-        dueAt: { $lt: input.until },
+        ...(input.queued === "drop" ? {} : { dueAt: { $lt: input.until } }),
       },
-      { $set: { dueAt: input.until, deferReason: input.reason } },
+      input.queued === "drop"
+        ? { $set: { status: "skipped", skipReason: input.reason } }
+        : { $set: { dueAt: input.until, deferReason: input.reason } },
     );
     await db.collection(C.events).insertOne({
       _id: new ObjectId(),
@@ -103,6 +120,53 @@ export async function holdCampaigns(input: HoldInput): Promise<number> {
     held++;
   }
   return held;
+}
+
+/**
+ * Lifts every hold of one kind on a person, across all their campaigns.
+ *
+ * A hold that can only expire is a hold that outlives its reason: a lead the CRM reopens, or
+ * who writes to us, is not still lost, and waiting out the rest of ninety days would be the
+ * system ignoring the very thing it was watching for. Messages already dropped stay dropped
+ * — the planner writes what fits now.
+ */
+export async function liftHold(input: {
+  orgId: string;
+  productId: string;
+  personId: string;
+  kind: "absence" | "lost";
+  reason: string;
+  now?: Date;
+}): Promise<number> {
+  const db = await getDb();
+  const now = input.now ?? new Date();
+  const held = await db
+    .collection(C.goalInstances)
+    .find({ orgId: input.orgId, productId: input.productId, personId: input.personId, holdKind: input.kind })
+    .project({ _id: 1 })
+    .toArray();
+  if (!held.length) return 0;
+
+  await db
+    .collection(C.goalInstances)
+    .updateMany(
+      { _id: { $in: held.map((h) => h._id) } },
+      { $unset: { holdUntil: "", holdReason: "", holdKind: "", holdSetAt: "" } },
+    );
+  await db.collection(C.events).insertMany(
+    held.map((h) => ({
+      _id: new ObjectId(),
+      orgId: input.orgId,
+      productId: input.productId,
+      personId: input.personId,
+      goalInstanceId: String(h._id),
+      source: "engine",
+      type: "campaign_hold_lifted",
+      payload: { kind: input.kind, reason: input.reason },
+      ts: now,
+    })),
+  );
+  return held.length;
 }
 
 /** Whether a campaign is held right now, and why. */
@@ -429,5 +493,21 @@ export async function pauseForReply(input: {
     },
     { $set: { status: "skipped", skipReason: input.reason ?? REPLIED_REASON } },
   );
+
+  // Someone the sales team wrote off who then writes to us has answered the only question the
+  // hold was waiting on, so their other campaigns wake up too. Rule 3 has already dropped what
+  // was written for them; what follows is written knowing they replied.
+  const instance = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) }, { projection: { personId: 1 } });
+  if (instance?.personId) {
+    await liftHold({
+      orgId: input.orgId,
+      productId: input.productId,
+      personId: String(instance.personId),
+      kind: "lost",
+      reason: "they wrote back after the sales team marked them lost",
+      now: input.at,
+    });
+  }
+
   return { goalInstanceId, skipped: skipped.modifiedCount };
 }

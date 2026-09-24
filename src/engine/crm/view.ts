@@ -18,6 +18,8 @@ export interface CrmRecordView {
   why?: string;
   snapshot: CrmSnapshot;
   meetings: CrmMeeting[];
+  /** What this record's "lost" was taken to mean for our campaigns. See engine/crmLost.ts. */
+  lostBucket?: string;
   lastActivityAt?: Date;
   syncedAt?: Date;
 }
@@ -87,6 +89,7 @@ export async function crmForPerson(orgId: string, productId: string, personId: s
         why: l.why ? String(l.why) : undefined,
         snapshot: (l.snapshot ?? {}) as CrmSnapshot,
         meetings: (l.meetings ?? []) as CrmMeeting[],
+        lostBucket: l.lostBucket ? String(l.lostBucket) : undefined,
         lastActivityAt: l.lastActivityAt,
         syncedAt: l.syncedAt,
       }))
@@ -153,6 +156,10 @@ export function crmForPlanner(view: CrmPersonView, now = new Date()) {
       won_at: r.snapshot.wonAt,
       lost_at: r.snapshot.lostAt,
       lost_reason: r.snapshot.lostReason,
+      // What that lost was taken to mean for our campaigns, once somebody read the reason:
+      // reachable (nobody got through), wrong_need (we do not sell it), competitor (bought
+      // elsewhere). Absent until it has been read. See engine/crmLost.ts.
+      lost_bucket: r.lostBucket ?? null,
       has_owner: Boolean(r.snapshot.owner),
     })),
     meetings,
