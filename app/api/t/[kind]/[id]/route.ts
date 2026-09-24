@@ -6,6 +6,7 @@ import { bumpPrior, type PriorKey } from "@/engine/outcomes.js";
 import { notify } from "@/engine/notify.js";
 import { PIXEL, looksAutomated, signalField, unb64url, verify } from "@/engine/tracking.js";
 import { creditAssets } from "@/engine/assets.js";
+import { noteEvent, noteOpenedToday, pageName, shorten } from "@/engine/crm/writeBack.js";
 
 export const dynamic = "force-dynamic";
 
@@ -169,6 +170,25 @@ async function record(
           { _id: new ObjectId(String(result.personId)), temp: { $exists: true } },
           { $set: { "temp.computedAt": new Date(0) } },
         );
+    }
+
+    // The sales team's CRM hears that a person read us, or followed a link — the half of a
+    // lead they cannot see, and the half that decides whether a rep calls again. Opens are
+    // one line a day; a click is always its own, because a click is what they act on.
+    const crm = {
+      orgId: String(result.orgId),
+      productId: String(result.productId),
+      personId: String(result.personId),
+    };
+    if (type === "opened") await noteOpenedToday(crm).catch(() => false);
+    if (type === "clicked") {
+      const subject = (result.content as { subject?: string } | undefined)?.subject;
+      await noteEvent({
+        ...crm,
+        event: "clicked",
+        body: `Link clicked — ${pageName(url)} — from "${shorten(subject)}"`,
+        key: actionId,
+      }).catch(() => false);
     }
 
     await announce(result as Document, type, url);

@@ -366,7 +366,7 @@ export async function applyWhatsAppEvent(
   // channel reads; repliedOn.whatsapp is what lets free text go on WhatsApp for 24 hours.
   await db.collection(C.people).updateOne({ _id: person._id }, { $set: { lastReplyAt: event.at, "repliedOn.whatsapp": event.at } });
   // The campaign they answered pauses until they are answered; their other campaigns run on.
-  await pauseForReply({ orgId, productId, answeredActionId: String(answered._id), eventId: recorded.insertedId, at: event.at, reason: "they replied on WhatsApp; waiting on an answer" });
+  await pauseForReply({ orgId, productId, answeredActionId: String(answered._id), eventId: recorded.insertedId, at: event.at, reason: "they replied on WhatsApp; waiting on an answer", note: { channel: "whatsapp", text: event.text } });
 
   const who = String(person.name ?? event.senderName ?? "A lead");
   const said = event.button

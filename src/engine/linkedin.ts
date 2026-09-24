@@ -427,7 +427,7 @@ export async function recordLinkedInReply(input: {
   const person = await db.collection(C.people).findOne({ _id: new ObjectId(personId) }, { projection: { name: 1 } });
   await db.collection(C.people).updateOne({ _id: new ObjectId(personId) }, { $set: { lastReplyAt: at } });
   // The campaign they answered pauses until they are answered; their other campaigns run on.
-  await pauseForReply({ orgId, productId, answeredActionId: answered ? String(answered._id) : undefined, eventId: recorded.insertedId, at, reason: "they replied on LinkedIn; waiting on a human answer" });
+  await pauseForReply({ orgId, productId, answeredActionId: answered ? String(answered._id) : undefined, eventId: recorded.insertedId, at, reason: "they replied on LinkedIn; waiting on a human answer", note: { channel: "linkedin", text } });
   const who = String(person?.name ?? "A lead");
   await notify({
     orgId,

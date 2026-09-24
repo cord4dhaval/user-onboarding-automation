@@ -1,13 +1,39 @@
-import { ObjectId } from "mongodb";
+import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { resolveChannelAdapter } from "./adapters.js";
+import { noteEvent, sentNote } from "./crm/writeBack.js";
 
 export interface ReconcileSummary {
   checked: number;
   confirmed: number;
   failed: number;
   stillPending: number;
+}
+
+/** The note for a message a provider has just confirmed it sent. Keyed on the action, so the send path and this one can never both write it. */
+async function noteSend(action: Document): Promise<void> {
+  const content = (action.content ?? {}) as { subject?: string; slotText?: string; bodyMd?: string };
+  const note = sentNote({
+    channel: String(action.channel),
+    op: action.op ? String(action.op) : undefined,
+    subject: content.subject,
+    text: content.slotText || content.bodyMd,
+  });
+  if (!note) return;
+  const db = await getDb();
+  const instance = await db
+    .collection(C.goalInstances)
+    .findOne({ _id: new ObjectId(String(action.goalInstanceId)) }, { projection: { goalKey: 1 } });
+  await noteEvent({
+    orgId: String(action.orgId),
+    productId: String(action.productId),
+    personId: String(action.personId),
+    campaignKey: instance?.goalKey ? String(instance.goalKey) : undefined,
+    event: note.event,
+    body: note.body,
+    key: String(action._id),
+  }).catch(() => false);
 }
 
 /**
@@ -38,6 +64,7 @@ export async function reconcileDispatched(
       if (!adapter.checkStatus) {
         // The channel turned out to be synchronous after all; trust the send.
         await db.collection(C.actions).updateOne({ _id: action._id }, { $set: { status: "sent" } });
+        await noteSend(action);
         summary.confirmed++;
         continue;
       }
@@ -79,6 +106,10 @@ export async function reconcileDispatched(
         await db
           .collection(C.actions)
           .updateOne({ _id: action._id }, { $set: { status: "sent", confirmedAt: new Date() } });
+        // Only now is it true that we wrote to them, so only now does their CRM hear it. A
+        // message that queues with the provider is told to the sales team once, here, and
+        // never at the moment it was handed over.
+        await noteSend(action);
         summary.confirmed++;
       } else if (status === "failed") {
         await db

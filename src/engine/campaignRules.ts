@@ -2,6 +2,7 @@ import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { HOME_TIMEZONE } from "./time.js";
+import { noteEvent, shorten } from "./crm/writeBack.js";
 
 /**
  * Three rules every campaign follows, whatever its settings, because breaking any of them
@@ -471,6 +472,8 @@ export async function pauseForReply(input: {
   eventId?: ObjectId;
   at: Date;
   reason?: string;
+  /** What they said and where, for the note their sales team reads. */
+  note?: { channel: "email" | "whatsapp" | "linkedin"; text?: string };
 }): Promise<{ goalInstanceId: string | null; skipped: number }> {
   const db = await getDb();
   const goalInstanceId = await campaignOf(input.orgId, input.answeredActionId);
@@ -497,7 +500,7 @@ export async function pauseForReply(input: {
   // Someone the sales team wrote off who then writes to us has answered the only question the
   // hold was waiting on, so their other campaigns wake up too. Rule 3 has already dropped what
   // was written for them; what follows is written knowing they replied.
-  const instance = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) }, { projection: { personId: 1 } });
+  const instance = await db.collection(C.goalInstances).findOne({ _id: new ObjectId(goalInstanceId) }, { projection: { personId: 1, goalKey: 1 } });
   if (instance?.personId) {
     await liftHold({
       orgId: input.orgId,
@@ -507,6 +510,23 @@ export async function pauseForReply(input: {
       reason: "they wrote back after the sales team marked them lost",
       now: input.at,
     });
+
+    // The sales team hears it from their own CRM rather than from us telling them later. A
+    // reply is the strongest thing that happens to a lead and the one a rep would most want
+    // to know before picking up the phone.
+    if (input.note) {
+      const where = input.note.channel === "email" ? "Replied to our email" : `Replied on ${input.note.channel === "whatsapp" ? "WhatsApp" : "LinkedIn"}`;
+      const said = shorten(input.note.text, 80);
+      await noteEvent({
+        orgId: input.orgId,
+        productId: input.productId,
+        personId: String(instance.personId),
+        campaignKey: instance.goalKey ? String(instance.goalKey) : undefined,
+        event: "replied",
+        body: said ? `${where} — "${said}"` : where,
+        key: String(input.eventId ?? input.answeredActionId ?? goalInstanceId),
+      }).catch(() => false);
+    }
   }
 
   return { goalInstanceId, skipped: skipped.modifiedCount };

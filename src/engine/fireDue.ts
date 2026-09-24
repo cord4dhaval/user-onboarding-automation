@@ -29,6 +29,7 @@ import { bumpPrior } from "./outcomes.js";
 import { HOME_TIMEZONE, latestOf, localHour, nextSendableAt } from "./time.js";
 import { appOrigin, mergeVarsFor, withUtm } from "./vars.js";
 import { holdOf, REPLIED_REASON, writtenBeforeReply } from "./campaignRules.js";
+import { noteEvent, sentNote } from "./crm/writeBack.js";
 import { pathAndQuery, providerParams } from "./providerParams.js";
 
 export interface FireSummary {
@@ -760,6 +761,31 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
             $unset: { deferReason: "", dueReason: "" },
           },
         );
+
+        // The sales team's CRM learns that we wrote to this person, if this product writes
+        // notes there at all. Queued, never called here: their CRM shares one rate limit with
+        // their own product, and a send that waited on it would fail whenever it was slow.
+        // Only a real send — a dry run reached nobody, and a queued one is not sent until the
+        // reconciler says the provider took it.
+        if (!dryRun && !queued) {
+          const note = sentNote({
+            channel: String(action.channel),
+            op,
+            subject: content.subject,
+            text: content.slotText || content.bodyMd,
+          });
+          if (note) {
+            await noteEvent({
+              orgId: opts.orgId,
+              productId: opts.productId,
+              personId: String(action.personId),
+              campaignKey: String(goalInstance.goalKey),
+              event: note.event,
+              body: note.body,
+              key: String(action._id),
+            }).catch(() => false);
+          }
+        }
 
         // Budget and cap are decremented in the database, never tracked in a caller's head.
         await db.collection(C.goalInstances).updateOne(

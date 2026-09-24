@@ -36,6 +36,40 @@ export function shorten(text: string | undefined, max = SUBJECT_MAX): string {
   return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
 }
 
+/**
+ * The note for a message that went out, or nothing for a channel a rep has no use for.
+ *
+ * A call is not here: their CRM logs its own calls with duration, agent and a recording, and
+ * a second line from us saying the same thing in fewer words would only get in the way.
+ */
+export function sentNote(input: { channel: string; op?: string; subject?: string; text?: string }): { event: NoteEvent; body: string } | null {
+  if (input.channel === "email") return { event: "email_sent", body: `Email sent — "${shorten(input.subject)}"` };
+  if (input.channel === "whatsapp") return { event: "whatsapp_sent", body: `WhatsApp message sent — "${shorten(input.text, 60)}"` };
+  if (input.channel === "linkedin") {
+    return input.op === "invite"
+      ? { event: "linkedin_sent", body: "LinkedIn connection request sent" }
+      : { event: "linkedin_sent", body: `LinkedIn message sent — "${shorten(input.text, 60)}"` };
+  }
+  return null;
+}
+
+/** Which page of ours a click landed on, in the words a rep would use for it. */
+export function pageName(url: string | undefined): string {
+  const path = (() => {
+    try {
+      return new URL(String(url)).pathname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  if (/register|signup|sign-up|trial/.test(path)) return "the sign-up page";
+  if (/pricing|plans/.test(path)) return "the pricing page";
+  if (/security|privacy/.test(path)) return "the security page";
+  if (/book|calendar|meet|demo/.test(path)) return "the booking page";
+  if (!path || path === "/") return "our website";
+  return `our ${path.replace(/^\//, "").replace(/[-_/]+/g, " ").trim()} page`;
+}
+
 export interface CrmWriteConfig {
   enabled: boolean;
   events: Set<string>;
@@ -89,6 +123,30 @@ export async function noteEvent(input: {
     { productId: input.productId, campaignKey: input.campaignKey, subjectId: `${input.key}:${input.event}` },
   );
   return true;
+}
+
+/**
+ * One note a day for opens, not one per message.
+ *
+ * A lead catching up on a week of our mail opens four of them inside a minute, and four rows
+ * stamped the same minute read as a system talking to itself rather than as a person reading.
+ * The day is claimed on the person before the note is queued, so two opens in the same second
+ * still leave one line.
+ */
+export async function noteOpenedToday(input: {
+  orgId: string;
+  productId: string;
+  personId: string;
+  campaignKey?: string;
+  now?: Date;
+}): Promise<boolean> {
+  const day = (input.now ?? new Date()).toISOString().slice(0, 10);
+  const db = await getDb();
+  const claimed = await db
+    .collection(C.people)
+    .updateOne({ _id: new ObjectId(input.personId), crmOpenNoteOn: { $ne: day } }, { $set: { crmOpenNoteOn: day } });
+  if (!claimed.modifiedCount) return false;
+  return noteEvent({ ...input, event: "opened", body: "Opened our email today", key: `${input.personId}:${day}` });
 }
 
 export interface DrainSummary {

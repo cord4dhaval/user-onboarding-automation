@@ -569,7 +569,7 @@ export async function pollReplies(
       // The campaign they answered pauses: everything it wrote for them before this reply
       // is dropped, wherever it waits. Their other campaigns run on.
       summary.heldForReply += (
-        await pauseForReply({ orgId, productId, answeredActionId: answered ? String(answered._id) : undefined, eventId: recorded.insertedId, at })
+        await pauseForReply({ orgId, productId, answeredActionId: answered ? String(answered._id) : undefined, eventId: recorded.insertedId, at, note: { channel: "email", text } })
       ).skipped;
 
       // Then the answer itself is queued as urgent work, which bypasses fairness entirely.
