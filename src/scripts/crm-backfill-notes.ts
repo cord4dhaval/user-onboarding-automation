@@ -16,7 +16,11 @@ import { noteEvent, noteOpenedToday, pageName, sentNote, shorten } from "../engi
  * second. Nothing here writes to the CRM itself; the CRM's own run does that, a call every
  * three seconds.
  *
- *   npx tsx --env-file=.env src/scripts/crm-backfill-notes.ts --product <id> [--days 2] [--dry]
+ * `--new-only` narrows it to the people who arrived inside the same window, which is the
+ * gentler way in: their lead in the CRM is new too, so their page starts at the beginning
+ * rather than acquiring a history halfway through.
+ *
+ *   npx tsx --env-file=.env src/scripts/crm-backfill-notes.ts --product <id> [--days 2] [--new-only] [--dry]
  */
 
 const arg = (name: string, fallback?: string) => {
@@ -30,6 +34,7 @@ const arg = (name: string, fallback?: string) => {
 const productId = arg("product") ?? "";
 const days = Number(arg("days", "2"));
 const dry = process.argv.includes("--dry");
+const newOnly = process.argv.includes("--new-only");
 if (!productId) throw new Error("--product <productId> is required");
 
 const db = await getDb();
@@ -135,9 +140,23 @@ for (const [key, open] of openDays) {
   });
 }
 
-planned.sort((a, b) => a.at.getTime() - b.at.getTime());
-console.log(`${planned.length} notes to write\n`);
-for (const note of planned.slice(0, 200)) {
+// Only what belongs to somebody who arrived in this window, when asked for.
+let writing = planned;
+if (newOnly) {
+  const arrived = await db
+    .collection(C.people)
+    .find({ orgId, productId, $or: [{ createdAt: { $gte: since } }, { "arrivals.at": { $gte: since } }] })
+    .project({ _id: 1 })
+    .toArray();
+  const fresh = new Set(arrived.map((p) => String(p._id)));
+  writing = planned.filter((n) => fresh.has(n.personId));
+  console.log(`--new-only: ${fresh.size} people arrived in this window, ${writing.length} of ${planned.length} notes are theirs`);
+}
+
+const planned2 = writing;
+planned2.sort((a, b) => a.at.getTime() - b.at.getTime());
+console.log(`${planned2.length} notes to write\n`);
+for (const note of planned2.slice(0, 200)) {
   console.log(`  ${note.at.toISOString().slice(0, 16)} ${note.campaignKey.padEnd(24)} ${note.body}`);
 }
 
@@ -148,7 +167,7 @@ if (dry) {
 
 let queued = 0;
 let refused = 0;
-for (const note of planned) ((await note.run()) ? queued++ : refused++);
+for (const note of planned2) ((await note.run()) ? queued++ : refused++);
 console.log(`\nqueued ${queued} · refused ${refused} (writing off, campaign not writing, or the lead is not in their CRM)`);
 
 // Today's open line is now accounted for, so a live open later today does not write a second
