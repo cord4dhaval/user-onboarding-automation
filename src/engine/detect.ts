@@ -5,6 +5,7 @@ import { activeInstanceFor } from "./instances.js";
 import { PRIORITY, enqueue, enqueueMany } from "./queue.js";
 import { claudePlansLinkedIn } from "./linkedin.js";
 import { notHeld } from "./campaignRules.js";
+import { lostNeedingBucket } from "./crmLost.js";
 
 /**
  * Noticing what needs a session's attention, on the minute clock, without a model.
@@ -27,6 +28,7 @@ export interface DetectSummary {
   escalate: number;
   playbook: number;
   plan: number;
+  lost: number;
 }
 
 export async function detectWork(
@@ -36,7 +38,7 @@ export async function detectWork(
   deadline = Date.now() + 8_000,
 ): Promise<DetectSummary> {
   const db = await getDb();
-  const summary: DetectSummary = { classify: 0, compose: 0, monitor: 0, escalate: 0, playbook: 0, plan: 0 };
+  const summary: DetectSummary = { classify: 0, compose: 0, monitor: 0, escalate: 0, playbook: 0, plan: 0, lost: 0 };
   const s = { orgId, productId };
 
   // Bounded by rows and by wall clock, because the two run out at different times. The
@@ -243,6 +245,30 @@ export async function detectWork(
     }
   }
   if (wanted.length) summary.playbook = await enqueueMany(orgId, "playbook", wanted, now);
+
+  // A lead the sales team closed as lost, whose reason nobody has read under the rule in
+  // force. It is queued here like everything else rather than left for a routine to notice
+  // in a report, because a routine that finds its queue empty stops — and on 2026-09-24 one
+  // did, twenty seconds in, while a lead who had said no sat with a message still waiting.
+  const lost = await lostNeedingBucket(orgId, productId, BATCH);
+  if (lost.length) {
+    summary.lost = await enqueueMany(
+      orgId,
+      "lost",
+      lost.map((lead) => ({
+        subjectId: lead.person_id,
+        payload: {
+          personId: lead.person_id,
+          reason: `the sales team marked them lost: "${lead.reason || "no reason given"}"`,
+          lost: lead,
+        },
+        productId,
+        campaignKey: lead.campaigns[0] ?? "unassigned",
+        priority: PRIORITY.normal,
+      })),
+      now,
+    );
+  }
 
   return summary;
 }

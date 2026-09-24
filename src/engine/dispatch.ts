@@ -43,6 +43,9 @@ const QUANTUM: Record<ThinkingKind, number> = {
   // LinkedIn is paced by the account's own day caps (10 to 20 invites), so a lane wider
   // than a day's worth of decisions would only age in the queue.
   linkedin: 25,
+  // Reading why the sales team lost a lead is a sentence each and a single batched call, and
+  // every one of them left unread is a campaign still writing to somebody who said no.
+  lost: 50,
 };
 
 /**
@@ -61,6 +64,7 @@ const READY_CEILING: Record<ThinkingKind, number> = {
   monitor: 200,
   groom: 10,
   linkedin: 100,
+  lost: 200,
 };
 
 export interface LaneReport {

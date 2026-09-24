@@ -41,7 +41,7 @@ import {
 } from "../../engine/assets.js";
 import { LINKEDIN_TOOLS } from "./linkedinTools.js";
 import { crmForPerson, crmForPlanner } from "../../engine/crm/view.js";
-import { LOST_BUCKETS, applyLostBucket, lostNeedingBucket, type LostBucket } from "../../engine/crmLost.js";
+import { LOST_BUCKETS, LOST_RULE_VERSION, applyLostBucket, type LostBucket } from "../../engine/crmLost.js";
 import { salesChatForPlanner } from "../../engine/whatsappInbound.js";
 import { saidText, sinceLastPlan } from "../../engine/news.js";
 
@@ -715,10 +715,6 @@ export const TOOLS: ToolDef[] = [
         // everyone on this product before anybody noticed.
         const tooEasy = wants("monitor") ? await undiscriminatingChecks(orgId, productId) : [];
 
-        // Leads the sales team marked lost whose reason nobody has read yet. Every one of
-        // them still has messages queued, so leaving the row unread is itself a decision.
-        const lost = wants("monitor") ? await lostNeedingBucket(orgId, productId, limit) : [];
-
         packet.push({
           product_id: productId,
           unclassified: unclassified.map((p) => ({
@@ -762,19 +758,6 @@ export const TOOLS: ToolDef[] = [
             started_at: g.startedAt,
           })),
           verification_too_easy: tooEasy,
-          lost_in_crm: lost.length
-            ? {
-                note:
-                  "The sales team closed these as lost. Read the words the rep typed and call classify_lost for each, taking the buckets in order and stopping at the first the words support: " +
-                  "\"wrong_need\" when they wanted something we do not sell — say what, in their terms; " +
-                  "\"competitor\" when they bought elsewhere or are happy with what they have; " +
-                  "\"refused\" when they said no in words without naming either; " +
-                  "\"reachable\" only when none of those fit — nobody actually got through (dead number, does not remember enquiring, no reason given) — because they never said no and our mail still reaches them. " +
-                  "A row carrying previous_bucket was read under an older rule and is in front of you again to be read under this one; answer it even if you would keep the same verdict. " +
-                  "Until you do, everything queued for them keeps going out.",
-                leads: lost,
-              }
-            : null,
         });
       }
 
@@ -789,8 +772,7 @@ export const TOOLS: ToolDef[] = [
           p.replies_waiting.length +
           p.undetermined_checks.length +
           p.verification_looks_wrong.length +
-          p.verification_too_easy.length +
-          (p.lost_in_crm?.leads.length ?? 0),
+          p.verification_too_easy.length,
         0,
       );
       return { scope, total_work_items: total, products: packet };
@@ -5183,7 +5165,7 @@ TOOLS.push({
 TOOLS.push({
   name: "next_work",
   description:
-    "Claim the next batch of work of one kind. The engine has already decided what is ready and divided it fairly across products and campaigns, so what comes back is yours to do now — urgent first, then whoever has waited longest. Every item is leased: finish it with finish_work, or it returns to the pool on its own when the lease expires. Kinds: classify (people nobody has read), compose (the next message for someone who has earned a written one), escalate (someone who just clicked or replied), monitor (is this person done), playbook (a segment with no sequence), plan (one lead's own plan, in a campaign that plans each lead), groom (setup).",
+    "Claim the next batch of work of one kind. The engine has already decided what is ready and divided it fairly across products and campaigns, so what comes back is yours to do now — urgent first, then whoever has waited longest. Every item is leased: finish it with finish_work, or it returns to the pool on its own when the lease expires. Kinds: classify (people nobody has read), compose (the next message for someone who has earned a written one), escalate (someone who just clicked or replied), monitor (is this person done), playbook (a segment with no sequence), plan (one lead's own plan, in a campaign that plans each lead), groom (setup), lost (a lead the sales CRM closed, whose reason decides what happens to their campaigns — answer with classify_lost).",
   inputSchema: {
     type: "object",
     properties: {
@@ -5260,6 +5242,26 @@ TOOLS.push({
       mine = keep;
     }
 
+    // A lost lead somebody has already read under the rule in force is finished here rather
+    // than handed out: the minute clock queues them and a session may have answered in
+    // between, and re-reading a lead to reach the same verdict spends a call on nothing.
+    if (kind === "lost") {
+      const keep = [];
+      for (const job of mine) {
+        const personId = str((job.payload as Record<string, unknown> | undefined)?.personId);
+        const link = personId
+          ? await db.collection(C.crmLinks).findOne({ orgId: ctx.orgId, personId }, { projection: { lostRuleVersion: 1 } })
+          : null;
+        if (link?.lostRuleVersion === LOST_RULE_VERSION) {
+          await completeAll([job._id]);
+          stale++;
+        } else {
+          keep.push(job);
+        }
+      }
+      mine = keep;
+    }
+
     const items = [];
     for (const job of mine) {
       const payload = (job.payload ?? {}) as Record<string, unknown>;
@@ -5285,6 +5287,9 @@ TOOLS.push({
         waiting_minutes: Math.round((Date.now() - new Date(String(job.dueAt)).getTime()) / 60_000),
         reason: payload.reason ?? null,
         goal_instance_id: payload.goalInstanceId ?? null,
+        // What the rep typed, what it is costing while it sits unread, and what an older
+        // rule made of it. A lost item is answered from this alone.
+        lost: payload.lost ?? null,
         asset: assetRow
           ? {
               id: String(assetRow._id),
