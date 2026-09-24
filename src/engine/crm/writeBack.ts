@@ -73,18 +73,15 @@ export function pageName(url: string | undefined): string {
 export interface CrmWriteConfig {
   enabled: boolean;
   events: Set<string>;
-  /** Campaigns allowed to write. Empty means every campaign, which is what it grows into. */
-  campaigns: Set<string>;
   actorUserId?: string;
 }
 
 /** What this connection is allowed to write, and as whom. Off unless somebody turned it on. */
 export function writeConfigOf(connection: Document | null | undefined): CrmWriteConfig {
-  const write = (connection?.crm?.write ?? {}) as { enabled?: boolean; events?: string[]; campaigns?: string[]; actorUserId?: string };
+  const write = (connection?.crm?.write ?? {}) as { enabled?: boolean; events?: string[]; actorUserId?: string };
   return {
     enabled: write.enabled === true,
     events: new Set(write.events?.length ? write.events : NOTE_EVENTS),
-    campaigns: new Set(write.campaigns ?? []),
     actorUserId: write.actorUserId,
   };
 }
@@ -111,11 +108,16 @@ export async function noteEvent(input: {
     .findOne({ orgId: input.orgId, productId: input.productId, "crm.enabled": true });
   const config = writeConfigOf(connection);
   if (!config.enabled || !config.events.has(input.event)) return false;
-  // Narrowed to named campaigns while the sales team is deciding whether they want this at
-  // all: one campaign's worth of notes is enough to judge it by, and a campaign nobody
-  // listed writes nothing. An event that cannot say which campaign it belongs to is not
-  // written either — guessing which one it was is how the wrong leads get written about.
-  if (config.campaigns.size && !(input.campaignKey && config.campaigns.has(input.campaignKey))) return false;
+
+  // Then the campaign's own answer. The same CRM holds leads worked by campaigns a rep
+  // should see and campaigns they should not, so the decision belongs where a campaign is
+  // set up rather than in a list of keys kept somewhere else. An event that cannot say which
+  // campaign it belongs to writes nothing — guessing is how the wrong lead gets written on.
+  if (!input.campaignKey) return false;
+  const campaign = await db
+    .collection(C.goals)
+    .findOne({ orgId: input.orgId, productId: input.productId, key: input.campaignKey }, { projection: { crmWrite: 1 } });
+  if (campaign?.crmWrite !== true) return false;
 
   // A person their CRM has never heard of has nowhere to write to. Checked here rather than
   // at the drain so the queue does not fill with work that can never be done.

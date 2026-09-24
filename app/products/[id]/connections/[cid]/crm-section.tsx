@@ -8,7 +8,7 @@ import { proposeCrmMap } from "@/engine/crm/map.js";
 import { ActionButton, SubmitButton } from "../../../../ui/kit";
 import Select from "../../../../ui/select";
 import { ist, istLong } from "../../../../ui/time";
-import { proposeCrm, saveCrmSettings, setCrmBackfillGoal, setCrmEnabled } from "../../../../crm-actions";
+import { proposeCrm, saveCrmSettings, setCrmBackfillGoal, setCrmEnabled, setCrmWriteEnabled } from "../../../../crm-actions";
 import CrmDrawer from "./crm-drawer";
 
 /**
@@ -31,6 +31,7 @@ export default async function CrmSection({
     enabled?: boolean;
     map?: unknown;
     enabledAt?: Date;
+    write?: { enabled?: boolean };
     sync?: {
       status?: string;
       error?: string | null;
@@ -49,8 +50,9 @@ export default async function CrmSection({
   const intro = (
     <p className="sub">
       Reads what the sales team logs in this CRM — notes, calls, meetings, stage, won or lost — into our own copy, and
-      shows it on each person&apos;s timeline and to Claude when it plans. Read-only: nothing is written to the CRM, and
-      nothing about what we send changes. Switching it off stops the reading; what was already read stays.
+      shows it on each person&apos;s timeline and to Claude when it plans. Nothing we send changes because of it.
+      Switching it off stops the reading; what was already read stays. Writing back is a separate switch below, off
+      until somebody turns it on.
     </p>
   );
 
@@ -172,6 +174,38 @@ export default async function CrmSection({
           </dd>
         </dl>
         {sync.error ? <div className="note warn">{sync.error}</div> : null}
+
+        <div className="row" style={{ alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>Write our activity back</h3>
+          <span className={`pill ${crm.write?.enabled ? "ok" : ""}`}>{crm.write?.enabled ? "on" : "off"}</span>
+          <div className="spacer" />
+          {crm.write?.enabled ? (
+            <ActionButton
+              action={setCrmWriteEnabled.bind(null, productId, connectionId, false)}
+              variant="quiet"
+              size="sm"
+              icon={<PowerOff />}
+              pendingLabel="Switching off…"
+            >
+              Switch off
+            </ActionButton>
+          ) : (
+            <ActionButton
+              action={setCrmWriteEnabled.bind(null, productId, connectionId, true)}
+              size="sm"
+              icon={<Power />}
+              pendingLabel="Switching on…"
+            >
+              Switch on
+            </ActionButton>
+          )}
+        </div>
+        <p className="sub crm-sub">
+          On: what we send, and whether a lead opened it, clicked it or wrote back, appears on their lead in the CRM as
+          notes — one line each, written as the account this connection signs in with. Nothing else is written: no
+          status, no owner, no stage, and never a message that failed or is only planned. Which campaigns write is
+          asked on each campaign, so this switch alone writes nothing.
+        </p>
 
         <form action={setCrmBackfillGoal} className="crm-actions">
           <input type="hidden" name="productId" value={productId} />

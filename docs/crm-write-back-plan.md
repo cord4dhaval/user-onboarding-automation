@@ -100,28 +100,11 @@ more reason every line is a fact and never a plan.
 
 `{page}` is read from the clicked URL: the sign-up page, the pricing page, the security page.
 
-### A follow-up for the rep (proposed, off by default)
-
-When a lead clicks or replies, our engine knows something the CRM does not. One call turns
-that into a task on the rep's list:
-
-```json
-{
-  "tool": "crm_set_follow_up",
-  "args": {
-    "leadId": "6aa77cabd27593b60b77c059",
-    "scheduledAt": "2026-09-25T04:00:00.000Z",
-    "scheduledTimezone": "Asia/Kolkata",
-    "actorUserId": "<outreach user id>",
-    "orgId": "68b2c559f43d78cbf207113b"
-  }
-}
-```
-
 ### What we will not call
 
 `crm_change_lead_status`, `crm_update_lead`, `crm_move_lead`, `crm_create_lead`. Sales owns
-those fields. An engine that moves a lead to "hot" because of an open will be wrong in public
+those fields. `crm_set_follow_up` is out too, decided 2026-09-24: a note can be ignored, a
+task has to be cleared, and a rep's to-do list is theirs to fill. An engine that moves a lead to "hot" because of an open will be wrong in public
 the first week, and the team will stop trusting everything else it writes.
 
 ## How it runs
@@ -166,18 +149,27 @@ This goes in before the first note is written, not after.
 
 Per connection, so another product can choose differently:
 
+Two switches, in two places, because they are two decisions.
+
 ```
-crm.write.enabled     false by default
-crm.write.events      ["email_sent", "whatsapp_sent", "linkedin_sent", "opened", "clicked", "replied"]
-crm.write.campaigns   ["teamgrid_leads_v3", "whatsapp_intro_hot_leads", "linkedin_hot_leads"]
-                      — empty means every campaign
-crm.write.actorUserId the outreach user in their CRM
+connection  (Connections -> the CRM -> "Write our activity back")
+  crm.write.enabled       the master switch, off by default
+  crm.write.events        which of the six events may be written
+  crm.write.actorUserId   who to write as, when their CRM takes one
+
+campaign    (Campaigns -> Edit -> "Sales CRM")
+  goal.crmWrite           whether this campaign's work is written
 ```
 
-The campaign list is how this starts: the three hot-lead campaigns write, so a lead's page
-shows their whole story across email, WhatsApp and LinkedIn, and the 356 older July-August
-leads stay out until somebody has read a week of the rest. An event that cannot name its
-campaign is not written rather than guessed at. On the week this
+Master off writes nothing, whatever a campaign says. Master on writes for the campaigns
+that ticked the box. The connection is the right home for "may this CRM be written to at
+all", and the campaign for "should a rep see this work" — the same CRM holds leads worked
+by campaigns a rep wants on their screen and campaigns they do not.
+
+Today the three hot-lead campaigns write, so a lead's page shows their whole story across
+email, WhatsApp and LinkedIn, and the 356 older July-August leads stay out until somebody
+has read a week of the rest. An event that cannot name its campaign is not written rather
+than guessed at. On the week this
 was built, all of it on would have been 83 notes on the busiest day across 77 leads — about
 one line per lead per day, and four minutes of their rate limit. The list is there to keep
 the first week answerable, not because the volume is a problem.
@@ -190,9 +182,9 @@ drain, the three trigger points, the loop guard, and the settings.
 ## Open questions
 
 1. Do replies get a note, or does the sales team see them another way?
-2. Is a follow-up on a click welcome, or does it clutter their task list?
-3. ~~A dedicated "TeamGrid Outreach" user?~~ Decided 2026-09-24: `admin@teamgrid.com` is
-   fine as the author, so nothing is needed from them.
+
+Decided on 2026-09-24: `admin@teamgrid.com` is fine as the author, so nothing is needed from
+the sales team; and no follow-up task on a click.
 
 With opens rolled up to one line a day, an active lead costs about eight notes a week
 (Kusum Sagar Pathak's real week: six sends, one click, one open line) rather than thirteen.

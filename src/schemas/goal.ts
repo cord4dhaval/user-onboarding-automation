@@ -153,6 +153,15 @@ export const goal = z.object({
    * written touch asks for. See LEAD_TYPE_PROFILES in src/engine/rolling.ts.
    */
   leadType: z.enum(["hot", "warm", "cold", "reengage", "trial"]).optional(),
+  /**
+   * Whether what this campaign does is written into the sales team's CRM as notes.
+   *
+   * A campaign question, not a connection one: the same CRM holds leads worked by campaigns
+   * a rep should see and campaigns they should not, and the person who decides is the one
+   * setting the campaign up. The connection still holds the master switch — with writing off
+   * there, this changes nothing.
+   */
+  crmWrite: z.boolean().default(false),
   enabled: z.boolean().default(true),
 });
 export type Goal = z.infer<typeof goal>;

@@ -100,6 +100,26 @@ export async function setCrmEnabled(productId: string, connectionId: string, ena
 }
 
 /**
+ * Whether we write our own activity back into this CRM as notes.
+ *
+ * Apart from the reading switch on purpose. Reading is a copy nobody outside can see;
+ * writing puts rows on a sales team's leads, which is their screen and their decision. Which
+ * campaigns write is asked once per campaign, so this is only the master switch: with it off
+ * nothing writes, whatever a campaign says.
+ */
+export async function setCrmWriteEnabled(productId: string, connectionId: string, enabled: boolean, _formData?: FormData) {
+  const { db, connection } = await ownedConnection(connectionId);
+  if (enabled && !crmMap.safeParse(connection.crm?.map).success) throw new Error("Set up the CRM map first.");
+  if (enabled && !(connection.crm as { map?: { write?: { note?: unknown } } } | undefined)?.map?.write?.note) {
+    throw new Error("This CRM has no note-writing tool mapped yet.");
+  }
+  await db
+    .collection(C.connections)
+    .updateOne({ _id: connection._id }, { $set: { "crm.write.enabled": enabled, "crm.write.changedAt": new Date() } });
+  revalidatePath(connectionPath(productId, connectionId));
+}
+
+/**
  * Which campaign's people the CRM cron looks up. One at a time, so older lists are brought
  * in step by step rather than all at once; new arrivals are looked up regardless.
  */

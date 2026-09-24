@@ -27,6 +27,7 @@ export default function GoalDrawer({
   audiences,
   verifiers,
   leadTypes,
+  crmConnected,
   action,
   existing,
   label,
@@ -41,6 +42,8 @@ export default function GoalDrawer({
   verifiers: VerifierChoice[];
   /** Who a campaign's leads can be, with the line that says who belongs in each. */
   leadTypes: Array<{ value: string; label: string; who: string }>;
+  /** True when this product reads a sales CRM, which is what makes writing to it possible. */
+  crmConnected?: boolean;
   action: (formData: FormData) => void | Promise<void>;
   /** Present when editing. Inputs and checks are left alone — saving a form should not
       re-ingest a spreadsheet or discard a plan Claude has already written. */
@@ -58,6 +61,7 @@ export default function GoalDrawer({
     days: number;
     approvalMode: string;
     firstTouchApproval?: string;
+    crmWrite?: boolean;
     /** Empty means this campaign uses every healthy mailbox. */
     channelIds?: string[];
   };
@@ -255,6 +259,21 @@ export default function GoalDrawer({
               ]}
             />
           </label>
+
+          {crmConnected && (
+            <fieldset className="fieldset">
+              <legend>Sales CRM</legend>
+              <label className="check">
+                <input type="checkbox" name="crmWrite" defaultChecked={existing?.crmWrite === true} />
+                Write this campaign&apos;s activity into the CRM
+              </label>
+              <span className="reason">
+                On: what this campaign sends, and whether a lead opened it, clicked it or wrote back, appears on their
+                lead in the sales CRM as notes. Nothing else is written — no field, no status, no owner. Off: the sales
+                team sees nothing of this campaign. It also needs writing switched on for the CRM connection itself.
+              </span>
+            </fieldset>
+          )}
 
           <fieldset className="fieldset">
             <legend>First message</legend>

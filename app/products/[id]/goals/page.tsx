@@ -83,6 +83,10 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
     })
     .filter((v) => v.tools > 0);
 
+  // Offered only where there is a CRM to write to. A checkbox for a thing that cannot happen
+  // is a question nobody can answer.
+  const crmConnected = connections.some((c) => (c.crm as { enabled?: boolean } | undefined)?.enabled === true);
+
   const templateKeys = [...new Set(templates.map((t) => String(t.key)))];
   const channelKeys = [...new Set(channels.map((c) => String(c.key)))];
   const leadTypes = LEAD_TYPES.map((t) => ({ value: t, label: LEAD_TYPE_PROFILES[t].label, who: LEAD_TYPE_PROFILES[t].who }));
@@ -154,6 +158,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
           audiences={audiences}
           verifiers={verifiers}
           leadTypes={leadTypes}
+          crmConnected={crmConnected}
           action={createGoal}
         />
       </div>
@@ -352,6 +357,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                           audiences={audiences}
                           verifiers={verifiers}
                           leadTypes={leadTypes}
+                          crmConnected={crmConnected}
                           action={updateGoal}
                           label="Edit"
                           existing={{
@@ -368,6 +374,7 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
                             days: budget.days,
                             approvalMode: sch.approvalMode,
                             firstTouchApproval: sch.firstTouchApproval,
+                            crmWrite: goal.crmWrite === true,
                             channelIds: ((goal.channelIds ?? []) as string[]).map(String),
                           }}
                         />

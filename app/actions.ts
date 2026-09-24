@@ -614,6 +614,8 @@ export async function createGoal(formData: FormData) {
           approvalMode: formData.get("approvalMode") === "auto_send" ? "auto_send" : "gate_on",
           firstTouchApproval: formData.get("firstTouchApproval") === "auto_send" ? "auto_send" : "follow_campaign",
         },
+        // Whether a rep sees this campaign's work in their own CRM. Off unless asked for.
+        crmWrite: formData.get("crmWrite") === "on",
         // Confidence buys patience, not pressure. Someone read as a near-certain fit will
         // convert on a calm sequence; someone read at 5% will not convert on one at all, so
         // they get the tightest gaps and the boldest angles — there is nothing to lose that
@@ -3117,6 +3119,7 @@ export async function updateGoal(formData: FormData) {
         firstTouch: { templateKey: String(formData.get("firstTouchTemplate")), channels },
         "schedule.approvalMode": formData.get("approvalMode") === "auto_send" ? "auto_send" : "gate_on",
         "schedule.firstTouchApproval": formData.get("firstTouchApproval") === "auto_send" ? "auto_send" : "follow_campaign",
+        crmWrite: formData.get("crmWrite") === "on",
         "failure.silenceDays": Number(formData.get("silenceDays") ?? existing?.failure?.silenceDays ?? 30),
         ...(verifierChanged ? { checks: [], needsVerificationPlan: true } : {}),
       },
