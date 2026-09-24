@@ -231,13 +231,14 @@ export async function applyLostBucket(input: ApplyLostInput): Promise<ApplyLostR
 
   if (SLEEPERS.has(input.bucket)) {
     const until = new Date(lostAt.getTime() + REVIVE_AFTER_DAYS * DAY);
-    const before = await db.collection(C.actions).countDocuments({
-      orgId,
-      productId,
-      goalInstanceId: { $in: ids },
-      status: { $in: ["queued", "awaiting_approval"] },
-      angle: { $ne: "reply" },
-    });
+    // Dropped here rather than left to holdCampaigns, which leaves a hold that already runs
+    // this long alone — right for the hold, wrong for the queue. On a re-read that reaches the
+    // same verdict it skipped the drop and this reported it as done anyway, so a stale message
+    // sat waiting for a date three months out while the count said it was gone.
+    const dropped = await db.collection(C.actions).updateMany(
+      { orgId, productId, goalInstanceId: { $in: ids }, status: { $in: ["queued", "awaiting_approval"] }, angle: { $ne: "reply" } },
+      { $set: { status: "skipped", skipReason: `CRM lost: ${input.why}` } },
+    );
     await holdCampaigns({
       orgId,
       productId,
@@ -248,7 +249,7 @@ export async function applyLostBucket(input: ApplyLostInput): Promise<ApplyLostR
       queued: "drop",
       now,
     });
-    result.messages_dropped = before;
+    result.messages_dropped = dropped.modifiedCount;
     result.until = until.toISOString();
   }
 
