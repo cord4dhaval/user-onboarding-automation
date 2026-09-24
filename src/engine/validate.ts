@@ -141,6 +141,11 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
     if (/[?!:]/.test(subject)) {
       softFails.push("subject carries ? ! or :, which reads as a sales line and scores as spam on Outlook");
     }
+    // A name taken from a domain rather than read as words is the failure this rule exists
+    // for: "Wwwpioneercars" in an inbox line is worse than no name at all.
+    if (/www|\.(com|in|net|org|co)\b|\|/i.test(subject)) {
+      softFails.push("subject carries a domain, a www or a pipe; a company name is written the way people write it, or left out");
+    }
     const writingWords = SUBJECT_WRITING_WORDS.filter((word) =>
       new RegExp(`\\b${word}\\b`, "i").test(subject),
     );

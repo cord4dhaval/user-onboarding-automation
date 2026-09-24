@@ -434,11 +434,20 @@ bottleneck, loaded. Test each subject by asking whether a shop owner would say t
 on the phone.
 
 The subject follows the mail, not a list of fields: it is this mail's own point, in the
-fewest plain words. Their company name goes in only when the point itself is about their
-company, and only when we hold a clean name from their site — never one built from a
-domain string, never on a mail about a problem every office has, where a name reads as a
-mail merge. Never open a subject with "welcome" to somebody who has not signed up, and
-never put their first name in it.
+fewest plain words.
+
+Their company name goes in the subject wherever we hold a real one and the line still
+reads naturally: "Salary day at Sree Motors", "Who came in at Aventurine Homes", "Monday
+mornings at Khyra". Find it in context.site_title trimmed to the name itself — a title
+like "Top Property Consultant & Mandate Services in Mumbai" holds no name — or in what
+their site text calls itself, or in the domain read as words (sreemotors.com is Sree
+Motors). Leave the name out when you are not sure what they are called, when the domain
+is mangled (wwwpioneercars.in, abc.com), or when the line only fits with the name forced
+into it: "your showroom" beats a wrong name, and a wrong name in an inbox line is the
+one mistake they cannot unsee. Never the raw domain, never www or a dot, never their
+first name. Do not use the name in two mails in a row to the same person; once said, the
+next subject speaks about the work. Never open a subject with "welcome" to somebody who
+has not signed up.
 
 2.1 compose-tier1
   next_work("compose") with limit 15. One sub-agent per person, all in one wave.
