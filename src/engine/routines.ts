@@ -746,10 +746,15 @@ never invent a capability, a customer or a number.
           next one or two messages with plan_linkedin, each built on one idea from
           linkedin_card ideas (the ones they have not had, closest fit first;
           linkedin_results_by_idea shows what got answers on LinkedIn). Each message:
-            - the first after an accept is 150 to 200 characters: one line on a moment
-              from their week the idea describes, then one question they can answer in
-              a line;
-            - no link and no pitch until they have answered; ask "link" with
+            - the first after an accept is 150 to 200 characters: one plain clause
+              saying what the product is and does, one line on a moment from their week
+              the idea describes, then one question they can answer in a line. The
+              invite went without a note, so they know nothing about us: a message that
+              never says who we are reads as a stranger's;
+            - say numbers the way a person says them, and never read a form's own words
+              back to them, such as a team-size band;
+            - no link and no pitch until they have answered, though saying what the
+              product is and does in one clause is not a pitch; ask "link" with
               {{trial_link}} only after they answered, or on the last message allowed,
               and set link_page to a page from product.context when one fits them
               better than the start link;

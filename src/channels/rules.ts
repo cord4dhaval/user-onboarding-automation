@@ -91,10 +91,14 @@ const LINKEDIN: ChannelRules = {
     "pick your brain",
     "\\b(you|your team) (clicked|filled|signed up|asked)",
     "your form",
+    // A band read straight off a form ("11 to 50", "51-200") is how a record talks, not a person.
+    "\\b\\d{1,4}\\s*(to|-|\u2013)\\s*\\d{1,4}\\b",
   ],
   writing: [
-    "A message after an accept is 150 to 200 characters: their situation in one line and one question they can answer in a line.",
-    "No link and no pitch in the first message. The ask grows only after they answer.",
+    "A message after an accept is 150 to 200 characters: one plain clause saying what the product is and does, their situation in one line, and one question they can answer in a line.",
+    "Say what the product is in the first message. The invite carried no note, so they know nothing about us, and a message that never says who we are reads as a stranger's.",
+    "No link and no pitch in the first message; naming the product and what it does is not a pitch. The ask grows only after they answer.",
+    "Say numbers the way a person says them. Never read a form's own words back to them, such as a team-size band.",
     "At most three messages to someone who has not answered, three to five days apart.",
     "Never open on their profile (\"I saw your profile\", \"great background\") or compliment them.",
     "One question per message. No lists, no bold, no emoji.",
@@ -104,9 +108,17 @@ const LINKEDIN: ChannelRules = {
 
 const DEFAULTS: Partial<Record<ChannelKey, ChannelRules>> = { linkedin: LINKEDIN };
 
-/** A channel's rules for one product: the defaults, with the product's overrides on top. */
+/**
+ * A channel's rules for one product: the defaults, with the product's overrides on top.
+ *
+ * `banned` is the exception: the two lists are added, not replaced. A product's list is its
+ * own voice ("no contractions"), and a product that copied the defaults once went on using
+ * that stale copy, so a phrase added to the channel later reached nobody.
+ */
 export function rulesFor(channel: string, product?: Record<string, unknown> | null): ChannelRules {
   const base = DEFAULTS[channel as ChannelKey] ?? {};
   const own = ((product?.config as { channelRules?: Record<string, ChannelRules> } | undefined)?.channelRules ?? {})[channel];
-  return { ...base, ...own };
+  const merged = { ...base, ...own };
+  if (base.banned || own?.banned) merged.banned = [...new Set([...(base.banned ?? []), ...(own?.banned ?? [])])];
+  return merged;
 }
