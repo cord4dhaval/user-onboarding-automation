@@ -139,6 +139,16 @@ export const crmMap = z.object({
   noteEventTypes: z.array(z.string()).default([]),
   /** How `$from` is written: a bare day (`2026-09-21`) or a full instant. */
   fromFormat: z.enum(["date", "iso"]).default("date"),
+  /**
+   * Who we are inside their CRM: the actor names, emails or ids our own writes appear under.
+   *
+   * Everything we write there comes back through the same read as everything their team
+   * writes, and a note about an email we sent, read back, is news that re-plans the next
+   * email. Without this the system writes to itself. Filled in by the writer itself the first
+   * time it writes, because the CRM's reply says which actor it recorded, and a value nobody
+   * has to type is a value nobody can get wrong.
+   */
+  ours: z.array(z.string()).default([]),
 });
 export type CrmMap = z.infer<typeof crmMap>;
 

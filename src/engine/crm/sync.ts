@@ -4,7 +4,7 @@ import { COLLECTIONS as C } from "../../db/collections.js";
 import { pluck } from "../../mcp/binding.js";
 import type { CrmKind, CrmMap, CrmMatchedBy, CrmMeeting, CrmSnapshot } from "../../schemas/crm.js";
 import { CrmClient, RateLimited, dateOf, fingerprint, lowerEmail, phoneKey } from "./client.js";
-import { kindOf } from "./map.js";
+import { kindOf, writtenByUs } from "./map.js";
 import { NEWS_KINDS, recordNews } from "../news.js";
 import { liftLost, noticeLostButReading } from "../crmLost.js";
 
@@ -164,8 +164,14 @@ async function storeActivity(
   client: CrmClient,
   recordId: string,
   personId: string | undefined,
-  rows: ActivityInput[],
+  input: ActivityInput[],
 ): Promise<number> {
+  // Our own writes, read straight back. A note saying we sent an email is not news about the
+  // lead, and treating it as news re-plans the very message that wrote it — the system
+  // answering itself, forever, one loop per send. Dropped here rather than filtered later so
+  // nothing downstream ever sees them: not the lead card, not the planner, not the team's
+  // side of the person's history.
+  const rows = input.filter((r) => !writtenByUs(r.actor, client.conn.map));
   if (!rows.length) return 0;
   const db = await getDb();
   const { orgId, productId, connectionId } = client.conn;
@@ -495,6 +501,10 @@ export async function syncChanges(
     if (at > newest) newest = at;
     const link = await linkOf(recordId);
     if (link?.status === "out_of_scope") continue;
+    // A change we made ourselves leaves nothing of theirs stale, so it neither queues a read
+    // nor costs a call. The rows would be dropped on the way in anyway; this is the same
+    // decision made one step earlier, where it is also free.
+    if (map.eventFields.actor && writtenByUs(str(pluck(e, map.eventFields.actor)), map)) continue;
     if (link?.personId && (link.status === "linked" || link.status === "review")) {
       // Ours already: keep the event as it is, and queue only what it left stale.
       const row = eventRow(e, recordId, map);

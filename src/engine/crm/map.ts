@@ -29,6 +29,20 @@ const KIND_BY_NAME: Array<[RegExp, CrmKind]> = [
   [/updat|changed|edit/i, "field"],
 ];
 
+/**
+ * Whether an activity row is one of ours.
+ *
+ * Matched on the actor as the CRM prints it, because that is all a timeline row carries: a
+ * display name ("System Administrator"), sometimes an email or an id. Compared loosely —
+ * trimmed and case-insensitive — since the same actor arrives spelled differently from a
+ * timeline, a note list and a change feed.
+ */
+export function writtenByUs(actor: string | undefined, map: Pick<CrmMap, "ours">): boolean {
+  const who = String(actor ?? "").trim().toLowerCase();
+  if (!who) return false;
+  return map.ours.some((mine) => mine.trim().toLowerCase() === who);
+}
+
 export function kindOf(type: string, map: Pick<CrmMap, "eventKinds">): CrmKind {
   const explicit = map.eventKinds[type];
   if (explicit) return explicit;
