@@ -359,8 +359,19 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   Words a shop owner uses, sentences of 16 words or fewer: customer, not lead or
   enquiry; price, not quote; "keeps track of every customer", not CRM; "nobody has
   replied", not "goes quiet"; "too busy", not overloaded; "new people", not new hires;
-  "fill any sheet", not timesheet; and the plain word from writing.plain_words. No
+  "fill any sheet", not timesheet; salary, not payroll; "who came in", not attendance;
+  "staying late" or "extra hours", not overtime; "free" or "doing nothing", not idle;
+  "work" or "orders", not pipeline; "how much work gets done", not productivity; never
+  capacity, visibility, bottleneck, loaded, leverage, streamline, seamless, solution;
+  and the plain word from writing.plain_words. No
   feature names (Founder's Report, Anomaly Feed): say what they get.
+  Every line is a line the owner would say out loud. Read the body back that way before
+  you send it: anything you would not say on the phone is rewritten, not softened.
+  The words are also theirs, not ours. Where the card carries what they typed as their
+  own problem, the opening is that problem in their words. The example is their kind of
+  work, from what their site says they do — a showroom floor, an event week, a parts
+  counter, a site visit — never a generic office, which is what every other mail in
+  their inbox describes.
   lead_type  read writing.lead_type first; its default_ask, rules and sequence override
              the defaults here. Pick the hook and the idea that fit this lead, then write
              the short selling email above. Indian office words ("any update?", WFH,

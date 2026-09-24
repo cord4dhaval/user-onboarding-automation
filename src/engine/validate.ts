@@ -40,6 +40,15 @@ const SUBJECT_MAX = 45;
  * and an advertisement is deleted without being opened. The replacement is on the right
  * of each pair in the product's writing.wordsAvoid; this list is the floor under it.
  */
+const BODY_WRITING_WORDS = [
+  "payroll",
+  "attendance",
+  "timesheet",
+  "timesheets",
+  "overtime",
+  "idle",
+];
+
 const SUBJECT_WRITING_WORDS = [
   "payroll",
   "attendance",
@@ -138,6 +147,21 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
     if (writingWords.length) {
       softFails.push(
         `subject uses words people write but do not say (${writingWords.join(", ")}); say it the way an owner says it on the phone`,
+      );
+    }
+  }
+
+  // The five words that kept appearing in composed mail in the fortnight to 2026-09-24
+  // although the brief already asked for a shop owner's words: 41 of 200 mails carried one.
+  // Soft, because the product genuinely does mark who came in and fill the hours sheet, and
+  // a mail is worth more than a word swap — but the reviewer sees which word to change.
+  if (ctx.channelKey === "email") {
+    const bodyWords = BODY_WRITING_WORDS.filter((word) =>
+      new RegExp(`\\b${word}\\b`, "i").test(content.bodyMd),
+    );
+    if (bodyWords.length) {
+      softFails.push(
+        `body uses office words (${bodyWords.join(", ")}); say salary, who came in, hours sheet, staying late, free`,
       );
     }
   }
