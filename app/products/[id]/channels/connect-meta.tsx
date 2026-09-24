@@ -17,7 +17,7 @@ import { MessageCircle } from "lucide-react";
  */
 export default function ConnectMeta({ href }: { href: string }) {
   return (
-    <a className="button primary" href={href}>
+    <a className="btn" href={href}>
       <MessageCircle />
       Connect WhatsApp
     </a>
