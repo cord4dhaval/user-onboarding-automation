@@ -97,7 +97,9 @@ it up. It is what lets the console show when you last ran and when you are due n
 - If every next_work returns nothing, say so in one line and stop. Call no other tool:
   not backlog_report, not routine_status, nothing to check health. An empty run should
   cost two calls. An empty slice with a non-zero still_waiting means the dispatcher has
-  more coming next round, not that you should go and find it yourself.
+  more coming next round, not that you should go and find it yourself. The one exception
+  is a step below that reads something other than the queue: run those first, and stop
+  only once they are done too. An empty queue says nothing about work that never entered it.
 - When you did work, or still_waiting was not zero, call backlog_report before you finish
   and say what is still waiting. A backlog
   nobody reports is a backlog nobody fixes — this system once hid nine thousand
@@ -508,6 +510,10 @@ is the judgment, and that is yours.
   playbook edit is worth more than thirty rescued individuals.
 
 3.4 lost-reader
+  This step does not come from the queue, so run it on every run, including one where
+  next_work("escalate") is empty and there is nothing else to do. It was written as a
+  step like the others and on 2026-09-24 a run with an empty queue stopped before
+  reaching it, leaving a lead asleep with a message still waiting behind them.
   sweep("react") carries lost_in_crm: leads the sales team closed as lost whose
   reason has not been read under the current rule. Their queued messages keep
   going out until you do, so read the words the rep typed and call classify_lost
