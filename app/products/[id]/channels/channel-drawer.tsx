@@ -5,6 +5,7 @@ import Drawer from "../../../ui/drawer";
 import { Contact, Globe, KeyRound, Mail, Plug, ShieldCheck, Server } from "lucide-react";
 import { SubmitButton } from "../../../ui/kit";
 import { FormatChoice, SendToolFields } from "./channel-fields";
+import ConnectMeta from "./connect-meta";
 import { catalogById, transportsFor, type TransportId } from "@/channels/catalog.js";
 import Select from "../../../ui/select";
 
@@ -110,6 +111,8 @@ export default function ChannelDrawer({
   bolnaAction,
   linkedinAction,
   googleAction,
+  metaAction,
+  metaConfig,
   sesAction,
   googleReady,
   sesReady,
@@ -127,6 +130,10 @@ export default function ChannelDrawer({
   bolnaAction: (formData: FormData) => void | Promise<void>;
   linkedinAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
+  /** connectMetaWhatsApp — what Embedded Signup posts its code and ids to. */
+  metaAction: (formData: FormData) => void | Promise<void>;
+  /** The Meta app this deployment signs in through, or null where none is configured. */
+  metaConfig: { appId: string; configId: string } | null;
   sesAction: (formData: FormData) => void | Promise<void>;
   /** Whether this deployment has an OAuth client at all. Checked on the server: the id is
    * not a secret, but a client component has no way to read it. */
@@ -226,7 +233,32 @@ export default function ChannelDrawer({
         ))}
       </div>
 
-      {active === "oauth" && !googleReady && (
+      {active === "oauth" && option?.channelKey === "whatsapp" && (
+        metaConfig ? (
+          <div className="stack drawer-block">
+            <p className="sub tight">
+              Sign in with Meta and pick the WhatsApp account. Nothing is typed here: the account, the number and the
+              token all come back from Meta, and the token is exchanged on our server rather than held by this page.
+            </p>
+            <p className="sub tight">
+              A number already running in someone&rsquo;s WhatsApp Business app can stay there. Meta calls it
+              coexistence: they keep answering clients on the phone, and campaigns go out over the API on the same
+              number.
+            </p>
+            <ConnectMeta productId={productId} appId={metaConfig.appId} configId={metaConfig.configId} action={metaAction} />
+          </div>
+        ) : (
+          <div className="empty drawer-block">
+            <strong>This deployment has no Meta app yet</strong>
+            <p>
+              Set <code>META_APP_ID</code>, <code>META_APP_SECRET</code> and <code>META_LOGIN_CONFIG_ID</code>, then
+              restart. Until then, an API endpoint still works.
+            </p>
+          </div>
+        )
+      )}
+
+      {active === "oauth" && option?.channelKey !== "whatsapp" && !googleReady && (
         <div className="empty drawer-block">
           <strong>This deployment has no Google OAuth client yet</strong>
           <p>
@@ -236,7 +268,7 @@ export default function ChannelDrawer({
         </div>
       )}
 
-      {active === "oauth" && googleReady && (
+      {active === "oauth" && option?.channelKey !== "whatsapp" && googleReady && (
         <form action={googleAction} className="stack drawer-block">
           <input type="hidden" name="productId" value={productId} />
           <p className="sub tight">

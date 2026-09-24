@@ -105,11 +105,12 @@ export const CHANNEL_CATALOG: ChannelOption[] = [
     typeLabel: "WhatsApp",
     status: "live",
     blurb: "Template messages, and free-form inside the 24-hour reply window.",
-    // No sign-in here: Meta's flow needs a Business number and approved templates before
-    // there is anything to consent to, so offering it would be a dead end. What the tenant
-    // brings instead is their provider's token and endpoint — Wati, Gupshup, AiSensy and
-    // Meta's own Cloud API are all one HTTP call with a bearer token.
-    transports: ["http", "mcp"],
+    // Sign-in first, and it is Meta's Embedded Signup rather than a plain consent screen: it
+    // creates or claims the account, hands back the number, and can leave the number running
+    // in the owner's WhatsApp Business app instead of taking it away from them. The endpoint
+    // route stays for a reseller — Wati, Gupshup, AiSensy — and for anyone who would rather
+    // paste a token than sign in.
+    transports: ["oauth", "http", "mcp"],
   },
   {
     id: "bolna",

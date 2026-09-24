@@ -56,6 +56,8 @@ export default function ChannelCards({
   bolnaAction,
   linkedinAction,
   googleAction,
+  metaAction,
+  metaConfig,
   sesAction,
 }: {
   productId: string;
@@ -72,6 +74,10 @@ export default function ChannelCards({
   bolnaAction: (formData: FormData) => void | Promise<void>;
   linkedinAction: (formData: FormData) => void | Promise<void>;
   googleAction: (formData: FormData) => void | Promise<void>;
+  /** connectMetaWhatsApp — Embedded Signup's landing point. */
+  metaAction: (formData: FormData) => void | Promise<void>;
+  /** The Meta app this deployment signs in through, or null where none is configured. */
+  metaConfig: { appId: string; configId: string } | null;
   sesAction: (formData: FormData) => void | Promise<void>;
 }) {
   // Which channel is being connected, or nothing. Keyed remount below resets the transport
@@ -172,6 +178,8 @@ export default function ChannelCards({
           bolnaAction={bolnaAction}
           linkedinAction={linkedinAction}
           googleAction={googleAction}
+          metaAction={metaAction}
+          metaConfig={metaConfig}
           sesAction={sesAction}
         />
       )}
