@@ -29,6 +29,7 @@
     "test:signals": "tsx --env-file=.env src/scripts/signal-test.ts",
     "gmail:check": "tsx --env-file=.env src/scripts/gmail-check.ts",
     "linkedin:check": "tsx --env-file=.env src/scripts/linkedin-check.ts",
+    "verify:ideas": "tsx --env-file=.env src/scripts/verify-trial-ideas.ts",
     "verify:orchestration": "tsx --env-file=.env src/scripts/verify-orchestration.ts",
     "verify:scope": "tsx --env-file=.env src/scripts/verify-scope.ts",
     "repair:dead": "tsx --env-file=.env src/scripts/repair-dead-actions.ts",

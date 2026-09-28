@@ -2,7 +2,7 @@ import type { Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
-import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLeadCount, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas } from "./ideas.js";
+import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas, trialReach } from "./ideas.js";
 import { contextForLead, contextOf } from "./siteContext.js";
 import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand } from "./rolling.js";
 
@@ -128,9 +128,10 @@ export async function writingBriefFor(input: {
       ideaLimitsFor({ orgId, productId, goalKey: input.goalKey, bank }),
       loop ? ideaPerformance(orgId, productId) : Promise.resolve(null),
     ]);
-    // A trial idea that has reached its few leads waits for their results before anyone else gets it.
+    // A trial idea that has reached its few leads waits for their results before anyone else gets
+    // it. Reached, not merely planned: a lead whose step was skipped never saw it (trialReach).
     for (const idea of bank.filter((i) => i.status === "trial")) {
-      if ((await ideaLeadCount({ orgId, productId, n: idea.n, excludeInstanceId: input.goalInstanceId })) >= TRIAL_LEADS) bank = bank.filter((i) => i.n !== idea.n);
+      if ((await trialReach({ orgId, productId, n: idea.n, excludeInstanceId: input.goalInstanceId })) >= TRIAL_LEADS) bank = bank.filter((i) => i.n !== idea.n);
     }
     const leadText = [form.main_problem, form.role, person.role, form.team_size, (person.enrichment as { siteText?: unknown } | undefined)?.siteText]
       .map((v) => String(v ?? ""))

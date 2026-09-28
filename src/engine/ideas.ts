@@ -65,6 +65,15 @@ export const INVENTED_FROM = 1001;
 export const TRIAL_LEADS = 5;
 /** Trial ideas open at once, so a planner cannot flood the bank with untested scenes. */
 export const TRIAL_OPEN_MAX = 10;
+/** The fewest sends that can speak for a trial idea where no more are coming. */
+export const TRIAL_MIN_SENDS = 2;
+/** How long after its last send a trial waits for a click or a reply before it is judged. */
+export const TRIAL_WATCH_HOURS = 72;
+
+/** The idea reached the lead, or the provider has it. */
+const REACHED = ["sent", "dispatched"];
+/** The mail carrying the idea is still to go out, so the lead's trial slot is taken. */
+const STILL_COMING = ["queued", "held", "awaiting_approval", "sending"];
 /** Sends an idea needs in a group before its record moves it. Click rates are about 2%. */
 export const RECORD_MIN_SENDS = 10;
 /** The fewest sends with nothing back that can call an idea a loser. */
@@ -337,13 +346,43 @@ export async function ideasHadBy(input: { orgId: string; goalInstanceId: string 
   return had;
 }
 
-/** How many leads have ever had this idea in a plan, in any campaign of the product. */
-export async function ideaLeadCount(input: { orgId: string; productId: string; n: number; excludeInstanceId?: string }): Promise<number> {
+/**
+ * How many of a trial idea's few leads are spent: the leads it reached, and the leads whose
+ * mail is still coming.
+ *
+ * Until 2026-09-28 this counted every lead the idea was ever planned for, while
+ * reviewInventedIdeas judged the idea on its sends. A planned step often never sends — the
+ * lead replied, the campaign paused, the news re-wrote the plan (105 of this product's 359
+ * steps carrying an idea were skipped) — so the planned count reached TRIAL_LEADS while the
+ * sent count stopped at one to four. Every one of the ten trial ideas stood there: too wide
+ * to plan again, too few sends to be judged, and with TRIAL_OPEN_MAX full no new idea could
+ * be proposed either. A lead whose step died no longer holds a slot.
+ */
+export async function trialReach(input: { orgId: string; productId: string; n: number; excludeInstanceId?: string }): Promise<number> {
   const db = await getDb();
-  const ids = await db
-    .collection(C.plans)
-    .distinct("goalInstanceId", { orgId: input.orgId, productId: input.productId, rolling: true, "steps.idea_refs": input.n });
-  return ids.map(String).filter((id) => id !== input.excludeInstanceId).length;
+  const planned = (
+    await db.collection(C.plans).distinct("goalInstanceId", { orgId: input.orgId, productId: input.productId, rolling: true, "steps.idea_refs": input.n })
+  )
+    .map(String)
+    .filter((id) => id !== input.excludeInstanceId);
+  if (planned.length === 0) return 0;
+  const written = await db
+    .collection(C.actions)
+    .find({ orgId: input.orgId, productId: input.productId, ideaRefs: input.n, goalInstanceId: { $in: planned } }, { projection: { goalInstanceId: 1, status: 1 } })
+    .toArray();
+  const statuses = new Map<string, string[]>();
+  for (const a of written) {
+    const id = String(a.goalInstanceId);
+    if (!statuses.has(id)) statuses.set(id, []);
+    statuses.get(id)!.push(String(a.status));
+  }
+  let reach = 0;
+  for (const id of planned) {
+    const mine = statuses.get(id) ?? [];
+    // Planned with nothing written yet: compose is still to come, so the slot is taken.
+    if (mine.length === 0 || mine.some((s) => REACHED.includes(s) || STILL_COMING.includes(s))) reach++;
+  }
+  return reach;
 }
 
 /** The next free number for an invented idea. */
@@ -373,9 +412,12 @@ export async function setInventedIdeaStatus(input: { orgId: string; productId: s
 /**
  * Moves invented ideas on from what their sends did.
  *
- * A trial idea reached its TRIAL_LEADS and they were sent: an unsubscribe from any of those
- * readers retires it, otherwise it becomes active and is ranked like the bank. An active one
- * with loserSends sends and nothing back retires. Every move keeps its reason.
+ * A trial is judged when its readers have had their say: TRIAL_LEADS sends, or — where no
+ * further send is coming — the sends it did get, once TRIAL_WATCH_HOURS have passed since the
+ * last one. Waiting for TRIAL_LEADS sends alone froze all ten trials, because a skipped step
+ * never sends (see trialReach). An unsubscribe from any of those readers retires it, otherwise
+ * it becomes active and is ranked like the bank. An active one with loserSends sends and
+ * nothing back retires. Every move keeps its reason.
  */
 export async function reviewInventedIdeas(orgId: string, productId: string): Promise<Array<{ n: number; title: string; from: string; to: string; reason: string }>> {
   const db = await getDb();
@@ -384,14 +426,20 @@ export async function reviewInventedIdeas(orgId: string, productId: string): Pro
   const moves: Array<{ n: number; title: string; from: string; to: string; reason: string }> = [];
   const lossAt = loserSends(ideaRecords(await ideaPerformance(orgId, productId), null).average);
   for (const idea of inventedOf(product).filter((i) => i.status !== "retired")) {
-    const sent = await db
+    const written = await db
       .collection(C.actions)
-      .find({ orgId, productId, ideaRefs: idea.n, status: { $in: ["sent", "dispatched"] }, dryRun: { $ne: true } }, { projection: { personId: 1, sentAt: 1, firstClickedAt: 1, firstRepliedAt: 1, goalOutcome: 1 } })
+      .find({ orgId, productId, ideaRefs: idea.n, dryRun: { $ne: true } }, { projection: { personId: 1, status: 1, sentAt: 1, firstClickedAt: 1, firstRepliedAt: 1, goalOutcome: 1 } })
       .toArray();
+    const sent = written.filter((a) => REACHED.includes(String(a.status)));
+    const coming = written.filter((a) => STILL_COMING.includes(String(a.status))).length;
     const responses = sent.filter((a) => a.firstClickedAt || a.firstRepliedAt || a.goalOutcome === "won").length;
+    // The last send has had its watch window, so a click or a reply would already be here.
+    const lastSent = Math.max(0, ...sent.map((a) => new Date(String(a.sentAt)).getTime()).filter((t) => Number.isFinite(t)));
+    const watched = lastSent > 0 && Date.now() - lastSent >= TRIAL_WATCH_HOURS * 3_600_000;
+    const heardEnough = sent.length >= TRIAL_LEADS || (coming === 0 && sent.length >= TRIAL_MIN_SENDS && watched);
     let to: InventedIdea["status"] | null = null;
     let reason = "";
-    if (idea.status === "trial" && sent.length >= TRIAL_LEADS) {
+    if (idea.status === "trial" && heardEnough) {
       const people = await db
         .collection(C.people)
         .find({ _id: { $in: sent.map((a) => new ObjectId(String(a.personId))) } }, { projection: { primaryEmail: 1 } })
@@ -404,12 +452,13 @@ export async function reviewInventedIdeas(orgId: string, productId: string): Pro
         reason: { $not: /bounce/i },
         at: { $gte: firstSent },
       });
+      const readers = new Set(sent.map((a) => String(a.personId))).size;
       if (optedOut) {
         to = "retired";
-        reason = `${optedOut} of its first ${sent.length} readers unsubscribed or complained`;
+        reason = `${optedOut} of its first ${readers} readers unsubscribed or complained`;
       } else {
         to = "active";
-        reason = `sent to ${sent.length} leads with no unsubscribe (${responses} clicked or replied); now ranked like the bank`;
+        reason = `sent to ${readers} ${readers === 1 ? "lead" : "leads"} with no unsubscribe (${responses} clicked or replied); now ranked like the bank`;
       }
     } else if (idea.status === "active" && sent.length >= lossAt && responses === 0) {
       to = "retired";

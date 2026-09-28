@@ -391,11 +391,20 @@ Dhaval asked for ideas to be targeted rather than fixed: Claude may invent ideas
               untested (<10 sends) +1 · shrunk rate vs average ±3 · silent past loserSends −20
                 │
  nothing fits ─▶ propose_idea (proof = one canDo fact, word for word) → trial, numbered from 1001
-                │   plan_goal lets a trial reach 5 leads
+                │   plan_goal lets a trial reach 5 leads (trialReach: leads it reached or still will;
+                │   a skipped step gives its slot back)
                 ▼
- what_works / Ideas page ─▶ reviewInventedIdeas: 5 sent, no opt-out → active; an opt-out → retired;
+ what_works / Ideas page ─▶ reviewInventedIdeas: 5 sends, or 2+ sends with none still coming and 72 h
+                            since the last one → no opt-out → active; an opt-out → retired;
                             active and silent past loserSends → retired (reason kept on the idea)
 ```
+
+- **Why a trial is judged on the sends it got (2026-09-28).** The gate counted leads a trial was
+  *planned* for while graduation counted *sent* actions, and a skipped step (105 of 359 steps
+  carrying an idea) makes the second smaller than the first for good. All ten trials stood at 1 to
+  4 sends: too wide to plan again, too few sends to judge, and with 10 trials open `propose_idea`
+  refused every new idea — the loop had been shut since 2026-09-19 and said so only in the refusal
+  log. `npm run verify:ideas -- <productId>` prints both counts per idea; `--move` runs the review.
 
 - **Why the loser mark moves.** At about 2% clicks, an ordinary idea gets no click in 30 sends more than half the time. `loserSends(average)` is the count at which an average idea would show nothing only 1 time in 10: about 114 sends at 2%, and never fewer than 30.
 - **Where invented ideas live.** `config.writing.invented`, apart from the approved 88, so code with the loop off never reads them.

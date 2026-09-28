@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
-import { TRIAL_LEADS, ideasLoopOn, ideasOf, inventedOf, type Idea } from "@/engine/ideas.js";
+import { TRIAL_LEADS, ideasLoopOn, ideasOf, inventedOf, trialReach, type Idea } from "@/engine/ideas.js";
 import { evidenceStatus, ideaPerformance } from "@/engine/outcomes.js";
 import { requireSession } from "../../../tenant";
 import { ActionButton } from "../../../ui/kit";
@@ -63,6 +63,13 @@ export default async function Ideas({ params }: { params: Promise<{ id: string }
   const bank = ideasOf(product);
   const usable = bank.filter((i) => i.usable !== false);
   const invented = inventedOf(product).sort((a, b) => b.n - a.n);
+  // A trial's slots are the leads it reached or is about to, which is what plan_goal counts;
+  // the leads it was planned for can be more, because a skipped step never sent.
+  const reach = new Map(
+    await Promise.all(
+      invented.filter((i) => i.status === "trial").map(async (i) => [i.n, await trialReach({ orgId, productId: id, n: i.n })] as const),
+    ),
+  );
 
   return (
     <main>
@@ -72,7 +79,7 @@ export default async function Ideas({ params }: { params: Promise<{ id: string }
           <p className="sub">
             What Claude learns from before it writes: each idea is a pattern that lands with Indian founders, with
             other shapes it can take, never copy to retell. The approved bank, and ideas Claude writes when no pattern
-            fits a lead. A new idea starts on trial. It reaches {TRIAL_LEADS} leads, and once those are sent it either stays
+            fits a lead. A new idea starts on trial. It reaches {TRIAL_LEADS} leads, and once their mails have gone and been watched it either stays
             (ranked like the bank) or retires, with the reason on its row. Results feed the ranking on every lead card.
           </p>
         </div>
@@ -135,8 +142,8 @@ export default async function Ideas({ params }: { params: Promise<{ id: string }
                       {idea.statusReason && <div className="reason">{idea.statusReason}</div>}
                     </td>
                     <td className="num">
-                      {plannedEver.get(idea.n) ?? 0}
-                      {idea.status === "trial" && <div className="muted">of {TRIAL_LEADS}</div>}
+                      {(idea.status === "trial" ? reach.get(idea.n) : plannedEver.get(idea.n)) ?? 0}
+                      {idea.status === "trial" && <div className="muted">of {TRIAL_LEADS} · planned {plannedEver.get(idea.n) ?? 0}</div>}
                     </td>
                     <td className="num">{t?.sent ?? 0}</td>
                     <td className="num">{t?.clicked ?? 0}</td>

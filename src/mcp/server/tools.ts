@@ -23,7 +23,7 @@ import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
-import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLeadCount, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, type InventedIdea } from "../../engine/ideas.js";
+import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, trialReach, type InventedIdea } from "../../engine/ideas.js";
 import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
@@ -1301,10 +1301,12 @@ export const TOOLS: ToolDef[] = [
               throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, which this lead has already been sent. Pick an idea they have not had. Nothing was written.`);
             }
             // A trial idea reaches a few leads, then waits for what they did before it goes wider.
+            // The count is the leads it reached or is about to (trialReach): a lead whose step
+            // was skipped never saw it, so their slot goes back.
             for (const n of refs.filter((r) => known.get(r)?.status === "trial")) {
-              const leads = await ideaLeadCount({ orgId: ctx.orgId, productId: String(instance.productId), n, excludeInstanceId: String(instance._id) });
+              const leads = await trialReach({ orgId: ctx.orgId, productId: String(instance.productId), n, excludeInstanceId: String(instance._id) });
               if (leads >= TRIAL_LEADS) {
-                throw new Error(`step ${String(st.id)} uses #${n}, a trial idea already planned for ${leads} leads. It waits for their results before anyone else gets it. Pick another idea. Nothing was written.`);
+                throw new Error(`step ${String(st.id)} uses #${n}, a trial idea already sent to or queued for ${leads} leads. It waits for their results before anyone else gets it. Pick another idea. Nothing was written.`);
               }
             }
             if (refs.every((n) => (usage.get(n) ?? 0) >= cap && !waitingIdeas.has(n))) {
@@ -5785,7 +5787,7 @@ TOOLS.push({
 TOOLS.push({
   name: "propose_idea",
   description:
-    "Add a new idea to the product's idea bank when no pattern on lead_card writing.ideas fits the lead in front of you (a new shape of an existing pattern needs no new idea: plan it from that idea). The idea is a scene from an Indian office week that TeamGrid makes visible, with its pattern (why it lands) and other shapes it can take, so the next planner learns from it. proof must be copied word for word from one writing.facts.canDo entry: that is what makes it true. It starts as a trial: plan_goal lets it reach 5 leads, then their results move it to active (ranked like the bank) or retire it. Refused: a title another idea already has, a proof that is not in canDo, testimonial or verdict words, and more than 10 trial ideas open at once. Returns the idea's number for plan_goal idea_refs.",
+    "Add a new idea to the product's idea bank when no pattern on lead_card writing.ideas fits the lead in front of you (a new shape of an existing pattern needs no new idea: plan it from that idea). The idea is a scene from an Indian office week that TeamGrid makes visible, with its pattern (why it lands) and other shapes it can take, so the next planner learns from it. proof must be copied word for word from one writing.facts.canDo entry: that is what makes it true. It starts as a trial: plan_goal lets it reach 5 leads, then what those readers did moves it to active (ranked like the bank) or retires it. Refused: a title another idea already has, a proof that is not in canDo, testimonial or verdict words, and more than 10 trial ideas open at once. Returns the idea's number for plan_goal idea_refs.",
   inputSchema: {
     type: "object",
     properties: {
@@ -5888,7 +5890,7 @@ TOOLS.push({
           n,
           status: "trial",
           plan: idea.plan,
-          note: `Plan with idea_refs [${n}]. It reaches at most ${TRIAL_LEADS} leads; once those are sent, what_works moves it to active or retires it, with the reason.`,
+          note: `Plan with idea_refs [${n}]. It reaches at most ${TRIAL_LEADS} leads; once their mails have gone and been watched, what_works moves it to active or retires it, with the reason.`,
         };
       }
     }
