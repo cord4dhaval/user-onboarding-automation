@@ -19,8 +19,9 @@ import {
  * never sends, approves or removes anything. Every mail is checked against the same rules
  * compose_batch enforces, and one that fails any of them is reported and left exactly as it was.
  *
- *   npm run rewrite:review              check them and write nothing
- *   npm run rewrite:review -- --apply   write the ones that pass
+ *   npm run rewrite:review                    check them and write nothing
+ *   npm run rewrite:review -- --apply         write the ones that pass
+ *   npm run rewrite:review -- --id=<id> ...   only these mails, repeatable
  */
 
 interface Draft {
@@ -165,9 +166,12 @@ async function main(): Promise<void> {
   const wordsAvoid = ((writing.wordsAvoid as Array<{ word: string; use: string }> | undefined) ?? []).filter((w) => w?.word);
   const subjectAvoid = ((writing.subjectAvoid as string[] | undefined) ?? []).map(String);
 
+  const only = process.argv.filter((x) => x.startsWith("--id=")).map((x) => x.split("=")[1] ?? "");
+  const batch = only.length ? DRAFTS.filter((d) => only.includes(d.id)) : DRAFTS;
+  if (only.length && batch.length !== only.length) throw new Error(`--id given ${only.length} ids, ${batch.length} of them are in this batch.`);
   let refused = 0;
   const ready: Draft[] = [];
-  for (const d of DRAFTS) {
+  for (const d of batch) {
     const action = await db.collection(C.actions).findOne({ _id: new ObjectId(d.id) });
     if (!action) { console.log(`${d.id}: no longer in the queue, skipped`); continue; }
     if (String(action.status) !== "awaiting_approval") { console.log(`${d.id}: now ${String(action.status)}, skipped`); continue; }
@@ -226,7 +230,7 @@ async function main(): Promise<void> {
     if (f.length) refused++; else ready.push(d);
   }
 
-  console.log(`\n${ready.length} pass the rules, ${refused} refused.`);
+  console.log(`\n${ready.length} of ${batch.length} pass the rules, ${refused} refused.`);
   if (!apply) {
     console.log("Nothing written. Re-run with --apply to write the ones that pass.");
     return;
@@ -259,7 +263,8 @@ async function main(): Promise<void> {
       },
     );
   }
-  console.log(`\nrewrote ${ready.length} mails. They stay in Review with the new words; nothing was sent.`);
+  console.log(`\nrewrote ${ready.length} mails, each stamped content.rewrittenAt. They stay in Review with the new words; nothing was sent.`);
+  for (const d of ready) console.log(`  written: ${d.id} "${d.subject}"`);
   if (refused) console.log(`${refused} were left exactly as they were — their reasons are above.`);
 }
 
