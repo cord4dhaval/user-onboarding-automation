@@ -185,6 +185,40 @@ export function companyTokens(person: Document | null | undefined): string[] {
 }
 
 /**
+ * The subject in words a reader whose English is their second or third language takes in at a
+ * glance.
+ *
+ * Dhaval, 2026-09-28: these leads do not read English all day, and the inbox line is where they
+ * decide. "The counselling call that waited", "Where the summit week went", "Desk work versus site
+ * work" are office English; "The call no one returned", "Hours spent in show week", "Desk work or
+ * site work" are the same thing in school English. A word of theirs is allowed to be long —
+ * fabrication and installation are what they call their own work — and so is their company name.
+ */
+const HARD_IN_A_SUBJECT: Record<string, string> = {
+  activation: "work", assessment: "test", assessments: "tests", candidate: "person", conference: "meeting",
+  coordinator: "planner", corporate: "company", counselling: "call", exhibition: "show", guesswork: "guess",
+  impressions: "memory", productivity: "work", requirement: "need", required: "needed", revision: "change",
+  session: "client", sessions: "clients", simulator: "machine", subscription: "plan", utilisation: "use",
+  utilization: "use", versus: "or",
+};
+
+/** The longest a subject word may be before a reader has to sound it out, their own words apart. */
+export const SUBJECT_WORD_MAX_CHARS = 10;
+
+export function plainSubjectProblems(subject: string, theirs: string[] = []): string[] {
+  const own = new Set(theirs.map((w) => w.toLowerCase()));
+  const problems: string[] = [];
+  for (const raw of String(subject ?? "").split(/\s+/)) {
+    const word = raw.toLowerCase().replace(/[^a-z-]/g, "");
+    if (!word || own.has(word)) continue;
+    const plain = HARD_IN_A_SUBJECT[word];
+    if (plain) problems.push(`"${raw}" is a word they read slowly; say "${plain}"`);
+    else if (word.length > SUBJECT_WORD_MAX_CHARS) problems.push(`"${raw}" is ${word.length} letters; use a shorter word`);
+  }
+  return problems;
+}
+
+/**
  * Words that belong to this lead's own business, for the subject and the scene.
  *
  * Dhaval, 2026-09-28: a mail whose subject and scene would fit any office is a mail nobody

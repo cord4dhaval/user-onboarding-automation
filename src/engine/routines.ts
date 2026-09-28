@@ -454,6 +454,15 @@ not catch" and not "Is your Monday review costing you a full day?" — a figure 
 about 46% of opens, a question mark about 56%, and both read as an advertisement. No
 digits, no ? ! or :, no sales words, no feature name.
 
+These readers do not read English all day. Every word of the subject is one a
+school-leaver takes in at a glance: "The call no one returned", not "The counselling
+call that waited"; "Hours spent in show week", not "Where the summit week went";
+"Desk work or site work", never "versus". A word of their own trade may be long
+(fabrication, installation), and so may their company name; one of ours may not.
+compose_batch refuses a subject word over 10 letters, and words such as counselling,
+assessment, exhibition, revision, corporate, guesswork, candidate, sessions,
+productivity, impressions and versus.
+
 Words people write but never say are out of the subject: payroll (say salary),
 attendance (who came in), timesheet (hours), overtime (working late), idle (free),
 pipeline (work, orders), productivity (how much work gets done), capacity, visibility,

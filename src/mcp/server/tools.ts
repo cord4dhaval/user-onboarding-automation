@@ -24,7 +24,7 @@ import { writingBriefFor } from "../../engine/writingBrief.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, trialReach, type InventedIdea } from "../../engine/ideas.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, carriesTheirWorld, priceHistory, repeatedSentence, scenesSent, theirWords, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, carriesTheirWorld, plainSubjectProblems, priceHistory, repeatedSentence, scenesSent, theirWords, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -2152,6 +2152,9 @@ export const TOOLS: ToolDef[] = [
             );
           }
         }
+        // The inbox line in school English: these readers do not read English all day, and a word
+        // they have to sound out is a mail they do not open (2026-09-28).
+        for (const problem of plainSubjectProblems(String(t.subject ?? ""), theirs)) say(`subject: ${problem}.`);
         const twice = repeatedSentence([t.opening, t.scene, t.reveal, t.limit].map((v) => String(v ?? "")).join("\n"), sentBefore);
         if (twice) {
           say(`"${twice}" is a sentence this lead has already been sent. Say what TeamGrid would show about their own work instead of the line they have read.`);
