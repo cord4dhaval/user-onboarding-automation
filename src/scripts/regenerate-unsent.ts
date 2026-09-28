@@ -27,11 +27,18 @@ import { writeFileSync } from "node:fs";
  * answered. Most of this campaign's failures are the price claim refused a second time to the
  * same person, which is what the one-mail-in-three price rule exists to stop.
  *
+ * Mail the writer has already produced under the current rules is left alone: a frame touch
+ * written since scene_kind existed carries it on the action, and taking that away would throw
+ * away good work and spend a routine run rewriting it. --include-new overrides that, for a rules
+ * change that came after those mails.
+ *
  * --lead=<goalInstanceId> narrows it to one lead, repeatable, for trying the new rules on two
- * or three people before the whole campaign.
+ * or three people before the whole campaign. --status=awaiting_approval narrows it to the mail
+ * waiting in Review, leaving what is queued for later sends alone.
  *
  *   npm run regen -- --goal=teamgrid_leads_v3            what would go
  *   npm run regen -- --goal=teamgrid_leads_v3 --apply    back it up and let it be rewritten
+ *   npm run regen -- --goal=teamgrid_leads_v3 --status=awaiting_approval --apply
  *   npm run regen -- --goal=teamgrid_leads_v3 --include-failed --apply
  */
 
@@ -54,7 +61,20 @@ async function main(): Promise<void> {
   if (ids.length === 0) throw new Error(`None of --lead=${only.join(",")} is a lead in ${goalKey}.`);
   if (only.length) console.log(`narrowed to ${ids.length} lead(s): ${ids.join(", ")}\n`);
 
-  const unsent = await db.collection(C.actions).find({ goalInstanceId: { $in: ids }, status: { $in: UNSENT } }).toArray();
+  const statuses = (arg("status") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  for (const status of statuses) if (!UNSENT.includes(status)) throw new Error(`--status takes ${UNSENT.join(", ")}; "${status}" is not one of them.`);
+  const wanted = statuses.length ? statuses : UNSENT;
+  const found = await db.collection(C.actions).find({ goalInstanceId: { $in: ids }, status: { $in: wanted } }).toArray();
+  // Already written to the current rules: a frame touch carries the shape of its scene.
+  const current = found.filter((a) => a.sceneKind);
+  const unsent = process.argv.includes("--include-new") ? found : found.filter((a) => !a.sceneKind);
+  if (current.length) {
+    console.log(
+      process.argv.includes("--include-new")
+        ? `${current.length} of these were written under the current rules and are being rewritten anyway (--include-new).\n`
+        : `${current.length} of these were already written under the current rules — left alone. Use --include-new to rewrite them too.\n`,
+    );
+  }
 
   // Mail that died at the send gate, where the lead is still going and the plan still has that
   // step. Anything else stays: a failure whose step the plan replaced is not waiting to be sent.
