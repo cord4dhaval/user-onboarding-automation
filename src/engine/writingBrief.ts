@@ -4,7 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas, trialReach } from "./ideas.js";
 import { contextForLead, contextOf } from "./siteContext.js";
-import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent } from "./rolling.js";
+import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent, theirWords } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -38,6 +38,8 @@ export interface WritingBrief {
     used_a_lot_this_week: number[];
     already_had: number[];
   } | null;
+  /** Words this lead's own answers and website use: what makes the subject and the scene theirs. */
+  words_of_theirs: string[];
   /** The scene shape this lead's last mail used, and the shapes the next one may take. */
   scene: { last_mail: string | null; open_to_you: string[]; jobs: Record<string, string> };
   /** Whether this is the mail that gives the price. See engine/rolling.ts priceHistory. */
@@ -209,6 +211,7 @@ export async function writingBriefFor(input: {
     ideas,
     examples_note:
       "A random sample of past ideas, shown for the standard a message should clear. They are not a menu: invent the idea that fits this person, and use one of these only if it truly is the best fit.",
+    words_of_theirs: theirWords(person),
     scene: (() => {
       const { last } = scenesSent(actions);
       return {
@@ -291,6 +294,8 @@ export async function writingBriefFor(input: {
       "Name the problem the way they would say it (\"orders wait for approval\"), not in our words (\"work is blocked\"). Their own words come first: where the lead card carries what they typed as their problem, the opening is that problem in their words, not a problem we picked for them.",
       "Every word in the body is a word an owner says out loud. Say salary, not payroll; who came in, not attendance; hours or any sheet, not timesheet; staying late or extra hours, not overtime; free or doing nothing, not idle; work or orders, not pipeline; how much work gets done, not productivity. Never capacity, visibility, bottleneck, loaded, leverage, streamline, seamless, solution.",
       "The example is their kind of work, taken from what their site says they do: a showroom floor, an event week, a parts counter, a site visit. A generic office is what every other mail describes, and it tells the reader nothing about us.",
+      "words_of_theirs holds the words their own answers and website use (\"exhibitions\", \"turnkey\", \"fabrication\", \"spare parts\"). The subject or the scene carries at least one of them, and compose_batch refuses a mail that carries none: a mail that would fit any office is a mail nobody opens. The subject may also carry their company name, by the rule below.",
+      "The reveal is the surprise, not the summary: the one thing TeamGrid would show about the moment just described, said so the reader thinks \"it can do that too\". Name their own thing — which stand list is waiting, which dealer request got no reply, why the panel job slowed — and where it fits, say it plainly with \"also\". Never a feature list, never a screen.",
       `Plan at most ${ROLLING_MAX_STEPS} touches. The engine watches the result and asks again.`,
       "Invent the idea for this person: a real moment from their week, with its cost in rupees or hours.",
       "State only what product_config.writing.facts supports. Never quote anything in facts.unverified.",

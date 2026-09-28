@@ -24,7 +24,7 @@ import { writingBriefFor } from "../../engine/writingBrief.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, trialReach, type InventedIdea } from "../../engine/ideas.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, priceHistory, repeatedSentence, scenesSent, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, carriesTheirWorld, priceHistory, repeatedSentence, scenesSent, theirWords, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -2087,6 +2087,7 @@ export const TOOLS: ToolDef[] = [
         .toArray();
       const scenes = scenesSent(sentBefore);
       const priceNow = priceHistory(sentBefore, prices);
+      const theirs = theirWords(lead);
       const sceneProblems: string[] = [];
       for (const t of touches) {
         if (providerTouch.has(t) || !isFrameTouch(t) || !structuredParts.has(t)) continue;
@@ -2130,6 +2131,25 @@ export const TOOLS: ToolDef[] = [
           }
           if (!priceNow.due && gave.length) {
             say(`gives the price again (${gave[0]}), ${priceNow.mails_ago} mail(s) after the last one. It belongs in one mail of ${PRICE_EVERY}: leave it out and close on one question they can answer in a line.`);
+          }
+        }
+        // A mail that would fit any office is a mail nobody opens: the subject or the scene has to
+        // carry something of theirs — a word from their answers or their own website (2026-09-28).
+        const revealText = String(t.reveal ?? "");
+        if (theirs.length) {
+          const world = carriesTheirWorld([t.subject, t.opening, t.scene, revealText].map((v) => String(v ?? "")).join("\n"), theirs);
+          if (!world) {
+            say(
+              `nothing in this mail is theirs. Put one of their own words in the subject or the scene, from lead_card writing.words_of_theirs: ${theirs.slice(0, 8).join(", ")}.`,
+            );
+          }
+          // The reveal is the surprise about the moment above it, so it speaks in the same nouns:
+          // "it can do that too", not the product described again.
+          const sceneNouns = [...new Set((String(t.scene ?? "").toLowerCase().match(/[a-z][a-z-]{4,}/g) ?? []).map((w) => w.replace(/-+$/, "")))];
+          if (revealText && !carriesTheirWorld(revealText, [...theirs, ...sceneNouns])) {
+            say(
+              "the reveal says nothing about the moment above it. Name the one thing TeamGrid would show about that scene, in their own words, so it reads as \"it can do that too\".",
+            );
           }
         }
         const twice = repeatedSentence([t.opening, t.scene, t.reveal, t.limit].map((v) => String(v ?? "")).join("\n"), sentBefore);

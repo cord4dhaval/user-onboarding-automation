@@ -321,8 +321,12 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   Nobody reads a long mail (the manager's review, 2026-09-22): the subject and the first
   line are the hook, and the whole mail is about 50 words, never more than 75.
   subject    required: the point of this mail in 3 to 5 talking words, 18 to 45
-             characters ("what your showroom staff did today"). No figure, no
-             question mark, no colon.
+             characters. No figure, no question mark, no colon. It must be theirs,
+             not any office's: their company name where we hold a real one ("Salary
+             day at Sree Motors"), or a word from their own work ("The stand list
+             nobody updated", "Why the panel job slowed"). writing.words_of_theirs
+             lists the words their answers and their website use; the subject or the
+             scene carries at least one, and compose_batch refuses a mail with none.
   preheader  optional, under 90 characters, adds to the subject.
   opening    the problem and what it costs, one line under 90 characters. Bold; in
              plain text it is the inbox preview, so it never repeats the subject.
@@ -343,11 +347,14 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
                      words. "Tuesday: the panel drawing waited two days for approval."
              Only money counts in rupees. The same shape twice running is refused,
              and so is a rupee figure in a moment or shown scene.
-  reveal     1 or 2 lines on what TeamGrid does about it, as a result they get. Say what
+  reveal     the surprise, not the summary: the one thing TeamGrid would show about the
+             moment in the scene, in their own nouns, so the reader thinks "it can do
+             that too" — which stand list is still waiting, which dealer request got no
+             reply, why the panel job slowed. Where it fits, say it with "also". Say what
              it is ("a small app on your office computers") in their first mail only;
-             after that this line says what it would show about their own work. A
-             sentence they have already been sent is refused. Shown between thin lines
-             with TeamGrid's name in the brand shade.
+             a sentence they have already been sent is refused, and so is a reveal that
+             says nothing about the scene above it. Shown between thin lines with
+             TeamGrid's name in the brand shade.
   question   the price belongs in one mail of three, and writing.price.give_it_here says
              whether this is that mail. Where it is, the price from writing.facts.plans,
              shown bold in a box: "₹299 per person a month." with the total for their team

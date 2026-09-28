@@ -184,6 +184,54 @@ export function companyTokens(person: Document | null | undefined): string[] {
   return [...tokens];
 }
 
+/**
+ * Words that belong to this lead's own business, for the subject and the scene.
+ *
+ * Dhaval, 2026-09-28: a mail whose subject and scene would fit any office is a mail nobody
+ * opens. The reader has to see their own week in it — the stand list, the discom paperwork, the
+ * panel drawing — and then the reveal is the surprise: it can show that too. These are the
+ * words to build that from: what they typed, their role, and what their own site says they do.
+ *
+ * Web furniture and our own vocabulary are dropped, so "services", "contact" and "productivity"
+ * never count as theirs.
+ */
+const NOT_THEIRS = new Set([
+  "about", "account", "address", "australia", "based", "blog", "business", "career", "careers", "clients", "company",
+  "contact", "content", "cookie", "customer", "customers", "delivered", "delivering", "email", "employee", "employees",
+  "enquiry", "every", "experience", "experiences", "facebook", "growth", "history", "home", "hours", "india", "instagram",
+  "learn", "linkedin", "login", "management", "manager", "mission", "office", "people", "phone", "policy", "portfolio",
+  "present", "pricing", "privacy", "product", "products", "project", "projects", "quality", "read", "resources", "reviews",
+  "search", "service", "services", "skip", "solution", "solutions", "staff", "started", "story", "submit", "support",
+  "team", "teams", "teamgrid", "terms", "their", "there", "these", "those", "today", "tracking", "twitter", "updates",
+  "value", "values", "vision", "website", "welcome", "whatsapp", "which", "while", "work", "working", "works", "would",
+  "years", "your", "yours", "productivity", "attendance", "timesheet", "timesheets", "payroll",
+]);
+
+export function theirWords(person: Document | null | undefined): string[] {
+  const form = ((person?.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;
+  const site = String((person?.enrichment as { siteText?: unknown } | undefined)?.siteText ?? "").slice(0, 1200);
+  const source = [form.main_problem, form.role, person?.role, form.industry, site].map((v) => String(v ?? "")).join(" ");
+  const counts = new Map<string, number>();
+  for (const raw of source.toLowerCase().match(/[a-z][a-z-]{4,}/g) ?? []) {
+    const word = raw.replace(/-+$/, "");
+    if (NOT_THEIRS.has(word)) continue;
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  // The words their own pages lean on, longest first where they are used as often: a word they
+  // repeat is what they call their work, and a long one is rarely a filler.
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+    .slice(0, 24)
+    .map(([word]) => word);
+}
+
+/** The first word of theirs this text uses. Both sides are cut back to a stem, so "exhibitions" on their site matches "exhibition" in a subject. */
+export function carriesTheirWorld(text: string, words: string[]): string | null {
+  const stem = (word: string) => word.replace(/-+$/, "").replace(/ies$/, "y").replace(/(ing|es|s)$/, "");
+  const said = new Set((String(text ?? "").toLowerCase().match(/[a-z][a-z-]{3,}/g) ?? []).map(stem));
+  return words.find((word) => said.has(stem(word.toLowerCase()))) ?? null;
+}
+
 /** A number in copy with nothing near it saying it is an example. Returned as warnings, not refused. */
 export function unlabelledNumbers(text: string): string[] {
   const body = String(text ?? "");
@@ -466,7 +514,9 @@ export function repeatedSentence(text: string, actions: Document[]): string | nu
  */
 const SELL_RULES: string[] = [
   "Every email sells one result and asks for one step: try it free for 7 days, or reply \"call\". It is never a feature tour: one problem, what it costs them, what changes with TeamGrid, one next step.",
-  "Hook them in the subject and the first line; most people decide there. Subject: the point of this mail in 3 to 5 talking words, 18 to 45 characters, no figures, no question mark, no colon (\"Stop asking what happened today\", \"The quiet engineer resigns\"). opening: the problem in their words, shown bold.",
+  "Hook them in the subject and the first line; most people decide there. Subject: the point of this mail in 3 to 5 talking words, 18 to 45 characters, no figures, no question mark, no colon. It has to be theirs, not any office's: their company name where we hold a real one (\"Salary day at Sree Motors\"), or a word from their own work (\"The stand list nobody updated\", \"Why the panel job slowed\"). opening: the problem in their words, shown bold.",
+  "writing.words_of_theirs holds the words their answers and their website use. The subject or the scene carries at least one; compose_batch refuses a mail carrying none, because a mail that fits any office is a mail nobody opens.",
+  "The reveal is the surprise, not the summary. Name the one thing TeamGrid would show about the moment just described, in their own nouns, so the reader thinks \"it can do that too\": which stand list is still waiting, which dealer request got no reply, why the panel job slowed. Where it fits, say it with \"also\". It speaks about the scene above it, never about a screen or a list of features.",
   "Five parts, about 50 words, never more than 75: opening (the problem, bold); scene (1 or 2 short lines, at most 2 **bold** figures, doing the job scene_kind names); reveal (1 or 2 lines on what TeamGrid does about it, as a result they get); question (the price where this mail is the one that gives it, else one question they can answer in a line); ps (\"P.S. Reply \"call\" and we will call you.\").",
   `scene_kind is required, and it is never the kind their last mail used: ${SCENE_KINDS.map((k) => `"${k}" — ${SCENE_JOBS[k]}`).join(" ")} writing.scene on the card names the last one and the ones open to you. Only "money" carries rupees: in "moment" and "shown" there is no ₹ figure at all.`,
   `The price goes in one mail of ${PRICE_EVERY}, not in every one. writing.price says whether this is the mail that gives it: where it is, the question is the price, bold, with the total for their team size when known; where it is not, leave every ₹ price out and close on one question they can answer in a line ("Would a 15-minute call help? Reply call."). The button still goes to the trial.`,

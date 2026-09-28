@@ -461,6 +461,15 @@ clicks, 1 reply — the subject was working and the body was not.
   one does) and `writing.price` (`give_it_here`, how many mails ago it was last given).
 - **Trigger.** The Advance prompt was pushed to its live trigger the same day; Acquire, React,
   Close, Maintain and LinkedIn did not change.
+- **The mail has to be theirs, and the reveal is the surprise** (Dhaval, same day). A subject and
+  a scene that would fit any office get no opens, and the reveal should read as "it can do that
+  too". `theirWords(person)` collects the words their own answers and website use — for an events
+  company: exhibitions, summit, trade, partnerships; for a solar EPC: solar, turnkey, residential,
+  paperwork; for an engineering works: fabrication, panel, spare parts, electrical. The card
+  carries them as `writing.words_of_theirs`. compose_batch refuses a mail where the subject,
+  opening, scene and reveal carry none of them, and refuses a reveal that names nothing from the
+  scene above it, so the line speaks about their own moment instead of describing the product
+  again. The subject may also carry their company name, by the rule that was already there.
 - **Not done.** Hook spread across leads: `hidden_bill` was 49 of 201 hooked sends, and nothing
   yet caps a hook the way `ideaUsage` caps an idea.
 
