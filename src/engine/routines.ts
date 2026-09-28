@@ -99,10 +99,11 @@ it up. It is what lets the console show when you last ran and when you are due n
 - finish_work(job_ids) hands back what you completed. Anything you do not finish
   returns to the pool on its own when the lease expires, so if you run low on room,
   stop. Never report work you did not do; the queue is what remembers, not you.
-- A refusal names one problem at a time. Fix it and send again: a new reason means
-  the work is getting closer, so keep going. Leave the item and move on only when the
-  same reason comes back after you fixed it, or after five refusals on one item.
-  Looping on the same refusal spends the run on one item while the rest wait.
+- A refusal lists every problem it found, so fix the whole list before you send again.
+  Sending it back with one of them fixed costs another run of everything you just read.
+  A new reason means the work is getting closer, so keep going. Leave the item and move
+  on only when the same reason comes back after you fixed it, or after five refusals on
+  one item. Looping on the same refusal spends the run on one item while the rest wait.
 - If every next_work returns nothing, say so in one line and stop. Call no other tool:
   not backlog_report, not routine_status, nothing to check health. An empty run should
   cost two calls. An empty slice with a non-zero still_waiting means the dispatcher has
