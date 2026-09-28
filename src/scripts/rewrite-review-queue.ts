@@ -15,8 +15,8 @@ import {
  * from their own trade.
  *
  * A one-off batch, kept in the repo because it is what went back into Review and why. It touches
- * only the action ids below, only while each is still awaiting_approval, and it writes words: it
- * never sends, approves or removes anything. Every mail is checked against the same rules
+ * only the action ids below, only while each is still waiting for approval or sitting in the
+ * queue for a later send, and it writes words: it never sends, approves or removes anything. Every mail is checked against the same rules
  * compose_batch enforces, and one that fails any of them is reported and left exactly as it was.
  *
  *   npm run rewrite:review                    check them and write nothing
@@ -30,6 +30,9 @@ interface Draft {
 }
 
 const PS = 'Reply "call" and we will call you.';
+
+/** Mail that has not gone out: waiting for approval, or queued for a later send. */
+const WAITING = ["awaiting_approval", "queued"];
 
 const DRAFTS: Draft[] = [
   { id: "6ab51d1f25db026c9bc57971", kind: "money", subject: "Site round at Heaven Solar",
@@ -149,6 +152,43 @@ const DRAFTS: Draft[] = [
     reveal: "TeamGrid also shows which exhibition ate the coordinator's week.",
     question: "Would one week of that be worth seeing?", ps: PS },
 
+  // Queued for a later send, composed before the rules changed (added 2026-09-28).
+  { id: "6ab51b7343d73f65637b8206", kind: "shown", subject: "Where the summit week went",
+    opening: "A show week ends, and the hours behind it are never counted.",
+    scene: "Tuesday: 3 hours went to calls with the venue, and nothing to the trade list.",
+    reveal: "TeamGrid also shows how much of a summit week goes to calls instead of the floor.",
+    question: "Would you want that on the next show week?", ps: PS },
+
+  { id: "6ab61315aa36622d699a409a", kind: "shown", subject: "Why the panel job slowed",
+    opening: "A job's pace drops for a week, and nobody can say why.",
+    scene: "Tuesday: the panel drawing waited 2 days for approval. Nobody had to be asked.",
+    reveal: "TeamGrid also answers why the week slowed, from the fabrication work already recorded.",
+    question: "Which job would you want that answer on first?", ps: PS },
+
+  { id: "6ab6756924bb3a88211b84f2", kind: "shown", subject: "Who started the assessments",
+    opening: "The register says present at nine. It does not say when work began.",
+    scene: "Tuesday: the first assessment report moved at noon, not at nine.",
+    reveal: "TeamGrid also shows when the assessment work actually started, without a register.",
+    question: "Would that be worth seeing for one week?", ps: PS },
+
+  { id: "6ab8d195d67f616fb997bae8", kind: "moment", subject: "The raise you cannot prove",
+    opening: "As the owner, you have only impressions when your best planner asks for a raise.",
+    scene: "She asks on Friday. Nothing on paper says how her last 12 weeks went.",
+    reveal: "TeamGrid also shows the last 12 weeks for each planner, so the answer is not a guess.",
+    question: "Would that make Friday's answer easier?", ps: PS },
+
+  { id: "6ab9f911b4831d0f9b5e001b", kind: "moment", subject: "Pings between every shift",
+    opening: "Every shift handover turns into 10 WhatsApp pings, and work waits.",
+    scene: "A vendor asks for an update at 11. The answer comes after the shift changes.",
+    reveal: "TeamGrid also shows how much of a shift goes to messages instead of the work.",
+    question: "Would one week of that be useful?", ps: PS },
+
+  { id: "6ab9f946b4831d0f9b5e0022", kind: "moment", subject: "The chat window stays open",
+    opening: "WhatsApp stays open all day, and focus breaks with every ping.",
+    scene: "A buyer asks about the product range. The reply waits behind 20 other pings.",
+    reveal: "TeamGrid also shows which hours stay whole and which are broken by pings.",
+    question: "Would you want to see one week of that?", ps: PS },
+
   { id: "6ab8c466d67f616fb997b902", kind: "moment", subject: "Facts the timber desk sees",
     opening: "A pay talk built on memory feels unfair to the person across the desk.",
     scene: "The month a buyer's order ran long is remembered. The quiet months are not.",
@@ -174,7 +214,7 @@ async function main(): Promise<void> {
   for (const d of batch) {
     const action = await db.collection(C.actions).findOne({ _id: new ObjectId(d.id) });
     if (!action) { console.log(`${d.id}: no longer in the queue, skipped`); continue; }
-    if (String(action.status) !== "awaiting_approval") { console.log(`${d.id}: now ${String(action.status)}, skipped`); continue; }
+    if (!WAITING.includes(String(action.status))) { console.log(`${d.id}: now ${String(action.status)}, skipped`); continue; }
     const person = await db.collection(C.people).findOne({ _id: new ObjectId(String(action.personId)) });
     const prior = await db.collection(C.actions).find({ goalInstanceId: String(action.goalInstanceId), status: { $in: ["sent", "dispatched"] } }).toArray();
     const price = priceHistory(prior, prices);
@@ -243,7 +283,7 @@ async function main(): Promise<void> {
     if (d.ps) slots.ps = `P.S. ${d.ps}`;
     if (ask === "link") slots.cta_text = "Try it free for 7 days";
     await db.collection(C.actions).updateOne(
-      { _id: new ObjectId(d.id), status: "awaiting_approval" },
+      { _id: new ObjectId(d.id), status: { $in: WAITING } },
       {
         $set: {
           sceneKind: d.kind,
