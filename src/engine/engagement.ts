@@ -38,8 +38,13 @@ export interface Engagement {
    * a different sentence from nobody having opened, and the console must not merge them.
    */
   openTrackable: number;
+  /** Messages opened. A lead sent seven mails can be seven of these on their own. */
   opened: number;
+  /** People behind those opens. The sentence a reader says out loud is this one. */
+  openedPeople: number;
   clicked: number;
+  /** People behind those clicks, counted once however many links they reached. */
+  clickedPeople: number;
   /** Clicks that were a security gateway scanning the mail. Reported, never counted in. */
   machineClicked: number;
   /** People who wrote back, not messages: one reply answers a thread, not a send. */
@@ -56,7 +61,9 @@ const empty = (): Engagement => ({
   trackable: 0,
   openTrackable: 0,
   opened: 0,
+  openedPeople: 0,
   clicked: 0,
+  clickedPeople: 0,
   machineClicked: 0,
   replied: 0,
   unsubscribed: 0,
@@ -70,6 +77,15 @@ export function rate(part: number, whole: number): string {
   if (whole <= 0) return "—";
   return `${Math.round((part / whole) * 100)}%`;
 }
+
+/**
+ * How many people a $addToSet of person ids stands for.
+ *
+ * The set carries a null for every message that did not qualify — $addToSet has no way to
+ * skip one — so the null is dropped here rather than counted as a person.
+ */
+const distinct = (ids: unknown): number =>
+  Array.isArray(ids) ? new Set(ids.filter((id) => id !== null).map(String)).size : 0;
 
 /**
  * Engagement for every campaign in one product, keyed by goal key.
@@ -173,6 +189,27 @@ export async function campaignEngagement(
               ],
             },
           },
+          // Messages and people are different answers to "how did this land", and the
+          // console printed the first under a word readers hear as the second. Both are
+          // collected here so neither page has to guess which one it is showing.
+          openedPeople: {
+            $addToSet: {
+              $cond: [
+                { $and: [{ $in: ["$status", DELIVERED] }, { $ifNull: ["$firstOpenedAt", false] }] },
+                "$personId",
+                null,
+              ],
+            },
+          },
+          clickedPeople: {
+            $addToSet: {
+              $cond: [
+                { $and: [{ $in: ["$status", DELIVERED] }, { $ifNull: ["$firstClickedAt", false] }] },
+                "$personId",
+                null,
+              ],
+            },
+          },
           preSend: {
             $sum: {
               $cond: [
@@ -205,7 +242,9 @@ export async function campaignEngagement(
       trackable: Number(row.trackable ?? 0),
       openTrackable: Number(row.openTrackable ?? 0),
       opened: Number(row.opened ?? 0),
+      openedPeople: distinct(row.openedPeople),
       clicked: Number(row.clicked ?? 0),
+      clickedPeople: distinct(row.clickedPeople),
       machineClicked: Number(row.machineClicked ?? 0),
     });
     of(String(row._id)).failed = Number(row.failed ?? 0);
@@ -316,22 +355,54 @@ export async function peopleEngagement(
 /** People this product has ever heard back from, for the library's engagement filter. */
 export type EngagementState = "opened" | "clicked" | "replied" | "none";
 
+/**
+ * The runs one campaign has opened, and the people they were opened for.
+ *
+ * Actions name the run they belong to, never the campaign, so every campaign-scoped read
+ * starts here. Ids are compared as strings because that is how the action stores them.
+ */
+export async function campaignScope(
+  orgId: string,
+  productId: string,
+  goalKey: string,
+): Promise<{ runIds: string[]; personIds: string[] }> {
+  const db = await getDb();
+  const runs = await db
+    .collection(C.goalInstances)
+    .find({ orgId, productId, goalKey })
+    .project({ _id: 1, personId: 1 })
+    .toArray();
+  return {
+    runIds: runs.map((r) => String(r._id)),
+    personIds: [...new Set(runs.map((r) => String(r.personId)))],
+  };
+}
+
 export async function peopleMatching(
   orgId: string,
   productId: string,
   state: Exclude<EngagementState, "none">,
+  campaign?: string,
 ): Promise<string[]> {
   const db = await getDb();
+  // A reply arrives against a mailbox, not against a campaign, so it is attributed the
+  // same way the campaign rollup attributes it: people in this campaign who wrote back.
+  const scoped = campaign ? await campaignScope(orgId, productId, campaign) : undefined;
   if (state === "replied") {
-    return (
+    const people = (
       await db.collection(C.events).distinct("personId", { orgId, productId, type: "reply_received" })
     ).map(String);
+    return scoped ? people.filter((id) => scoped.personIds.includes(id)) : people;
   }
   const field = state === "opened" ? "firstOpenedAt" : "firstClickedAt";
   return (
-    await db
-      .collection(C.actions)
-      .distinct("personId", { orgId, productId, status: { $in: DELIVERED }, [field]: { $exists: true } })
+    await db.collection(C.actions).distinct("personId", {
+      orgId,
+      productId,
+      status: { $in: DELIVERED },
+      [field]: { $exists: true },
+      ...(scoped ? { goalInstanceId: { $in: scoped.runIds } } : {}),
+    })
   ).map(String);
 }
 

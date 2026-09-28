@@ -71,7 +71,10 @@ export async function queryLibrary(orgId: string, productId: string, q: LibraryQ
     filter.lastSignalAt = { $exists: false };
     filter.lastReplyAt = { $exists: false };
   } else if (q.engagement) {
-    narrowings.push(await peopleMatching(orgId, productId, q.engagement));
+    // Scoped to the campaign when one is picked, so "opened" here means opened in this
+    // campaign rather than opened anywhere — the table would otherwise list people whose
+    // only open was in some other campaign they also happen to be in.
+    narrowings.push(await peopleMatching(orgId, productId, q.engagement, q.campaign));
   }
   if (narrowings.length > 0) {
     const ids = narrowings.reduce((a, b) => a.filter((id) => b.includes(id)));

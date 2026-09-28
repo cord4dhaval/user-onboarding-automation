@@ -418,6 +418,9 @@ export default async function Goals({ params }: { params: Promise<{ id: string }
   );
 }
 
+/** A count of people, in the words a reader would use for it. */
+const people = (n: number): string => `${n} ${n === 1 ? "person" : "people"}`;
+
 /**
  * What a campaign earned, as against what it spent.
  *
@@ -440,19 +443,30 @@ function Responses({
     return <span className="muted">nothing sent yet</span>;
   }
 
-  const { sent, trackable, openTrackable, opened, clicked, machineClicked, replied, unsubscribed } = engagement;
+  const { sent, trackable, openTrackable, opened, openedPeople, clicked, clickedPeople, machineClicked, replied, unsubscribed } =
+    engagement;
   return (
     <div className="responses">
       <span className="status" title="Messages the provider accepted.">
         <Send size={13} className="muted" /> {sent} sent
       </span>
 
+      {/* Messages, not people. One lead who clicked in three mails is three here and one
+          on the audience page, and both pages said "clicked" — so the word that counts
+          messages now says messages, and the people behind them are named beside it. */}
       <a
         className={`status ${clicked > 0 ? "live" : "muted"}`}
         href={`${library}&engagement=clicked`}
-        title={trackable > 0 ? `${clicked} of ${trackable} tracked sends` : "These sends carried no tracked links."}
+        title={
+          trackable > 0
+            ? `${clicked} of ${trackable} tracked sends, from ${people(clickedPeople)}`
+            : "These sends carried no tracked links."
+        }
       >
-        <MousePointerClick size={13} /> {clicked} clicked
+        <MousePointerClick size={13} /> {clicked} click{clicked === 1 ? "" : "s"}
+        {clickedPeople > 0 && clickedPeople !== clicked && (
+          <span className="muted"> · {people(clickedPeople)}</span>
+        )}
         {trackable > 0 && <span className="muted"> · {rate(clicked, trackable)}</span>}
       </a>
 
@@ -477,9 +491,15 @@ function Responses({
         <a
           className="status muted"
           href={`${library}&engagement=opened`}
-          title="Opens are unreliable: some mail clients load images without a human looking."
+          // No "of N pixelled sends" here: an open can be inferred from a click on a mail
+          // that never carried a pixel, so the denominator is sometimes the smaller number
+          // and the sentence read as nonsense.
+          title={`${opened} opens from ${people(openedPeople)}. Opens are unreliable: some mail clients load images without a human looking.`}
         >
-          <Mail size={13} /> {opened} opened
+          <Mail size={13} /> {opened} open{opened === 1 ? "" : "s"}
+          {openedPeople > 0 && openedPeople !== opened && (
+            <span className="muted"> · {people(openedPeople)}</span>
+          )}
         </a>
       ) : (
         <span

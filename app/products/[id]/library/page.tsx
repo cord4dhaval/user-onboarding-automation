@@ -1,6 +1,6 @@
 import { Bot, Layers, MessageSquare, MousePointerClick, Mail, Users } from "lucide-react";
 import { audienceCount, queryLibrary, type DeliveryState } from "@/engine/library.js";
-import { peopleEngagement, peopleMatching, type EngagementState } from "@/engine/engagement.js";
+import { campaignScope, peopleEngagement, peopleMatching, type EngagementState } from "@/engine/engagement.js";
 import { replyReach } from "@/engine/reach.js";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
@@ -121,22 +121,32 @@ export default async function Audience({
     audienceDocs.map(async (a) => ({ audience: a, size: await audienceCount(orgId, id, a) })),
   );
 
+  // Every tile obeys the campaign menu above it. They used to be product-wide whatever the
+  // filter said, so picking one campaign narrowed the table underneath while the numbers
+  // over it kept counting every campaign — two answers to one question on one screen.
+  const runs = campaign ? await campaignScope(orgId, id, campaign) : undefined;
+  const inCampaign = runs ? { goalInstanceId: { $in: runs.runIds } } : {};
+
   // The headline the page was missing. These are people, not messages: someone who clicked
   // three links is one interested human, and three would read as three leads.
   const [clickedIds, repliedIds, openedIds, reach, pixelled, scanned, everConfirmed] = await Promise.all([
-    peopleMatching(orgId, id, "clicked"),
-    peopleMatching(orgId, id, "replied"),
-    peopleMatching(orgId, id, "opened"),
+    peopleMatching(orgId, id, "clicked", campaign),
+    peopleMatching(orgId, id, "replied", campaign),
+    peopleMatching(orgId, id, "opened", campaign),
     replyReach(orgId, id),
     // Whether a pixel ever went out. Without one, "0 opened" is not a measurement.
-    db.collection(C.actions).countDocuments({ ...s, status: "sent", "tracking.opens": true }),
-    db.collection(C.actions).countDocuments({ ...s, firstMachineClickedAt: { $exists: true } }),
+    db.collection(C.actions).countDocuments({ ...s, ...inCampaign, status: "sent", "tracking.opens": true }),
+    db.collection(C.actions).countDocuments({ ...s, ...inCampaign, firstMachineClickedAt: { $exists: true } }),
     // Whether "delivered" is a state this product can ever be in. The channel here hands a
     // message over and reports nothing back, so the filter for it matched nothing and said
     // so in the same words it would use for a product whose mail all bounced.
     db.collection(C.actions).countDocuments({ ...s, confirmedAt: { $exists: true } }, { limit: 1 }),
   ]);
   const engaged = await peopleEngagement(orgId, id, rows.map((r) => String(r._id)));
+
+  const campaignName = campaign
+    ? String(goals.find((g) => String(g.key) === campaign)?.name ?? campaign)
+    : undefined;
 
   // Each tile states what it knows, or says plainly that it cannot know. A tile reading
   // zero when nothing was ever measured is the single most misleading thing this page
@@ -145,7 +155,7 @@ export default async function Audience({
     {
       key: "clicked" as const,
       icon: <MousePointerClick size={14} />,
-      label: "clicked a link",
+      label: "people who clicked",
       value: String(clickedIds.length),
       measured: true,
       note:
@@ -156,7 +166,7 @@ export default async function Audience({
     {
       key: "replied" as const,
       icon: <MessageSquare size={14} />,
-      label: "replied",
+      label: "people who replied",
       value: reach.replies ? String(repliedIds.length) : "—",
       measured: reach.replies,
       note: reach.replies
@@ -166,7 +176,7 @@ export default async function Audience({
     {
       key: "opened" as const,
       icon: <Mail size={14} />,
-      label: "opened",
+      label: "people who opened",
       value: pixelled > 0 ? String(openedIds.length) : "—",
       measured: pixelled > 0,
       note:
@@ -212,6 +222,11 @@ export default async function Audience({
         <>
           {/* One row that answers "did any of this land?" without reading a table. Each
               tile is a link, because a number nobody can drill into is a poster. */}
+          <p className="sub">
+            {campaignName
+              ? `People, counted once each, in ${campaignName} only. A campaign's own row counts messages instead, so its open number is the larger one.`
+              : "People, counted once each, across every campaign. A campaign's own row counts messages instead, so its open number is the larger one."}
+          </p>
           <div className="signal-strip">
             {signals.map((sig) => {
               const body = (
