@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 /**
  * Sends a campaign's unsent mail back to be written again, under whatever the rules are now.
@@ -53,6 +53,7 @@ async function main(): Promise<void> {
   if (!goalKey) throw new Error("Pass a campaign: npm run regen -- --goal=<goalKey> [--apply]");
 
   const db = await getDb();
+  console.log(`database ${db.databaseName}\n`);
   const instances = await db.collection(C.goalInstances).find({ goalKey }, { projection: { _id: 1, personId: 1, status: 1 } }).toArray();
   if (instances.length === 0) throw new Error(`No campaign runs with goalKey "${goalKey}".`);
   const only = process.argv.filter((x) => x.startsWith("--lead=")).map((x) => x.split("=")[1] ?? "");
@@ -115,6 +116,9 @@ async function main(): Promise<void> {
   }
 
   const file = `backups/unsent-${goalKey}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  // The folder is not in git, so a fresh checkout has none: make it rather than failing after
+  // the count has been printed and before anything is safe to remove.
+  mkdirSync("backups", { recursive: true });
   writeFileSync(file, JSON.stringify(unsent, null, 1));
   const gone = await db.collection(C.actions).deleteMany({ _id: { $in: unsent.map((a) => a._id) }, status: { $in: [...UNSENT, "failed"] } });
   console.log(`\nbacked up ${unsent.length} to ${file}`);
