@@ -21,6 +21,7 @@ import { runSource, dueSources } from "../../engine/runSource.js";
 import { fireDue, rungsSentTo } from "../../engine/fireDue.js";
 import { planMenuFor } from "../../engine/templates.js";
 import { writingBriefFor } from "../../engine/writingBrief.js";
+import { hookSpread } from "../../engine/hooks.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, trialReach, type InventedIdea } from "../../engine/ideas.js";
@@ -1313,6 +1314,34 @@ export const TOOLS: ToolDef[] = [
               throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, already planned for ${cap} or more other leads in this campaign this week. Pick another idea that fits this lead. Nothing was written.`);
             }
             st.idea_refs = refs;
+          }
+        }
+        // The hooks are spread like the ideas, by share of sends rather than by leads a week: a
+        // rolling plan cycles one lead through every hook, so leads-per-hook says nothing, while
+        // the sends were plainly lopsided (hidden_bill 57 of about 250). Only the hooks this lead
+        // type offers count — a word a writer invented is not a slot others are queuing for.
+        {
+          const typeHere = leadTypeOf(goalDef);
+          const sequence = typeHere ? LEAD_TYPE_PROFILES[typeHere].sequence ?? [] : [];
+          if (sequence.length) {
+            const spread = await hookSpread({
+              orgId: ctx.orgId,
+              productId: String(instance.productId),
+              goalKey: String(instance.goalKey),
+              hooks: sequence.map((row) => row.hook),
+            });
+            for (const st of planSteps as Array<Record<string, unknown>>) {
+              const hook = String(st.hook ?? "").trim().toLowerCase();
+              const row = spread.rows.find((r) => r.hook.toLowerCase() === hook);
+              if (!row?.spent) continue;
+              const others = spread.open.length ? spread.open : spread.rows.filter((r) => !r.spent).map((r) => r.hook);
+              throw new Error(
+                `step ${String(st.id)} uses hook "${hook}", which is ${Math.round(row.share * 100)}% of this campaign's last ${spread.total} sends; ` +
+                  `an even share of ${sequence.length} hooks is ${Math.round((1 / sequence.length) * 100)}%. ` +
+                  (others.length ? `Take one that is running behind: ${others.join(", ")}.` : "Plan one step instead of two.") +
+                  " Nothing was written.",
+              );
+            }
           }
         }
         // An idea this lead was given and did nothing with is spent for them after one send, not

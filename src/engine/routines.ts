@@ -205,7 +205,12 @@ have been read.
   about the product) every step leads to signing up or a call: each email sells one
   result in about 50 words, with the price. writing.lead_type.sequence lists the hooks, each
   marked sent or not: daily_question, hidden_bill, office_habit, just_ask,
-  found_out_late, no_watching, closing. Plan two not yet sent that fit this lead best
+  found_out_late, no_watching, closing. Each also carries its share of the campaign's
+  recent sends beside the share an even split would give it, and hooks_open lists the
+  ones running behind: take one of those unless nothing else fits this lead. plan_goal
+  refuses a hook already past half again its even share, because a hook on a quarter of
+  the list is one argument repeated and its record cannot be compared with hooks nobody
+  used. Plan two not yet sent that fit this lead best
   (not a fixed order), after_days 1 and 2, with hook set to its name and a theme that
   joins it to the idea from the idea bank that fits this lead (the 8pm update calls,
   the punch machine, the Monday Excel report). The last step a campaign has room for is

@@ -4,6 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas, trialReach } from "./ideas.js";
 import { contextForLead, contextOf } from "./siteContext.js";
+import { hookSpread } from "./hooks.js";
 import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent, theirWords } from "./rolling.js";
 
 /**
@@ -20,7 +21,14 @@ const EXAMPLES_SHOWN = 10;
 export interface WritingBrief {
   mode: "rolling";
   frame_key: string;
-  lead_type: { type: string; label: string; who: string; paced_as: string | null; default_ask: string; reply_ask_only_for_hooks: string[]; body_max_words: number; sequence: Array<{ hook: string; job: string; sent: boolean }> | null; rules: string[] } | null;
+  lead_type: {
+    type: string; label: string; who: string; paced_as: string | null; default_ask: string; reply_ask_only_for_hooks: string[]; body_max_words: number;
+    /** Each hook with the job it does, whether this lead had it, and its share of the campaign's recent sends. */
+    sequence: Array<{ hook: string; job: string; sent: boolean; share_of_recent_sends: number; even_share_is: number; spent: boolean }> | null;
+    /** The hooks under an even share of recent sends: pick from these first. */
+    hooks_open?: string[];
+    rules: string[];
+  } | null;
   max_steps_per_plan: number;
   body_max_words: number;
   watch_hours: Record<string, number>;
@@ -83,6 +91,12 @@ export async function writingBriefFor(input: {
   };
   const group = groupFor(person);
   const form = ((person.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;
+
+  // Each hook's share of the campaign's recent sends, so the card offers the ones it has not leaned
+  // on (engine/hooks.ts).
+  const hooks = input.goalKey && leadTypeOf(goal)
+    ? await hookSpread({ orgId, productId, goalKey: input.goalKey, hooks: (LEAD_TYPE_PROFILES[leadTypeOf(goal)!].sequence ?? []).map((s) => s.hook) })
+    : null;
 
   const [rows, notes, groupSends] = await Promise.all([
     themePerformance(orgId, productId, group),
@@ -189,8 +203,18 @@ export async function writingBriefFor(input: {
         body_max_words: profile.maxWords,
         // Which jobs this lead has already had, so the next plan takes the next one.
         sequence: profile.sequence
-          ? profile.sequence.map((s) => ({ ...s, sent: actions.some((a) => String(a.hook ?? "") === s.hook && ["sent", "dispatched"].includes(String(a.status))) }))
+          ? profile.sequence.map((s) => {
+              const row = hooks?.rows.find((r) => r.hook === s.hook);
+              return {
+                ...s,
+                sent: actions.some((a) => String(a.hook ?? "") === s.hook && ["sent", "dispatched"].includes(String(a.status))),
+                share_of_recent_sends: row?.share ?? 0,
+                even_share_is: row?.allowed ?? 0,
+                spent: row?.spent ?? false,
+              };
+            })
           : null,
+        ...(hooks && hooks.open.length ? { hooks_open: hooks.open } : {}),
         rules: profile.rules,
       };
     })(),
@@ -289,6 +313,7 @@ export async function writingBriefFor(input: {
     rules: [
       "Nobody reads a long mail. Hook them with the subject and the first line, then keep the whole mail to about 50 words that a busy owner understands in one quick read.",
       "Every link ask sells: the problem, what it costs, what changes with TeamGrid, the price, one next step. Never a tour of features.",
+      "Spread the hooks as well as the ideas. lead_type.sequence gives each hook its share of the campaign's recent sends beside the share an even split would give it, and hooks_open lists the ones running under that: take one of those unless nothing else fits this lead. plan_goal refuses a hook already past half again its even share. A hook on a quarter of the list is one argument repeated, and its record cannot be compared with hooks nobody used.",
       "Say what the product is once to a person, in plain words close to product_in_one_line, in their first mail (\"TeamGrid is a small app on your office computers.\"). After that the reveal says what it would show about their own work: the same sentence in a second mail is a stamp, and compose_batch refuses a line this lead has already been sent.",
       `Short sentences, one idea each, never more than ${SENTENCE_MAX_WORDS} words. Everyday words: no wordplay, no metaphors, no clever phrasing. Where plain_words lists a word, use its plain replacement.`,
       "Name the problem the way they would say it (\"orders wait for approval\"), not in our words (\"work is blocked\"). Their own words come first: where the lead card carries what they typed as their problem, the opening is that problem in their words, not a problem we picked for them.",

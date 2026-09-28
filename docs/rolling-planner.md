@@ -483,8 +483,15 @@ clicks, 1 reply — the subject was working and the body was not.
   What survives is no ₹ figure in the line (a price in an inbox row is an advertisement) and no
   exclamation mark (spam filters distrust it). Opens themselves are a weak measure now: Apple
   pre-loads pixels and about half of all opens are machines, so clicks and replies decide.
-- **Not done.** Hook spread across leads: `hidden_bill` was 49 of 201 hooked sends, and nothing
-  yet caps a hook the way `ideaUsage` caps an idea.
+- **Hooks are spread by share of sends (2026-09-28).** `hidden_bill` was 57 of about 250 hooked
+  sends and `found_out_late` 44, so a quarter of the campaign made one argument. The first build
+  copied `ideaUsage` — leads per hook per week — and the live numbers killed it: 7 hooks against 71
+  ideas, and a rolling plan re-plans the same lead every few days, so every hook legitimately
+  reached 28 to 36 of 54 leads against a cap of 16. It would have refused nearly every step and
+  spent the run on refusals. `hookSpread` measures each hook's share of the campaign's last 120
+  sends instead; a hook at half again an even share (21% of seven) waits until it falls back, which
+  can never refuse everything because shares sum to one. Below 20 sends nothing is refused. The
+  card carries each hook's share beside the even share, and `hooks_open` names the ones behind.
 
 ## Follow-ups
 

@@ -125,8 +125,10 @@ export function ideaLimits(activeLeads: number, usableIdeas: number): IdeaLimits
  * outruns the even-spread estimate), the least-used ones stay open. Without this the planner
  * was refused on every pick and retried until its run ran out (2026-09-22: 191 refusals in one
  * run, one lead planned).
+ *
+ * Written for idea numbers and used for hook names too, so both spreads share one floor.
  */
-export function capFor(cap: number, usage: Map<number, number>, open: Iterable<number>): number {
+export function capFor<K>(cap: number, usage: Map<K, number>, open: Iterable<K>): number {
   let least = Infinity;
   for (const n of open) least = Math.min(least, usage.get(n) ?? 0);
   return Number.isFinite(least) ? Math.max(cap, least + 1) : cap;
