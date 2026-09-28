@@ -396,6 +396,28 @@ export async function refuseOutOfScope(
   );
 }
 
+/**
+ * The tools worth advertising to this caller, or null for "all of them".
+ *
+ * A routine is already refused every tool that is not its own (refuseOutOfScope), but the
+ * connector advertised all 45 of them to every session and every sub-agent inside it — about
+ * 13,500 tokens of descriptions read before a word is written, most of it for tools that call
+ * would have been refused. Advance, which writes the mail, may call fourteen.
+ *
+ * The rule is deliberately the same as the refusal's, down to the session id: a session with
+ * no declared routine — a person onboarding a product by hand — still sees everything, which
+ * is why this returns null rather than a list in that case.
+ */
+export async function visibleTools(caller: {
+  orgId: string;
+  userId: string;
+  sessionId?: string;
+}): Promise<string[] | null> {
+  if (!caller.sessionId) return null;
+  const routine = await currentRoutine(caller.orgId, caller.userId, caller.sessionId);
+  return routine ? ROUTINE_TOOLS[routine] : null;
+}
+
 export interface ToolCallRecord {
   orgId: string;
   userId: string;

@@ -38,15 +38,24 @@ export interface RoutineDef {
  * second. Maintain is daily because setup gaps are a day-scale problem — hourly would mean
  * twenty-four notifications about the same missing lead source.
  *
- * Every run costs tokens even when it finds nothing, so only Acquire and Advance run round
- * the clock: a lead who arrives at night is planned before morning, and a step Advance has
- * not written within six hours goes out as a fixed email. React, close and linkedin run
- * every second hour in Indian working hours, 10:00–21:15 IST (2026-09-23: about a hundred
- * empty runs a day were a large share of the plan). Crons are UTC.
+ * Every run costs tokens even when it finds nothing: a session reads its system prompt, the
+ * whole tool list and these instructions — about 19,000 tokens — before it can call
+ * next_work and learn there is nothing to do. Nothing can make that cheaper, so the only
+ * lever is running less often. React, close and linkedin run every second hour in Indian
+ * working hours, 10:00–21:15 IST (2026-09-23: about a hundred empty runs a day were a large
+ * share of the plan).
+ *
+ * Acquire and Advance were hourly round the clock, 48 runs a day, and the overnight ones
+ * almost always found nothing: these leads are Indian offices and they arrive during the
+ * working day. They now run hourly from 08:30 to 21:30 IST and twice overnight (00:30 and
+ * 03:30 IST), 32 runs instead of 48. A lead who arrives at 2 a.m. waits at most about three
+ * hours for a plan instead of one, which costs them nothing: the engine holds their standard
+ * step for twelve hours waiting for a written one, and sends a fixed email if none comes.
+ * Crons are UTC.
  */
 export const DEFAULT_CRONS: Record<RoutineKey, string> = {
-  acquire: "34 * * * *",
-  advance: "15 * * * *",
+  acquire: "34 3-16,19,22 * * *",
+  advance: "15 3-16,19,22 * * *",
   react: "30 4-14/2 * * *",
   close: "45 5-15/2 * * *",
   maintain: "50 7 * * *",
@@ -123,7 +132,7 @@ on waiting than on the work (2026-09-23).`;
       key: "acquire",
       name: "1 — Acquire",
       cron: DEFAULT_CRONS.acquire,
-      human: "every hour, at :34",
+      human: "at :34, hourly 08:30–21:30 IST, then 00:30 and 03:30",
       essential: true,
       job: "Turn arrivals into people with a working sequence: read who they are, and make sure their segment has a playbook to run.",
       example: [
@@ -184,11 +193,17 @@ have been read.
   campaign that plans every person. plan_goal is this routine's tool: before
   2026-09-16 it was wrongly refused to Acquire, so errors in routine_status or run
   history saying otherwise are out of date and are not a reason to skip this step.
-  One sub-agent per lead, all in one wave, until the slice is
-  done. Each one: lead_card, then plan_goal, then finish_work for that job. If
-  plan_goal refuses a plan, read the reason, fix the plan and call it again. When the
+  Groups of five leads, one sub-agent per group, all in one wave, until the slice is
+  done. Never one sub-agent per lead: the reading a sub-agent does before its first
+  plan costs the same whether it then plans one lead or five. Each sub-agent takes its
+  five one at a time, in order, and each one gets the same care as if it were alone:
+  lead_card, then plan_goal, then finish_work for that job, then the next lead. If
+  plan_goal refuses a plan, read the reason, fix the plan and call it again — the
+  refusal lists every problem it found at once, so fix the whole list before sending
+  again rather than one line at a time. When the
   same reason comes back after you fixed it, or after five refusals, leave that lead:
-  do not finish_work it, and return the refusal in one line so it reaches your notes.
+  do not finish_work it, move to the next lead in the group, and return the refusal in
+  one line so it reaches your notes.
   It comes back next run with a fresh card. A refusal naming the routine itself is
   worth stopping the whole run for.
 
@@ -223,8 +238,8 @@ have been read.
   a new shape you find in their business and their week. The 8pm status calls (#7) could
   just as well be the Saturday WhatsApp round-up, the 7pm sheet every team fills, or
   something only their office does. The shape can change; the proof cannot.
-  writing.ideas.best_fit is the bank's top 8 for this lead (their words, role, segment),
-  and others lists the rest. Each best_fit idea comes with its pattern, other shapes, the
+  writing.ideas.best_fit is the bank's top 4 for this lead (their words, role, segment),
+  and others lists more of them, one line each. Each best_fit idea comes with its pattern, other shapes, the
   hook that lands it, its proof and the sample card that can show it; used_this_week
   says how many other leads in this campaign got it. You may blend two ideas; every step
   names idea_refs, the ideas you learned from. Two leads should rarely get the same
@@ -292,7 +307,7 @@ have been read.
       key: "advance",
       name: "2 — Advance",
       cron: DEFAULT_CRONS.advance,
-      human: "every hour, at :15",
+      human: "at :15, hourly 08:30–21:30 IST, then 00:30 and 03:30",
       essential: true,
       job: "Write the messages for the people worth writing for. Everyone else is already being served by the engine from their playbook.",
       example: [
@@ -495,9 +510,16 @@ next subject speaks about the work. Never open a subject with "welcome" to someb
 has not signed up.
 
 2.1 compose-tier1
-  next_work("compose") with limit 15. One sub-agent per person, all in one wave.
-  Each one: lead_card with view "write" for context, then compose_batch for the step it
-  names. The write view is the card cut to what a mail is built from, small enough to
+  next_work("compose") with limit 15. Split what comes back into groups of five people,
+  one sub-agent per group, all in one wave. Never one sub-agent per person: a sub-agent
+  reads the tool list and these instructions before it writes a word, that reading costs
+  the same whether it then writes one mail or five, and at one per person it was four
+  fifths of what the run spent (2026-09-28).
+  Each sub-agent takes its five people one at a time, in order, and each one gets the
+  same care as if they were alone: lead_card with view "write" for context, then
+  compose_batch for the step it names, then finish_work for that person, then the next.
+  A person it cannot write comes back in the summary with the refusal that stopped it,
+  and the sub-agent moves to the next rather than spending the group on one. The write view is the card cut to what a mail is built from, small enough to
   read in one go: read it whole, never piece by piece with jq or scripts.
   compose_batch counts the words, the sentence lengths and the symbols itself and
   lists every problem in one reply, so never write a script to count or check them:
@@ -758,7 +780,9 @@ lead's company name and never how they arrived. Every fact comes from product.fa
 never invent a capability, a customer or a number.
 
 6.1 leads
-  next_work("linkedin") with limit 15. One sub-agent per lead, all in one wave. Each one reads linkedin_card for the item's
+  next_work("linkedin") with limit 15. Groups of five leads, one sub-agent per group,
+  all in one wave — not one sub-agent per lead, which pays for the same reading five
+  times. Each sub-agent takes its leads one at a time and reads linkedin_card for the item's
   goal_instance_id and acts on needs.kind, not on the item's reason, which can be older
   than the card:
 

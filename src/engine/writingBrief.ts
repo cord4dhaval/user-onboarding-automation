@@ -17,6 +17,10 @@ import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, 
  */
 
 const EXAMPLES_SHOWN = 10;
+/** Ideas shown whole, with their pattern, their other shapes, their proof and their card. */
+const IDEAS_IN_FULL = 4;
+/** And the next few as one line each, for a planner who wants one the ranking put lower. */
+const IDEAS_IN_LINE = 25;
 
 export interface WritingBrief {
   mode: "rolling";
@@ -173,12 +177,16 @@ export async function writingBriefFor(input: {
               : "If no pattern here fits this lead, call propose_idea with a new one built on a verified fact, then plan with the number it returns: a new idea reaches 5 leads, and their results decide whether it stays."
           }`
         : `${IDEAS_ARE_TEACHING} best_fit is ranked for this lead from their words and segment, with ideas the campaign leaned on this week pushed down. You may blend two ideas; name every idea you learned from.`,
-      best_fit: fresh.slice(0, 8).map((i) => ({
+      // Four, not eight. Every one carries its pattern, its other shapes, its proof and its
+      // sample card, and a planner uses one or two; the other six were about 2,000 tokens
+      // read by every sub-agent on every lead (2026-09-28). The rest are one line each in
+      // others, and a planner who wants one can still name it.
+      best_fit: fresh.slice(0, IDEAS_IN_FULL).map((i) => ({
         n: i.n, title: i.title, detail: i.detail, pattern: i.pattern, also: i.also, hook: i.hook, proof: i.proof, plan: i.plan, card: i.card, used_this_week: i.used_this_week,
         ...(i.record ? { record: i.record } : {}),
         ...(i.source ? { source: i.source, status: i.status } : {}),
       })),
-      others: fresh.slice(8).map((i) => `#${i.n} ${i.title} (${i.hook}${i.used_this_week ? `, used by ${i.used_this_week} this week` : ""})`),
+      others: fresh.slice(IDEAS_IN_FULL, IDEAS_IN_FULL + IDEAS_IN_LINE).map((i) => `#${i.n} ${i.title} (${i.hook}${i.used_this_week ? `, used by ${i.used_this_week} this week` : ""})`),
       used_a_lot_this_week: [...usage.entries()].filter(([, count]) => count >= limits.busyAt).map(([n]) => n).sort((a, b) => a - b),
       already_had: [...had].sort((a, b) => a - b),
     };

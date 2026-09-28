@@ -1226,6 +1226,15 @@ export const TOOLS: ToolDef[] = [
         .findOne({ _id: new ObjectId(goalInstanceId), orgId: ctx.orgId });
       if (!instance) throw new Error("goal instance not found");
 
+      // Every problem in this plan, reported in one refusal at the end.
+      //
+      // Each of these checks used to throw where it stood, so a plan with three problems
+      // cost four attempts, and every attempt re-sent the whole lead card and the writing
+      // brief to fix one line. One lead's plan ran to 160,000 tokens that way (2026-09-28).
+      // The checks above this line are the ones the rest of the code cannot run without:
+      // no steps, no rationale, no instance.
+      const refusals: string[] = [];
+
       // A plan that names a channel the campaign does not allow would queue messages that
       // can never send, so it is refused rather than stored.
       const goalDef = await db
@@ -1235,7 +1244,7 @@ export const TOOLS: ToolDef[] = [
       if (allowed.length > 0) {
         const stray = planSteps.map((st) => String(st.channel)).filter((ch) => !allowed.includes(ch));
         if (stray.length > 0) {
-          throw new Error(
+          refusals.push(
             `This campaign may only use ${allowed.join(", ")}. The plan asks for ${[...new Set(stray)].join(", ")}.`,
           );
         }
@@ -1248,16 +1257,19 @@ export const TOOLS: ToolDef[] = [
       const frameKey = frameKeyOf(goalDef);
       if (rolling) {
         if (planSteps.length > ROLLING_MAX_STEPS) {
-          throw new Error(
+          refusals.push(
             `This campaign plans ${ROLLING_MAX_STEPS} touches at a time and this plan has ${planSteps.length}. Plan the next one or two; ` +
-              `the engine asks for the next plan once it has seen what this lead does with these. Nothing was written.`,
+              `the engine asks for the next plan once it has seen what this lead does with these.`,
           );
         }
         const missing = (planSteps as Array<Record<string, unknown>>).filter((st) => !String(st.theme ?? "").trim());
         if (missing.length) {
-          throw new Error(`step ${missing.map((st) => String(st.id)).join(", ")} has no theme. Each touch is built on one idea in words. Nothing was written.`);
+          refusals.push(`step ${missing.map((st) => String(st.id)).join(", ")} has no theme. Each touch is built on one idea in words.`);
         }
         for (const st of planSteps as Array<Record<string, unknown>>) {
+          // A themeless step is refused above already. Slugging "" here would make every
+          // later check compare an empty angle and report problems on top of the real one.
+          if (!String(st.theme ?? "").trim()) continue;
           st.angle = themeSlug(String(st.theme));
           // Always the frame. A step that named one of the fixed feature emails got a single
           // opening line written into it, which is the old mail under a new label; the fixed
@@ -1291,27 +1303,39 @@ export const TOOLS: ToolDef[] = [
           }
           for (const st of planSteps as Array<Record<string, unknown>>) {
             const refs = (Array.isArray(st.idea_refs) ? st.idea_refs : []).map(Number).filter((n) => Number.isFinite(n));
+            const step = `step ${String(st.id)}`;
+            // One problem per step, then on to the next one. A step whose ideas are unknown
+            // fails every check after that too, and four sentences about one step reads as
+            // four things to fix.
             if (refs.length === 0) {
-              throw new Error(`step ${String(st.id)} names no idea. Pick from lead_card writing.ideas (best_fit first) and pass idea_refs, for example [16]. A new idea still names the ideas it came from. Nothing was written.`);
+              refusals.push(`${step} names no idea. Pick from lead_card writing.ideas (best_fit first) and pass idea_refs, for example [16]. A new idea still names the ideas it came from.`);
+              continue;
             }
             const unknown = refs.filter((n) => !known.has(n) || known.get(n)!.usable === false);
             if (unknown.length === refs.length) {
-              throw new Error(`step ${String(st.id)} idea_refs ${unknown.join(", ")} are not usable ideas in the bank. Pick from lead_card writing.ideas. Nothing was written.`);
+              refusals.push(`${step} idea_refs ${unknown.join(", ")} are not usable ideas in the bank. Pick from lead_card writing.ideas.`);
+              continue;
             }
             if (refs.every((n) => had.has(n))) {
-              throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, which this lead has already been sent. Pick an idea they have not had. Nothing was written.`);
+              refusals.push(`${step} uses ${refs.map((n) => `#${n}`).join(", ")}, which this lead has already been sent. Pick an idea they have not had.`);
+              continue;
             }
             // A trial idea reaches a few leads, then waits for what they did before it goes wider.
             // The count is the leads it reached or is about to (trialReach): a lead whose step
             // was skipped never saw it, so their slot goes back.
+            let trialSpent = false;
             for (const n of refs.filter((r) => known.get(r)?.status === "trial")) {
               const leads = await trialReach({ orgId: ctx.orgId, productId: String(instance.productId), n, excludeInstanceId: String(instance._id) });
               if (leads >= TRIAL_LEADS) {
-                throw new Error(`step ${String(st.id)} uses #${n}, a trial idea already sent to or queued for ${leads} leads. It waits for their results before anyone else gets it. Pick another idea. Nothing was written.`);
+                refusals.push(`${step} uses #${n}, a trial idea already sent to or queued for ${leads} leads. It waits for their results before anyone else gets it. Pick another idea.`);
+                trialSpent = true;
+                break;
               }
             }
+            if (trialSpent) continue;
             if (refs.every((n) => (usage.get(n) ?? 0) >= cap && !waitingIdeas.has(n))) {
-              throw new Error(`step ${String(st.id)} uses ${refs.map((n) => `#${n}`).join(", ")}, already planned for ${cap} or more other leads in this campaign this week. Pick another idea that fits this lead. Nothing was written.`);
+              refusals.push(`${step} uses ${refs.map((n) => `#${n}`).join(", ")}, already planned for ${cap} or more other leads in this campaign this week. Pick another idea that fits this lead.`);
+              continue;
             }
             st.idea_refs = refs;
           }
@@ -1335,11 +1359,10 @@ export const TOOLS: ToolDef[] = [
               const row = spread.rows.find((r) => r.hook.toLowerCase() === hook);
               if (!row?.spent) continue;
               const others = spread.open.length ? spread.open : spread.rows.filter((r) => !r.spent).map((r) => r.hook);
-              throw new Error(
+              refusals.push(
                 `step ${String(st.id)} uses hook "${hook}", which is ${Math.round(row.share * 100)}% of this campaign's last ${spread.total} sends; ` +
                   `an even share of ${sequence.length} hooks is ${Math.round((1 / sequence.length) * 100)}%. ` +
-                  (others.length ? `Take one that is running behind: ${others.join(", ")}.` : "Plan one step instead of two.") +
-                  " Nothing was written.",
+                  (others.length ? `Take one that is running behind: ${others.join(", ")}.` : "Plan one step instead of two."),
               );
             }
           }
@@ -1350,8 +1373,8 @@ export const TOOLS: ToolDef[] = [
         const ignored = new Set(triedOnce.filter((t) => !t.clicked).map((t) => t.angle));
         const again = (planSteps as Array<Record<string, unknown>>).filter((st) => ignored.has(String(st.angle)));
         if (again.length) {
-          throw new Error(
-            `This lead already had ${again.map((st) => `"${String(st.theme)}"`).join(", ")} and did not act on it. Pick an idea they have not seen. Nothing was written.`,
+          refusals.push(
+            `This lead already had ${again.map((st) => `"${String(st.theme)}"`).join(", ")} and did not act on it. Pick an idea they have not seen.`,
           );
         }
       }
@@ -1424,7 +1447,7 @@ export const TOOLS: ToolDef[] = [
         );
       }
       if (templateProblems.length > 0) {
-        throw new Error(`This plan names templates it cannot send:\n- ${templateProblems.join("\n- ")}\nNothing was written.`);
+        refusals.push(...templateProblems);
       }
 
       // Assets are checked at plan time as well as at compose time, because a step can
@@ -1456,7 +1479,7 @@ export const TOOLS: ToolDef[] = [
           if (n > 1) problems.push(`${id} is carried by ${n} steps of this plan. One asset, one touch.`);
         }
         if (problems.length > 0) {
-          throw new Error(`This plan cannot carry what it names:\n- ${problems.join("\n- ")}`);
+          refusals.push(...problems);
         }
       }
 
@@ -1472,7 +1495,7 @@ export const TOOLS: ToolDef[] = [
       // A plan of one or two touches cannot hold a third of anything. In a rolling campaign
       // exploration is kept across the group instead, and lead_card says how it stands.
       const block = rolling ? null : await explorationBlock(ctx.orgId, String(instance.productId), segment, angles);
-      if (block) throw new Error(block);
+      if (block) refusals.push(block);
 
       // What this person has already ignored. Attempt two opening on the line that lost
       // attempt one is the cheapest mistake in the system and the easiest to make: the
@@ -1481,10 +1504,21 @@ export const TOOLS: ToolDef[] = [
       const spent = spentAngles(tried);
       const repeats = [...new Set(angles.filter((a) => spent.has(a)))];
       if (repeats.length > 0) {
-        throw new Error(
+        refusals.push(
           `This person has already been sent ${repeats.join(", ")} and did not act on it. ` +
             `Reusing it means saying the thing that already failed on them, more loudly. ` +
             `lead_card lists every angle they have seen — pick one they have not.`,
+        );
+      }
+
+      // The one refusal, carrying everything wrong with this plan, before anything is written.
+      if (refusals.length > 0) {
+        throw new Error(
+          refusals.length === 1
+            ? `${refusals[0]} Nothing was written.`
+            : `This plan has ${refusals.length} problems. Fix every one of them and send it again; ` +
+              `sending it back with one fixed costs another run of everything you just read. Nothing was written.\n- ` +
+              refusals.join("\n- "),
         );
       }
 
@@ -1571,7 +1605,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: "compose_batch",
     description:
-      "Write the actual copy for upcoming touches and queue them. Your part of each body is at most 90 words with no links, and the finished mail stays under 200 words; lead_card's skeleton shows what the template adds. Each becomes a scheduled message; the engine sends it when due, under every guardrail. Never repeat a claim already made to this person. A touch may carry assets from lead_card's assets_available; carrying none is the normal case. Anything not on that list is refused with the reason, and what an asset proves counts as said. A WhatsApp touch goes as an approved template, sent by name: body fills its {{message}} and question its {{question}}, nothing else is sent, and template_key names which template (lead_card's skeleton for the step lists the choices).",
+      "Write the copy for upcoming touches and queue them; the engine sends each when due, under every guardrail. Your part of a body is at most 90 words with no links. Never repeat a claim already made to this person. Assets come from lead_card's assets_available and most touches carry none. A WhatsApp touch goes as an approved template named by template_key: body fills its {{message}}, question its {{question}}. Every rule is checked here and every problem comes back in one reply — lead_card's writing block is where they are written out.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1595,78 +1629,67 @@ export const TOOLS: ToolDef[] = [
               body: {
                 type: "string",
                 description:
-                  "Markdown, at most 90 words, no links. Write the message only: the greeting, the " +
-                  "call-to-action button, the sign-off and the unsubscribe line belong to the template " +
-                  "and are added around it. On a WhatsApp template this is its {{message}}: one paragraph " +
-                  `of at most ${WRITTEN_MESSAGE_MAX_WORDS} words with no line break, no greeting and no sign-off.`,
+                  "Markdown, at most 90 words, no links, message only — the greeting, button, sign-off and " +
+                  "unsubscribe line are the template's. On a WhatsApp template it is the {{message}}: one " +
+                  `paragraph of at most ${WRITTEN_MESSAGE_MAX_WORDS} words, no line break, no greeting, no sign-off.`,
               },
               preheader: {
                 type: "string",
                 description:
-                  "Optional. The grey line an inbox shows after the subject: under 90 characters, one detail " +
-                  "from their situation, never a repeat of the subject. Omit to keep the template's own.",
+                  "Optional, under 90 characters: one detail from their situation, never the subject again.",
               },
               ps: {
                 type: "string",
-                description:
-                  "Optional, only where the template has a PS line: one line of at most 25 words, no link, " +
-                  "offering an easy second route that fits this person. Omit to keep the template's own PS.",
+                description: "Optional, at most 25 words, no link: an easier second route for this person.",
               },
               ask: {
                 type: "string",
                 enum: ["reply", "link"],
                 description:
-                  "What this message asks for. \"reply\" renders it without the template's button, so the " +
-                  "only thing to do is answer; the body must then end on a question a person can answer in " +
-                  "one line. Use it for the first two written touches to anyone who has not clicked, and for " +
-                  "anyone who has gone quiet. \"link\" keeps the button and is the default.",
+                  "\"reply\" drops the button, so the body ends on a question they can answer in a line. " +
+                  "\"link\" keeps it and is the default. lead_card writing.lead_type says which this lead gets.",
               },
               claims_made: { type: "array", items: { type: "string" } },
               format: {
                 type: "string",
                 enum: ["text", "html", "letter"],
                 description:
-                  "Required where the step renders through the campaign's frame (a rolling campaign). \"text\" sends a " +
-                  "plain note and only asks for a reply: it carries no link. \"letter\" is HTML that looks typed — no logo, " +
-                  "box or button, bold phrases and a link on its own words — for a link ask or where bold carries the idea. " +
-                  "\"html\" sends the branded design, for a sample, table or screen, or a lead who engages with designed mail.",
+                  "Required on a frame touch. \"text\" a plain note, reply ask only, no link. \"letter\" HTML that " +
+                  "looks typed. \"html\" the branded design, for a sample, table or screen. lead_card writing " +
+                  "carries the choice for this lead and this mail.",
               },
               format_why: { type: "string", description: "One sentence: why this format for this person now." },
               opening: {
                 type: "string",
                 description:
-                  "Frame touches, written in parts instead of body: the first line, one sentence under 90 characters, shown bold in HTML. " +
-                  "In plain text it is the inbox preview after the subject, so it must not repeat the subject.",
+                  "Frame touches, in place of body: the first line, under 90 characters, bold. It is the inbox " +
+                  "preview in plain text, so never the subject again.",
               },
               timeline: {
                 type: "array",
                 items: { type: "object", properties: { when: { type: "string" }, what: { type: "string" } }, required: ["when", "what"] },
                 description:
-                  "Layout test, story ideas only: 2 to 4 moments in order, when is a day or time (\"Monday\", \"8 PM\"), what is " +
-                  "one short sentence. Shown under the opening. Follow the arm in lead_card writing.layout_tests.",
+                  "Story ideas only: 2 to 4 moments, when a day or time, what one short sentence. Follow the arm " +
+                  "in lead_card writing.layout_tests.",
               },
               reveal: {
                 type: "string",
                 description:
-                  "Hot and warm emails: 1 or 2 short lines on what TeamGrid does about the problem above, as a result they get " +
-                  "(\"TeamGrid is a small app on your office computers. It shows how many hours go to each client.\"). " +
-                  "Shown between two thin lines with TeamGrid's name in the brand shade.",
+                  "Hot and warm emails, required: 1 or 2 short lines on what TeamGrid would show about the scene " +
+                  "above, in their own nouns. Shown between two thin lines.",
               },
               receipt: {
                 type: "object",
                 properties: { title: { type: "string" }, lines: { type: "array", items: { type: "string" } } },
                 description:
-                  "Hot emails: what day 1 would show, written like the product's own view, as a sample. title says it is a " +
-                  "sample (default \"A sample hour in TeamGrid:\"); 2 to 5 lines under 48 characters, for example " +
-                  "\"14:00–15:00 · score 40%\", \"meetings in blue · idle in grey\", \"09:04 standup · 18m\".",
+                  "Designed emails only: a sample of what day 1 would show. title says it is a sample; 2 to 5 " +
+                  "lines under 48 characters, from lead_card writing.facts.samples.",
               },
               link_page: {
                 type: "string",
                 description:
-                  "Optional, link asks only. A page from lead_card writing.context (pages_for_this_lead, pages or " +
-                  "other_solution_pages) that fits this lead better than the start link: their segment's solution page, " +
-                  "the comparison with a tool they use, pricing when cost is the question. The button, and every link in " +
-                  "the mail, goes there instead. Omit to send them to the start link.",
+                  "Optional, link asks only: a page from lead_card writing.context that fits this lead better than " +
+                  "the start link. Every link in the mail goes there.",
               },
               cta_text: {
                 type: "string",
@@ -1677,8 +1700,7 @@ export const TOOLS: ToolDef[] = [
                 type: "array",
                 items: { type: "string" },
                 description:
-                  "Layout test, reply asks only: 2 to 4 short answers to the question, shown as \"Reply with one number:\" and " +
-                  "\"1 = …\" lines. Follow the arm in lead_card writing.layout_tests.",
+                  "Reply asks only: 2 to 4 short answers to the question. Follow the arm in lead_card writing.layout_tests.",
               },
               scene: { type: "string", description: "One or two short paragraphs (blank line between) that make the idea their scene. At most two **bold** phrases." },
               scene_kind: {
@@ -1703,9 +1725,9 @@ export const TOOLS: ToolDef[] = [
               question: {
                 type: "string",
                 description:
-                  "The closing line, shown bold (a tinted box in the designed look). On a link ask it is the price from writing.facts.plans " +
-                  "(\"₹299 per person a month. No card needed to try.\"); on a reply ask, one question they can answer in a line. On a WhatsApp template with a " +
-                  `{{question}}, it fills that: one line of at most ${WRITTEN_QUESTION_MAX_WORDS} words ending in a question mark.`,
+                  "The closing line, bold. On a link ask the price from writing.facts.plans where this is the mail " +
+                  "that gives it; on a reply ask, one question they can answer in a line. On a WhatsApp " +
+                  `{{question}}, at most ${WRITTEN_QUESTION_MAX_WORDS} words ending in a question mark.`,
               },
               theme: { type: "string", description: "The idea in words. Defaults to the plan step's theme." },
               hook: { type: "string", description: "How the idea lands: story, rupee_math, question, comparison, proof, or your own word." },
@@ -1713,11 +1735,8 @@ export const TOOLS: ToolDef[] = [
                 type: "array",
                 items: { type: "string" },
                 description:
-                  "Optional. Assets this message carries, from lead_card's assets_available. Omit the " +
-                  "field to keep whatever the plan named for this step; pass an empty array to deliberately " +
-                  "send words alone where the plan had named something. Most messages carry nothing. " +
-                  "Where one is carried, write the copy to lead into it — what it proves is already counted " +
-                  "as said, so do not spend the message arguing it again.",
+                  "Optional, from lead_card's assets_available; most messages carry none. Omit to keep what the " +
+                  "plan named, or pass [] to send words alone. What an asset proves counts as said.",
               },
               rationale: { type: "string" },
             },

@@ -4,7 +4,7 @@ import { TOOLS, isMediaResult, type ToolCtx } from "@/mcp/server/tools.js";
 import { checkArgs } from "@/mcp/argcheck.js";
 import { resolveAccessToken } from "@/auth/oauth-server.js";
 import { appOrigin } from "@/auth/origin.js";
-import { recordToolCall, refuseOutOfScope } from "@/engine/runlog.js";
+import { recordToolCall, refuseOutOfScope, visibleTools } from "@/engine/runlog.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -102,8 +102,13 @@ export async function POST(request: NextRequest) {
   if (method.startsWith("notifications/")) return new NextResponse(null, { status: 202 });
 
   if (method === "tools/list") {
+    // A routine mid-run is shown its own tools and nothing else. Every other tool would be
+    // refused at the call anyway, and the descriptions of the other thirty-one were read by
+    // every sub-agent this run opened (2026-09-28).
+    const visible = await visibleTools(ctx);
+    const shown = visible ? TOOLS.filter((t) => visible.includes(t.name)) : TOOLS;
     return reply({
-      tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+      tools: shown.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
     });
   }
 
