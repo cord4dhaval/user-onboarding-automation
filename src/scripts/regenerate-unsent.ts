@@ -27,6 +27,9 @@ import { writeFileSync } from "node:fs";
  * answered. Most of this campaign's failures are the price claim refused a second time to the
  * same person, which is what the one-mail-in-three price rule exists to stop.
  *
+ * --lead=<goalInstanceId> narrows it to one lead, repeatable, for trying the new rules on two
+ * or three people before the whole campaign.
+ *
  *   npm run regen -- --goal=teamgrid_leads_v3            what would go
  *   npm run regen -- --goal=teamgrid_leads_v3 --apply    back it up and let it be rewritten
  *   npm run regen -- --goal=teamgrid_leads_v3 --include-failed --apply
@@ -45,14 +48,18 @@ async function main(): Promise<void> {
   const db = await getDb();
   const instances = await db.collection(C.goalInstances).find({ goalKey }, { projection: { _id: 1, personId: 1, status: 1 } }).toArray();
   if (instances.length === 0) throw new Error(`No campaign runs with goalKey "${goalKey}".`);
-  const ids = instances.map((i) => String(i._id));
+  const only = process.argv.filter((x) => x.startsWith("--lead=")).map((x) => x.split("=")[1] ?? "");
+  const ids = instances.map((i) => String(i._id)).filter((id) => only.length === 0 || only.includes(id));
+  const scoped = instances.filter((i) => ids.includes(String(i._id)));
+  if (ids.length === 0) throw new Error(`None of --lead=${only.join(",")} is a lead in ${goalKey}.`);
+  if (only.length) console.log(`narrowed to ${ids.length} lead(s): ${ids.join(", ")}\n`);
 
   const unsent = await db.collection(C.actions).find({ goalInstanceId: { $in: ids }, status: { $in: UNSENT } }).toArray();
 
   // Mail that died at the send gate, where the lead is still going and the plan still has that
   // step. Anything else stays: a failure whose step the plan replaced is not waiting to be sent.
   if (process.argv.includes("--include-failed")) {
-    const active = new Map(instances.filter((i) => i.status === "active").map((i) => [String(i._id), String(i.currentPlanId ?? "")]));
+    const active = new Map(scoped.filter((i) => i.status === "active").map((i) => [String(i._id), String(i.currentPlanId ?? "")]));
     const failed = await db.collection(C.actions).find({ goalInstanceId: { $in: [...active.keys()] }, status: "failed" }).toArray();
     const planIds = [...new Set([...active.values()].filter((id) => ObjectId.isValid(id)))].map((id) => new ObjectId(id));
     const plans = await db.collection(C.plans).find({ _id: { $in: planIds } }, { projection: { steps: 1 } }).toArray();
@@ -66,7 +73,7 @@ async function main(): Promise<void> {
     unsent.push(...live);
   }
   const sent = await db.collection(C.actions).countDocuments({ goalInstanceId: { $in: ids }, status: { $in: ["sent", "dispatched"] } });
-  console.log(`${goalKey}: ${instances.length} leads (${instances.filter((i) => i.status === "active").length} active), ${sent} mails already sent — those stay.\n`);
+  console.log(`${goalKey}: ${scoped.length} leads (${scoped.filter((i) => i.status === "active").length} active), ${sent} mails already sent — those stay.\n`);
   console.log(`unsent mail: ${unsent.length}`);
   for (const [status, count] of Object.entries(unsent.reduce<Record<string, number>>((m, a) => ({ ...m, [String(a.status)]: (m[String(a.status)] ?? 0) + 1 }), {}))) {
     console.log(`  ${status.padEnd(18)} ${count}`);
