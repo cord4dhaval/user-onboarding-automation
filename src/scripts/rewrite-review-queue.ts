@@ -174,7 +174,7 @@ const DRAFTS: Draft[] = [
   { id: "6ab8d195d67f616fb997bae8", kind: "moment", subject: "The raise you cannot prove",
     opening: "As the owner, you have only impressions when your best planner asks for a raise.",
     scene: "She asks on Friday. Nothing on paper says how her last 12 weeks went.",
-    reveal: "TeamGrid also shows the last 12 weeks for each planner, so the answer is not a guess.",
+    reveal: "TeamGrid also shows the last 12 weeks for each planner. The answer stops being a guess.",
     question: "Would that make Friday's answer easier?", ps: PS },
 
   { id: "6ab9f911b4831d0f9b5e001b", kind: "moment", subject: "Pings between every shift",
