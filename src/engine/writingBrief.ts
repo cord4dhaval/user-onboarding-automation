@@ -4,7 +4,7 @@ import { COLLECTIONS as C } from "../db/collections.js";
 import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas, trialReach } from "./ideas.js";
 import { contextForLead, contextOf } from "./siteContext.js";
-import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, ROLLING_MAX_STEPS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand } from "./rolling.js";
+import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, SENTENCE_MAX_WORDS, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -38,6 +38,10 @@ export interface WritingBrief {
     used_a_lot_this_week: number[];
     already_had: number[];
   } | null;
+  /** The scene shape this lead's last mail used, and the shapes the next one may take. */
+  scene: { last_mail: string | null; open_to_you: string[]; jobs: Record<string, string> };
+  /** Whether this is the mail that gives the price. See engine/rolling.ts priceHistory. */
+  price: { give_it_here: boolean; last_given_mails_ago: number | null; one_mail_in: number };
   subject_avoid: string[];
   product_in_one_line: string | null;
   plain_words: Array<{ word: string; use: string }>;
@@ -205,6 +209,18 @@ export async function writingBriefFor(input: {
     ideas,
     examples_note:
       "A random sample of past ideas, shown for the standard a message should clear. They are not a menu: invent the idea that fits this person, and use one of these only if it truly is the best fit.",
+    scene: (() => {
+      const { last } = scenesSent(actions);
+      return {
+        last_mail: last,
+        open_to_you: SCENE_KINDS.filter((k) => k !== last),
+        jobs: SCENE_JOBS,
+      };
+    })(),
+    price: (() => {
+      const history = priceHistory(actions, planPriceFigures(writing.facts));
+      return { give_it_here: history.due, last_given_mails_ago: history.mails_ago, one_mail_in: PRICE_EVERY };
+    })(),
     subject_avoid: (writing.subjectAvoid ?? []).map(String),
     product_in_one_line: writing.oneLine ? String(writing.oneLine) : null,
     plain_words: (writing.wordsAvoid ?? []).map((w) => ({ word: String(w.word), use: String(w.use) })),
@@ -270,7 +286,7 @@ export async function writingBriefFor(input: {
     rules: [
       "Nobody reads a long mail. Hook them with the subject and the first line, then keep the whole mail to about 50 words that a busy owner understands in one quick read.",
       "Every link ask sells: the problem, what it costs, what changes with TeamGrid, the price, one next step. Never a tour of features.",
-      "Say what the product is once, in plain words close to product_in_one_line, usually in reveal (\"TeamGrid is a small app on your office computers.\"). Never assume they already know.",
+      "Say what the product is once to a person, in plain words close to product_in_one_line, in their first mail (\"TeamGrid is a small app on your office computers.\"). After that the reveal says what it would show about their own work: the same sentence in a second mail is a stamp, and compose_batch refuses a line this lead has already been sent.",
       `Short sentences, one idea each, never more than ${SENTENCE_MAX_WORDS} words. Everyday words: no wordplay, no metaphors, no clever phrasing. Where plain_words lists a word, use its plain replacement.`,
       "Name the problem the way they would say it (\"orders wait for approval\"), not in our words (\"work is blocked\"). Their own words come first: where the lead card carries what they typed as their problem, the opening is that problem in their words, not a problem we picked for them.",
       "Every word in the body is a word an owner says out loud. Say salary, not payroll; who came in, not attendance; hours or any sheet, not timesheet; staying late or extra hours, not overtime; free or doing nothing, not idle; work or orders, not pipeline; how much work gets done, not productivity. Never capacity, visibility, bottleneck, loaded, leverage, streamline, seamless, solution.",
@@ -283,8 +299,10 @@ export async function writingBriefFor(input: {
       "context.competitors: use one only when this lead uses or names that tool, and say the difference the way the site does, without running the other tool down.",
       "On a link ask, set link_page when a page in context fits this lead better than the start link: pages_for_this_lead first, the comparison page for a tool they use, pricing when cost is the question. Otherwise leave it out.",
       "A number that is not a fact is an example, and the sentence says so ('for example', 'a team of 30 on ₹25,000').",
+      `scene_kind is required on every mail written in parts, and it is never the kind writing.scene.last_mail names: ${SCENE_KINDS.map((k) => `"${k}" (${SCENE_JOBS[k]})`).join(" ")} Only "money" carries rupees; a "moment" or "shown" scene has no ₹ figure in it at all. The three exist because the same money working in every mail stopped being read.`,
+      `The price belongs in one mail of ${PRICE_EVERY}. writing.price.give_it_here says whether this is that mail: where it is true, the question is the price, bold, with the total for their team size when known; where it is false, no ₹ price anywhere in the mail, and the question is one a person can answer in a line. On a link ask the button still goes to the trial.`,
       "Never a rupee figure without its working. Build every money number in the mail from three things the reader can check for themselves: how many people, how much time each of them loses, and what an hour of their time costs. Write the arithmetic in the mail: \"6 people × 5 minutes a day = 30 minutes a day. Over 22 working days that is 11 hours. If an hour of their time costs ₹200, about ₹2,200 a month.\" Hours first, rupees second.",
-      "The hour rate is an assumption, and the sentence says so (\"if an hour of their time costs ₹200\"). Use the team size they gave us rather than a size we invented. A rupee figure that arrives with no working reads as a made-up number, and a made-up number loses the reader for the rest of the mail.",
+      "The hour rate is ours, not theirs, and the sentence says so: \"If an hour of their time costs ₹200, that is about ₹2,200 a month.\" Never \"At ₹200 an hour\", which states it as a fact we hold. Use the team size they gave us rather than a size we invented. A rupee figure that arrives with no working reads as a made-up number, and a made-up number loses the reader for the rest of the mail.",
       "Inside the mail, never print their company's name or any person's name: describe what they do instead. The subject is the exception, and its own rule below says when a name belongs there.",
       "Never say how they arrived or point back at what they submitted: no 'you clicked', 'you signed up', 'you asked', 'you named', 'you mentioned', 'your form'. Write about their situation as a fact of their business.",
       "Segment off_icp: one short touch that asks a question a person can answer in a line (what the team mostly does at a computer, for example), no pitch.",

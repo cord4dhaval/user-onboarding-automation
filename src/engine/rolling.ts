@@ -336,9 +336,9 @@ export const IDEAS_ARE_TEACHING =
  */
 const SELL_SEQUENCE: Array<{ hook: string; job: string }> = [
   { hook: "daily_question", job: "The question they ask every day (\"any update?\", \"what did you do today?\") and the short note TeamGrid writes by 6pm, so nobody calls or writes updates." },
-  { hook: "hidden_bill", job: "Money lost every month that nobody counts (a client who takes more hours than they pay for, paid hours with no work behind them), as a ₹ example for a team their size, set against the price." },
+  { hook: "hidden_bill", job: "Money lost every month that nobody counts (a client who takes more hours than they pay for, paid hours with no work behind them), as a ₹ example for a team their size. This is a \"money\" scene, and the mail to give the price in where the price is due." },
   { hook: "office_habit", job: "An office habit that eats the day (the evening calls, the Monday Excel report, the punch machine, WhatsApp all day) and how TeamGrid makes it unnecessary." },
-  { hook: "just_ask", job: "A straight answer without asking anyone (\"why was this week slow?\", the Monday report that writes itself). These are on the ₹649 plan." },
+  { hook: "just_ask", job: "A straight answer without asking anyone (\"why was this week slow?\", the Monday report that writes itself). These sit on the Advanced plan, whose price is named only where the price is due." },
   { hook: "found_out_late", job: "What they find out too late (a customer nobody called back, a deadline that slipped on Monday and was heard on Friday) and the reminder that tells them the same day." },
   { hook: "no_watching", job: "The worry about the team's reaction: no screenshots, nothing people type is recorded, everyone sees their own day. The one email where the privacy line belongs." },
   { hook: "closing", job: "The last note: should we close this, or reply \"call\" and we will set it up with you." },
@@ -361,6 +361,103 @@ export const FORMAT_CHOICE =
 export const TRIAL_CTA = "Try it free for 7 days";
 
 /**
+ * The three jobs a scene can do, rotated so the same lead never reads the same shape twice
+ * running.
+ *
+ * Dhaval, 2026-09-28: of 209 written mails, 98 opened their scene with "For example," 65 built
+ * a rupee figure and 60 carried the same sentence saying what the product is. The shape had
+ * become the mail: only the nouns changed between a dealer, a patient and a buyer, and 301
+ * sends drew 3 clicks. Money still earns its place — it is one of three scenes, not the scene.
+ */
+export const SCENE_KINDS = ["money", "moment", "shown"] as const;
+export type SceneKind = (typeof SCENE_KINDS)[number];
+
+export const SCENE_JOBS: Record<SceneKind, string> = {
+  money:
+    "the working behind one rupee figure: how many people, how much time each loses, and what an hour costs — the rate said as an assumption (\"If an hour of their time costs ₹250, that is about ₹2,750 a month\"). Hours first, rupees second.",
+  moment:
+    "one moment from their own week, told with no figures at all (\"A dealer asks for a price on Monday. The reply goes out on Thursday.\"). It lands because they recognise it, not because it is counted.",
+  shown:
+    "what TeamGrid would have shown them about that day, in the product's own plain words (\"Tuesday: the panel drawing waited two days for approval, and nobody was asked.\"). No rupees here.",
+};
+
+/** Mails that may pass before the price is given again: it belongs in one mail of three. */
+export const PRICE_EVERY = 3;
+
+/** Everything a sent mail actually said: the parts a frame touch is written in, and the plain body. */
+export function mailWords(action: Document | null | undefined): string {
+  const content = (action?.content ?? {}) as { subject?: unknown; slotText?: unknown; bodyMd?: unknown; slots?: Record<string, unknown>; parts?: unknown };
+  const slots = Object.values(content.slots ?? {}).map((v) => String(v ?? ""));
+  return [content.subject, content.slotText, content.bodyMd, ...slots, JSON.stringify(content.parts ?? {})].map((v) => String(v ?? "")).join("\n");
+}
+
+/**
+ * The words of a sent mail that carry its idea: the opening, the scene, the reveal and the
+ * limit line.
+ *
+ * Not the price line, the P.S., the button words or the rendered body. Those repeat on purpose —
+ * the P.S. is fixed by rule and the opt-out line is in every mail — so a repeat check that read
+ * the whole mail would refuse almost every one of them.
+ */
+export function mailSceneWords(action: Document | null | undefined): string {
+  const content = (action?.content ?? {}) as { slotText?: unknown; slots?: Record<string, unknown> };
+  const slots = content.slots ?? {};
+  const carried = ["opening", "reveal", "limit", "timeline"].map((k) => String(slots[k] ?? ""));
+  return [content.slotText, ...carried].map((v) => String(v ?? "")).join("\n");
+}
+
+/** A lead's sent mails, newest first. The history every look-back rule reads. */
+export function mailsSent(actions: Document[]): Document[] {
+  return actions
+    .filter((a) => ["sent", "dispatched"].includes(String(a.status)) && a.dryRun !== true)
+    .sort((a, b) => new Date(String(b.sentAt ?? 0)).getTime() - new Date(String(a.sentAt ?? 0)).getTime());
+}
+
+/** The scene shape of this lead's last mail, and the shapes before it. */
+export function scenesSent(actions: Document[]): { last: SceneKind | null; recent: SceneKind[] } {
+  const kinds = mailsSent(actions)
+    .map((a) => String(a.sceneKind ?? ""))
+    .filter((k): k is SceneKind => (SCENE_KINDS as readonly string[]).includes(k));
+  return { last: kinds[0] ?? null, recent: kinds.slice(0, PRICE_EVERY) };
+}
+
+/**
+ * Whether this mail is the one that gives the price.
+ *
+ * Every hot and warm link mail had to carry it, so the price was in all of them and the second
+ * mail had nothing new to say. It is now due where none of the last PRICE_EVERY − 1 mails gave
+ * it; the others close on a question instead.
+ */
+export function priceHistory(actions: Document[], prices: string[]): { due: boolean; mails_ago: number | null } {
+  if (prices.length === 0) return { due: false, mails_ago: null };
+  const sent = mailsSent(actions);
+  const at = sent.findIndex((a) => prices.some((p) => mailWords(a).replace(/₹\s+/g, "₹").includes(p)));
+  const ago = at === -1 ? null : at + 1;
+  return { due: ago === null || ago >= PRICE_EVERY, mails_ago: ago };
+}
+
+/** Sentences worth comparing between mails: what a reader would notice as the same line twice. */
+function sentencesOf(text: string): string[] {
+  return String(text ?? "")
+    .replace(/\*\*/g, "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.trim().toLowerCase().replace(/[^a-z0-9₹ ]+/g, " ").replace(/\s+/g, " ").trim())
+    .filter((s) => s.split(" ").filter(Boolean).length >= 6);
+}
+
+/**
+ * A sentence this lead has already been sent, word for word.
+ *
+ * "TeamGrid is a small app on your office computers." went to 60 leads and often twice to the
+ * same one. Saying what the product is belongs in the first mail; after that the same words are
+ * a stamp, and the line should say what it shows about their own work instead.
+ */
+export function repeatedSentence(text: string, actions: Document[]): string | null {
+  const before = new Set(mailsSent(actions).flatMap((a) => sentencesOf(mailSceneWords(a))));
+  return sentencesOf(text).find((s) => before.has(s)) ?? null;
+}
+
+/**
  * The short selling email, shared by every type that writes to people who once asked about
  * the product. Approved by the manager on 2026-09-22 from four before/after rewrites: a ₹
  * figure or their problem in the subject, the problem bold on the first line, one or two
@@ -368,12 +465,16 @@ export const TRIAL_CTA = "Try it free for 7 days";
  * P.S. About 50 words, in the words a shop owner uses.
  */
 const SELL_RULES: string[] = [
-  "Every email sells one result and asks for one step: try it free for 7 days, or reply \"call\". It is never a feature tour: one problem, what it costs, what changes with TeamGrid, the price, the next step.",
-  "Hook them in the subject and the first line; most people decide there. Subject: a ₹ figure or their own problem in their words, 25 to 55 characters (\"Is 1 client costing you ₹1.68 lakh a year?\", \"Stop asking 'what did you do today?'\"). opening: the problem and what it costs, shown bold.",
-  "Five parts, about 50 words, never more than 75: opening (the problem, bold); scene (1 or 2 short lines: the ₹ example, said to be an example, at most 2 **bold** figures); reveal (1 or 2 lines on what TeamGrid does about it, as a result they get, saying once that it is a small app on their office computers); question (the price, shown bold in a box: \"₹299 per person a month.\" with the total for their team size when known, or \"No card needed to try.\"); ps (\"P.S. Reply \"call\" and we will call you.\").",
-  "Where they are choosing a tool now (timeline ASAP) and the idea is about sales or customers, the question may ask for the call instead (\"Reply \"call\" and we will show you how it works in 15 minutes.\"), with the price in the scene and the free trial in the ps.",
+  "Every email sells one result and asks for one step: try it free for 7 days, or reply \"call\". It is never a feature tour: one problem, what it costs them, what changes with TeamGrid, one next step.",
+  "Hook them in the subject and the first line; most people decide there. Subject: the point of this mail in 3 to 5 talking words, 18 to 45 characters, no figures, no question mark, no colon (\"Stop asking what happened today\", \"The quiet engineer resigns\"). opening: the problem in their words, shown bold.",
+  "Five parts, about 50 words, never more than 75: opening (the problem, bold); scene (1 or 2 short lines, at most 2 **bold** figures, doing the job scene_kind names); reveal (1 or 2 lines on what TeamGrid does about it, as a result they get); question (the price where this mail is the one that gives it, else one question they can answer in a line); ps (\"P.S. Reply \"call\" and we will call you.\").",
+  `scene_kind is required, and it is never the kind their last mail used: ${SCENE_KINDS.map((k) => `"${k}" — ${SCENE_JOBS[k]}`).join(" ")} writing.scene on the card names the last one and the ones open to you. Only "money" carries rupees: in "moment" and "shown" there is no ₹ figure at all.`,
+  `The price goes in one mail of ${PRICE_EVERY}, not in every one. writing.price says whether this is the mail that gives it: where it is, the question is the price, bold, with the total for their team size when known; where it is not, leave every ₹ price out and close on one question they can answer in a line ("Would a 15-minute call help? Reply call."). The button still goes to the trial.`,
+  "Say what TeamGrid is once to a person, in their first mail. After that the reveal says what it would show about their own work; the same sentence twice is a stamp, and compose_batch refuses a line this lead has already been sent.",
+  "Where they are choosing a tool now (timeline ASAP) and the idea is about sales or customers, the question may ask for the call instead (\"Reply \"call\" and we will show you how it works in 15 minutes.\"), with the free trial in the ps.",
   "Words a shop owner uses, sentences of 16 words or fewer. Customer, not lead, enquiry or exhibitor. Price, not quote. \"Keeps track of every customer\", not CRM. \"Nobody has replied\", not \"goes quiet\". \"Too busy\", not overloaded or workload. \"New people\", not new hires. \"Fill any sheet\", not timesheet. No feature names (Founder's Report, Pattern Intelligence, Anomaly Feed): say what they get.",
-  "The price comes only from writing.facts.plans: ₹299 per person a month, or ₹649 for anything the facts put on the Advanced plan. Give the price, not the plan name. A total for their team is arithmetic, and a team size they did not give is an example.",
+  "Where the price is given it comes only from writing.facts.plans: ₹299 per person a month, or ₹649 for anything the facts put on the Advanced plan. Give the price, not the plan name. A total for their team is arithmetic, and a team size they did not give is an example.",
+  "The hour rate is ours, not theirs, so the sentence says so: \"If an hour of their time costs ₹250, that is about ₹2,750 a month.\" Never \"At ₹250 an hour\" as though we knew it. A rupee figure with no working, or a rate stated as a fact, loses the reader for the whole mail.",
   "No feature lists (leave shows out), no thinking questions (\"Which buyer would top that list?\"), no clever lines. The privacy line (no screenshots, nothing people type is recorded) goes only in the no_watching email or to someone who asked. limit only where most of their work is away from a computer (site visits, field work), in one short line.",
   `Start from the idea bank, then the hook. ${IDEAS_ARE_TEACHING} best_fit is ranked for this lead; used_a_lot_this_week are ideas other leads already got. Two leads should rarely get the same shape of an idea.`,
   "Indian office words work: \"any update?\", WFH, WhatsApp, late mark, half day, ₹ and lakh. Never colours or screen words (dashboard, widget), never spy or verdict words (monitor, catch, spy, lazy), never a customer quote or a result nobody measured. Features only from writing.facts; an example number says so.",
@@ -424,7 +525,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     replyHooks: [],
     maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Teach first, short and plain. A ₹ figure or their problem in the subject, the problem bold on the first line, one line on what TeamGrid does, then one question they can answer in a line (\"Would a 15-minute call help? Reply call.\"). Plain text, no link until they reply or click. About 50 words, sentences of 16 words or fewer.",
+      "Teach first, short and plain. Their problem in the subject, in 3 to 5 talking words, the problem bold on the first line, one line on what TeamGrid does, then one question they can answer in a line (\"Would a 15-minute call help? Reply call.\"). Plain text, no link until they reply or click. About 50 words, sentences of 16 words or fewer.",
     ],
   },
   reengage: {

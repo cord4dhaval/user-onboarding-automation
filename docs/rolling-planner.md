@@ -427,6 +427,43 @@ Dhaval: the idea bank is for Claude to learn from. It is not a set of examples t
 - **propose_idea** now asks for a pattern and other shapes, so an invented idea teaches the next planner the same way.
 - **Triggers.** The Acquire and Advance prompts were pushed to the live triggers the same day. React, Close and Maintain did not change.
 
+## The scene rotates, and the price is in one mail of three, 2026-09-28
+
+Dhaval read the v3 mails and asked why every one of them worked out what his lead's time costs.
+Counted over the 209 written mails: 98 opened the scene with "For example," 65 built a rupee
+figure, 60 carried the same sentence saying what the product is, 64 ended "No card needed to
+try." Only the nouns changed between a dealer, a patient and a buyer. 301 sends, 113 opens, 3
+clicks, 1 reply — the subject was working and the body was not.
+
+- **Three scene shapes, never the same one twice running** (`SCENE_KINDS` in rolling.ts):
+  `money` is the working behind one figure, `moment` is one moment from their week with no
+  figure at all, `shown` is what TeamGrid would have shown them that day. `scene_kind` is
+  required with `scene` in a hot or warm frame touch, is stored on the action, and compose_batch
+  refuses the shape their last mail used. Only `money` may carry rupees in the scene.
+- **The rate is ours, so the sentence says so.** "At ₹250 an hour" is refused (58 mails said it);
+  "If an hour of their time costs ₹250, that is about ₹2,750 a month" is the form. The team size
+  is theirs — the form gave it on every money mail we checked — the rate never is.
+- **The price belongs in one mail of `PRICE_EVERY`** (three). `priceHistory` reads the lead's own
+  sent mails: where none of the last two gave a price, this mail gives it and the question is the
+  price, bold; where one did, a rupee price anywhere in the mail is refused and the question is
+  one they can answer in a line. The button still goes to the trial. The old rule required the
+  price in every hot or warm link mail, which is why the second mail had nothing new to say.
+- **A sentence a lead has already read is refused.** `repeatedSentence` compares the opening,
+  scene, reveal and limit against the same lead's earlier mails — not the price line, P.S.,
+  button or rendered footer, which repeat by design. "TeamGrid is a small app on your office
+  computers" went to 87 mails; saying what the product is belongs in their first mail, and after
+  that the reveal says what it would show about their own work. 25 of 263 past mails would have
+  been refused by this.
+- **One subject rule, not two.** The hot and warm rules said "a ₹ figure, 25 to 55 characters"
+  while the writer prompt and the card said "3 to 5 talking words, 18 to 45 characters, no
+  figures". The talking-words rule is the approved one and now stands alone.
+- **The card carries the facts.** `writing.scene` (the last shape, the shapes open now, what each
+  one does) and `writing.price` (`give_it_here`, how many mails ago it was last given).
+- **Trigger.** The Advance prompt was pushed to its live trigger the same day; Acquire, React,
+  Close, Maintain and LinkedIn did not change.
+- **Not done.** Hook spread across leads: `hidden_bill` was 49 of 201 hooked sends, and nothing
+  yet caps a hook the way `ideaUsage` caps an idea.
+
 ## Follow-ups
 
 

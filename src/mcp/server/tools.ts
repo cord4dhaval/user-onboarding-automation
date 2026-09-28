@@ -24,7 +24,7 @@ import { writingBriefFor } from "../../engine/writingBrief.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, trialReach, type InventedIdea } from "../../engine/ideas.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, priceHistory, repeatedSentence, scenesSent, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -1652,6 +1652,14 @@ export const TOOLS: ToolDef[] = [
                   "\"1 = …\" lines. Follow the arm in lead_card writing.layout_tests.",
               },
               scene: { type: "string", description: "One or two short paragraphs (blank line between) that make the idea their scene. At most two **bold** phrases." },
+              scene_kind: {
+                type: "string",
+                enum: [...SCENE_KINDS],
+                description:
+                  "Required with scene in a hot or warm frame touch: the job this scene does. " +
+                  SCENE_KINDS.map((k) => `"${k}" — ${SCENE_JOBS[k]}`).join(" ") +
+                  " It is never the kind lead_card writing.scene.last_mail names, and only \"money\" may carry a ₹ figure.",
+              },
               cost_intro: { type: "string", description: "Optional heading over the cost lines. Defaults to \"For example:\"." },
               cost_lines: {
                 type: "array",
@@ -1761,7 +1769,7 @@ export const TOOLS: ToolDef[] = [
         // row, and the provider may still answer OK. Said here, before anyone reviews it.
         const unsendable = (x: string) => /[\n\t]/.test(x) || / {5,}/.test(x);
         const wordsIn = (x: string) => x.split(/\s+/).filter(Boolean).length;
-        const stray = ["subject", "preheader", "ps", "opening", "scene", "cost_lines", "shows", "receipt", "reveal", "timeline", "reply_options", "format", "cta_text", "limit"].filter(
+        const stray = ["subject", "preheader", "ps", "opening", "scene", "scene_kind", "cost_lines", "shows", "receipt", "reveal", "timeline", "reply_options", "format", "cta_text", "limit"].filter(
           (k) => t[k] !== undefined && String(t[k] ?? "").trim() !== "",
         );
         if (stray.length) {
@@ -2068,6 +2076,70 @@ export const TOOLS: ToolDef[] = [
       const lead = await db.collection(C.people).findOne({ _id: new ObjectId(String(instance.personId)) });
       const companyWords = companyTokens(lead);
       const warnings: string[] = [];
+
+      // What this lead has already read, and what that leaves for this mail: the scene shape
+      // their last mail used, whether the price is due again, and the sentences they have had
+      // word for word. Collected together and refused in one list, because a writer that is
+      // told one fault at a time re-reads the whole card for each (2026-09-23).
+      const sentBefore = await db
+        .collection(C.actions)
+        .find({ orgId, productId, goalInstanceId, status: { $in: ["sent", "dispatched"] }, dryRun: { $ne: true } })
+        .toArray();
+      const scenes = scenesSent(sentBefore);
+      const priceNow = priceHistory(sentBefore, prices);
+      const sceneProblems: string[] = [];
+      for (const t of touches) {
+        if (providerTouch.has(t) || !isFrameTouch(t) || !structuredParts.has(t)) continue;
+        const typeHere = leadTypeOf(campaignDef);
+        const profileHere = typeHere ? LEAD_TYPE_PROFILES[typeHere] : null;
+        if (!profileHere?.reveal) continue;
+        const step = String(t.step_id);
+        const say = (msg: string) => sceneProblems.push(`step ${step}: ${msg}`);
+        const kind = String(t.scene_kind ?? "").trim() as SceneKind | "";
+        const written = [t.subject, t.preheader, t.opening, t.scene, t.reveal, t.limit, t.question, t.ps]
+          .map((v) => String(v ?? ""))
+          .join("\n")
+          .replace(/₹\s+/g, "₹");
+        if (!kind) {
+          say(`scene_kind is missing. ${SCENE_KINDS.map((k) => `"${k}" — ${SCENE_JOBS[k]}`).join(" ")}`);
+        } else if (!(SCENE_KINDS as readonly string[]).includes(kind)) {
+          say(`scene_kind "${kind}" is not one of ${SCENE_KINDS.map((k) => `"${k}"`).join(", ")}.`);
+        } else if (kind === scenes.last) {
+          say(`scene_kind "${kind}" is the shape their last mail used. Take one of ${SCENE_KINDS.filter((k) => k !== scenes.last).map((k) => `"${k}" (${SCENE_JOBS[k]})`).join(" or ")}`);
+        }
+        // Only the money scene counts anything in rupees. A moment they recognise and a day the
+        // product would have shown them do their work without a figure, and 47% of the mails
+        // that went out did the arithmetic anyway (2026-09-28).
+        // The question holds the price where the price is due, so only the written scene is read
+        // here: the opening, the scene itself and the limit line.
+        const sceneText = [t.subject, t.preheader, t.opening, t.scene, t.reveal, t.limit].map((v) => String(v ?? "")).join("\n").replace(/₹\s+/g, "₹");
+        const rupees = sceneText.match(/₹\s?[\d,]+/g) ?? [];
+        if (kind && kind !== "money" && rupees.length) {
+          say(`a "${kind}" scene carries ${rupees[0]}. Only a "money" scene counts in rupees; the price, where it is due, goes in question. Say the moment, not the figure.`);
+        }
+        // The rate is an assumption of ours. "At ₹250 an hour" tells the reader we know what
+        // their people cost, which we do not, and one figure they can argue with loses the mail.
+        const asFact = /(?:^|[^a-z])(?:at|@)\s*₹\s?[\d,]+\s*(?:an|per|\/)\s*hour/i.exec(written);
+        if (asFact) {
+          say(`"${asFact[0].trim()}" states our assumed rate as a fact. Write it as the assumption it is: "If an hour of their time costs ₹250, that is about ₹2,750 a month."`);
+        }
+        const gave = prices.filter((x) => written.includes(x));
+        if (String(t.ask ?? "link") === "link" && prices.length) {
+          if (priceNow.due && gave.length === 0) {
+            say(`no price, and this is the mail that gives it (last given ${priceNow.mails_ago === null ? "never" : `${priceNow.mails_ago} mails ago`}). Put it in question, bold: ${prices.join(" or ")} per person a month, from writing.facts.plans.`);
+          }
+          if (!priceNow.due && gave.length) {
+            say(`gives the price again (${gave[0]}), ${priceNow.mails_ago} mail(s) after the last one. It belongs in one mail of ${PRICE_EVERY}: leave it out and close on one question they can answer in a line.`);
+          }
+        }
+        const twice = repeatedSentence([t.opening, t.scene, t.reveal, t.limit].map((v) => String(v ?? "")).join("\n"), sentBefore);
+        if (twice) {
+          say(`"${twice}" is a sentence this lead has already been sent. Say what TeamGrid would show about their own work instead of the line they have read.`);
+        }
+      }
+      if (sceneProblems.length) {
+        throw new Error(`Fix all of these, then send again:\n- ${sceneProblems.join("\n- ")}\nNothing was written.`);
+      }
       for (const t of touches) {
         const step = String(t.step_id);
         const subjectText = String(t.subject ?? "");
@@ -2115,9 +2187,8 @@ export const TOOLS: ToolDef[] = [
             if (sp.shows) {
               throw new Error(`step ${step} lists what they would see (shows). A list of features reads as a brochure: say the one result in reveal and leave shows out. Nothing was written.`);
             }
-            if (askNow === "link" && prices.length && !prices.some((p) => everythingRaw.includes(p))) {
-              throw new Error(`step ${step} never gives the price. Put it in question, bold: ${prices.join(" or ")} per person a month, from writing.facts.plans. Nothing was written.`);
-            }
+            // The price is checked above against this lead's own history: it belongs in one mail
+            // of PRICE_EVERY, not in every one, so there is nothing to require here.
           }
           if (profile.ask === "link" && askNow === "reply" && !profile.replyHooks.includes(hookNow)) {
             throw new Error(
@@ -2593,6 +2664,8 @@ export const TOOLS: ToolDef[] = [
                   format: String(t.format),
                   formatWhy: String(t.format_why ?? "").trim(),
                   ...(Array.isArray(stepRows.get(Number(t.step_id))?.idea_refs) ? { ideaRefs: (stepRows.get(Number(t.step_id))!.idea_refs as unknown[]).map(Number) } : {}),
+                  // The shape of the scene, so the next mail to this lead takes another one.
+                  ...(String(t.scene_kind ?? "").trim() ? { sceneKind: String(t.scene_kind).trim() } : {}),
                 }
               : {}),
             // Claude writes the slot, not the whole message: the greeting, call to action

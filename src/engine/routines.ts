@@ -326,21 +326,35 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   preheader  optional, under 90 characters, adds to the subject.
   opening    the problem and what it costs, one line under 90 characters. Bold; in
              plain text it is the inbox preview, so it never repeats the subject.
-  scene      1 or 2 short lines showing the working, never a bare figure. Three
-             things the reader can check: how many people, how much time each
-             loses, what an hour costs. "6 people × 5 minutes a day = 30 minutes
-             a day. Over 22 working days that is 11 hours. If an hour of their
-             time costs ₹200, about ₹2,200 a month." Hours first, rupees second;
-             the rate is said to be an assumption; the team size is the one they
-             gave us. At most two **bold** figures. A rupee figure with no
-             working reads as invented and loses the reader for the whole mail.
-  reveal     1 or 2 lines on what TeamGrid does about it, as a result they get, saying
-             once that it is a small app on their office computers. Shown between thin
-             lines with TeamGrid's name in the brand shade.
-  question   on a link ask, the price from writing.facts.plans, shown bold in a box:
-             "₹299 per person a month." with the total for their team size when known,
-             or "No card needed to try." ₹649 for anything on the Advanced plan; the price,
-             never the plan name. On a reply ask, one question they can answer in a line.
+  scene      1 or 2 short lines doing the job scene_kind names, at most two **bold**
+             figures. lead_card writing.scene says which shape their last mail used;
+             this one takes another.
+  scene_kind required with scene: "money", "moment" or "shown".
+             money   the working behind one figure: how many people, how much time
+                     each loses, what an hour costs. "6 people × 5 minutes a day =
+                     30 minutes a day. Over 22 working days that is 11 hours. If an
+                     hour of their time costs ₹200, about ₹2,200 a month." Hours
+                     first, rupees second; the rate is ours, so the sentence says
+                     "if", never "at ₹200 an hour"; the team size is the one they
+                     gave us.
+             moment  one moment from their own week, with no figure at all. "A dealer
+                     asks for a price on Monday. The reply goes out on Thursday."
+             shown   what TeamGrid would have shown them about that day, in plain
+                     words. "Tuesday: the panel drawing waited two days for approval."
+             Only money counts in rupees. The same shape twice running is refused,
+             and so is a rupee figure in a moment or shown scene.
+  reveal     1 or 2 lines on what TeamGrid does about it, as a result they get. Say what
+             it is ("a small app on your office computers") in their first mail only;
+             after that this line says what it would show about their own work. A
+             sentence they have already been sent is refused. Shown between thin lines
+             with TeamGrid's name in the brand shade.
+  question   the price belongs in one mail of three, and writing.price.give_it_here says
+             whether this is that mail. Where it is, the price from writing.facts.plans,
+             shown bold in a box: "₹299 per person a month." with the total for their team
+             size when known, or "No card needed to try." ₹649 for anything on the Advanced
+             plan; the price, never the plan name. Where it is not, no rupee price anywhere
+             in the mail: one question they can answer in a line, and the button still goes
+             to the trial. On a reply ask, one question they can answer in a line.
   ps         "P.S. Reply "call" and we will call you." (or the free trial, where the
              question already asks for the call).
   limit      only where most of their work is away from a computer (site visits),
