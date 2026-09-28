@@ -470,6 +470,19 @@ clicks, 1 reply — the subject was working and the body was not.
   opening, scene and reveal carry none of them, and refuses a reveal that names nothing from the
   scene above it, so the line speaks about their own moment instead of describing the product
   again. The subject may also carry their company name, by the rule that was already there.
+- **The inbox line, checked against the datasets (2026-09-28).** Dhaval asked whether "3 to 5
+  plain words" is what the industry does. It is, and the data leans shorter: Belkins over 5.5M
+  B2B cold emails puts 2 to 4 words at the best open rate, Gong and 30MPC over 85M put lines under
+  4 words at four times the reply rate of 13 words or more, Lavender over 28.3M say 1 to 3. Phones
+  show about 33 characters. So the rule is now 2 to 5 words and 14 to 45 characters, in school
+  English (`subjectShapeProblems`, `plainSubjectProblems`).
+  Two rules were dropped because nothing supports them: the ban on every digit, and the ban on the
+  question mark. Both rested on "a figure loses about 46% of opens, a question mark about 56%",
+  which no source in this repo backs and which the largest of those datasets contradicts — a
+  question line opens best of all. A question mark is now allowed where the mail asks for a reply.
+  What survives is no ₹ figure in the line (a price in an inbox row is an advertisement) and no
+  exclamation mark (spam filters distrust it). Opens themselves are a weak measure now: Apple
+  pre-loads pixels and about half of all opens are machines, so clicks and replies decide.
 - **Not done.** Hook spread across leads: `hidden_bill` was 49 of 201 hooked sends, and nothing
   yet caps a hook the way `ideaUsage` caps an idea.
 

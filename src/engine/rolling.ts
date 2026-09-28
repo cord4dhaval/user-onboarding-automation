@@ -205,6 +205,40 @@ const HARD_IN_A_SUBJECT: Record<string, string> = {
 /** The longest a subject word may be before a reader has to sound it out, their own words apart. */
 export const SUBJECT_WORD_MAX_CHARS = 10;
 
+/**
+ * The shape of the inbox line, from the cold-email datasets rather than from our own taste
+ * (checked 2026-09-28).
+ *
+ * Belkins over 5.5 million B2B cold emails: 2 to 4 words opens best, and a question line opens
+ * best of all. Gong and 30MPC over 85 million: under 4 words replies 4 times better than 13 or
+ * more. Lavender over 28.3 million: 1 to 3 words. Phones show about 33 characters of it.
+ *
+ * Until today this said 3 to 5 words, banned every digit and banned the question mark on the
+ * strength of two percentages — "a figure loses 46% of opens, a question mark 56%" — that no
+ * source in this repo supports and that the largest of those datasets contradicts. What survives
+ * is the short line, the plain words and no rupee figure: a price in an inbox line reads as an
+ * advertisement, which is a different thing from a digit.
+ */
+export const SUBJECT_WORDS_MIN = 2;
+export const SUBJECT_WORDS_MAX = 5;
+export const SUBJECT_CHARS_MIN = 14;
+export const SUBJECT_CHARS_MAX = 45;
+
+export function subjectShapeProblems(subject: string, ask: "link" | "reply" = "link"): string[] {
+  const line = String(subject ?? "").trim();
+  const words = line.split(/\s+/).filter(Boolean).length;
+  const problems: string[] = [];
+  if (words < SUBJECT_WORDS_MIN || words > SUBJECT_WORDS_MAX) problems.push(`${words} words; ${SUBJECT_WORDS_MIN} to ${SUBJECT_WORDS_MAX}`);
+  if (line.length < SUBJECT_CHARS_MIN || line.length > SUBJECT_CHARS_MAX) problems.push(`${line.length} characters; ${SUBJECT_CHARS_MIN} to ${SUBJECT_CHARS_MAX}`);
+  // A price in the inbox line is the advertisement; a plain digit is not.
+  if (/₹/.test(line)) problems.push("carries a ₹ figure, which reads as an advertisement");
+  if (/!/.test(line)) problems.push("carries an exclamation mark, which spam filters distrust");
+  // The question line opens best where the mail really is a question; on a link ask it promises
+  // an answer the mail does not give.
+  if (/\?/.test(line) && ask !== "reply") problems.push("asks a question, but this mail asks for a click: keep the question mark for a reply ask");
+  return problems;
+}
+
 export function plainSubjectProblems(subject: string, theirs: string[] = []): string[] {
   const own = new Set(theirs.map((w) => w.toLowerCase()));
   const problems: string[] = [];

@@ -320,8 +320,9 @@ greeting, the button, the sign-off and the unsubscribe line. Write it in parts, 
 one block of text, because a wall of paragraphs is skimmed and ignored:
   Nobody reads a long mail (the manager's review, 2026-09-22): the subject and the first
   line are the hook, and the whole mail is about 50 words, never more than 75.
-  subject    required: the point of this mail in 3 to 5 talking words, 18 to 45
-             characters. No figure, no question mark, no colon. It must be theirs,
+  subject    required: the point of this mail in 2 to 5 talking words, 14 to 45
+             characters, and shorter reads better. No ₹ figure and no exclamation
+             mark; a question mark only on a reply ask. It must be theirs,
              not any office's: their company name where we hold a real one ("Salary
              day at Sree Motors"), or a word from their own work ("The stand list
              nobody updated", "Why the panel job slowed"). writing.words_of_theirs
@@ -447,12 +448,15 @@ After any click or reply, every later mail is a link ask again. Never both asks 
 message (the P.S. offer to reply "call" is a second route, not a second ask); compose_batch refuses a reply ask that does not end on a question, and the
 engine refuses one that carries a link.
 
-The subject. Eighteen to forty-five characters, three to five words, and every word one
-an owner says out loud to a friend: "what your showroom staff did today", "who is busy
-and who is free", "why work is getting late". Not "₹88,000 a month a punch machine will
-not catch" and not "Is your Monday review costing you a full day?" — a figure loses
-about 46% of opens, a question mark about 56%, and both read as an advertisement. No
-digits, no ? ! or :, no sales words, no feature name.
+The subject. Two to five words, fourteen to forty-five characters, and shorter is
+better: across 5.5 million B2B cold emails 2 to 4 words opened best, and across 85
+million, lines under 4 words replied four times better than lines of 13 or more. Every
+word is one an owner says out loud to a friend: "what your showroom staff did today",
+"who is busy and who is free", "why work is getting late". No ₹ figure — "₹88,000 a
+month a punch machine will not catch" is an advertisement, not an inbox line — and no
+exclamation mark, which spam filters distrust. A question mark is allowed where the mail
+asks for a reply, and those lines open best of the lot; on a link ask it promises an
+answer the mail does not give. No sales words, no feature name.
 
 These readers do not read English all day. Every word of the subject is one a
 school-leaver takes in at a glance: "The call no one returned", not "The counselling
