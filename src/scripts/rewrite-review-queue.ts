@@ -52,7 +52,7 @@ const DRAFTS: Draft[] = [
   { id: "6ab8b5b145e3d1a03e4b16f6", kind: "moment", subject: "The evening simulator call",
     opening: "Every evening the build team is called to ask what moved today.",
     scene: "Monday the simulation model waits on one engineer. The call finds out on Wednesday.",
-    reveal: "TeamGrid also writes what moved on the model by 6pm, so the call has nothing left to ask.",
+    reveal: "TeamGrid also writes what moved on the model by 6pm. The call has nothing left to ask.",
     question: "Would that note replace the evening call this week?", ps: PS },
 
   { id: "6ab8b5b445e3d1a03e4b16f8", kind: "moment", subject: "About your corporate rides", ask: "reply", format: "text",
@@ -84,9 +84,9 @@ const DRAFTS: Draft[] = [
     question: "Would that split be worth seeing for a week?", ps: PS },
 
   { id: "6ab8c3c545e3d1a03e4b18c8", kind: "money", subject: "The hour between sessions",
-    opening: "Between two client sessions, an hour goes somewhere nobody can name.",
+    opening: "Between 2 client sessions, an hour goes somewhere nobody can name.",
     scene: "Suppose 30 minutes slip between sessions each day. Over a month that is **11 hours**. If an hour costs ₹200, about **₹2,200**.",
-    reveal: "TeamGrid also shows what filled the gap between two sessions.",
+    reveal: "TeamGrid also shows what filled the gap between 2 sessions.",
     question: "Would seeing one week of those gaps help?", ps: PS },
 
   { id: "6ab8c3e045e3d1a03e4b18d6", kind: "shown", subject: "The crew's best activation hour",
@@ -110,7 +110,7 @@ const DRAFTS: Draft[] = [
   { id: "6ab8c40ad67f616fb997b8df", kind: "moment", subject: "Who showed the veneer today",
     opening: "Nobody writes down who showed which customer around the floor.",
     scene: "A buyer asks for the laminates range again. 2 people answer, and neither knows who saw them first.",
-    reveal: "TeamGrid also shows which customer each person handled, without a sheet.",
+    reveal: "TeamGrid also shows who walked the buyer through the laminates, without a sheet.",
     question: "Would that help at the month's review?", ps: PS },
 
   { id: "6ab8c422d67f616fb997b8e7", kind: "shown", subject: "Who carries the parts desk",
@@ -139,7 +139,7 @@ const DRAFTS: Draft[] = [
   { id: "6ab8c450d67f616fb997b8f9", kind: "shown", subject: "Late nights nobody flagged",
     opening: "As the owner, you hear about the late nights weeks after they start.",
     scene: "Tuesday: 2 people worked past 9pm, and nobody raised it.",
-    reveal: "TeamGrid also flags the late nights the same week, not after someone quits.",
+    reveal: "TeamGrid also flags the week someone worked past 9pm, not months later.",
     question: "Would you want that flag this week?", ps: PS },
 
   { id: "6ab8c451d67f616fb997b8fb", kind: "money", subject: "The exhibition revision calls",
