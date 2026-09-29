@@ -166,7 +166,13 @@ export function isDoingWord(raw: string): boolean {
   return (w.length >= 5 && w.endsWith("ed")) || baseForms(w).some((x) => DOING_WORDS.has(x));
 }
 
-/** True when one of the plain forms of the word is in the given list, for the lead's own words. */
+/**
+ * True when the word and a word in the list share a plain form, for the lead's own words:
+ * "facility" is theirs when their site says "facilities", and "tape" when it says "tapes".
+ */
 export function isOneOf(raw: string, list: ReadonlySet<string>): boolean {
-  return baseForms(raw).some((w) => list.has(w));
+  const forms = baseForms(raw);
+  if (forms.some((w) => list.has(w))) return true;
+  for (const own of list) if (baseForms(own).some((w) => forms.includes(w))) return true;
+  return false;
 }
