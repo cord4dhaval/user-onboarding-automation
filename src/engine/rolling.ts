@@ -315,7 +315,7 @@ export function templateSubjectProblems(subject: string, product: string[] = [],
  * (Dhaval, 2026-09-29: "Which oxygen customer eats your day", "When your best builder leaves").
  * Found as phrases, so "eat lunch" is left alone.
  */
-const PICTURE = /\b(eats?|ate|eating) (up |into |away )?(your|the|their|his|her|a|most|half|every|all)\b|\bpiles? (up|on)\b|\bthrough the cracks\b|\bfalls? through\b|\bslips? (through|away|past)\b|\bin the dark\b|\bblind spot|\bfirefight|\bjuggl|\bdrown|\bbleed|\bleaks?\b|\bburn(s|ing|t)? (through|out)\b|\bon (your|their) plate\b|\bmove(s)? the needle\b|\bat the end of the day\b|\bblack hole\b|\bgoes quiet\b|\bsteals?\b|\bkills? (the|your|their)\b/gi;
+const PICTURE = /\b(eats?|ate|eating) (up |into |away )?(your|the|their|his|her|a|most|half|every|all|it)\b|\b(sits?|sat|sitting) (stuck|not|waiting|at|there)\b|\bgo(es)? missing\b|\bfights? for\b|\bcarr(y|ies|ied) (your|the|their) team\b|\bmoves? on\b|\bclosed? out\b|\bresting on\b|\bheld the hour\b|\bpiles? (up|on)\b|\bthrough the cracks\b|\bfalls? through\b|\bslips? (through|away|past)\b|\bin the dark\b|\bblind spot|\bfirefight|\bjuggl|\bdrown|\bbleed|\bleaks?\b|\bburn(s|ing|t)? (through|out)\b|\bon (your|their) plate\b|\bmove(s)? the needle\b|\bat the end of the day\b|\bblack hole\b|\bgoes quiet\b|\bsteals?\b|\bkills? (the|your|their)\b/gi;
 
 export function pictureWords(text: string): string[] {
   return [...new Set((String(text ?? "").match(PICTURE) ?? []).map((m) => m.toLowerCase()))];
@@ -427,7 +427,9 @@ export function plainBodyProblems(
     }
     // The product never watches anyone: "a tool that quietly watches your team's work" says the
     // one thing every privacy line in these mails exists to deny (2026-09-29).
-    const watching = named.filter((x) => WATCH_VERB.test(x) && !NEGATION.test(x));
+    // "Watches what keeps happening, not any one person" still says it watches: only a
+    // negation on the verb itself ("never watches", "nobody is watched") clears it.
+    const watching = named.filter((x) => WATCH_VERB.test(x) && !NEGATED_WATCH.test(x));
     if (watching.length) problems.push(`${watching.map((x) => `"${x}"`).join(", ")} says ${names[0]} watches people; say what it shows the owner, never that it watches, monitors or tracks anyone`);
   }
   return problems;
@@ -436,7 +438,7 @@ export function plainBodyProblems(
 /** The thing the product is, in the words a reader knows it by. */
 const WHAT_IT_IS = /\b(apps?|programs?|tools?|computers?|laptops?|software)\b/i;
 const WATCH_VERB = /\b(watch(es|ing)?|monitor(s|ing)?|spy|spies|spying|track(s|ing)? (your|the|each|every) (team|staff|people|person|employees?))\b/i;
-const NEGATION = /\b(never|not|no|nothing|without|nobody)\b/i;
+const NEGATED_WATCH = /\b(never|not|no|nobody|without|no one)\s+(\w+\s+)?(watch|watches|watched|watching|monitor|monitors|track|tracks)\b/i;
 
 /**
  * A sentence of this mail's opening or scene that another lead in the same campaign has already
@@ -474,6 +476,14 @@ const NOT_THEIRS = new Set([
   "team", "teams", "teamgrid", "terms", "their", "there", "these", "those", "today", "tracking", "twitter", "updates",
   "value", "values", "vision", "website", "welcome", "whatsapp", "which", "while", "work", "working", "works", "would",
   "years", "your", "yours", "productivity", "attendance", "timesheet", "timesheets", "payroll",
+  // Brochure words: on nearly every website, never in the owner's mouth. A lead's site using
+  // one does not make it theirs ("workflow is where work gets stuck", "85 people on capacity
+  // calls", "your best creative asks for a raise": Dhaval's review, 2026-09-29).
+  "workflow", "workflows", "capacity", "bottleneck", "bottlenecks", "creative", "creatives", "solutions",
+  "leverage", "synergy", "scalable", "streamline", "optimize", "optimise", "seamless", "robust", "innovative",
+  "stakeholders", "deliverables", "onboarding", "visibility", "efficiency", "utilization", "utilisation",
+  "bandwidth", "ecosystem", "platform", "integrated", "enterprise", "excellence", "empower", "empowering",
+  "cutting-edge", "end-to-end", "insights", "analytics", "dashboard", "resources", "strategic", "holistic",
 ]);
 
 export function theirWords(person: Document | null | undefined): string[] {
