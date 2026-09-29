@@ -55,8 +55,9 @@ export default function Nav({ productId, counts }: { productId: string; counts: 
 
   return (
     <>
+      <div className="group">Work</div>
       {WORK.map(item)}
-      <div className="group">Configure</div>
+      <div className="group">Setup</div>
       {SETUP.map(item)}
     </>
   );

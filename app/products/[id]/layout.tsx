@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Zap } from "lucide-react";
+import { ChevronsUpDown, Zap } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { getAccount, getProduct, requireSession } from "../../tenant";
@@ -46,42 +46,60 @@ export default async function ProductLayout({
   return (
     <ToastProvider>
     <div className="app">
-      <div className="strip">
-        <aside className="side">
-          <a className="brand" href="/products" style={{ padding: "4px 10px 14px", gap: 8 }}>
-            <Zap size={17} strokeWidth={2.5} /> Engine
-          </a>
+      <aside className="side">
+        <a className="brand" href="/products">
+          <span className="logo"><Zap strokeWidth={2.5} /></span>
+          <span>Engine</span>
+        </a>
+
+        {products.length > 1 ? (
+          <details className="switcher">
+            <summary className="prod">
+              <span className="prod-mark" aria-hidden="true">{mark(String(product.name))}</span>
+              <span>{String(product.name)}</span>
+              <ChevronsUpDown />
+            </summary>
+            <div>
+              {products.map((p) => (
+                <a key={String(p._id)} href={`/products/${String(p._id)}`}>{String(p.name)}</a>
+              ))}
+            </div>
+          </details>
+        ) : (
+          <div className="prod">
+            <span className="prod-mark" aria-hidden="true">{mark(String(product.name))}</span>
+            <span>{String(product.name)}</span>
+          </div>
+        )}
+
+        <nav className="side-nav" aria-label="Product">
           <Nav productId={id} counts={{ review, replies }} />
-        </aside>
-        <Notifications productId={id} />
-        {/* The ideas loop has a kill switch (IDEAS_LOOP=off); the server says whether it is on. */}
-        <AccountMenu
-          name={account.name}
-          email={account.email}
-          orgName={account.orgName}
-          product={{ id, ideas: ideasLoopOn() }}
-        />
-      </div>
+        </nav>
+
+        <div className="side-foot">
+          {/* The ideas loop has a kill switch (IDEAS_LOOP=off); the server says whether it is on. */}
+          <AccountMenu
+            name={account.name}
+            email={account.email}
+            orgName={account.orgName}
+            product={{ id, ideas: ideasLoopOn() }}
+            showName
+          />
+          <Notifications productId={id} />
+        </div>
+      </aside>
 
       <div>
-        <header className="topbar">
-          {products.length > 1 ? (
-            <details className="switcher">
-              <summary><strong>{String(product.name)}</strong> <span className="muted">▾</span></summary>
-              <div>
-                {products.map((p) => (
-                  <a key={String(p._id)} href={`/products/${String(p._id)}`}>{String(p.name)}</a>
-                ))}
-              </div>
-            </details>
-          ) : (
-            <strong>{String(product.name)}</strong>
-          )}
-        </header>
-
         <main className="page">{children}</main>
       </div>
     </div>
     </ToastProvider>
   );
+}
+
+/** Two letters for the product's square: "TeamGrid" → "TG", "Acme" → "AC". */
+function mark(name: string): string {
+  const caps = name.match(/[A-Z]/g) ?? [];
+  if (caps.length >= 2) return `${caps[0]}${caps[1]}`;
+  return name.trim().slice(0, 2).toUpperCase();
 }

@@ -1,3 +1,4 @@
+import { Zap } from "lucide-react";
 import { getDb } from "@/db/client.js";
 import { COLLECTIONS as C } from "@/db/collections.js";
 import { createProduct } from "../actions";
@@ -18,7 +19,7 @@ export default async function Products() {
   return (
     <div>
       <header className="topbar">
-        <span className="brand">Engine</span>
+        <span className="brand"><span className="logo"><Zap strokeWidth={2.5} /></span>Engine</span>
         <span className="spacer" />
         <AccountMenu name={account.name} email={account.email} orgName={account.orgName} />
       </header>

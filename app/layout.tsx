@@ -1,19 +1,18 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-import { JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { Figtree, JetBrains_Mono } from "next/font/google";
 import { themeScript } from "./theme";
 
-// One family across both roles. Bricolage is an editorial face — its width axis and
-// tighter counters read as personality on a headline and as noise on a console that is
-// mostly labels and numbers. Plus Jakarta carries a real 800 for headings and a plain
-// 400 for body, so the hierarchy comes from weight rather than from a second typeface.
-const display = Plus_Jakarta_Sans({
+// One family across both roles. Figtree is round and open, so a screen of labels and short
+// rows reads as friendly rather than technical, and its 800 is heavy enough to carry a page
+// title on weight alone. The mono face is kept for counts and IDs only — never for a label.
+const display = Figtree({
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
+  weight: ["400", "500", "600", "700", "800"],
   variable: "--font-display",
   display: "swap",
 });
-const body = Plus_Jakarta_Sans({
+const body = Figtree({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-body",

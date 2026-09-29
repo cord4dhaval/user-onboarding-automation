@@ -584,6 +584,7 @@ export default async function Review({
                   name="decision"
                   value="approve"
                   size="sm"
+                  className="approve"
                   icon={<Check />}
                   aria-label={`Approve the message to ${name}`}
                   title={due ? "Approve — sends now" : "Approve — sends on its date"}

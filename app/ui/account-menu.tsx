@@ -18,12 +18,15 @@ export default function AccountMenu({
   email,
   orgName,
   product,
+  showName = false,
 }: {
   name: string;
   email: string;
   orgName?: string;
   /** Set inside a product; `ideas` is false when the loop is switched off (IDEAS_LOOP=off). */
   product?: { id: string; ideas: boolean };
+  /** In the rail there is room to say who is signed in, not just their initials. */
+  showName?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -55,17 +58,35 @@ export default function AccountMenu({
 
   return (
     <div className="acct" ref={wrap}>
-      <button
-        type="button"
-        className="avatar"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Account: ${name}`}
-        data-current={current || undefined}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {initials(name)}
-      </button>
+      {showName ? (
+        <button
+          type="button"
+          className="acct-btn"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`Account: ${name}`}
+          data-current={current || undefined}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <span className="avatar" aria-hidden="true">{initials(name)}</span>
+          <span className="who">
+            <span>{name}</span>
+            {orgName && <small>{orgName}</small>}
+          </span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="avatar"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`Account: ${name}`}
+          data-current={current || undefined}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {initials(name)}
+        </button>
+      )}
 
       {open && (
         <div className="acct-menu" role="menu">
