@@ -38,7 +38,7 @@ const LIST = "docs/subjects/everyday-2026-09-29.json";
 const TEAMGRID = "6a964454c4fa12977b6d6964";
 
 const TEMPLATES: Record<string, string> = {
-  welcome: "Your TeamGrid account is ready to use",
+  welcome: "Welcome to TeamGrid", // kept as it was, Dhaval 2026-09-29
   welcome_signup: "Put one small app on your computer",
   one_step_left: "Finish setting up your TeamGrid account",
   teamgrid_intro: "What TeamGrid does for your team",
@@ -46,7 +46,7 @@ const TEMPLATES: Record<string, string> = {
   privacy_answer: "What TeamGrid never sees on your computers",
   written_email: "We have a short note for you",
   re_qualify: "Does your team work at a computer?",
-  book_call: "Can we set it up with you?",
+  book_call: "Book a 15-minute setup call", // kept as it was, Dhaval 2026-09-29
   last_call: "We will stop writing to you now",
   replaces_tools: "One app writes your team's daily update",
   four_lines: "Stop asking your team what they did",

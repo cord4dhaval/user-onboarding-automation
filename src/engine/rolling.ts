@@ -256,9 +256,15 @@ export function subjectShapeProblems(subject: string, ask: "link" | "reply" = "l
  * inboxes as every written one together. Merge tokens are read as what they become: a
  * company token as their name, and a first name is refused, because no subject carries one.
  */
+/**
+ * Template subjects Dhaval chose to keep as they are, 2026-09-29, after reading the rewrites:
+ * the welcome to someone who signed up, and the offer to book the setup call. Exact lines only.
+ */
+export const KEPT_TEMPLATE_SUBJECTS: ReadonlySet<string> = new Set(["Welcome to TeamGrid", "Book a 15-minute setup call"]);
+
 export function templateSubjectProblems(subject: string, product: string[] = [], ask: "link" | "reply" = "link"): string[] {
   const line = String(subject ?? "").trim();
-  if (!line) return [];
+  if (!line || KEPT_TEMPLATE_SUBJECTS.has(line)) return [];
   const problems: string[] = [];
   if (/\{\{\s*first_name\s*\}\}/i.test(line)) problems.push("carries {{first_name}}; a subject never carries a person's name");
   const read = line.replace(/\{\{\s*first_name\s*\}\},?\s*/gi, "").replace(/\{\{\s*company[a-z_]*\s*\}\}/gi, "Acme").replace(/\{\{[^}]*\}\}/g, "your");
