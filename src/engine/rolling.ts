@@ -497,6 +497,9 @@ const NOT_THEIRS = new Set([
   "stakeholders", "deliverables", "onboarding", "visibility", "efficiency", "utilization", "utilisation",
   "bandwidth", "ecosystem", "platform", "integrated", "enterprise", "excellence", "empower", "empowering",
   "cutting-edge", "end-to-end", "insights", "analytics", "dashboard", "resources", "strategic", "holistic",
+  // Words from a form's own options ("all of the above") or filler, never their trade.
+  "above", "below", "other", "others", "under", "after", "before", "multiple", "various", "general",
+  "lorem", "ipsum", "dolor",
 ]);
 
 export function theirWords(person: Document | null | undefined): string[] {
