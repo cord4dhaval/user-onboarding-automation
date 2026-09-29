@@ -5,7 +5,7 @@ import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas, trialReach } from "./ideas.js";
 import { contextForLead, contextOf } from "./siteContext.js";
 import { hookSpread } from "./hooks.js";
-import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, BODY_METHOD, SENTENCE_MAX_WORDS, SUBJECT_METHOD, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent, theirWords } from "./rolling.js";
+import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, BODY_METHOD, WHATSAPP_METHOD, SENTENCE_MAX_WORDS, SUBJECT_METHOD, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent, theirWords } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -321,6 +321,7 @@ export async function writingBriefFor(input: {
     rules: [
       "Hook them with the subject and the first line, then say what the mail needs, plainly, so a busy owner understands it in one read. Short means each part once, not fewer words than the idea needs.",
       BODY_METHOD,
+      WHATSAPP_METHOD,
       "Every link ask sells: the problem, what it costs, what changes with TeamGrid, the price, one next step. Never a tour of features.",
       "Spread the hooks as well as the ideas. lead_type.sequence gives each hook its share of the campaign's recent sends beside the share an even split would give it, and hooks_open lists the ones running under that: take one of those unless nothing else fits this lead. plan_goal refuses a hook already past half again its even share. A hook on a quarter of the list is one argument repeated, and its record cannot be compared with hooks nobody used.",
       "Say what the product is in every mail, in one plain sentence close to product_in_one_line (\"TeamGrid is a small app on your office computers.\"), because a reader does not remember the last mail. Word it fresh each time: the same sentence in a second mail is a stamp, and compose_batch refuses a line this lead has already been sent.",

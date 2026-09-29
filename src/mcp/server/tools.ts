@@ -2249,6 +2249,14 @@ export const TOOLS: ToolDef[] = [
         const shared = sharedWithOtherLeads([t.opening, t.scene].map((v) => String(v ?? "")).join("\n"), otherLeadsMail);
         if (shared) slotSubjectProblems.push(`step ${String(t.step_id)}: "${shared}" is a sentence another lead in this campaign already has. Write this moment for this lead, from their own work.`);
       }
+      // A WhatsApp template's {{message}} and {{question}} meet the same two methods; the
+      // template's fixed text says what TeamGrid is, so the message need not (2026-09-29).
+      for (const [t] of providerTouch) {
+        const said = [t.body, t.question].map((v) => String(v ?? ""));
+        for (const problem of plainBodyProblems(said, [...theirs, ...theirVocabulary(lead)], companyWords, productWords, { mustSayWhatItIs: false })) {
+          slotSubjectProblems.push(`step ${String(t.step_id)}: the WhatsApp message ${problem}.`);
+        }
+      }
       if (slotSubjectProblems.length) {
         throw new Error(`Fix all of these, then send again:\n- ${slotSubjectProblems.join("\n- ")}\nNothing was written.`);
       }

@@ -49,6 +49,15 @@ export const BODY_METHOD =
   "Do not squeeze the mail. Every mail says these five things, each one fully, in this order. 1, the problem, in their words (opening). 2, a real moment from their kind of work that shows it (scene, 1 to 3 sentences). 3, what TeamGrid is, in one plain sentence, in every mail and worded fresh each time, because nobody remembers the last mail (\"TeamGrid is a small app on your office computers.\"); it opens the reveal. 4, what TeamGrid would show or do about that moment (the rest of the reveal, 1 or 2 sentences). 5, one next step said plainly: what to do and what happens then (question, with the price where this is the mail that gives it). That usually takes 60 to 100 words and never more than 110. Say each part once: no second example, no feature list, no warm-up line.";
 
 /**
+ * The same two methods on WhatsApp (Dhaval, 2026-09-29), in the room a WhatsApp template gives:
+ * one paragraph of at most 60 words in its {{message}}. The template's fixed text already says
+ * what TeamGrid is, so the message carries the rest: their problem, a moment from their work,
+ * what TeamGrid would show about it.
+ */
+export const WHATSAPP_METHOD =
+  "How to write a WhatsApp message. The same way as a mail: talk to the owner as on a phone call, in full sentences with a doing word, \"you\" and \"your\", and only everyday words, their own words, or Indian office words; compose_batch refuses the hard ones and names the easy word. It is one paragraph of at most 60 words in the template's {{message}}: their problem in their words, one real moment from their kind of work, and what TeamGrid would show them about it. The template's fixed text already says what TeamGrid is and signs off, so do not repeat it, and no greeting. Never say TeamGrid watches, monitors or tracks anyone.";
+
+/**
  * How long a touch is given to be answered before the next one is planned.
  *
  * Email is read over a day or two; a WhatsApp message within hours; a call has its answer
@@ -358,7 +367,15 @@ const SET_LINE = /₹|[×=]|^\s*\d+\s*=|^\s*(Reply with one number|P\.S\.)/i;
  *
  * Every problem comes back at once, each hard word once, so one rewrite fixes them all.
  */
-export function plainBodyProblems(parts: string[], theirs: string[] = [], company: string[] = [], product: string[] = []): string[] {
+export function plainBodyProblems(
+  parts: string[],
+  theirs: string[] = [],
+  company: string[] = [],
+  product: string[] = [],
+  // A WhatsApp template already says what TeamGrid is in its fixed text, so its {{message}}
+  // need not; everything else holds there too (Dhaval, 2026-09-29).
+  opts: { mustSayWhatItIs?: boolean } = {},
+): string[] {
   const text = parts.map((p) => String(p ?? "").replace(/\*\*/g, "")).join("\n");
   const own = new Set([...theirs, ...product.flatMap((p) => p.split(/[^A-Za-z0-9]+/))].map((w) => w.toLowerCase()).filter(Boolean));
   const companyWords = new Set(company.flatMap((c) => c.toLowerCase().split(/[^a-z0-9]+/)).filter((w) => w.length >= 2));
@@ -386,9 +403,10 @@ export function plainBodyProblems(parts: string[], theirs: string[] = [], compan
     const named = sentences.filter((x) => nameRe.test(x));
     // What it is: a sentence with its name and the thing it is (an app, on their computers).
     // "TeamGrid would show that stop" names it without saying what it is (2026-09-29).
-    if (!named.length) {
+    const mustSay = opts.mustSayWhatItIs !== false;
+    if (mustSay && !named.length) {
       problems.push(`never names ${names[0]}; say in one plain sentence what it is, in every mail, because a reader does not remember the last one`);
-    } else if (!named.some((x) => WHAT_IT_IS.test(x))) {
+    } else if (mustSay && !named.some((x) => WHAT_IT_IS.test(x))) {
       problems.push(`names ${names[0]} but never says what it is; add one plain sentence such as "${names[0]} is a small app on your office computers."`);
     }
     // The product never watches anyone: "a tool that quietly watches your team's work" says the
