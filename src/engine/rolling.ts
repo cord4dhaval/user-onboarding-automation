@@ -532,11 +532,14 @@ export function theirVocabulary(person: Document | null | undefined): string[] {
   return [...new Set((source.match(/[a-z][a-z-]{2,}/g) ?? []).map((w) => w.replace(/-+$/, "")).filter((w) => !NOT_THEIRS.has(w)))];
 }
 
-/** The first word of theirs this text uses. Both sides are cut back to a stem, so "exhibitions" on their site matches "exhibition" in a subject. */
+/**
+ * The first word of theirs this text uses, compared by plain forms on both sides: "roles" on
+ * their form matches "role" in a mail, and "exhibitions" matches "exhibition". The old stem cut
+ * "-es" before "-s" and turned "roles" into "rol", so a mail using their word was refused.
+ */
 export function carriesTheirWorld(text: string, words: string[]): string | null {
-  const stem = (word: string) => word.replace(/-+$/, "").replace(/ies$/, "y").replace(/(ing|es|s)$/, "");
-  const said = new Set((String(text ?? "").toLowerCase().match(/[a-z][a-z-]{3,}/g) ?? []).map(stem));
-  return words.find((word) => said.has(stem(word.toLowerCase()))) ?? null;
+  const said = new Set((String(text ?? "").toLowerCase().match(/[a-z][a-z-]{2,}/g) ?? []).map((w) => w.replace(/-+$/, "")));
+  return words.find((word) => isOneOf(word.toLowerCase(), said)) ?? null;
 }
 
 /** A number in copy with nothing near it saying it is an example. Returned as warnings, not refused. */
