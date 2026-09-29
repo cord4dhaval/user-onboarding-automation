@@ -60,6 +60,16 @@ spare stage staff start stock store sum supply tax taxi text ticket tool tools t
 unit van visit wage wages wall worker workers yard
 raise quit fee private festival review normal notice guest teacher student doctor nurse machine due
 program programme ship charge match rush message mark detail buyer seller owner product
+example actually memory usually usual instead plain probably finally twice either written taken known kept built
+given begun chosen driven eaten fallen forgotten grown hidden spoken stolen thrown understood worn won wrote began
+broke broken chose drove fell forgot grew hid rode rang rose shot sang slept spoke stood threw woke wore led meant
+met hit hurt lay itself yourself themselves myself ourselves himself herself score split replace request explain
+separate business delay outside several actual third conversation present camera decision average active design
+designer engineer developer support service voice edit single dinner tonight shape pm
+these fit useful remind disappear rise mix including wonder system season quarter web tab emergency
+bought pickup technician experience workshop profit waste role
+touch compare agree offer prefer improve include repeat suggest travel wash cook describe expect imagine manage
+receive remove repair search appear develop protect measure
 monday tuesday wednesday thursday friday saturday sunday
 january february march april june july august september october november december
 morning afternoon evening night noon midnight daily weekly monthly hourly
@@ -76,6 +86,8 @@ sheet sheets file files update updates target targets sales branch godown factor
 export import paperwork follow task tasks project projects deadline office
 load loading screen internet click link login online website
 punch stuck diwali holi audit handover youtube google
+screenshot screenshots install installed setup status admin appraisal senior supervisor dispatch chai approve
+approval confirm resign inbox schedule reminder log login logout data wfh
 `;
 
 /** Doing words, for the "say it as a sentence" check: a line with none of these is a label, not speech. */
@@ -92,7 +104,15 @@ running said sat save saw say says see seen sees sell send sends sent set share 
 sleep slow speak spend spends spent stand start starts started stay stays stop stops take takes
 taking talk talks tell tells think thinks throw told took try turn understand use uses used visit
 wait waits waiting walk want wants watch went win wish work works worked working worry write writes
-wrote
+wrote score skip confirm log ship ping lay cover email text message install add split record mark nudge track flag
+slip stall chase explain replace request delay compare rank remind ring scroll trace switch renew edit design approve
+wonder lean agree fit belong book bill claim collect copy fix grow hide improve include join like look matter mind note
+notice offer own pass prefer prepare prove quit raise realise realize reduce refuse remember rent repeat report ruin
+rush serve settle sign sound stick study suggest supply support suppose surprise test thank touch train travel treat
+trust type become believe clean cook deliver depend describe develop enjoy expect face feed fight happen hang imagine
+last listen live manage measure name place point produce protect rate receive relax remove repair roll search seem
+shine shop sort steer store suffer suit trade appear disappear exist miss count check lose sit stand set led began
+became grew hid met hit hurt lay meant rode rose spoke stood threw wore brought bought caught chose drove fell forgot
 `;
 
 const words = (text: string) => new Set(text.trim().split(/\s+/).filter(Boolean));
@@ -101,9 +121,15 @@ export const EVERYDAY_WORDS: ReadonlySet<string> = words(EVERYDAY);
 export const INDIAN_OFFICE_WORDS: ReadonlySet<string> = words(INDIAN_OFFICE);
 const DOING_WORDS: ReadonlySet<string> = words(DOING);
 
-/** The word as written and the plain forms it could come from: waits → wait, stopped → stop, dealers' → dealer. */
+/** The word as written and the plain forms it could come from: waits → wait, stopped → stop, bookings → book. */
 function baseForms(raw: string): string[] {
   const w = raw.toLowerCase().replace(/[’']s$/, "").replace(/[’']$/, "");
+  // Two rounds, so a plural of a longer form comes back too: bookings → booking → book.
+  const once = suffixForms(w);
+  return [...new Set([...once, ...once.flatMap(suffixForms)])];
+}
+
+function suffixForms(w: string): string[] {
   const out = new Set([w]);
   const add = (x: string) => { if (x.length >= 2) out.add(x); };
   if (w.endsWith("ies")) add(`${w.slice(0, -3)}y`);
@@ -115,6 +141,9 @@ function baseForms(raw: string): string[] {
   if (w.endsWith("er")) { add(w.slice(0, -2)); add(w.slice(0, -1)); }
   if (w.endsWith("est")) { add(w.slice(0, -3)); add(w.slice(0, -2)); }
   if (w.endsWith("ly")) add(w.slice(0, -2));
+  if (w.endsWith("ier")) add(`${w.slice(0, -3)}y`);
+  if (w.endsWith("iest")) add(`${w.slice(0, -4)}y`);
+  if (w.endsWith("ily")) add(`${w.slice(0, -3)}y`);
   // stopped → stopp → stop, running → runn → run
   for (const x of [...out]) if (/([b-df-hj-np-tv-z])\1$/.test(x)) add(x.slice(0, -1));
   return [...out];
@@ -125,9 +154,10 @@ export function isEasyWord(raw: string): boolean {
   return baseForms(raw).some((w) => EVERYDAY_WORDS.has(w) || INDIAN_OFFICE_WORDS.has(w));
 }
 
-/** True when the word is a doing word, in any of its plain forms. */
+/** True when the word is a doing word, in any of its plain forms. A long word ending in -ed is one too (logged, approved). */
 export function isDoingWord(raw: string): boolean {
-  return baseForms(raw).some((w) => DOING_WORDS.has(w));
+  const w = raw.toLowerCase();
+  return (w.length >= 5 && w.endsWith("ed")) || baseForms(w).some((x) => DOING_WORDS.has(x));
 }
 
 /** True when one of the plain forms of the word is in the given list, for the lead's own words. */

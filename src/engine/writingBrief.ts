@@ -5,7 +5,7 @@ import { evidenceStatus, ideaPerformance, themePerformance } from "./outcomes.js
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaRecords, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, inventedOf, rankIdeas, trialReach } from "./ideas.js";
 import { contextForLead, contextOf } from "./siteContext.js";
 import { hookSpread } from "./hooks.js";
-import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, SENTENCE_MAX_WORDS, SUBJECT_METHOD, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent, theirWords } from "./rolling.js";
+import { FORMAT_CHOICE, FRAME_BODY_MAX_WORDS, IDEAS_ARE_TEACHING, LAYOUT_TESTS, LEAD_TYPE_PROFILES, PRICE_EVERY, ROLLING_MAX_STEPS, SCENE_JOBS, SCENE_KINDS, BODY_METHOD, SENTENCE_MAX_WORDS, SUBJECT_METHOD, WATCH_WINDOW_MS, frameKeyOf, groupFor, layoutArm, leadTypeOf, paceBand, planPriceFigures, priceHistory, scenesSent, theirWords } from "./rolling.js";
 
 /**
  * What a session planning or writing one touch in a rolling campaign reads, in one block.
@@ -319,10 +319,11 @@ export async function writingBriefFor(input: {
       };
     }),
     rules: [
-      "Nobody reads a long mail. Hook them with the subject and the first line, then keep the whole mail to about 50 words that a busy owner understands in one quick read.",
+      "Hook them with the subject and the first line, then say what the mail needs, plainly, so a busy owner understands it in one read. Short means each part once, not fewer words than the idea needs.",
+      BODY_METHOD,
       "Every link ask sells: the problem, what it costs, what changes with TeamGrid, the price, one next step. Never a tour of features.",
       "Spread the hooks as well as the ideas. lead_type.sequence gives each hook its share of the campaign's recent sends beside the share an even split would give it, and hooks_open lists the ones running under that: take one of those unless nothing else fits this lead. plan_goal refuses a hook already past half again its even share. A hook on a quarter of the list is one argument repeated, and its record cannot be compared with hooks nobody used.",
-      "Say what the product is once to a person, in plain words close to product_in_one_line, in their first mail (\"TeamGrid is a small app on your office computers.\"). After that the reveal says what it would show about their own work: the same sentence in a second mail is a stamp, and compose_batch refuses a line this lead has already been sent.",
+      "Say what the product is in every mail, in one plain sentence close to product_in_one_line (\"TeamGrid is a small app on your office computers.\"), because a reader does not remember the last mail. Word it fresh each time: the same sentence in a second mail is a stamp, and compose_batch refuses a line this lead has already been sent.",
       `Short sentences, one idea each, never more than ${SENTENCE_MAX_WORDS} words. Everyday words: no wordplay, no metaphors, no clever phrasing. Where plain_words lists a word, use its plain replacement.`,
       "Name the problem the way they would say it (\"orders wait for approval\"), not in our words (\"work is blocked\"). Their own words come first: where the lead card carries what they typed as their problem, the opening is that problem in their words, not a problem we picked for them.",
       "Every word in the body is a word an owner says out loud. Say salary, not payroll; who came in, not attendance; hours or any sheet, not timesheet; staying late or extra hours, not overtime; free or doing nothing, not idle; work or orders, not pipeline; how much work gets done, not productivity. Never capacity, visibility, bottleneck, loaded, leverage, streamline, seamless, solution.",
@@ -349,7 +350,7 @@ export async function writingBriefFor(input: {
       "lead_type comes first: where it is set, its default_ask and rules decide what every touch asks for.",
       FORMAT_CHOICE,
       "One main ask. On a link ask: the button (it says \"Try it free for 7 days\") and the reply \"call\" offer in the ps. On a reply ask: one question they can answer in a line, and no button.",
-      "Write in parts, not one block: subject (one spoken sentence, by \"How to write the subject\" below), opening (the problem and its cost, one line under 90 characters, shown bold), scene (1 or 2 short lines, at most two **bold** figures), reveal (1 or 2 lines on what TeamGrid does, as a result), question (on a link ask the price from writing.facts.plans, shown bold in a box; on a reply ask the question), ps, plus the timeline or reply_options your layout_tests arm asks for. No shows list and no cost_lines box in hot or warm emails: the numbers go in the bold lines.",
+      "Write in parts, not one block: subject (one spoken sentence, by \"How to write the subject\" below), opening (the problem and its cost, one line under 90 characters, shown bold), scene (1 to 3 sentences, at most two **bold** figures), reveal (one plain sentence on what TeamGrid is, then 1 or 2 on what it would show, as a result), question (on a link ask the price from writing.facts.plans, shown bold in a box; on a reply ask the question), ps, plus the timeline or reply_options your layout_tests arm asks for. No shows list and no cost_lines box in hot or warm emails: the numbers go in the bold lines.",
       `The whole body, lists and titles included, stays within ${leadTypeOf(goal) ? LEAD_TYPE_PROFILES[leadTypeOf(goal)!].maxWords : FRAME_BODY_MAX_WORDS} words.`,
       "Write quantities as digits: 5 days, 9 hours, 3 of 9 hours, 30 people, ₹4 lakh. A skimming eye stops on digits and passes over words.",
       "In plain text there is no hidden preview line: the inbox shows the opening after the subject. Make the opening add to the subject, never repeat it.",

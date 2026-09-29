@@ -27,11 +27,26 @@ export const CHECKPOINT_REASK_MS = 12 * 3_600_000;
 export const DEFAULT_FRAME_KEY = "written_email";
 
 /**
- * Most words a session writes into the frame. The manager's review of 2026-09-22: nobody
- * reads a long mail, so the hook is the subject and first line and the whole mail is about
- * 50 words. The whole mail, greeting and sign-off included, still stays under 200.
+ * Most words a session writes into the frame. The manager's review of 2026-09-22 asked for
+ * about 50 words, and the mails that followed read as notes: the parts were squeezed until
+ * a reader could not tell who was writing or why (Dhaval, 2026-09-29). Now every mail says
+ * the five parts in BODY_METHOD fully, which usually takes 60 to 100 words, and this cap only
+ * stops a mail that has started to say things twice. The whole mail, greeting and sign-off
+ * included, still stays under 200.
  */
-export const FRAME_BODY_MAX_WORDS = 75;
+export const FRAME_BODY_MAX_WORDS = 110;
+
+/**
+ * How the AI writes the body of a mail, said once and read by every place that asks for one.
+ *
+ * Dhaval, 2026-09-29: the same two methods as the subject — A, talk to the owner, do not write
+ * at them; B, easy words only — and no squeezing: "whatever is needed in the content should be
+ * there", while the mail stays short. The needed parts are named, so short means "each part
+ * once", not "fewer words than the idea needs".
+ */
+export const BODY_METHOD =
+  "How to write the mail. Write it the way you would explain it to the owner on a phone call. Full sentences, one idea each, 16 words or fewer, each one following from the last (so, because, then, but). Say \"you\" and \"your\". Only people do things: paperwork does not wait and a day does not slip. No riddles, no clever lines, and no notes like \"Hours by client, no sheet\": a line with no doing word is not a sentence yet. Every word is an everyday word a school child knows, a word of their own from writing.words_of_theirs, their company or product name, or a word every Indian office says (staff, pending, report, WhatsApp, Excel, salary, leave). compose_batch refuses the hard ones and says what to use instead: tells you, not flags; on its own, not automatically; a short note, not a summary; if, not whether. " +
+  "Do not squeeze the mail. Every mail says these five things, each one fully, in this order. 1, the problem, in their words (opening). 2, a real moment from their kind of work that shows it (scene, 1 to 3 sentences). 3, what TeamGrid is, in one plain sentence, in every mail and worded fresh each time, because nobody remembers the last mail (\"TeamGrid is a small app on your office computers.\"); it opens the reveal. 4, what TeamGrid would show or do about that moment (the rest of the reveal, 1 or 2 sentences). 5, one next step said plainly: what to do and what happens then (question, with the price where this is the mail that gives it). That usually takes 60 to 100 words and never more than 110. Say each part once: no second example, no feature list, no warm-up line.";
 
 /**
  * How long a touch is given to be answered before the next one is planned.
@@ -195,7 +210,7 @@ export function companyTokens(person: Document | null | undefined): string[] {
  * site work" are the same thing in school English. A word of theirs is allowed to be long —
  * fabrication and installation are what they call their own work — and so is their company name.
  */
-const HARD_IN_A_SUBJECT: Record<string, string> = {
+const PLAIN_SWAPS: Record<string, string> = {
   activation: "work", assessment: "test", assessments: "tests", candidate: "person", conference: "meeting",
   coordinator: "planner", corporate: "company", counselling: "call", exhibition: "show", guesswork: "guess",
   impressions: "memory", productivity: "work", requirement: "need", required: "needed", revision: "change",
@@ -203,6 +218,20 @@ const HARD_IN_A_SUBJECT: Record<string, string> = {
   utilization: "use", versus: "or",
   covered: "did", logged: "see", counted: "see", founder: "you", certification: "course", paused: "stopped",
   pause: "stop", visibility: "see", insights: "see", monitor: "see", tracking: "see", track: "see",
+  // The body's hard words, from the last 300 mails measured on 2026-09-29, most used first.
+  flags: "tells you", flag: "tell you", summary: "short note", assumed: "if", assume: "if", assuming: "if",
+  assumption: "guess", automatically: "on its own", rarely: "not often", chasing: "asking again", chase: "ask again",
+  focused: "real", focus: "work", whether: "if", unanswered: "not answered", tracks: "shows", tracked: "seen",
+  slips: "gets late", slip: "get late", software: "app", pattern: "what happens each day", patterns: "what happens each day",
+  whoever: "who", stalled: "stuck", stall: "get stuck", unread: "not read", pings: "messages", ping: "message",
+  elsewhere: "somewhere else", surfaces: "shows", unexplained: "with no reason", unseen: "not seen", unnoticed: "not seen",
+  unused: "not used", steady: "regular", view: "see", cover: "do", covers: "does", ate: "took", straight: "clear",
+  pitch: "offer", visible: "seen", claims: "says", claimed: "said", reminds: "tells", uneven: "not equal",
+  activity: "work", warning: "sign", dip: "drop", truly: "really", renew: "pay again", interruptions: "breaks",
+  complaint: "problem", query: "question", unclear: "not clear", shelved: "dropped", retainer: "monthly fee",
+  detects: "sees", trend: "change", burnout: "too tired", attendance: "who came in", timesheet: "hours sheet",
+  timesheets: "hours sheets", payroll: "salary", overtime: "extra hours", idle: "free", enquiry: "question",
+  enquiries: "questions", quote: "price", workload: "work",
 };
 
 /**
@@ -298,7 +327,7 @@ export function plainSubjectProblems(subject: string, theirs: string[] = [], com
     // A joined word is read as its parts: "mid-test" is "mid" and "test".
     for (const part of word.split("-").filter(Boolean)) {
       if (isEasyWord(part) || isOneOf(part, own) || companyWords.has(part)) continue;
-      const plain = HARD_IN_A_SUBJECT[part];
+      const plain = PLAIN_SWAPS[part];
       hard.push(plain ? `"${raw.replace(/[^A-Za-z'’-]/g, "")}" (say "${plain}")` : `"${raw.replace(/[^A-Za-z'’-]/g, "")}"`);
     }
   }
@@ -311,6 +340,50 @@ export function plainSubjectProblems(subject: string, theirs: string[] = [], com
   const namesThem = tokens.some((t) => companyWords.has(t.word) && t.word.length >= 3 && !isEasyWord(t.word));
   const speaksToThem = namesThem || tokens.some((t) => t.word === "you" || t.word === "your" || t.word === "yours");
   if (!speaksToThem) problems.push("does not speak to them; put \"you\" or \"your\" in it, or their company name");
+  return problems;
+}
+
+/** Money lines, reply options and a timeline's day label are set layouts, not sentences to speak. */
+const SET_LINE = /₹|[×=]|^\s*\d+\s*=|^\s*(Reply with one number|P\.S\.)/i;
+
+/**
+ * The body in everyday English, said the way a person talks (methods A and B on the body,
+ * Dhaval 2026-09-29): the same two methods the subject follows.
+ *
+ * B, easy words: every word of the parts we write is an everyday word, one of the lead's own
+ * words, part of their company or product name, or a digit. A, spoken sentences: every
+ * sentence has a doing word, so nothing reads as a note to self ("Hours by client, no sheet").
+ * And the mail speaks to them and names the product, so a reader who forgot the last mail still
+ * knows who is writing and why.
+ *
+ * Every problem comes back at once, each hard word once, so one rewrite fixes them all.
+ */
+export function plainBodyProblems(parts: string[], theirs: string[] = [], company: string[] = [], product: string[] = []): string[] {
+  const text = parts.map((p) => String(p ?? "").replace(/\*\*/g, "")).join("\n");
+  const own = new Set([...theirs, ...product.flatMap((p) => p.split(/[^A-Za-z0-9]+/))].map((w) => w.toLowerCase()).filter(Boolean));
+  const companyWords = new Set(company.flatMap((c) => c.toLowerCase().split(/[^a-z0-9]+/)).filter((w) => w.length >= 2));
+  const problems: string[] = [];
+  const hard = new Map<string, string>();
+  for (const raw of text.split(/[\s/]+/)) {
+    const word = raw.toLowerCase().replace(/[^a-z0-9'’-]/g, "").replace(/^[-'’]+|[-'’]+$/g, "");
+    if (!word || /\d/.test(word)) continue;
+    // A joined word is read as its parts, and a two-letter prefix ("re-", "e-") as part of the next.
+    if (isEasyWord(word.replace(/-/g, "")) || isOneOf(word, own)) continue;
+    for (const part of word.split("-").filter((x) => x.length > 2)) {
+      if (isEasyWord(part) || isOneOf(part, own) || companyWords.has(part) || hard.has(part)) continue;
+      const plain = PLAIN_SWAPS[part];
+      hard.set(part, plain ? `"${part}" (say "${plain}")` : `"${part}"`);
+    }
+  }
+  if (hard.size) problems.push(`${[...hard.values()].join(", ")} ${hard.size === 1 ? "is not an everyday word" : "are not everyday words"}; say each with words a school child knows, one of their own words, or an office word like staff, pending, report`);
+  const sentences = text.split(/(?<=[.?!])\s+|\n+/).map((x) => x.trim()).filter((x) => x && !SET_LINE.test(x));
+  const labels = sentences.filter((x) => !x.split(/\s+/).some((w) => isDoingWord(w.toLowerCase().replace(/[^a-z'’]/g, ""))));
+  if (labels.length) problems.push(`${labels.map((x) => `"${x}"`).join(", ")} ${labels.length === 1 ? "has" : "have"} no doing word, so ${labels.length === 1 ? "it reads" : "they read"} as a note, not speech; say who does what`);
+  if (!/\b(you|your|yours)\b/i.test(text)) problems.push("never speaks to them; say \"you\" or \"your\" where it is about them");
+  const names = product.filter(Boolean);
+  if (names.length && !names.some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text))) {
+    problems.push(`never names ${names[0]}; say in one plain sentence what it is, in every mail, because a reader does not remember the last one`);
+  }
   return problems;
 }
 
@@ -353,6 +426,18 @@ export function theirWords(person: Document | null | undefined): string[] {
     .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
     .slice(0, 24)
     .map(([word]) => word);
+}
+
+/**
+ * Every word their own answers, role and website use, for the body's word check: a trade word
+ * of theirs (jointer, recruiter, dispatch) is never a hard word to them, even where it is not
+ * among the few theirWords ranks first. Our own vocabulary is still left out.
+ */
+export function theirVocabulary(person: Document | null | undefined): string[] {
+  const form = ((person?.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;
+  const site = String((person?.enrichment as { siteText?: unknown } | undefined)?.siteText ?? "");
+  const source = [...Object.values(form), person?.role, site].map((v) => String(v ?? "")).join(" ").toLowerCase();
+  return [...new Set((source.match(/[a-z][a-z-]{2,}/g) ?? []).map((w) => w.replace(/-+$/, "")).filter((w) => !NOT_THEIRS.has(w)))];
 }
 
 /** The first word of theirs this text uses. Both sides are cut back to a stem, so "exhibitions" on their site matches "exhibition" in a subject. */
@@ -554,9 +639,9 @@ export const SCENE_JOBS: Record<SceneKind, string> = {
   money:
     "the working behind one rupee figure: how many people, how much time each loses, and what an hour costs — the rate said as an assumption (\"If an hour of their time costs ₹250, that is about ₹2,750 a month\"). Hours first, rupees second.",
   moment:
-    "one moment from their own week, told with no figures at all (\"A dealer asks for a price on Monday. The reply goes out on Thursday.\"). It lands because they recognise it, not because it is counted.",
+    "one moment from their own week, told with no figures at all (\"A dealer asks you for a price on Monday. Your team sends it on Thursday.\"). It lands because they recognise it, not because it is counted.",
   shown:
-    "what TeamGrid would have shown them about that day, in the product's own plain words (\"Tuesday: the panel drawing waited two days for approval, and nobody was asked.\"). No rupees here.",
+    "what TeamGrid would have shown them about that day, in the product's own plain words (\"On Tuesday, nobody approved the panel drawing for 2 days, and nobody asked why.\"). No rupees here.",
 };
 
 /** Mails that may pass before the price is given again: it belongs in one mail of three. */
@@ -640,17 +725,18 @@ export function repeatedSentence(text: string, actions: Document[]): string | nu
  * the product. Approved by the manager on 2026-09-22 from four before/after rewrites: a ₹
  * figure or their problem in the subject, the problem bold on the first line, one or two
  * lines on what TeamGrid does, the price in bold, and the trial button with a reply "call"
- * P.S. About 50 words, in the words a shop owner uses.
+ * P.S. About 50 words, in the words a shop owner uses. Loosened on 2026-09-29 (BODY_METHOD):
+ * each needed part said fully, usually 60 to 100 words, and what TeamGrid is in every mail.
  */
 const SELL_RULES: string[] = [
   "Every email sells one result and asks for one step: try it free for 7 days, or reply \"call\". It is never a feature tour: one problem, what it costs them, what changes with TeamGrid, one next step.",
   "Hook them in the subject and the first line; most people decide there. Subject: one sentence you would say to the owner on a phone call, in everyday words, by \"How to write the subject\". It has to be theirs, not any office's: their company name where we hold a real one (\"Who came late at Sree Motors today\"), or a word from their own work (\"Your stand list is still pending\", \"Why your panel job got slow\"). opening: the problem in their words, shown bold.",
   "writing.words_of_theirs holds the words their answers and their website use. The subject or the scene carries at least one; compose_batch refuses a mail carrying none, because a mail that fits any office is a mail nobody opens.",
   "The reveal is the surprise, not the summary. Name the one thing TeamGrid would show about the moment just described, in their own nouns, so the reader thinks \"it can do that too\": which stand list is still waiting, which dealer request got no reply, why the panel job slowed. Where it fits, say it with \"also\". It speaks about the scene above it, never about a screen or a list of features.",
-  "Five parts, about 50 words, never more than 75: opening (the problem, bold); scene (1 or 2 short lines, at most 2 **bold** figures, doing the job scene_kind names); reveal (1 or 2 lines on what TeamGrid does about it, as a result they get); question (the price where this mail is the one that gives it, else one question they can answer in a line); ps (\"P.S. Reply \"call\" and we will call you.\").",
+  "The parts, by \"How to write the mail\": opening (the problem, bold); scene (1 to 3 sentences, at most 2 **bold** figures, doing the job scene_kind names); reveal (one plain sentence on what TeamGrid is, then 1 or 2 on what it would show about the scene, as a result they get); question (the price where this mail is the one that gives it, else one question they can answer in a line); ps (\"P.S. Reply \"call\" and we will call you.\"). Usually 60 to 100 words, never more than 110.",
   `scene_kind is required, and it is never the kind their last mail used: ${SCENE_KINDS.map((k) => `"${k}" — ${SCENE_JOBS[k]}`).join(" ")} writing.scene on the card names the last one and the ones open to you. Only "money" carries rupees: in "moment" and "shown" there is no ₹ figure at all.`,
   `The price goes in one mail of ${PRICE_EVERY}, not in every one. writing.price says whether this is the mail that gives it: where it is, the question is the price, bold, with the total for their team size when known; where it is not, leave every ₹ price out and close on one question they can answer in a line ("Would a 15-minute call help? Reply call."). The button still goes to the trial.`,
-  "Say what TeamGrid is once to a person, in their first mail. After that the reveal says what it would show about their own work; the same sentence twice is a stamp, and compose_batch refuses a line this lead has already been sent.",
+  "Say what TeamGrid is in every mail, in one plain sentence at the start of the reveal, because a reader does not remember the last mail. Word it fresh each time: the same sentence twice is a stamp, and compose_batch refuses a line this lead has already been sent.",
   "Where they are choosing a tool now (timeline ASAP) and the idea is about sales or customers, the question may ask for the call instead (\"Reply \"call\" and we will show you how it works in 15 minutes.\"), with the free trial in the ps.",
   "Words a shop owner uses, sentences of 16 words or fewer. Customer, not lead, enquiry or exhibitor. Price, not quote. \"Keeps track of every customer\", not CRM. \"Nobody has replied\", not \"goes quiet\". \"Too busy\", not overloaded or workload. \"New people\", not new hires. \"Fill any sheet\", not timesheet. No feature names (Founder's Report, Pattern Intelligence, Anomaly Feed): say what they get.",
   "Where the price is given it comes only from writing.facts.plans: ₹299 per person a month, or ₹649 for anything the facts put on the Advanced plan. Give the price, not the plan name. A total for their team is arithmetic, and a team size they did not give is an example.",
@@ -705,7 +791,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     replyHooks: [],
     maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Teach first, short and plain. Their problem in the subject, said as one spoken sentence in everyday words, the problem bold on the first line, one line on what TeamGrid does, then one question they can answer in a line (\"Would a 15-minute call help? Reply call.\"). Plain text, no link until they reply or click. About 50 words, sentences of 16 words or fewer.",
+      "Teach first, short and plain. Their problem in the subject, said as one spoken sentence in everyday words, the problem bold on the first line, one plain sentence on what TeamGrid is and what it would show them, then one question they can answer in a line (\"Would a 15-minute call help? Reply call.\"). Plain text, no link until they reply or click. By \"How to write the mail\": each part said fully, usually 60 to 100 words.",
     ],
   },
   reengage: {
@@ -717,7 +803,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     replyHooks: [],
     maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Say what is new or what may have changed for them, in plain words, and ask one easy question (\"Reply call and we will set it up with you.\") before offering the trial again. About 50 words.",
+      "Say what is new or what may have changed for them, in plain words, and ask one easy question (\"Reply call and we will set it up with you.\") before offering the trial again. By \"How to write the mail\": each part said fully, usually 60 to 100 words.",
     ],
   },
   trial: {
@@ -729,7 +815,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     replyHooks: ["question"],
     maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Help them reach the first useful report, then lead to the plan that fits, with its price. Never ask them to sign up again. About 50 words.",
+      "Help them reach the first useful report, then lead to the plan that fits, with its price. Never ask them to sign up again. By \"How to write the mail\": each part said fully, usually 60 to 100 words.",
     ],
   },
 };

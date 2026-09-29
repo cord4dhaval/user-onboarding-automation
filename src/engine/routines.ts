@@ -219,7 +219,7 @@ have been read.
   Read writing.lead_type before anything else: it says what kind of people this campaign
   holds and how hard to push. In a hot campaign (they filled in our own form and asked
   about the product) every step leads to signing up or a call: each email sells one
-  result in about 50 words, with the price. writing.lead_type.sequence lists the hooks, each
+  result, each part said fully and plainly (usually 60 to 100 words), with the price. writing.lead_type.sequence lists the hooks, each
   marked sent or not: daily_question, hidden_bill, office_habit, just_ask,
   found_out_late, no_watching, closing. Each also carries its share of the campaign's
   recent sends beside the share an even split would give it, and hooks_open lists the
@@ -339,8 +339,13 @@ A rolling campaign (lead_card goal.rolling true) is where the writing matters mo
 The step names an idea (its theme) and renders through a frame that adds only the
 greeting, the button, the sign-off and the unsubscribe line. Write it in parts, not
 one block of text, because a wall of paragraphs is skimmed and ignored:
-  Nobody reads a long mail (the manager's review, 2026-09-22): the subject and the first
-  line are the hook, and the whole mail is about 50 words, never more than 75.
+  The subject and the first line are the hook. Then the mail says what it needs, plainly,
+  by "How to write the mail" in the writing brief: talk to the owner as on a phone call,
+  full sentences with a doing word, "you" and "your", everyday words only (compose_batch
+  refuses the hard ones and names the easy word). Do not squeeze: every mail says the
+  problem, a real moment from their work, what TeamGrid is in one plain sentence, what it
+  would show about that moment, and one next step. Usually 60 to 100 words, never more
+  than 110; each part once.
   subject    required: one sentence you would say to the owner on a phone call,
              in everyday words ("Your dealers wait all day for a reply"). It speaks
              to them (you, your, or their company name), has a doing word, no comma
@@ -357,7 +362,7 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
   preheader  optional, under 90 characters, adds to the subject.
   opening    the problem and what it costs, one line under 90 characters. Bold; in
              plain text it is the inbox preview, so it never repeats the subject.
-  scene      1 or 2 short lines doing the job scene_kind names, at most two **bold**
+  scene      1 to 3 sentences doing the job scene_kind names, at most two **bold**
              figures. lead_card writing.scene says which shape their last mail used;
              this one takes another.
   scene_kind required with scene: "money", "moment" or "shown".
@@ -369,17 +374,19 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
                      "if", never "at ₹200 an hour"; the team size is the one they
                      gave us.
              moment  one moment from their own week, with no figure at all. "A dealer
-                     asks for a price on Monday. The reply goes out on Thursday."
+                     asks you for a price on Monday. Your team sends it on Thursday."
              shown   what TeamGrid would have shown them about that day, in plain
-                     words. "Tuesday: the panel drawing waited two days for approval."
+                     words. "On Tuesday, nobody approved the panel drawing for 2 days."
              Only money counts in rupees. The same shape twice running is refused,
              and so is a rupee figure in a moment or shown scene.
-  reveal     the surprise, not the summary: the one thing TeamGrid would show about the
-             moment in the scene, in their own nouns, so the reader thinks "it can do
-             that too" — which stand list is still waiting, which dealer request got no
-             reply, why the panel job slowed. Where it fits, say it with "also". Say what
-             it is ("a small app on your office computers") in their first mail only;
-             a sentence they have already been sent is refused, and so is a reveal that
+  reveal     opens with one plain sentence on what TeamGrid is, in every mail and
+             worded fresh ("TeamGrid is a small app on your office computers."),
+             because nobody remembers the last mail. Then the surprise, not the
+             summary: the one thing TeamGrid would show about the moment in the scene,
+             in their own nouns, so the reader thinks "it can do that too" — which
+             stand list is still pending, which dealer got no reply, why the panel job
+             got slow. A sentence they have already been sent is refused, and so is a
+             reveal that
              says nothing about the scene above it. Shown between thin lines with
              TeamGrid's name in the brand shade.
   question   the price belongs in one mail of three, and writing.price.give_it_here says
