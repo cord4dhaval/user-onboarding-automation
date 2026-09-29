@@ -347,7 +347,7 @@
   "ask": "reply",
   "name": "K Srinivas",
   "was": "The quote that went quiet",
-  "now": "Do your customers wait days for a quote?",
+  "now": "Do your customers wait days for a price?",
   "source": "written"
  },
  {
@@ -419,7 +419,7 @@
   "ask": "reply",
   "name": "World of Musicians",
   "was": "Queries that never get answered",
-  "now": "How long does each enquiry take you?",
+  "now": "How long do your customer questions take?",
   "source": "written"
  },
  {
@@ -1247,7 +1247,7 @@
   "ask": "link",
   "name": "Dinesh Rajvanshi",
   "was": "The Dint-Tech drawing board",
-  "now": "Enquiry calls take your team's whole day",
+  "now": "Customer calls take your team's whole day",
   "source": "written"
  },
  {

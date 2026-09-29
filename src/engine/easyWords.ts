@@ -75,7 +75,7 @@ laptop laptops computer computers mobile app apps excel whatsapp tally gst email
 sheet sheets file files update updates target targets sales branch godown factory showroom warehouse
 export import paperwork follow task tasks project projects deadline office
 load loading screen internet click link login online website
-punch stuck diwali holi quote quotation enquiry enquiries inquiry audit handover youtube google
+punch stuck diwali holi audit handover youtube google
 `;
 
 /** Doing words, for the "say it as a sentence" check: a line with none of these is a label, not speech. */

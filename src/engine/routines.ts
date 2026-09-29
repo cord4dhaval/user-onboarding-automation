@@ -474,24 +474,23 @@ After any click or reply, every later mail is a link ask again. Never both asks 
 message (the P.S. offer to reply "call" is a second route, not a second ask); compose_batch refuses a reply ask that does not end on a question, and the
 engine refuses one that carries a link.
 
-The subject. Two to five words, fourteen to forty-five characters, and shorter is
-better: across 5.5 million B2B cold emails 2 to 4 words opened best, and across 85
-million, lines under 4 words replied four times better than lines of 13 or more. Every
-word is one an owner says out loud to a friend: "what your showroom staff did today",
-"who is busy and who is free", "why work is getting late". No ₹ figure — "₹88,000 a
-month a punch machine will not catch" is an advertisement, not an inbox line — and no
-exclamation mark, which spam filters distrust. A question mark is allowed where the mail
-asks for a reply, and those lines open best of the lot; on a link ask it promises an
-answer the mail does not give. No sales words, no feature name.
+The subject. Write it the way you would say it to the owner on a phone call: one full
+sentence with a person, what they do, and the thing. "Your dealers wait all day for a
+reply", "Know what your team did today", "How fast does your export team reply?". It
+speaks to them, so "you", "your" or their company name is in it. Only people do things:
+paperwork does not wait and a day does not answer. No comma pieces ("Pause, or keep
+going?"), no colon or dash, and no this, that, these or those pointing at something
+they have not read yet. 3 to 8 words and 20 to 45 characters, so the whole line shows on
+a phone. No ₹ figure and no exclamation mark; a question mark only where the mail asks
+for a reply. Read it out loud: if a shop owner would say "what?", write it again.
 
-These readers do not read English all day. Every word of the subject is one a
-school-leaver takes in at a glance: "The call no one returned", not "The counselling
-call that waited"; "Hours spent in show week", not "Where the summit week went";
-"Desk work or site work", never "versus". A word of their own trade may be long
-(fabrication, installation), and so may their company name; one of ours may not.
-compose_batch refuses a subject word over 10 letters, and words such as counselling,
-assessment, exhibition, revision, corporate, guesswork, candidate, sessions,
-productivity, impressions and versus.
+These readers do not read English all day. Every word of the subject is an everyday word
+a school child knows (see, know, time, work, wait, reply, late, day, team), a word of
+their own from writing.words_of_theirs (cylinder, rotavator, fabrication), part of their
+company name, or a word every Indian office says (staff, pending, report, WhatsApp,
+Excel). compose_batch checks every word against the everyday list and refuses the line
+with the words it did not know; "covered", "logged", "founder" and "certification" are
+the kind it turns back.
 
 Words people write but never say are out of the subject: payroll (say salary),
 attendance (who came in), timesheet (hours), overtime (working late), idle (free),
@@ -504,8 +503,8 @@ as one sentence you would speak to them, in everyday words.
 
 Their company name goes in the subject wherever we hold a real one and the line still
 reads naturally: "Who came late at Sree Motors today", "Who came in first at Aventurine
-Homes", "Your Monday starts late at Khyra". Find it in context.site_title trimmed to the name itself — a title
-like "Top Property Consultant & Mandate Services in Mumbai" holds no name — or in what
+Homes", "Your Monday starts late at Khyra". Find it in context.site_title trimmed to the
+name itself — a title like "Top Property Consultant & Mandate Services in Mumbai" holds no name — or in what
 their site text calls itself, or in the domain read as words (sreemotors.com is Sree
 Motors). Leave the name out when you are not sure what they are called, when the domain
 is mangled (wwwpioneercars.in, abc.com), or when the line only fits with the name forced
