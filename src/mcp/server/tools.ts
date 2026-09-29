@@ -2232,12 +2232,14 @@ export const TOOLS: ToolDef[] = [
       // everyday words, speaking to them, and naming the product in every mail (2026-09-29).
       // Set layouts are left out: reply options are answers, not sentences to speak.
       // Other leads' mails in this campaign from the last two weeks, for the same-words check.
+      // Only the two fields the check reads: a whole mail is ~8 KB with its HTML, and a busy
+      // fortnight is over a thousand of them, which ran past the call's time limit (2026-09-29).
       const campaignRuns = (await db.collection(C.goalInstances).find({ orgId, productId, goalKey: String(instance.goalKey) }, { projection: { _id: 1 } }).toArray())
         .map((i) => String(i._id))
         .filter((id) => id !== String(goalInstanceId));
       const otherLeadsMail = await db
         .collection(C.actions)
-        .find({ goalInstanceId: { $in: campaignRuns }, channel: "email", status: { $in: ["sent", "dispatched", "queued", "awaiting_approval"] }, _id: { $gte: ObjectId.createFromTime(Math.floor(Date.now() / 1000) - 14 * 86400) } }, { projection: { content: 1 } })
+        .find({ goalInstanceId: { $in: campaignRuns }, channel: "email", status: { $in: ["sent", "dispatched", "queued", "awaiting_approval"] }, _id: { $gte: ObjectId.createFromTime(Math.floor(Date.now() / 1000) - 14 * 86400) } }, { projection: { "content.slots.opening": 1, "content.slotText": 1 } })
         .toArray();
       for (const t of touches) {
         if (providerTouch.has(t) || !structuredParts.has(t)) continue;
