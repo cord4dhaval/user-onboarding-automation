@@ -30,6 +30,7 @@
     "gmail:check": "tsx --env-file=.env src/scripts/gmail-check.ts",
     "linkedin:check": "tsx --env-file=.env src/scripts/linkedin-check.ts",
     "subjects": "tsx --env-file=.env src/scripts/simplify-subjects.ts",
+    "subjects:everyday": "tsx --env-file=.env src/scripts/everyday-subjects.ts",
     "rewrite:review": "tsx --env-file=.env src/scripts/rewrite-review-queue.ts",
     "regen": "tsx --env-file=.env src/scripts/regenerate-unsent.ts",
     "prompts": "tsx src/scripts/routine-prompts.ts",

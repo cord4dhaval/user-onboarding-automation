@@ -341,12 +341,17 @@ greeting, the button, the sign-off and the unsubscribe line. Write it in parts, 
 one block of text, because a wall of paragraphs is skimmed and ignored:
   Nobody reads a long mail (the manager's review, 2026-09-22): the subject and the first
   line are the hook, and the whole mail is about 50 words, never more than 75.
-  subject    required: the point of this mail in 2 to 5 talking words, 14 to 45
-             characters, and shorter reads better. No ₹ figure and no exclamation
-             mark; a question mark only on a reply ask. It must be theirs,
-             not any office's: their company name where we hold a real one ("Salary
-             day at Sree Motors"), or a word from their own work ("The stand list
-             nobody updated", "Why the panel job slowed"). writing.words_of_theirs
+  subject    required: one sentence you would say to the owner on a phone call,
+             in everyday words ("Your dealers wait all day for a reply"). It speaks
+             to them (you, your, or their company name), has a doing word, no comma
+             pieces, no this/that/these/those. Every word is one a school child
+             knows, their own word, or an Indian office word (staff, pending,
+             report, WhatsApp). 3 to 8 words, 20 to 45 characters. No ₹ figure,
+             no exclamation mark; a question mark only on a reply ask. The full
+             rule is "How to write the subject" in the writing brief. It must be
+             theirs, not any office's: their company name where we hold a real one
+             ("Who came late at Sree Motors today"), or a word from their own work
+             ("Your stand list is still pending"). writing.words_of_theirs
              lists the words their answers and their website use; the subject or the
              scene carries at least one, and compose_batch refuses a mail with none.
   preheader  optional, under 90 characters, adds to the subject.
@@ -494,12 +499,12 @@ pipeline (work, orders), productivity (how much work gets done), capacity, visib
 bottleneck, loaded. Test each subject by asking whether a shop owner would say that line
 on the phone.
 
-The subject follows the mail, not a list of fields: it is this mail's own point, in the
-fewest plain words.
+The subject follows the mail, not a list of fields: it is this mail's own point, said
+as one sentence you would speak to them, in everyday words.
 
 Their company name goes in the subject wherever we hold a real one and the line still
-reads naturally: "Salary day at Sree Motors", "Who came in at Aventurine Homes", "Monday
-mornings at Khyra". Find it in context.site_title trimmed to the name itself — a title
+reads naturally: "Who came late at Sree Motors today", "Who came in first at Aventurine
+Homes", "Your Monday starts late at Khyra". Find it in context.site_title trimmed to the name itself — a title
 like "Top Property Consultant & Mandate Services in Mumbai" holds no name — or in what
 their site text calls itself, or in the domain read as words (sreemotors.com is Sree
 Motors). Leave the name out when you are not sure what they are called, when the domain

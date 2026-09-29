@@ -1,4 +1,5 @@
 import type { Document } from "mongodb";
+import { isDoingWord, isEasyWord, isOneOf } from "./easyWords.js";
 
 /**
  * The rolling planner: plan the next one or two touches, watch what the person does, then
@@ -200,28 +201,38 @@ const HARD_IN_A_SUBJECT: Record<string, string> = {
   impressions: "memory", productivity: "work", requirement: "need", required: "needed", revision: "change",
   session: "client", sessions: "clients", simulator: "machine", subscription: "plan", utilisation: "use",
   utilization: "use", versus: "or",
+  covered: "did", logged: "see", counted: "see", founder: "you", certification: "course", paused: "stopped",
+  pause: "stop", visibility: "see", insights: "see", monitor: "see", tracking: "see", track: "see",
 };
 
-/** The longest a subject word may be before a reader has to sound it out, their own words apart. */
-export const SUBJECT_WORD_MAX_CHARS = 10;
+/**
+ * How the AI writes a subject, said once and read by every place that asks for one (the writing
+ * brief, the selling rules, the cold frame and the Advance routine), so the four can never drift.
+ *
+ * Dhaval, 2026-09-29, after reading the queue: "Pause, or keep going?", "A quick question,
+ * founder", "The evening ask, skipped" were short and still said nothing a shop owner could take in.
+ * He chose two methods together. A: talk, do not write — one full sentence you would say to the
+ * owner on a phone call. B: easy words only — every word on the everyday list, their own trade
+ * word, or an Indian office word, checked by code so a hard word never gets through.
+ */
+export const SUBJECT_METHOD =
+  "How to write the subject. Write it the way you would say it to the owner on a phone call. Say one full sentence: a person, what they do, and the thing (\"Your dealers wait all day for a reply\", \"Know what your team did today\", \"Who came late at Sree Motors today\"). Speak to them: \"you\" or \"your\" is in it, or their company name. Only people do things: paperwork does not wait and a day does not answer. No comma pieces, no colon or dash, and no \"this\", \"that\", \"these\" or \"those\" pointing at something they have not read yet. Every word is an everyday word a school child knows (see, know, time, work, wait, reply, late, day, team), a word of their own from writing.words_of_theirs (cylinder, rotavator, dealer), their company name, or a word every Indian office says (staff, pending, report, WhatsApp, Excel). 3 to 8 words and 20 to 45 characters, so the whole line shows on a phone. No ₹ figure and no exclamation mark; a question mark only where the mail asks for a reply. Read it out loud before you send it: if a shop owner would say \"what?\", write it again. compose_batch checks every word against the everyday list and refuses the line otherwise.";
 
 /**
- * The shape of the inbox line, from the cold-email datasets rather than from our own taste
- * (checked 2026-09-28).
+ * The shape of the inbox line.
  *
- * Belkins over 5.5 million B2B cold emails: 2 to 4 words opens best, and a question line opens
- * best of all. Gong and 30MPC over 85 million: under 4 words replies 4 times better than 13 or
- * more. Lavender over 28.3 million: 1 to 3 words. Phones show about 33 characters of it.
+ * The datasets (checked 2026-09-28): Belkins over 5.5 million B2B cold emails puts 2 to 4 words at
+ * the best open rate and a question line best of all; Lavender over 28.3 million says 1 to 3 words
+ * gets the most opens but 3 to 7 gets the opens that turn into replies; performance drops past 7
+ * words. Phones show about 33 to 45 characters of it.
  *
- * Until today this said 3 to 5 words, banned every digit and banned the question mark on the
- * strength of two percentages — "a figure loses 46% of opens, a question mark 56%" — that no
- * source in this repo supports and that the largest of those datasets contradicts. What survives
- * is the short line, the plain words and no rupee figure: a price in an inbox line reads as an
- * advertisement, which is a different thing from a digit.
+ * Dhaval, 2026-09-29: 2 to 5 words was too short to be understood. A line said the way a person
+ * talks needs its small words ("for", "the", "to"), which add to the count but not to the reading,
+ * so the word range is 3 to 8 and the 45 characters are what keep it on one phone line.
  */
-export const SUBJECT_WORDS_MIN = 2;
-export const SUBJECT_WORDS_MAX = 5;
-export const SUBJECT_CHARS_MIN = 14;
+export const SUBJECT_WORDS_MIN = 3;
+export const SUBJECT_WORDS_MAX = 8;
+export const SUBJECT_CHARS_MIN = 20;
 export const SUBJECT_CHARS_MAX = 45;
 
 export function subjectShapeProblems(subject: string, ask: "link" | "reply" = "link"): string[] {
@@ -239,16 +250,45 @@ export function subjectShapeProblems(subject: string, ask: "link" | "reply" = "l
   return problems;
 }
 
-export function plainSubjectProblems(subject: string, theirs: string[] = []): string[] {
+/** Words that point back at something, which in an inbox line points at nothing the reader has seen. */
+const POINTING = new Set(["this", "that", "these", "those"]);
+
+/**
+ * The subject in everyday English, said the way a person talks (methods A and B, 2026-09-29).
+ *
+ * B, easy words: every word is on the everyday list, is one of the lead's own words, is part of
+ * their company name, or carries a digit. A: one spoken sentence — it has a doing word, it speaks
+ * to them ("you", "your" or their company name), it is not cut into pieces by a comma, colon or
+ * dash, and it does not point with this, that, these or those.
+ *
+ * Every problem is returned at once, each with what to say instead where we know it, so one
+ * rewrite fixes them all.
+ */
+export function plainSubjectProblems(subject: string, theirs: string[] = [], company: string[] = []): string[] {
+  const line = String(subject ?? "").trim();
   const own = new Set(theirs.map((w) => w.toLowerCase()));
+  const companyWords = new Set(company.flatMap((c) => c.toLowerCase().split(/[^a-z0-9]+/)).filter((w) => w.length >= 2));
   const problems: string[] = [];
-  for (const raw of String(subject ?? "").split(/\s+/)) {
-    const word = raw.toLowerCase().replace(/[^a-z-]/g, "");
-    if (!word || own.has(word)) continue;
-    const plain = HARD_IN_A_SUBJECT[word];
-    if (plain) problems.push(`"${raw}" is a word they read slowly; say "${plain}"`);
-    else if (word.length > SUBJECT_WORD_MAX_CHARS) problems.push(`"${raw}" is ${word.length} letters; use a shorter word`);
+  const tokens = line.split(/\s+/).map((raw) => ({ raw, word: raw.toLowerCase().replace(/[^a-z0-9'’-]/g, "").replace(/^[-'’]+|[-'’]+$/g, "") })).filter((t) => t.word);
+  const hard: string[] = [];
+  for (const { raw, word } of tokens) {
+    if (/\d/.test(word)) continue;
+    // A joined word is read as its parts: "mid-test" is "mid" and "test".
+    for (const part of word.split("-").filter(Boolean)) {
+      if (isEasyWord(part) || isOneOf(part, own) || companyWords.has(part)) continue;
+      const plain = HARD_IN_A_SUBJECT[part];
+      hard.push(plain ? `"${raw.replace(/[^A-Za-z'’-]/g, "")}" (say "${plain}")` : `"${raw.replace(/[^A-Za-z'’-]/g, "")}"`);
+    }
   }
+  if (hard.length) problems.push(`${hard.join(", ")} ${hard.length === 1 ? "is not an everyday word" : "are not everyday words"}; say it with words a school child knows, one of their own words, or an office word like staff, pending, report`);
+  if (/[,;:—–]|\s-\s/.test(line)) problems.push("is cut into pieces by a comma, colon or dash; say it as one sentence you would speak");
+  const pointing = tokens.filter((t) => POINTING.has(t.word)).map((t) => `"${t.word}"`);
+  if (pointing.length) problems.push(`${pointing.join(", ")} points at something they have not read yet; name the thing itself`);
+  if (!tokens.some((t) => isDoingWord(t.word))) problems.push("has no doing word, so it reads as a label; say who does what (\"Your dealers wait for a reply\")");
+  // Their company name speaks to them; "Gas" or "Company" on its own does not.
+  const namesThem = tokens.some((t) => companyWords.has(t.word) && t.word.length >= 3 && !isEasyWord(t.word));
+  const speaksToThem = namesThem || tokens.some((t) => t.word === "you" || t.word === "your" || t.word === "yours");
+  if (!speaksToThem) problems.push("does not speak to them; put \"you\" or \"your\" in it, or their company name");
   return problems;
 }
 
@@ -582,7 +622,7 @@ export function repeatedSentence(text: string, actions: Document[]): string | nu
  */
 const SELL_RULES: string[] = [
   "Every email sells one result and asks for one step: try it free for 7 days, or reply \"call\". It is never a feature tour: one problem, what it costs them, what changes with TeamGrid, one next step.",
-  "Hook them in the subject and the first line; most people decide there. Subject: the point of this mail in 3 to 5 talking words, 18 to 45 characters, no figures, no question mark, no colon. It has to be theirs, not any office's: their company name where we hold a real one (\"Salary day at Sree Motors\"), or a word from their own work (\"The stand list nobody updated\", \"Why the panel job slowed\"). opening: the problem in their words, shown bold.",
+  "Hook them in the subject and the first line; most people decide there. Subject: one sentence you would say to the owner on a phone call, in everyday words, by \"How to write the subject\". It has to be theirs, not any office's: their company name where we hold a real one (\"Who came late at Sree Motors today\"), or a word from their own work (\"Your stand list is still pending\", \"Why your panel job got slow\"). opening: the problem in their words, shown bold.",
   "writing.words_of_theirs holds the words their answers and their website use. The subject or the scene carries at least one; compose_batch refuses a mail carrying none, because a mail that fits any office is a mail nobody opens.",
   "The reveal is the surprise, not the summary. Name the one thing TeamGrid would show about the moment just described, in their own nouns, so the reader thinks \"it can do that too\": which stand list is still waiting, which dealer request got no reply, why the panel job slowed. Where it fits, say it with \"also\". It speaks about the scene above it, never about a screen or a list of features.",
   "Five parts, about 50 words, never more than 75: opening (the problem, bold); scene (1 or 2 short lines, at most 2 **bold** figures, doing the job scene_kind names); reveal (1 or 2 lines on what TeamGrid does about it, as a result they get); question (the price where this mail is the one that gives it, else one question they can answer in a line); ps (\"P.S. Reply \"call\" and we will call you.\").",
@@ -643,7 +683,7 @@ export const LEAD_TYPE_PROFILES: Record<LeadType, LeadTypeProfile> = {
     replyHooks: [],
     maxWords: FRAME_BODY_MAX_WORDS,
     rules: [
-      "Teach first, short and plain. Their problem in the subject, in 3 to 5 talking words, the problem bold on the first line, one line on what TeamGrid does, then one question they can answer in a line (\"Would a 15-minute call help? Reply call.\"). Plain text, no link until they reply or click. About 50 words, sentences of 16 words or fewer.",
+      "Teach first, short and plain. Their problem in the subject, said as one spoken sentence in everyday words, the problem bold on the first line, one line on what TeamGrid does, then one question they can answer in a line (\"Would a 15-minute call help? Reply call.\"). Plain text, no link until they reply or click. About 50 words, sentences of 16 words or fewer.",
     ],
   },
   reengage: {

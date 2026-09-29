@@ -1,0 +1,1784 @@
+[
+ {
+  "id": "6ab51b7343d73f65637b8206",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Tahir Abdul Bari",
+  "was": "Hours in show week",
+  "now": "Your show week hours go to calls",
+  "source": "written"
+ },
+ {
+  "id": "6ab61315aa36622d699a409a",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Mihir Parekh",
+  "was": "Why panel work slowed",
+  "now": "Know why your fabrication work got slow",
+  "source": "written"
+ },
+ {
+  "id": "6ab65924113602e41c59a1ee",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Padam jain",
+  "was": "Salary that buys no work",
+  "now": "You pay salary for hours not worked",
+  "source": "written"
+ },
+ {
+  "id": "6ab65968113602e41c59a207",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Devender Sharma",
+  "was": "The punch clock lies",
+  "now": "See what your staff do after punch in",
+  "source": "written"
+ },
+ {
+  "id": "6ab6756924bb3a88211b84f2",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Anudip Kulkarni",
+  "was": "Who started at nine",
+  "now": "See when your team really starts work",
+  "source": "written"
+ },
+ {
+  "id": "6ab7c7041119aa45efee80ab",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Raghu A",
+  "was": "How appraisal calls get decided",
+  "now": "Who in your team gets the raise?",
+  "source": "written"
+ },
+ {
+  "id": "6ab7c7571119aa45efee80c3",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jack",
+  "was": "One update, all your events",
+  "now": "Your event updates without calling anyone",
+  "source": "written"
+ },
+ {
+  "id": "6ab8c46fd67f616fb997b907",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Amitsinh Chavan",
+  "was": "Answers without asking anyone",
+  "now": "Know why your week was slow",
+  "source": "written"
+ },
+ {
+  "id": "6ab8c475d67f616fb997b909",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ajith jain",
+  "was": "Not seeing it all now",
+  "now": "Know who did what in your team today",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d16dd67f616fb997bad4",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jigesh Shah",
+  "was": "No asking around for answers",
+  "now": "Get answers about your week without asking",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d16fd67f616fb997bad6",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ganesh",
+  "was": "What the job really took",
+  "now": "Show your client the hours you worked",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d193d67f616fb997bae6",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "L.Gada",
+  "was": "Your punch machine misses this",
+  "now": "Your punch machine does not show real work",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d195d67f616fb997bae8",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Heena Poriya Mokariya",
+  "was": "Who earned the raise",
+  "now": "Know who in your team earned a raise",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d1b9d67f616fb997baeb",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ankit",
+  "was": "See the day without asking",
+  "now": "See your team's day without calling them",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d1c2d67f616fb997baee",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kunjal Shah",
+  "was": "The chase before salary day",
+  "now": "Your salary sheet takes 3 days each month",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d1ced67f616fb997baf2",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Reena Khedekar",
+  "was": "Where the afternoon actually went",
+  "now": "Know where your team's afternoon goes",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d1d1d67f616fb997baf4",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Shubham",
+  "was": "Stop asking who is stuck",
+  "now": "Know which work is stuck in your team",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d1d2d67f616fb997baf6",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Atul Adavadkar",
+  "was": "The site news that waited",
+  "now": "Nobody reads your site messages for days",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d1d4d67f616fb997baf8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sushil",
+  "was": "One person doing both jobs",
+  "now": "One person in your team does two jobs",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d1f1d67f616fb997bb06",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Rahul sharma",
+  "was": "Which apps your recruiters use",
+  "now": "See which apps your team uses all day",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d207d67f616fb997bb0f",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "E4U Technologies Pvt. Ltd.",
+  "was": "Guess your team's focused hours",
+  "now": "How much real work does your desk do?",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d21dd67f616fb997bb16",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Aditya",
+  "was": "The reply that never came",
+  "now": "Your clients wait too long for replies",
+  "source": "written"
+ },
+ {
+  "id": "6ab8d22cd67f616fb997bb18",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Avanthika Rajesh",
+  "was": "What staff always ask first",
+  "now": "What your teachers see about their own day",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e01b6c0260c5e1e07139",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Viral Antala",
+  "was": "Your best operator takes leave",
+  "now": "Your orders stop when one person takes leave",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e0296c0260c5e1e07141",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ravi Harsh",
+  "was": "Editing day at Akaal Channel",
+  "now": "See your team's time on YouTube",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e03b6c0260c5e1e07146",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sudarsan Sahoo",
+  "was": "Late for the client visit",
+  "now": "Your staff get late marks for client visits",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e0476c0260c5e1e0714a",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Syed",
+  "was": "An answer without asking around",
+  "now": "Want to know why your week slowed?",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e0516c0260c5e1e07154",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Chetan Joshi",
+  "was": "WhatsApp all day, work waits",
+  "now": "Your team spends the day on WhatsApp",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e05c6c0260c5e1e0715a",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Annkur M Jain",
+  "was": "The resignation nobody saw coming",
+  "now": "See who in your team may quit soon",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e0a46c0260c5e1e0716c",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Endeavor Green Solutions LLP",
+  "was": "Chasing hours from every site",
+  "now": "You ask every site for hours each month",
+  "source": "written"
+ },
+ {
+  "id": "6ab8e0be6c0260c5e1e0716e",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ayub Merchant",
+  "was": "Who really deserves a raise",
+  "now": "Decide your team's raise from real work",
+  "source": "written"
+ },
+ {
+  "id": "6ab8ed95cb9a9d05fad1b1aa",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jay Pandya",
+  "was": "Client chat breaks the day",
+  "now": "Your team stops work for every chat",
+  "source": "written"
+ },
+ {
+  "id": "6ab8ed9ccb9a9d05fad1b1ac",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Rajan  Puri",
+  "was": "Why new policies slowed down",
+  "now": "Know why your new sales slowed down",
+  "source": "written"
+ },
+ {
+  "id": "6ab8edb2cb9a9d05fad1b1b8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Rajiv sahdev",
+  "was": "An appraisal both sides trust",
+  "now": "Give your team a raise based on work",
+  "source": "written"
+ },
+ {
+  "id": "6ab8edb6cb9a9d05fad1b1ba",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Yash salve",
+  "was": "Salary spent counting hours",
+  "now": "You spend hours counting who came in",
+  "source": "written"
+ },
+ {
+  "id": "6ab8edc1cb9a9d05fad1b1c0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Rishi Jain",
+  "was": "Leave landing right before filing",
+  "now": "Know about staff leave before your deadline",
+  "source": "written"
+ },
+ {
+  "id": "6ab8eddacb9a9d05fad1b1c4",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jitendra Nanda",
+  "was": "The client eating extra hours",
+  "now": "See which client takes more of your hours",
+  "source": "written"
+ },
+ {
+  "id": "6ab8edeecb9a9d05fad1b1ca",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Dev Gupta",
+  "was": "What free hours really cost",
+  "now": "You pay for hours your team never works",
+  "source": "written"
+ },
+ {
+  "id": "6ab8edf7cb9a9d05fad1b1ce",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "K Srinivas",
+  "was": "The quote that went quiet",
+  "now": "Do your customers wait days for a quote?",
+  "source": "written"
+ },
+ {
+  "id": "6ab8edf9cb9a9d05fad1b1d0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Shoeb Khan",
+  "was": "Event week changes add up",
+  "now": "Your team loses hours to event changes",
+  "source": "written"
+ },
+ {
+  "id": "6ab8edfdcb9a9d05fad1b1d8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Godvin Paul - Testing",
+  "was": "A client who costs more",
+  "now": "See which client takes most of your time",
+  "source": "written"
+ },
+ {
+  "id": "6ab8ee0bcb9a9d05fad1b1dd",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kataria Hasu",
+  "was": "Hours nobody can check",
+  "now": "You pay extra hours without any proof",
+  "source": "written"
+ },
+ {
+  "id": "6ab8ee15cb9a9d05fad1b1e0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kishor",
+  "was": "Why the project really slipped",
+  "now": "Know early when your project is late",
+  "source": "written"
+ },
+ {
+  "id": "6ab8ee23cb9a9d05fad1b1e9",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Darshan Singh",
+  "was": "Privacy at Turning Point Finance",
+  "now": "Your clients' details stay private with us",
+  "source": "written"
+ },
+ {
+  "id": "6ab8ee33cb9a9d05fad1b1f0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Prashant Bohra",
+  "was": "Guesswork at BJW Health",
+  "now": "You guess your team's real working hours",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc2d771fa3f6c73d64cd",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "kiran shetty",
+  "was": "A word about your customers",
+  "now": "Does your team miss customer messages?",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc43771fa3f6c73d64d8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "World of Musicians",
+  "was": "Queries that never get answered",
+  "now": "How long does each enquiry take you?",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc47771fa3f6c73d64db",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Pradip",
+  "was": "The designer nobody notices",
+  "now": "Know who does the most work for you",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc6f771fa3f6c73d64e8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Divya Raghavendra",
+  "was": "Nights lost to client calls",
+  "now": "Your team works late nights for clients",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc74771fa3f6c73d64ea",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Lavson",
+  "was": "Before your best agent quits",
+  "now": "Know before your best seller quits",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc78771fa3f6c73d64ee",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Avi K Pfuno",
+  "was": "One update, not many calls",
+  "now": "Get one update from all your units",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc9a771fa3f6c73d64f0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Raj",
+  "was": "Every evening, the same questions",
+  "now": "Stop asking your team what got done",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fc9d771fa3f6c73d64f2",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kishan",
+  "was": "Who really stayed late",
+  "now": "Check who in your team really worked late",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fcb1771fa3f6c73d64fc",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sandeep khatri",
+  "was": "Skip the evening call round",
+  "now": "Stop calling your sites every evening",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fcb2771fa3f6c73d64ff",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Deepak Patil",
+  "was": "Right hour to call buyers",
+  "now": "Know the best hour to call your buyers",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fcbb771fa3f6c73d6502",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ishan Bamunusinghe",
+  "was": "A client request left waiting",
+  "now": "Your clients wait days for a reply",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fcc9771fa3f6c73d6506",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kesari Seema",
+  "was": "The answer without asking anyone",
+  "now": "Know why your week slowed while it happens",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fcce771fa3f6c73d6508",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Smita",
+  "was": "A member asks about hours",
+  "now": "Tell your members where their hours went",
+  "source": "written"
+ },
+ {
+  "id": "6ab8fcfe771fa3f6c73d6510",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Abhishek Sharma",
+  "was": "Ending the evening check-in",
+  "now": "Still calling your team every night?",
+  "source": "written"
+ },
+ {
+  "id": "6ab909f9771fa3f6c73d66a0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Amit Thadani -Nik n Ami Travels",
+  "was": "One note before we close",
+  "now": "Can your team start in five minutes?",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a30207f54ee27c78684",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Jinit Shah",
+  "was": "Start with one team",
+  "now": "Can you start with just one team?",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a33207f54ee27c78686",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Dev",
+  "was": "Your steadiest order taker",
+  "now": "See who takes most of your calls",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a69207f54ee27c78695",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "sayan sen",
+  "was": "Proving hours to a client",
+  "now": "Show your client the real hours spent",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a6e207f54ee27c78697",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Daryl D'Souza",
+  "was": "What each person did today",
+  "now": "Know what your team fixed today",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a78207f54ee27c7869a",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jainam Shah",
+  "was": "The evening extra hours question",
+  "now": "You pay extra hours on trust alone",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a84207f54ee27c786a3",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "teri yaki",
+  "was": "Salary day at Everest Foods",
+  "now": "You spend 3 days on salary each month",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a8f207f54ee27c786a9",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Mayur Parmar",
+  "was": "Should we stop here",
+  "now": "Do 2 people do most of your work?",
+  "source": "written"
+ },
+ {
+  "id": "6ab90a93207f54ee27c786ab",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Divya shah",
+  "was": "Stop confirming who is in",
+  "now": "Stop checking who came in to your office",
+  "source": "written"
+ },
+ {
+  "id": "6ab90aa0207f54ee27c786ae",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Bhoomika Parmar",
+  "was": "Evening comes with no answer",
+  "now": "Know what your team got done today",
+  "source": "written"
+ },
+ {
+  "id": "6ab90aa1207f54ee27c786b0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Avsar Sarvaiya",
+  "was": "The steady worker nobody notices",
+  "now": "Know when your best worker slows down",
+  "source": "written"
+ },
+ {
+  "id": "6ab90aa8207f54ee27c786b2",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Pankaj Johari",
+  "was": "Which order took the hours",
+  "now": "See the hours each order takes you",
+  "source": "written"
+ },
+ {
+  "id": "6ab90ac4207f54ee27c786b5",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Sumit gaur",
+  "was": "Should we stop sending notes",
+  "now": "Is your team working every night?",
+  "source": "written"
+ },
+ {
+  "id": "6ab917fa207f54ee27c78843",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Deenadayalan D",
+  "was": "Extra hours nobody checks",
+  "now": "Check the extra hours you pay for",
+  "source": "written"
+ },
+ {
+  "id": "6ab91801207f54ee27c78846",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ankit",
+  "was": "Bigger team same work",
+  "now": "Your team grows but work does not",
+  "source": "written"
+ },
+ {
+  "id": "6ab91808207f54ee27c78849",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sswayam P Ranjan",
+  "was": "Late hours nobody can check",
+  "now": "Check your team's late hours for clients",
+  "source": "written"
+ },
+ {
+  "id": "6ab91808207f54ee27c7884b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Anil Sukhlal Patil",
+  "was": "The gap between gauge orders",
+  "now": "Your staff wait between orders on paid time",
+  "source": "written"
+ },
+ {
+  "id": "6ab9180e207f54ee27c7884e",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "TAXMATE CORPORATE SOLUTIONS",
+  "was": "The steady one nobody notices",
+  "now": "See who closes the most files for you",
+  "source": "written"
+ },
+ {
+  "id": "6ab9180fb2e810eb173574bd",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jeet Pisat",
+  "was": "Who really earned the raise",
+  "now": "Give raises from your team's real work",
+  "source": "written"
+ },
+ {
+  "id": "6ab91829b2e810eb173574c1",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sunay  Mehta",
+  "was": "Late hours nobody can prove",
+  "now": "Check the extra hours your team asks for",
+  "source": "written"
+ },
+ {
+  "id": "6ab9183db2e810eb173574c9",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ahmed Saif Ali Khan",
+  "was": "Hours nobody can check",
+  "now": "Nobody checks your team's extra hours",
+  "source": "written"
+ },
+ {
+  "id": "6ab91851b2e810eb173574d1",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Dhanush",
+  "was": "Calls that run past midnight",
+  "now": "Your team stays on calls past midnight",
+  "source": "written"
+ },
+ {
+  "id": "6ab9185bb2e810eb173574d5",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jeevan p kamble",
+  "was": "Closing books before the audit",
+  "now": "Know your hours by site before the audit",
+  "source": "written"
+ },
+ {
+  "id": "6ab91879b2e810eb173574d8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Debasis Das",
+  "was": "The quiet weeks before notice",
+  "now": "Know early when someone may quit your team",
+  "source": "written"
+ },
+ {
+  "id": "6ab9187eb2e810eb173574da",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "DM",
+  "was": "Before adding new people",
+  "now": "Check your work before you hire more",
+  "source": "written"
+ },
+ {
+  "id": "6ab91890b2e810eb173574dd",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Raj Kotia",
+  "was": "The invoice nobody checks",
+  "now": "Check the hours people bill you for",
+  "source": "written"
+ },
+ {
+  "id": "6ab925f2b2e810eb17357632",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Mahesh Chougale",
+  "was": "Where this week's hours go",
+  "now": "Do you know what your team did today?",
+  "source": "written"
+ },
+ {
+  "id": "6ab9262ab2e810eb17357641",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Anmol",
+  "was": "The subscriptions nobody reviews",
+  "now": "See which apps your team never opens",
+  "source": "written"
+ },
+ {
+  "id": "6ab9263cb2e810eb17357646",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Harinder Singh",
+  "was": "The Fixed Price That Slips",
+  "now": "Know when your fixed price job runs over",
+  "source": "written"
+ },
+ {
+  "id": "6ab9266a4b72a5137e4f8bc3",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Naveen",
+  "was": "The Hours Nobody Checks",
+  "now": "Show your clients the hours you really worked",
+  "source": "written"
+ },
+ {
+  "id": "6ab9267eb2e810eb1735765b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Chandrakant Kejriwal",
+  "was": "The order eating office hours",
+  "now": "See which order takes most of your hours",
+  "source": "written"
+ },
+ {
+  "id": "6ab926afb2e810eb1735766c",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Verma",
+  "was": "The late nights before burnout",
+  "now": "Does one person take all your late calls?",
+  "source": "written"
+ },
+ {
+  "id": "6ab926beb2e810eb17357674",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sri Kailashbuilders",
+  "was": "Stop the evening update calls",
+  "now": "Stop your evening calls to ask for updates",
+  "source": "written"
+ },
+ {
+  "id": "6ab926f8b2e810eb17357687",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Vignesh Manohar",
+  "was": "The evening check gets longer",
+  "now": "You ask more people for updates each night",
+  "source": "written"
+ },
+ {
+  "id": "6ab92701b2e810eb1735768b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Harshal",
+  "was": "Status Calls Cost Assessment Time",
+  "now": "Client updates take your team's working time",
+  "source": "written"
+ },
+ {
+  "id": "6ab92709b2e810eb17357690",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "JAY Barai",
+  "was": "The morning eaten by mail",
+  "now": "Your team starts every day on mail",
+  "source": "written"
+ },
+ {
+  "id": "6ab934851222e549ea7555d6",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Esa Mohammed",
+  "was": "Diwali leave at Kashish India",
+  "now": "Plan your Diwali leave before the order rush",
+  "source": "written"
+ },
+ {
+  "id": "6ab9423b1222e549ea75573b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Pathan Kasim",
+  "was": "Spare hours before hiring",
+  "now": "Does your team have time before you hire?",
+  "source": "written"
+ },
+ {
+  "id": "6ab942711222e549ea755746",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Harry G",
+  "was": "Paid hours or worked hours",
+  "now": "Do your paid hours match real work?",
+  "source": "written"
+ },
+ {
+  "id": "6ab95e6211291a03c5c92a4f",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Kasi Saravanan",
+  "was": "One last note before we stop",
+  "now": "Do you know where your day goes?",
+  "source": "written"
+ },
+ {
+  "id": "6ab95e6611291a03c5c92a51",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Jivan Tewari",
+  "was": "Everyone sees their own day",
+  "now": "Your staff see their own day first",
+  "source": "written"
+ },
+ {
+  "id": "6ab95e9911291a03c5c92a5d",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Simran Jain",
+  "was": "One quick yes or no",
+  "now": "Can you start without an IT person?",
+  "source": "written"
+ },
+ {
+  "id": "6ab9f902b4831d0f9b5e0017",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Hitesh Banwari",
+  "was": "Skip the site call round",
+  "now": "Get all your site updates without calling",
+  "source": "written"
+ },
+ {
+  "id": "6aba232e56105406aee9ffaa",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Satyendra Singh",
+  "was": "Where the billable hours go",
+  "now": "Know where your paid hours went last week",
+  "source": "written"
+ },
+ {
+  "id": "6aba233056105406aee9ffad",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sadaf Hasan",
+  "was": "Hearing what moved today",
+  "now": "Know what moved in your work today",
+  "source": "written"
+ },
+ {
+  "id": "6aba233456105406aee9ffb2",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Waris Ali",
+  "was": "The hours nobody counts",
+  "now": "Know where your team's working day goes",
+  "source": "written"
+ },
+ {
+  "id": "6aba233f56105406aee9ffb6",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Boopathiraja Natarajan",
+  "was": "Checking if the handover moved",
+  "now": "Check your handover work before your client",
+  "source": "written"
+ },
+ {
+  "id": "6aba237e56105406aee9ffc7",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Dilipsingh",
+  "was": "The manufacturing team's slow reply",
+  "now": "Your team waits days for a reply",
+  "source": "written"
+ },
+ {
+  "id": "6aba315bb3e283f3c0e3fa0f",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Dipali Vikram Purke",
+  "was": "Not a watching tool",
+  "now": "Your staff will not feel watched",
+  "source": "written"
+ },
+ {
+  "id": "6aba3195b3e283f3c0e3fa1c",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Sudip Singhania",
+  "was": "The call stays private",
+  "now": "We never see what your team types",
+  "source": "written"
+ },
+ {
+  "id": "6aba31a1b3e283f3c0e3fa22",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Amit Jain",
+  "was": "The same Monday review",
+  "now": "Get your Monday report before the week starts",
+  "source": "written"
+ },
+ {
+  "id": "6aba31acb3e283f3c0e3fa26",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Keval Lakhlani",
+  "was": "Nobody watches anyone",
+  "now": "Nobody in your team is watched",
+  "source": "written"
+ },
+ {
+  "id": "6aba31bab3e283f3c0e3fa2a",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Sushil",
+  "was": "The work with no end",
+  "now": "See late nights before your work is due",
+  "source": "written"
+ },
+ {
+  "id": "6aba31bcb3e283f3c0e3fa2c",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Kashak patel",
+  "was": "The raise, from memory",
+  "now": "Your quiet workers should get raises too",
+  "source": "written"
+ },
+ {
+  "id": "6aba31c4b3e283f3c0e3fa2e",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "S Praveen Kumar",
+  "was": "Before another jointing hire",
+  "now": "See who does double work before you hire",
+  "source": "written"
+ },
+ {
+  "id": "6aba31f5b3e283f3c0e3fa35",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Krishna Kinariwala",
+  "was": "Who picks up the phone",
+  "now": "One person in your team takes every call",
+  "source": "written"
+ },
+ {
+  "id": "6aba3fa31439dcc16bbdd115",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Shrey sing",
+  "was": "The founder's evening question",
+  "now": "Know what your team did without asking",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e2d1dc2c6a51c89558e",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Churchil",
+  "was": "What Agro Care pays for",
+  "now": "Check the hours you pay your plant workers",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e301dc2c6a51c895590",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Karan Tiwari",
+  "was": "Nothing hidden at Blue Carpet",
+  "now": "Your team sees its own day first",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e3b1dc2c6a51c895597",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Nirav Dhanani",
+  "was": "A visit request waits",
+  "now": "Your customers wait days for a site visit",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e401dc2c6a51c895599",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Nainesh Brahmbhatt",
+  "was": "Hardware, security, web together",
+  "now": "Get your 3 team updates in one place",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e691dc2c6a51c8955a4",
+  "goal": "teamgrid_leads_v3",
+  "ask": "reply",
+  "name": "Gaurav Tripathie",
+  "was": "Pause, or keep going?",
+  "now": "Which of your programs is running late?",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e711dc2c6a51c8955aa",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Kavitha Dheena",
+  "was": "A quick question, founder",
+  "now": "How long your office paperwork takes",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e731dc2c6a51c8955ac",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Vishal Ahuja",
+  "was": "Enquiries during turnkey work",
+  "now": "Your dealers wait days for an answer",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e941dc2c6a51c8955b9",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "I P Travel Lines",
+  "was": "Monday fleet check before 6am",
+  "now": "See what your team did last week",
+  "source": "written"
+ },
+ {
+  "id": "6aba4e961dc2c6a51c8955bb",
+  "goal": "teamgrid_leads_v3",
+  "ask": "reply",
+  "name": "MAYANK",
+  "was": "One desk, not everyone?",
+  "now": "How fast does your export team reply?",
+  "source": "written"
+ },
+ {
+  "id": "6aba4ea31dc2c6a51c8955c0",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "bhaven Bakhai",
+  "was": "The evening ask, skipped",
+  "now": "See your team's day without asking them",
+  "source": "written"
+ },
+ {
+  "id": "6aba4ea81dc2c6a51c8955c3",
+  "goal": "teamgrid_leads_v3",
+  "ask": "reply",
+  "name": "Ramki S",
+  "was": "Should we close this, Whitelabel?",
+  "now": "Who in your team has free time?",
+  "source": "written"
+ },
+ {
+  "id": "6aba4f0de60c331e253124c4",
+  "goal": "teamgrid_leads_v3",
+  "ask": "reply",
+  "name": "Yash Kamlesh",
+  "was": "Should we close this?",
+  "now": "Which product takes most of your time?",
+  "source": "written"
+ },
+ {
+  "id": "6aba5ddce60c331e25312656",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Raju passi whatsapp only",
+  "was": "Client hours past the fee",
+  "now": "Your client hours go past the fee",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e0ee60c331e25312664",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Maharashtra Gas Company",
+  "was": "Dealer WhatsApp all day",
+  "now": "Your dealers wait all day for a reply",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e20e60c331e25312670",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Suresh Bansode",
+  "was": "Which client took the hours",
+  "now": "Know which client took most of your hours",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e2ce60c331e25312674",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Navin agarwal",
+  "was": "Why the week went quiet",
+  "now": "Your customers wait days for an answer",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e49e60c331e2531267b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "vikas kanodia",
+  "was": "Where the whole day went",
+  "now": "Know where your team's whole day went",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e51e60c331e2531267d",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Rahul Parekh",
+  "was": "Evening calls at Star Electric",
+  "now": "Know what your team shipped today",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e5ae60c331e25312682",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "reply",
+  "name": "Sulaiman pls call me",
+  "was": "Setting up at Tulip Foods",
+  "now": "Can one person set it up for you?",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e69e60c331e25312688",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Charudutt",
+  "was": "Each person's own day",
+  "now": "Your team sees only their own day",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e6ce60c331e2531268b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Pranav Khandelwal",
+  "was": "The delegation tracker gap",
+  "now": "One client takes most of your team's day",
+  "source": "written"
+ },
+ {
+  "id": "6aba5e90e60c331e25312692",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Idris",
+  "was": "Slow report tab at Instabiz",
+  "now": "Your team waits for the report to load",
+  "source": "written"
+ },
+ {
+  "id": "6aba5eb3e60c331e25312699",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Dinesh Rajvanshi",
+  "was": "The Dint-Tech drawing board",
+  "now": "Enquiry calls take your team's whole day",
+  "source": "written"
+ },
+ {
+  "id": "6aba5ecfe60c331e253126a2",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Amiko Gulati",
+  "was": "When WhatsApp breaks the day",
+  "now": "How much of your day goes on chat",
+  "source": "written"
+ },
+ {
+  "id": "6aba5eede60c331e253126aa",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kashmira Nandanwar",
+  "was": "Ambica's hours per order",
+  "now": "Know the hours each order takes you",
+  "source": "written"
+ },
+ {
+  "id": "6aba5f1fe60c331e253126b2",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Suraj Vaigankar",
+  "was": "A leave request left waiting",
+  "now": "Your staff wait days for a leave reply",
+  "source": "written"
+ },
+ {
+  "id": "6aba5f6be60c331e253126d0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kamlesh Textiles",
+  "was": "Fixed price at Kamlesh Textiles",
+  "now": "Know the real hours behind your orders",
+  "source": "written"
+ },
+ {
+  "id": "6aba6a39e60c331e253127eb",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Anurag",
+  "was": "Front desk hours nobody counted",
+  "now": "See how your front desk spends its day",
+  "source": "written"
+ },
+ {
+  "id": "6aba6a42e60c331e253127f0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Prasad Jakhotia",
+  "was": "The desk hours nobody counts",
+  "now": "How much of your week is desk work",
+  "source": "written"
+ },
+ {
+  "id": "6aba6a78e60c331e253127fb",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Abdul Khadir",
+  "was": "The evening status calls",
+  "now": "Get your updates before the evening calls",
+  "source": "written"
+ },
+ {
+  "id": "6aba6a85e60c331e253127ff",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Keval Shah",
+  "was": "The evening filing round",
+  "now": "Know which tax files your team closed today",
+  "source": "written"
+ },
+ {
+  "id": "6aba6b04e60c331e25312816",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Shahid Shaikh",
+  "was": "Which screen went live tonight",
+  "now": "Get your city updates without calling anyone",
+  "source": "written"
+ },
+ {
+  "id": "6aba6b42e60c331e25312821",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Mritunjay jha",
+  "was": "What filled today at CosmicIT",
+  "now": "Know how your team spent the day",
+  "source": "written"
+ },
+ {
+  "id": "6aba856778ee19c4520decc4",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Vinay",
+  "was": "Following up without the watching",
+  "now": "Tell your staff what the new app sees",
+  "source": "written"
+ },
+ {
+  "id": "6aba9367550e783a6765c825",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Rrahul Takkaate",
+  "was": "Late marks at Mora Entertainment",
+  "now": "Your staff forget to punch in or out",
+  "source": "written"
+ },
+ {
+  "id": "6abb3c61b31a3d67233c60af",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Reshma",
+  "was": "The WhatsApp check before calls",
+  "now": "Know how your team works without asking",
+  "source": "written"
+ },
+ {
+  "id": "6abb4a43b31a3d67233c61d1",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Dinesh",
+  "was": "The order sitting at Matson",
+  "now": "Find stuck orders before your customers call",
+  "source": "written"
+ },
+ {
+  "id": "6abb4a7fb31a3d67233c61db",
+  "goal": "teamgrid_leads_v3",
+  "ask": "link",
+  "name": "Abinash Mohapatra",
+  "was": "Review season at Compunnel",
+  "now": "Plan your team's reviews from real work",
+  "source": "written"
+ },
+ {
+  "id": "6ab64b07113602e41c599fd8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ganesh",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab655fe113602e41c59a15a",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Gaurav Passi",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69ed3456e652389d28ed0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Amogh Sachdev",
+  "was": "Is 1 client costing you ₹1.68 lakh a year?",
+  "now": "See which client takes most of your time",
+  "source": "template"
+ },
+ {
+  "id": "6ab69ed3456e652389d28ed1",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ajay kumar maurya",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f0d456e652389d28edc",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Deepthi Yadav",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f0d456e652389d28eda",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Mohammed Arshan",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f0d456e652389d28ed8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "SANJAY SACHDEV",
+  "was": "The punch machine shows who came in, not who worked",
+  "now": "See who really works in your office",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f61456e652389d28ee9",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Haudekari Varsha",
+  "was": "Stop asking \"what did you do today?\"",
+  "now": "Stop asking your team what they did",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f61456e652389d28ee8",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Azhar Khan",
+  "was": "Is 1 client costing you ₹1.68 lakh a year?",
+  "now": "See which client takes most of your time",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28ef9",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Basil benny",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28f08",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Feni Shah",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28ef4",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Bhaavin Soni",
+  "was": "Is 1 client costing you ₹1.68 lakh a year?",
+  "now": "See which client takes most of your time",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28ef0",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Anil Arora",
+  "was": "Is 1 client costing you ₹1.68 lakh a year?",
+  "now": "See which client takes most of your time",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28f06",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "A Agasthiya",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28ef5",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Faseeh Khan",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28ef7",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Pahli Hill | Bandra Bhai",
+  "was": "Try it on 1 laptop today, free for 7 days",
+  "now": "Start in 5 minutes on your laptop",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28f01",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Darshak Shah",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28efc",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Abhishek Suri",
+  "was": "Stop asking \"what did you do today?\"",
+  "now": "Stop asking your team what they did",
+  "source": "template"
+ },
+ {
+  "id": "6ab69f83456e652389d28f0a",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Amol Naik",
+  "was": "Stop asking \"what did you do today?\"",
+  "now": "Stop asking your team what they did",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f1c",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Deepak S Jiyani",
+  "was": "The punch machine shows who came in, not who worked",
+  "now": "See who really works in your office",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f11",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Arjun",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f18",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Parth vyas",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f1b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Mangala Dabke",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f19",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Mital kumbhani",
+  "was": "Stop asking \"what did you do today?\"",
+  "now": "Stop asking your team what they did",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f14",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Rajeev Mone",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f15",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Tarun",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69fc3456e652389d28f17",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sudarshan Nikumbh",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab69ffc456e652389d28f24",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Bijal  SHAH",
+  "was": "Why was this week slow? Get the answer in 1 line",
+  "now": "Ask why your week was slow",
+  "source": "template"
+ },
+ {
+  "id": "6ab6a084456e652389d28f3a",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "anil tari",
+  "was": "Try it on 1 laptop today, free for 7 days",
+  "now": "Start in 5 minutes on your laptop",
+  "source": "template"
+ },
+ {
+  "id": "6ab6a084456e652389d28f3b",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Ratan moondra",
+  "was": "Is 1 client costing you ₹1.68 lakh a year?",
+  "now": "See which client takes most of your time",
+  "source": "template"
+ },
+ {
+  "id": "6ab6a0b2456e652389d28f42",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Yash jain",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab6a0b2456e652389d28f41",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Mukul Mukherjee",
+  "was": "Try it on 1 laptop today, free for 7 days",
+  "now": "Start in 5 minutes on your laptop",
+  "source": "template"
+ },
+ {
+  "id": "6ab6aacca533be08decc0d02",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "mayur kanabar",
+  "was": "Stop asking \"what did you do today?\"",
+  "now": "Stop asking your team what they did",
+  "source": "template"
+ },
+ {
+  "id": "6ab6ab12a533be08decc0d08",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "trish S",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab6ab44a533be08decc0d10",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Amit Somani",
+  "was": "Stop asking \"what did you do today?\"",
+  "now": "Stop asking your team what they did",
+  "source": "template"
+ },
+ {
+  "id": "6ab6ab44a533be08decc0d0f",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Navneet Bhattad",
+  "was": "Try it on 1 laptop today, free for 7 days",
+  "now": "Start in 5 minutes on your laptop",
+  "source": "template"
+ },
+ {
+  "id": "6ab6ab7ba533be08decc0d17",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Simranjit Kaur",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab6ab7ba533be08decc0d18",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "kalyansingh sisodiya",
+  "was": "Is 1 client costing you ₹1.68 lakh a year?",
+  "now": "See which client takes most of your time",
+  "source": "template"
+ },
+ {
+  "id": "6ab6ab7ba533be08decc0d16",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Chandra Acharya",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab6abb5a533be08decc0d1e",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Kalrav Thakkar",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ },
+ {
+  "id": "6ab6abb5a533be08decc0d1f",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Sudhir Agarwal",
+  "was": "Why was this week slow? Get the answer in 1 line",
+  "now": "Ask why your week was slow",
+  "source": "template"
+ },
+ {
+  "id": "6ab6abfba533be08decc0d27",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Shayadri Sharma",
+  "was": "Timesheets, status calls and the punch machine: 1 app",
+  "now": "One app writes your team's daily update",
+  "source": "template"
+ },
+ {
+  "id": "6ab6abfba533be08decc0d26",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Creative Rays Entertainment | Event company | Mumbai | India",
+  "was": "The punch machine shows who came in, not who worked",
+  "now": "See who really works in your office",
+  "source": "template"
+ },
+ {
+  "id": "6ab6ac42a533be08decc0d2d",
+  "goal": "teamgrid_july_aug_leads",
+  "ask": "link",
+  "name": "Anjali Deshpande",
+  "was": "Work stuck on Tuesday, found out on Friday?",
+  "now": "Know when your work gets stuck",
+  "source": "template"
+ }
+]

@@ -32,7 +32,7 @@ export interface ValidationContext {
  * Long enough to say something, short enough that a phone shows all of it: 68% of first
  * opens happen on a phone, and a subject over 45 characters is cut off there.
  */
-const SUBJECT_MIN = 18;
+const SUBJECT_MIN = 20;
 const SUBJECT_MAX = 45;
 
 /**
@@ -132,14 +132,17 @@ export function validate(content: ComposedContent, ctx: ValidationContext): Vali
     if (/^welcome\b/i.test(subject)) {
       softFails.push('subject opens with "welcome", which says nothing to somebody who did not sign up');
     }
-    // A figure or a question mark in a subject is the shape of an advertisement, and the
-    // measured cost is large: digits lose about 46% of opens, a question mark about 56%.
-    // The reason to open is that the line is about their own work, not that it is clever.
-    if (/\d/.test(subject)) {
-      softFails.push("subject carries a number; a figure in a subject reads as an advertisement");
+    // The same line compose_batch holds (rolling.ts, 2026-09-28 and 2026-09-29): a ₹ figure is
+    // the advertisement, a plain digit is not; a question mark belongs to a mail that asks for
+    // a reply; an exclamation mark or a colon cuts the spoken sentence into a sales line.
+    if (/₹/.test(subject)) {
+      softFails.push("subject carries a ₹ figure, which reads as an advertisement");
     }
-    if (/[?!:]/.test(subject)) {
-      softFails.push("subject carries ? ! or :, which reads as a sales line and scores as spam on Outlook");
+    if (/[!:]/.test(subject)) {
+      softFails.push("subject carries ! or :, which reads as a sales line and scores as spam on Outlook");
+    }
+    if (/\?/.test(subject) && ctx.ask !== "reply") {
+      softFails.push("subject asks a question, but this mail asks for a click");
     }
     // A name taken from a domain rather than read as words is the failure this rule exists
     // for: "Wwwpioneercars" in an inbox line is worse than no name at all.

@@ -2200,9 +2200,10 @@ export const TOOLS: ToolDef[] = [
             );
           }
         }
-        // The inbox line in school English: these readers do not read English all day, and a word
-        // they have to sound out is a mail they do not open (2026-09-28).
-        for (const problem of plainSubjectProblems(String(t.subject ?? ""), theirs)) say(`subject: ${problem}.`);
+        // The inbox line in everyday English, said the way a person talks: these readers do not
+        // read English all day, and a line they have to work out is a mail they do not open
+        // (2026-09-28, methods A and B 2026-09-29).
+        for (const problem of plainSubjectProblems(String(t.subject ?? ""), theirs, companyWords)) say(`subject ${problem}.`);
         for (const problem of subjectShapeProblems(String(t.subject ?? ""), String(t.ask ?? "link") === "reply" ? "reply" : "link")) say(`subject ${problem}.`);
         const twice = repeatedSentence([t.opening, t.scene, t.reveal, t.limit].map((v) => String(v ?? "")).join("\n"), sentBefore);
         if (twice) {
