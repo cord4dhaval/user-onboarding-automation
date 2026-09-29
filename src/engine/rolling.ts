@@ -500,6 +500,8 @@ const NOT_THEIRS = new Set([
   // Words from a form's own options ("all of the above") or filler, never their trade.
   "above", "below", "other", "others", "under", "after", "before", "multiple", "various", "general",
   "lorem", "ipsum", "dolor",
+  // Page-code words a scraped social page leaves behind (facebook, instagram HTML).
+  "class", "div", "span", "href", "src", "style", "script", "login", "html",
 ]);
 
 export function theirWords(person: Document | null | undefined): string[] {
