@@ -46,7 +46,8 @@ export const FRAME_BODY_MAX_WORDS = 110;
  */
 export const BODY_METHOD =
   "How to write the mail. Write it the way you would explain it to the owner on a phone call. Full sentences, one idea each, 16 words or fewer, each one following from the last (so, because, then, but). Say \"you\" and \"your\". Only people do things: paperwork does not wait and a day does not slip. No riddles, no clever lines, and no notes like \"Hours by client, no sheet\": a line with no doing word is not a sentence yet. Every word is an everyday word a school child knows, a word of their own from writing.words_of_theirs, their company or product name, or a word every Indian office says (staff, pending, report, WhatsApp, Excel, salary, leave). compose_batch refuses the hard ones and says what to use instead: tells you, not flags; on its own, not automatically; a short note, not a summary; if, not whether. " +
-  "Do not squeeze the mail. Every mail says these five things, each one fully, in this order. 1, the problem, in their words (opening). 2, a real moment from their kind of work that shows it (scene, 1 to 3 sentences). 3, what TeamGrid is, in one plain sentence, in every mail and worded fresh each time, because nobody remembers the last mail (\"TeamGrid is a small app on your office computers.\"); it opens the reveal. 4, what TeamGrid would show or do about that moment (the rest of the reveal, 1 or 2 sentences). 5, one next step said plainly: what to do and what happens then (question, with the price where this is the mail that gives it). That usually takes 60 to 100 words and never more than 110. Say each part once: no second example, no feature list, no warm-up line.";
+  "Do not squeeze the mail. Every mail says these five things, each one fully, in this order. 1, the problem, in their words (opening). 2, a real moment from their kind of work that shows it (scene, 1 to 3 sentences). 3, what TeamGrid is, in one plain sentence, in every mail and worded fresh each time, because nobody remembers the last mail (\"TeamGrid is a small app on your office computers.\"); it opens the reveal. 4, what TeamGrid would show or do about that moment (the rest of the reveal, 1 or 2 sentences). 5, one next step said plainly: what to do and what happens then (question, with the price where this is the mail that gives it). That usually takes 60 to 100 words and never more than 110. Say each part once: no second example, no feature list, no warm-up line. " +
+  "Say only what TeamGrid can really see: work on the office computers (apps, websites, tasks, hours, who was active, and email replies once their mail is linked). It cannot see phone calls, deliveries, what ships, patients, drivers, or anything on site or on the floor, so never say it shows those. Talk to the reader (you, your team), never about \"most founders\" or \"a director at a company\". Never put their company name next to something bad about them. Before you send it, read each sentence as the owner would: if it needs a second read, write it again.";
 
 /**
  * The same two methods on WhatsApp (Dhaval, 2026-09-29), in the room a WhatsApp template gives:
@@ -315,7 +316,7 @@ export function templateSubjectProblems(subject: string, product: string[] = [],
  * (Dhaval, 2026-09-29: "Which oxygen customer eats your day", "When your best builder leaves").
  * Found as phrases, so "eat lunch" is left alone.
  */
-const PICTURE = /\b(eats?|ate|eating) (up |into |away )?(your|the|their|his|her|a|most|half|every|all|it)\b|\b(sits?|sat|sitting) (stuck|not|waiting|at|there)\b|\bgo(es)? missing\b|\bfights? for\b|\bcarr(y|ies|ied) (your|the|their) team\b|\bmoves? on\b|\bclosed? out\b|\bresting on\b|\bheld the hour\b|\bpiles? (up|on)\b|\bthrough the cracks\b|\bfalls? through\b|\bslips? (through|away|past)\b|\bin the dark\b|\bblind spot|\bfirefight|\bjuggl|\bdrown|\bbleed|\bleaks?\b|\bburn(s|ing|t)? (through|out)\b|\bon (your|their) plate\b|\bmove(s)? the needle\b|\bat the end of the day\b|\bblack hole\b|\bgoes quiet\b|\bsteals?\b|\bkills? (the|your|their)\b/gi;
+const PICTURE = /\b(eats?|ate|eating) (up |into |away )?(your|the|their|his|her|a|most|half|every|all|it)\b|\b(sits?|sat|sitting) (stuck|not|waiting|at|there)\b|\bgo(es)? missing\b|\bfights? for\b|\bcarr(y|ies|ied) (your|the|their) team\b|\bmoves? on\b|\bclosed? out\b|\bresting on\b|\bheld the hour\b|\brests? on\b|\bwaits? (its|their) turn\b|\bpiles? (up|on)\b|\bthrough the cracks\b|\bfalls? through\b|\bslips? (through|away|past)\b|\bin the dark\b|\bblind spot|\bfirefight|\bjuggl|\bdrown|\bbleed|\bleaks?\b|\bburn(s|ing|t)? (through|out)\b|\bon (your|their) plate\b|\bmove(s)? the needle\b|\bat the end of the day\b|\bblack hole\b|\bgoes quiet\b|\bsteals?\b|\bkills? (the|your|their)\b/gi;
 
 export function pictureWords(text: string): string[] {
   return [...new Set((String(text ?? "").match(PICTURE) ?? []).map((m) => m.toLowerCase()))];
@@ -413,6 +414,10 @@ export function plainBodyProblems(
   const labels = sentences.filter((x) => !x.split(/\s+/).some((w) => isDoingWord(w.toLowerCase().replace(/[^a-z'’]/g, ""))));
   if (labels.length) problems.push(`${labels.map((x) => `"${x}"`).join(", ")} ${labels.length === 1 ? "has" : "have"} no doing word, so ${labels.length === 1 ? "it reads" : "they read"} as a note, not speech; say who does what`);
   if (!/\b(you|your|yours)\b/i.test(text)) problems.push("never speaks to them; say \"you\" or \"your\" where it is about them");
+  // About other people instead of to the reader: "most founders", "a director at a pharmaceutical
+  // company" (Dhaval's review queue, 2026-09-29).
+  const aboutOthers = text.match(/\b(most|many) (owners|founders|businesses|companies|managers|teams|agencies)\b|\ba (director|founder|owner|manager|ceo) (at|of|in) (a|an)\b/gi);
+  if (aboutOthers) problems.push(`"${aboutOthers[0]}" talks about other people; talk to them, with "you" and "your team"`);
   const names = product.filter(Boolean);
   if (names.length) {
     const nameRe = new RegExp(`\\b(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "i");
@@ -430,6 +435,13 @@ export function plainBodyProblems(
     // "Watches what keeps happening, not any one person" still says it watches: only a
     // negation on the verb itself ("never watches", "nobody is watched") clears it.
     const watching = named.filter((x) => WATCH_VERB.test(x) && !NEGATED_WATCH.test(x));
+    // What it cannot see: it records work on the computer, nothing off it. "It would tell you which
+    // orders shipped", "which patient call back still waited" promise what it has no way to know.
+    const offScreen = sentences.filter((x, i) => {
+      const aboutIt = nameRe.test(x) || (/^(it|this)\b/i.test(x) && sentences.slice(0, i).some((y) => nameRe.test(y)));
+      return aboutIt && OFF_SCREEN.test(x) && !/\b(not recorded|never|not|only computer)\b/i.test(x);
+    });
+    if (offScreen.length) problems.push(`${offScreen.map((x) => `"${x}"`).join(", ")} ${offScreen.length === 1 ? "promises" : "promise"} what ${names[0]} cannot see: it records work on the computer only, not calls, deliveries, patients or anything on site`);
     if (watching.length) problems.push(`${watching.map((x) => `"${x}"`).join(", ")} says ${names[0]} watches people; say what it shows the owner, never that it watches, monitors or tracks anyone`);
   }
   return problems;
@@ -438,6 +450,7 @@ export function plainBodyProblems(
 /** The thing the product is, in the words a reader knows it by. */
 const WHAT_IT_IS = /\b(apps?|programs?|tools?|computers?|laptops?|software)\b/i;
 const WATCH_VERB = /\b(watch(es|ing)?|monitor(s|ing)?|spy|spies|spying|track(s|ing)? (your|the|each|every) (team|staff|people|person|employees?))\b/i;
+const OFF_SCREEN = /\b(shipped|ships|delivered|deliveries|called back|call ?backs?|calls? back|phone calls?|on the phone|patients?|drivers?|on site|at the site|on the floor|went out)\b/i;
 const NEGATED_WATCH = /\b(never|not|no|nobody|without|no one)\s+(\w+\s+)?(watch|watches|watched|watching|monitor|monitors|track|tracks)\b/i;
 
 /**

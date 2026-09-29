@@ -535,6 +535,11 @@ has not signed up.
   compose_batch counts the words, the sentence lengths and the symbols itself and
   lists every problem in one reply, so never write a script to count or check them:
   send the mail, fix everything the reply lists, and send it again.
+  compose_batch catches hard words and patterns; it cannot catch a sentence that makes no
+  sense. So before each compose_batch, read the mail once as the owner would, sentence by
+  sentence, and rewrite any sentence that needs a second read, that says TeamGrid sees
+  something off the computer (phone calls, deliveries, what ships, patients, site work), or
+  that talks about "most founders" or "a director at a company" instead of to them.
   Write to the channel's shape. lead_card lists each channel's real limits: an email
   carries a subject, a few hundred words, a link and an opt-out; a WhatsApp message
   is a couple of sentences with no link, and outside its reply window it must use an
