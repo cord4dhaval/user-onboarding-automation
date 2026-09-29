@@ -78,6 +78,8 @@ monday tuesday wednesday thursday friday saturday sunday
 january february march april june july august september october november december
 morning afternoon evening night noon midnight daily weekly monthly hourly
 one two three four five six seven eight nine ten eleven twelve hundred thousand lakh crore
+row judge background surprise toward towards growth clothes fairer praise habit habits abroad choose weak argue sense
+equal regular somewhere campus campuses
 `;
 
 /** The office words every Indian office says every day, even where a school list leaves them out. */
