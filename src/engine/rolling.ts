@@ -381,10 +381,42 @@ export function plainBodyProblems(parts: string[], theirs: string[] = [], compan
   if (labels.length) problems.push(`${labels.map((x) => `"${x}"`).join(", ")} ${labels.length === 1 ? "has" : "have"} no doing word, so ${labels.length === 1 ? "it reads" : "they read"} as a note, not speech; say who does what`);
   if (!/\b(you|your|yours)\b/i.test(text)) problems.push("never speaks to them; say \"you\" or \"your\" where it is about them");
   const names = product.filter(Boolean);
-  if (names.length && !names.some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text))) {
-    problems.push(`never names ${names[0]}; say in one plain sentence what it is, in every mail, because a reader does not remember the last one`);
+  if (names.length) {
+    const nameRe = new RegExp(`\\b(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "i");
+    const named = sentences.filter((x) => nameRe.test(x));
+    // What it is: a sentence with its name and the thing it is (an app, on their computers).
+    // "TeamGrid would show that stop" names it without saying what it is (2026-09-29).
+    if (!named.length) {
+      problems.push(`never names ${names[0]}; say in one plain sentence what it is, in every mail, because a reader does not remember the last one`);
+    } else if (!named.some((x) => WHAT_IT_IS.test(x))) {
+      problems.push(`names ${names[0]} but never says what it is; add one plain sentence such as "${names[0]} is a small app on your office computers."`);
+    }
+    // The product never watches anyone: "a tool that quietly watches your team's work" says the
+    // one thing every privacy line in these mails exists to deny (2026-09-29).
+    const watching = named.filter((x) => WATCH_VERB.test(x) && !NEGATION.test(x));
+    if (watching.length) problems.push(`${watching.map((x) => `"${x}"`).join(", ")} says ${names[0]} watches people; say what it shows the owner, never that it watches, monitors or tracks anyone`);
   }
   return problems;
+}
+
+/** The thing the product is, in the words a reader knows it by. */
+const WHAT_IT_IS = /\b(apps?|programs?|tools?|computers?|laptops?|software)\b/i;
+const WATCH_VERB = /\b(watch(es|ing)?|monitor(s|ing)?|spy|spies|spying|track(s|ing)? (your|the|each|every) (team|staff|people|person|employees?))\b/i;
+const NEGATION = /\b(never|not|no|nothing|without|nobody)\b/i;
+
+/**
+ * A sentence of this mail's opening or scene that another lead in the same campaign has already
+ * been given, word for word. Those two parts are the lead's own moment; two owners comparing
+ * notes, or one reviewer reading the queue, should never find the same moment in both (Dhaval's
+ * review queue, 2026-09-29). What the product is and what it shows may repeat: those are facts.
+ */
+export function sharedWithOtherLeads(openingAndScene: string, others: Document[]): string | null {
+  const theirs = (a: Document) => {
+    const content = (a.content ?? {}) as { slotText?: unknown; slots?: Record<string, unknown> };
+    return [content.slots?.opening, content.slotText].map((v) => String(v ?? "")).join("\n");
+  };
+  const before = new Set(others.flatMap((a) => sentencesOf(theirs(a))));
+  return sentencesOf(openingAndScene).find((x) => before.has(x)) ?? null;
 }
 
 /**

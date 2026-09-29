@@ -25,7 +25,7 @@ import { hookSpread } from "../../engine/hooks.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, trialReach, type InventedIdea } from "../../engine/ideas.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, carriesTheirWorld, theirVocabulary, plainBodyProblems, plainSubjectProblems, priceHistory, subjectShapeProblems, templateSubjectProblems, repeatedSentence, scenesSent, theirWords, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, carriesTheirWorld, theirVocabulary, plainBodyProblems, sharedWithOtherLeads, plainSubjectProblems, priceHistory, subjectShapeProblems, templateSubjectProblems, repeatedSentence, scenesSent, theirWords, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -2231,6 +2231,14 @@ export const TOOLS: ToolDef[] = [
       // The body we write meets the same two methods as the subject: spoken sentences in
       // everyday words, speaking to them, and naming the product in every mail (2026-09-29).
       // Set layouts are left out: reply options are answers, not sentences to speak.
+      // Other leads' mails in this campaign from the last two weeks, for the same-words check.
+      const campaignRuns = (await db.collection(C.goalInstances).find({ orgId, productId, goalKey: String(instance.goalKey) }, { projection: { _id: 1 } }).toArray())
+        .map((i) => String(i._id))
+        .filter((id) => id !== String(goalInstanceId));
+      const otherLeadsMail = await db
+        .collection(C.actions)
+        .find({ goalInstanceId: { $in: campaignRuns }, channel: "email", status: { $in: ["sent", "dispatched", "queued", "awaiting_approval"] }, _id: { $gte: ObjectId.createFromTime(Math.floor(Date.now() / 1000) - 14 * 86400) } }, { projection: { content: 1 } })
+        .toArray();
       for (const t of touches) {
         if (providerTouch.has(t) || !structuredParts.has(t)) continue;
         const timelineWhats = (Array.isArray(t.timeline) ? (t.timeline as Array<Record<string, unknown>>) : []).map((r) => String(r?.what ?? ""));
@@ -2238,6 +2246,8 @@ export const TOOLS: ToolDef[] = [
         for (const problem of plainBodyProblems(written, [...theirs, ...theirVocabulary(lead)], companyWords, productWords)) {
           slotSubjectProblems.push(`step ${String(t.step_id)}: the mail ${problem}.`);
         }
+        const shared = sharedWithOtherLeads([t.opening, t.scene].map((v) => String(v ?? "")).join("\n"), otherLeadsMail);
+        if (shared) slotSubjectProblems.push(`step ${String(t.step_id)}: "${shared}" is a sentence another lead in this campaign already has. Write this moment for this lead, from their own work.`);
       }
       if (slotSubjectProblems.length) {
         throw new Error(`Fix all of these, then send again:\n- ${slotSubjectProblems.join("\n- ")}\nNothing was written.`);
