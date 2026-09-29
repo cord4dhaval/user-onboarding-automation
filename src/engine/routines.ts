@@ -386,8 +386,7 @@ one block of text, because a wall of paragraphs is skimmed and ignored:
              in their own nouns, so the reader thinks "it can do that too" — which
              stand list is still pending, which dealer got no reply, why the panel job
              got slow. A sentence they have already been sent is refused, and so is a
-             reveal that
-             says nothing about the scene above it. Shown between thin lines with
+             reveal that says nothing about the scene above it. Shown between thin lines with
              TeamGrid's name in the brand shade.
   question   the price belongs in one mail of three, and writing.price.give_it_here says
              whether this is that mail. Where it is, the price from writing.facts.plans,
