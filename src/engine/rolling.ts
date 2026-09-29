@@ -511,8 +511,8 @@ const NOT_THEIRS = new Set([
   "deserunt", "mollit",
 ]);
 
-/** A page-code token (data-count-selected-text, content-load-template) is markup, not a word of theirs. */
-const PAGE_CODE = /^(data|aria|content|footer|header|snippet|section|template)-/;
+/** A page-code token (data-count-selected-text, wix-ui-tpa-…, ovorhxe---imageresize) is markup, not a word of theirs. */
+const PAGE_CODE = /^(data|aria|content|footer|header|snippet|section|template|wix|wbu|icon)-|--|^(itemappearance|charset|madefor)$/;
 
 export function theirWords(person: Document | null | undefined): string[] {
   const form = ((person?.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;

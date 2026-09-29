@@ -88,7 +88,8 @@ salary salaries leave leaves boss manager managers team teams shift shifts desk 
 laptop laptops computer computers mobile app apps excel whatsapp tally gst email emails mail mails
 sheet sheets file files update updates target targets sales branch godown factory showroom warehouse
 export import paperwork follow task tasks project projects deadline office agency agencies fair unfair
-demo demos handle handles solar roof roofs
+demo demos handle handles solar roof roofs bulk electrical electric installer installers
+cup cups flower flowers teach teaching teacher teachers
 load loading screen internet click link login online website
 punch stuck diwali holi audit handover youtube google
 screenshot screenshots install installed setup status admin appraisal senior supervisor dispatch chai approve
