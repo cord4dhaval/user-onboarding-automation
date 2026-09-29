@@ -71,6 +71,9 @@ bought pickup technician experience workshop profit waste role
 touch compare agree offer prefer improve include repeat suggest travel wash cook describe expect imagine manage
 receive remove repair search appear develop protect measure
 video scroll connect connected gap
+faster slower later earlier longer shorter bigger smaller higher lower older newer harder easier cheaper quicker
+fewer greater richer poorer stronger weaker warmer colder clearer simpler wider nearer
+buyer seller player user partner sister summer winter printer register folder sooner counter neither planner
 monday tuesday wednesday thursday friday saturday sunday
 january february march april june july august september october november december
 morning afternoon evening night noon midnight daily weekly monthly hourly
@@ -139,7 +142,9 @@ function suffixForms(w: string): string[] {
   if (w.endsWith("ied")) add(`${w.slice(0, -3)}y`);
   if (w.endsWith("ed")) { add(w.slice(0, -2)); add(w.slice(0, -1)); }
   if (w.endsWith("ing")) { add(w.slice(0, -3)); add(`${w.slice(0, -3)}e`); }
-  if (w.endsWith("er")) { add(w.slice(0, -2)); add(w.slice(0, -1)); }
+  // No "-er" rule: it turned "builder" into "build" and let a software word through as an
+  // everyday one (Dhaval's review, 2026-09-29). Comparatives and the people-words we mean are
+  // listed by hand instead.
   if (w.endsWith("est")) { add(w.slice(0, -3)); add(w.slice(0, -2)); }
   if (w.endsWith("ly")) add(w.slice(0, -2));
   if (w.endsWith("ier")) add(`${w.slice(0, -3)}y`);

@@ -309,6 +309,18 @@ export function templateSubjectProblems(subject: string, product: string[] = [],
   return [...problems, ...plainSubjectProblems(read, [], ["acme"], product), ...subjectShapeProblems(read, ask)];
 }
 
+/**
+ * Pictures instead of plain words: a thing that eats the day, work that piles up, a request that
+ * falls through the cracks. Each word may be everyday, and the line still has to be worked out
+ * (Dhaval, 2026-09-29: "Which oxygen customer eats your day", "When your best builder leaves").
+ * Found as phrases, so "eat lunch" is left alone.
+ */
+const PICTURE = /\b(eats?|ate|eating) (up |into |away )?(your|the|their|his|her|a|most|half|every|all)\b|\bpiles? (up|on)\b|\bthrough the cracks\b|\bfalls? through\b|\bslips? (through|away|past)\b|\bin the dark\b|\bblind spot|\bfirefight|\bjuggl|\bdrown|\bbleed|\bleaks?\b|\bburn(s|ing|t)? (through|out)\b|\bon (your|their) plate\b|\bmove(s)? the needle\b|\bat the end of the day\b|\bblack hole\b|\bgoes quiet\b|\bsteals?\b|\bkills? (the|your|their)\b/gi;
+
+export function pictureWords(text: string): string[] {
+  return [...new Set((String(text ?? "").match(PICTURE) ?? []).map((m) => m.toLowerCase()))];
+}
+
 /** Words that point back at something, which in an inbox line points at nothing the reader has seen. */
 const POINTING = new Set(["this", "that", "these", "those"]);
 
@@ -342,6 +354,8 @@ export function plainSubjectProblems(subject: string, theirs: string[] = [], com
   }
   if (hard.length) problems.push(`${hard.join(", ")} ${hard.length === 1 ? "is not an everyday word" : "are not everyday words"}; say it with words a school child knows, one of their own words, or an office word like staff, pending, report`);
   if (/[,;:—–]|\s-\s/.test(line)) problems.push("is cut into pieces by a comma, colon or dash; say it as one sentence you would speak");
+  const pictures = pictureWords(line);
+  if (pictures.length) problems.push(`${pictures.map((x) => `"${x}"`).join(", ")} is a picture, not plain words; say what really happens`);
   const pointing = tokens.filter((t) => POINTING.has(t.word)).map((t) => `"${t.word}"`);
   if (pointing.length) problems.push(`${pointing.join(", ")} points at something they have not read yet; name the thing itself`);
   if (!tokens.some((t) => isDoingWord(t.word))) problems.push("has no doing word, so it reads as a label; say who does what (\"Your dealers wait for a reply\")");
@@ -393,6 +407,8 @@ export function plainBodyProblems(
     }
   }
   if (hard.size) problems.push(`${[...hard.values()].join(", ")} ${hard.size === 1 ? "is not an everyday word" : "are not everyday words"}; say each with words a school child knows, one of their own words, or an office word like staff, pending, report`);
+  const pictures = pictureWords(text);
+  if (pictures.length) problems.push(`${pictures.map((x) => `"${x}"`).join(", ")} ${pictures.length === 1 ? "is a picture" : "are pictures"}, not plain words; say what really happens ("one customer takes most of the day at your desk")`);
   const sentences = text.split(/(?<=[.?!])\s+|\n+/).map((x) => x.trim()).filter((x) => x && !SET_LINE.test(x));
   const labels = sentences.filter((x) => !x.split(/\s+/).some((w) => isDoingWord(w.toLowerCase().replace(/[^a-z'’]/g, ""))));
   if (labels.length) problems.push(`${labels.map((x) => `"${x}"`).join(", ")} ${labels.length === 1 ? "has" : "have"} no doing word, so ${labels.length === 1 ? "it reads" : "they read"} as a note, not speech; say who does what`);
