@@ -25,7 +25,7 @@ import { hookSpread } from "../../engine/hooks.js";
 import { CONTEXT_REFRESH_DAYS, READ_BATCH_MAX, contextAgeDays, contextOf, kindFromPath, normalisePageUrl, onSite, readPages, siteMap } from "../../engine/siteContext.js";
 import { siteContext, SITE_PAGE_KINDS } from "../../schemas/product.js";
 import { TRIAL_LEADS, TRIAL_OPEN_MAX, capFor, ideaLimitsFor, ideaUsage, ideasFor, ideasHadBy, ideasLoopOn, ideasOf, inventedOf, nextInventedN, reviewInventedIdeas, trialReach, type InventedIdea } from "../../engine/ideas.js";
-import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, carriesTheirWorld, plainSubjectProblems, priceHistory, subjectShapeProblems, repeatedSentence, scenesSent, theirWords, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
+import { COST_LABEL_MAX_CHARS, FRAME_BODY_MAX_WORDS, OPENING_MAX_CHARS, PRICE_EVERY, ROLLING_MAX_STEPS, SCAN_LINE_MAX_CHARS, SCENE_JOBS, SCENE_KINDS, carriesTheirWorld, plainSubjectProblems, priceHistory, subjectShapeProblems, templateSubjectProblems, repeatedSentence, scenesSent, theirWords, type SceneKind, avoidedWord, companyTokens, CTA_TEXTS, TRIAL_CTA, planPriceFigures, screenWords, unsampledFigures, paceBand, clickedRecently, RECEIPT_LINE_MAX_CHARS, RECEIPT_MAX_LINES, unprovenClaims, emojiProneSymbols, frameKeyOf, LEAD_TYPE_PROFILES, leadTypeOf, longSentences, SENTENCE_MAX_WORDS, groupFor, isRolling, isRollingPlan, layoutArm, spelledQuantities, themeSlug, unlabelledNumbers, watchWindowMs, type LayoutTest } from "../../engine/rolling.js";
 import { reconcileDispatched } from "../../engine/reconcile.js";
 import { resolveChannelAdapter } from "../../engine/adapters.js";
 import { registerRoutine, routineHealth } from "../../engine/routines.js";
@@ -2114,7 +2114,8 @@ export const TOOLS: ToolDef[] = [
       const stepRows = new Map(((currentPlan?.steps ?? []) as Array<Record<string, unknown>>).map((st) => [Number(st.id ?? st.step_id), st]));
       const isFrameTouch = (t: Record<string, unknown>) =>
         isRolling(campaignDef) && String(stepRows.get(Number(t.step_id))?.templateKey ?? "") === frameKey;
-      const writer = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { config: 1 } });
+      const writer = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { config: 1, name: 1 } });
+      const productWords = [String(writer?.name ?? "")].filter(Boolean);
       const subjectAvoid = (((writer?.config as { writing?: { subjectAvoid?: string[] } } | undefined)?.writing?.subjectAvoid) ?? []).map(String).filter(Boolean);
       const plainWriting = ((writer?.config as { writing?: { oneLine?: string; wordsAvoid?: Array<{ word: string; use: string }> } } | undefined)?.writing ?? {});
       const wordsAvoid = (plainWriting.wordsAvoid ?? []).filter((w) => w && w.word);
@@ -2137,6 +2138,7 @@ export const TOOLS: ToolDef[] = [
       const priceNow = priceHistory(sentBefore, prices);
       const theirs = theirWords(lead);
       const sceneProblems: string[] = [];
+      const subjectChecked = new Set<Record<string, unknown>>();
       for (const t of touches) {
         if (providerTouch.has(t) || !isFrameTouch(t) || !structuredParts.has(t)) continue;
         const typeHere = leadTypeOf(campaignDef);
@@ -2203,7 +2205,8 @@ export const TOOLS: ToolDef[] = [
         // The inbox line in everyday English, said the way a person talks: these readers do not
         // read English all day, and a line they have to work out is a mail they do not open
         // (2026-09-28, methods A and B 2026-09-29).
-        for (const problem of plainSubjectProblems(String(t.subject ?? ""), theirs, companyWords)) say(`subject ${problem}.`);
+        subjectChecked.add(t);
+        for (const problem of plainSubjectProblems(String(t.subject ?? ""), theirs, companyWords, productWords)) say(`subject ${problem}.`);
         for (const problem of subjectShapeProblems(String(t.subject ?? ""), String(t.ask ?? "link") === "reply" ? "reply" : "link")) say(`subject ${problem}.`);
         const twice = repeatedSentence([t.opening, t.scene, t.reveal, t.limit].map((v) => String(v ?? "")).join("\n"), sentBefore);
         if (twice) {
@@ -2212,6 +2215,21 @@ export const TOOLS: ToolDef[] = [
       }
       if (sceneProblems.length) {
         throw new Error(`Fix all of these, then send again:\n- ${sceneProblems.join("\n- ")}\nNothing was written.`);
+      }
+      // Every subject written here meets the same rule, not only a frame's: a subject written
+      // into a template's slot reaches the same inbox (2026-09-29).
+      const slotSubjectProblems: string[] = [];
+      for (const t of touches) {
+        if (subjectChecked.has(t) || providerTouch.has(t)) continue;
+        const line = String(t.subject ?? "").trim();
+        if (!line) continue;
+        const ask = String(t.ask ?? "link") === "reply" ? "reply" : "link";
+        for (const problem of [...plainSubjectProblems(line, theirs, companyWords, productWords), ...subjectShapeProblems(line, ask)]) {
+          slotSubjectProblems.push(`step ${String(t.step_id)}: subject ${problem}.`);
+        }
+      }
+      if (slotSubjectProblems.length) {
+        throw new Error(`Fix all of these, then send again:\n- ${slotSubjectProblems.join("\n- ")}\nNothing was written.`);
       }
       for (const t of touches) {
         const step = String(t.step_id);
@@ -3634,6 +3652,19 @@ TOOLS.push({
     const channel = str(args.channel) ?? "email";
     const scope = str(args.scope) ?? "product_default";
     const segmentKey = str(args.segment_key);
+    // The template's inbox line goes to everyone no mail was written for, so it meets the same
+    // subject rule as a written one: one spoken sentence in everyday words (2026-09-29).
+    if (channel === "email") {
+      const product = await db.collection(C.products).findOne({ _id: new ObjectId(productId) }, { projection: { name: 1 } });
+      const subjectBlock = parsed.data.find((b) => (b as { type?: string }).type === "subject") as { fallback?: string; fixed?: string } | undefined;
+      const line = String(subjectBlock?.fallback ?? subjectBlock?.fixed ?? "");
+      // A template with no button asks for a reply, so its subject may ask the question.
+      const ask = parsed.data.some((b) => (b as { type?: string }).type === "cta") ? "link" : "reply";
+      const problems = templateSubjectProblems(line, [String(product?.name ?? "")], ask);
+      if (problems.length) {
+        throw new Error(`the subject "${line}" breaks the subject rule. Fix all of these, then send again:\n- ${problems.join("\n- ")}\nNothing was written.`);
+      }
+    }
     const filter: Record<string, unknown> = { orgId: ctx.orgId, productId, key, channel, scope };
     if (scope === "segment") {
       if (!segmentKey) throw new Error("a segment-scoped template needs segment_key");

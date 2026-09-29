@@ -250,6 +250,21 @@ export function subjectShapeProblems(subject: string, ask: "link" | "reply" = "l
   return problems;
 }
 
+/**
+ * A template's subject, held to the same rule as a written one (2026-09-29). A template is
+ * what a lead gets when no mail was written for them, so its fixed line reaches as many
+ * inboxes as every written one together. Merge tokens are read as what they become: a
+ * company token as their name, and a first name is refused, because no subject carries one.
+ */
+export function templateSubjectProblems(subject: string, product: string[] = [], ask: "link" | "reply" = "link"): string[] {
+  const line = String(subject ?? "").trim();
+  if (!line) return [];
+  const problems: string[] = [];
+  if (/\{\{\s*first_name\s*\}\}/i.test(line)) problems.push("carries {{first_name}}; a subject never carries a person's name");
+  const read = line.replace(/\{\{\s*first_name\s*\}\},?\s*/gi, "").replace(/\{\{\s*company[a-z_]*\s*\}\}/gi, "Acme").replace(/\{\{[^}]*\}\}/g, "your");
+  return [...problems, ...plainSubjectProblems(read, [], ["acme"], product), ...subjectShapeProblems(read, ask)];
+}
+
 /** Words that point back at something, which in an inbox line points at nothing the reader has seen. */
 const POINTING = new Set(["this", "that", "these", "those"]);
 
@@ -257,16 +272,17 @@ const POINTING = new Set(["this", "that", "these", "those"]);
  * The subject in everyday English, said the way a person talks (methods A and B, 2026-09-29).
  *
  * B, easy words: every word is on the everyday list, is one of the lead's own words, is part of
- * their company name, or carries a digit. A: one spoken sentence — it has a doing word, it speaks
+ * their company name or the product's name, or carries a digit. A: one spoken sentence — it has a doing word, it speaks
  * to them ("you", "your" or their company name), it is not cut into pieces by a comma, colon or
  * dash, and it does not point with this, that, these or those.
  *
  * Every problem is returned at once, each with what to say instead where we know it, so one
  * rewrite fixes them all.
  */
-export function plainSubjectProblems(subject: string, theirs: string[] = [], company: string[] = []): string[] {
+export function plainSubjectProblems(subject: string, theirs: string[] = [], company: string[] = [], product: string[] = []): string[] {
   const line = String(subject ?? "").trim();
-  const own = new Set(theirs.map((w) => w.toLowerCase()));
+  // The product's own name may be said ("Your TeamGrid account is ready"); it does not speak to them.
+  const own = new Set([...theirs, ...product.flatMap((p) => p.split(/[^A-Za-z0-9]+/))].map((w) => w.toLowerCase()).filter(Boolean));
   const companyWords = new Set(company.flatMap((c) => c.toLowerCase().split(/[^a-z0-9]+/)).filter((w) => w.length >= 2));
   const problems: string[] = [];
   const tokens = line.split(/\s+/).map((raw) => ({ raw, word: raw.toLowerCase().replace(/[^a-z0-9'’-]/g, "").replace(/^[-'’]+|[-'’]+$/g, "") })).filter((t) => t.word);

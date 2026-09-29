@@ -40,7 +40,7 @@ const LADDER: Rung[] = [
     name: "Welcome",
     stage: "first_touch",
     angle: (c) => `Two sentences on what they can do in the first ten minutes. Tone: ${c.voice.tone}. No filler.`,
-    subject: () => "{{first_name}}, your workspace is ready",
+    subject: () => "Your account is ready to use",
     heading: () => "Your workspace is ready",
     body: (c) => `${sentence(firstPropOf(c))}\n\nMost teams see something useful inside a day.`,
   },
@@ -50,7 +50,7 @@ const LADDER: Rung[] = [
     stage: "day_two",
     angle: (c) =>
       `They signed up and stopped. Name the one thing standing between them and "${c.activation.describedAs}", and make that one thing feel small.`,
-    subject: () => "{{first_name}}, one step left",
+    subject: () => "You are one step from starting",
     heading: () => "One step left",
     body: (c) =>
       `You are one step from ${c.activation.describedAs}.\n\nIt takes a couple of minutes, and you can undo it afterwards.`,
@@ -61,7 +61,7 @@ const LADDER: Rung[] = [
     stage: "day_four",
     angle: (c) =>
       `Still cold. Show evidence rather than claims — what a team like theirs actually saw. Stay inside: ${c.valueProps.join("; ")}.`,
-    subject: () => "What this looks like in week one",
+    subject: () => "See what your first week looks like",
     heading: () => "What this looks like in week one",
     body: (c) => `${sentence(firstPropOf(c))}\n\nThat is the whole first week. No rollout, no training day.`,
   },
@@ -71,7 +71,7 @@ const LADDER: Rung[] = [
     stage: "day_seven",
     angle: (c) =>
       `They have gone quiet. Name the objection their segment actually has and answer it straight. Never claim: ${c.constraints.forbiddenClaims.join("; ") || "anything the product cannot back"}.`,
-    subject: () => "The bit people usually ask about",
+    subject: () => "We answer the question you may have",
     heading: () => "The bit people usually ask about",
     body: () =>
       "Most people stall on the same question, so here is the straight answer rather than a brochure one.",
@@ -82,7 +82,7 @@ const LADDER: Rung[] = [
     stage: "day_twelve",
     angle: () =>
       "The trial is ending. Be honest about that and easy to say no to. No manufactured urgency, no countdown.",
-    subject: () => "{{first_name}}, your trial ends soon",
+    subject: () => "Your free days end soon",
     heading: () => "Your trial ends soon",
     body: () =>
       "If it is not useful, that is a fair answer and this is the last you will hear about it.\n\nIf it is, the link below picks up exactly where you left off.",
@@ -106,7 +106,7 @@ const STATE_RUNGS: Rung[] = [
     angle: () =>
       "They have earned a conversation: they clicked recently, or they wrote back. Say that you noticed, " +
       "offer the time, and stop. No pitch, no recap, nothing to read before deciding.",
-    subject: () => "{{first_name}}, worth twenty minutes?",
+    subject: () => "We can call you when you want",
     heading: () => "Worth twenty minutes?",
     body: () =>
       "You have been looking at this properly, so rather than send you more to read, here is time with someone who can answer whatever is still open." +
@@ -255,7 +255,7 @@ export async function generateDefaultTemplates(
       if (!isShortForm) {
         blocks.push({
           type: "subject",
-          slot: `${rung.name.toLowerCase()}, under 55 characters`,
+          slot: `${rung.name.toLowerCase()}: one sentence you would say to them, in everyday words, 3 to 8 words, under 45 characters`,
           fallback: rung.subject(config),
         });
         // The line the inbox shows beside the subject. Left to the client it becomes the
@@ -344,8 +344,9 @@ export async function generateDefaultTemplates(
                 : [
                     {
                       type: "subject",
-                      slot: `hook on "${segment.pain}", under 55 characters`,
-                      fallback: `{{first_name}}, about ${segment.pain}`,
+                      slot: `their problem ("${segment.pain}") as one sentence you would say to them, in everyday words, 3 to 8 words, under 45 characters`,
+                      // Never the pain itself: it is a paragraph, and an inbox line of 30 words is not read.
+                      fallback: "Your account is ready to use",
                     },
                     {
                       type: "preheader",

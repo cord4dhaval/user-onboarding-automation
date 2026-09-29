@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { ObjectId, type Document } from "mongodb";
 import { getDb } from "../db/client.js";
 import { COLLECTIONS as C } from "../db/collections.js";
-import { companyTokens, plainSubjectProblems, subjectShapeProblems, theirWords } from "../engine/rolling.js";
+import { companyTokens, plainSubjectProblems, subjectShapeProblems, templateSubjectProblems, theirWords } from "../engine/rolling.js";
 
 /**
  * Every unsent subject, rewritten in everyday English said the way a person talks (2026-09-29).
@@ -21,14 +21,33 @@ import { companyTokens, plainSubjectProblems, subjectShapeProblems, theirWords }
  * body is not touched and nothing is re-rendered. With --apply the 7 feature templates get the
  * same new line as their subject, so the next mail they render carries it too.
  *
- *   npm run subjects:everyday              check them and write nothing
- *   npm run subjects:everyday -- --apply   write the ones that pass
+ * Second pass, the same day: Dhaval asked for both kinds of mail under the rule, the ones
+ * written per lead and the ones sent from a template. So every active TeamGrid template's
+ * subject is in TEMPLATES now, not only the 7 whose mails were waiting: "Welcome to TeamGrid",
+ * "Closing the loop on TeamGrid", "you're in. one step left" and the rest. Templates are
+ * matched by product and key, because another product uses keys such as welcome too.
+ *
+ *   npm run subjects:everyday                           check them and write nothing
+ *   npm run subjects:everyday -- --apply                write the ones that pass
+ *   npm run subjects:everyday -- --apply --templates    write only the template subjects
  */
 
 const WAITING = ["awaiting_approval", "queued"];
 const LIST = "docs/subjects/everyday-2026-09-29.json";
 
+const TEAMGRID = "6a964454c4fa12977b6d6964";
+
 const TEMPLATES: Record<string, string> = {
+  welcome: "Your TeamGrid account is ready to use",
+  welcome_signup: "Put one small app on your computer",
+  one_step_left: "Finish setting up your TeamGrid account",
+  teamgrid_intro: "What TeamGrid does for your team",
+  old_leads_intro: "See your team's working day each morning",
+  privacy_answer: "What TeamGrid never sees on your computers",
+  written_email: "We have a short note for you",
+  re_qualify: "Does your team work at a computer?",
+  book_call: "Can we set it up with you?",
+  last_call: "We will stop writing to you now",
   replaces_tools: "One app writes your team's daily update",
   four_lines: "Stop asking your team what they did",
   hours_by_project: "See which client takes most of your time",
@@ -65,7 +84,11 @@ async function main(): Promise<void> {
     ready.push({ row, action });
   }
   for (const [key, line] of Object.entries(TEMPLATES)) {
-    const problems = [...plainSubjectProblems(line), ...subjectShapeProblems(line)];
+    const template = await db.collection(C.templates).findOne({ productId: TEAMGRID, key, status: "active", channel: "email" });
+    if (!template) { refused++; console.log(`REFUSED  template ${key} — no active TeamGrid email template with that key`); continue; }
+    // A template with no button asks for a reply, so its subject may ask the question.
+    const ask = ((template.blocks ?? []) as Array<{ type?: string }>).some((b) => b.type === "cta") ? "link" : "reply";
+    const problems = templateSubjectProblems(line, ["TeamGrid"], ask);
     if (problems.length) { refused++; console.log(`REFUSED  template ${key} "${line}"\n         - ${problems.join("\n         - ")}`); }
   }
 
@@ -73,7 +96,8 @@ async function main(): Promise<void> {
   if (!apply) { console.log("Nothing written. Re-run with --apply."); return; }
   if (refused) { console.log("Nothing written: fix the refused lines first."); return; }
 
-  for (const { row, action } of ready) {
+  const templatesOnly = process.argv.includes("--templates");
+  for (const { row, action } of templatesOnly ? [] : ready) {
     const content = action.content as { subject?: string; bodyHtml?: string };
     const set: Record<string, unknown> = { "content.subject": row.now, "content.subjectWas": row.was, "content.subjectRewrittenAt": new Date() };
     if (typeof content.bodyHtml === "string") {
@@ -81,11 +105,11 @@ async function main(): Promise<void> {
     }
     await db.collection(C.actions).updateOne({ _id: action._id, status: { $in: WAITING } }, { $set: set });
   }
-  console.log(`${ready.length} subjects rewritten. Bodies untouched, nothing sent.`);
+  if (!templatesOnly) console.log(`${ready.length} subjects rewritten. Bodies untouched, nothing sent.`);
 
   for (const [key, line] of Object.entries(TEMPLATES)) {
     const res = await db.collection(C.templates).updateOne(
-      { key, status: "active", "blocks.type": "subject" },
+      { productId: TEAMGRID, key, status: "active", channel: "email", "blocks.type": "subject" },
       { $set: { "blocks.$[s].fallback": line, updatedAt: new Date() }, $inc: { version: 1 } },
       { arrayFilters: [{ "s.type": "subject" }] },
     );
