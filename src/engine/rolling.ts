@@ -501,8 +501,18 @@ const NOT_THEIRS = new Set([
   "above", "below", "other", "others", "under", "after", "before", "multiple", "various", "general",
   "lorem", "ipsum", "dolor",
   // Page-code words a scraped social page leaves behind (facebook, instagram HTML).
-  "class", "div", "span", "href", "src", "style", "script", "login", "html",
+  "class", "div", "span", "href", "src", "style", "script", "login", "html", "snippets", "liquid", "footer",
+  // Placeholder Latin a half-built site still shows (lorem ipsum), never their trade.
+  "consectetur", "adipisicing", "adipiscing", "earum", "perferendis", "blanditiis", "voluptates", "voluptate",
+  "voluptatem", "similique", "officiis", "amet", "elit", "tempor", "incididunt", "labore", "dolore", "magna",
+  "aliqua", "veniam", "nostrud", "exercitation", "ullamco", "laboris", "aliquip", "commodo", "consequat",
+  "reprehenderit", "accusantium", "doloremque", "laudantium", "architecto", "beatae", "explicabo", "nesciunt",
+  "quisquam", "dolorem", "numquam", "fugiat", "pariatur", "excepteur", "occaecat", "cupidatat", "proident",
+  "deserunt", "mollit",
 ]);
+
+/** A page-code token (data-count-selected-text, content-load-template) is markup, not a word of theirs. */
+const PAGE_CODE = /^(data|aria|content|footer|header|snippet|section|template)-/;
 
 export function theirWords(person: Document | null | undefined): string[] {
   const form = ((person?.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;
@@ -511,7 +521,7 @@ export function theirWords(person: Document | null | undefined): string[] {
   const counts = new Map<string, number>();
   for (const raw of source.toLowerCase().match(/[a-z][a-z-]{4,}/g) ?? []) {
     const word = raw.replace(/-+$/, "");
-    if (NOT_THEIRS.has(word)) continue;
+    if (NOT_THEIRS.has(word) || PAGE_CODE.test(word)) continue;
     counts.set(word, (counts.get(word) ?? 0) + 1);
   }
   // The words their own pages lean on, longest first where they are used as often: a word they
@@ -531,7 +541,7 @@ export function theirVocabulary(person: Document | null | undefined): string[] {
   const form = ((person?.enrichment as { form?: Record<string, unknown> } | undefined)?.form ?? {}) as Record<string, unknown>;
   const site = String((person?.enrichment as { siteText?: unknown } | undefined)?.siteText ?? "");
   const source = [...Object.values(form), person?.role, site].map((v) => String(v ?? "")).join(" ").toLowerCase();
-  return [...new Set((source.match(/[a-z][a-z-]{2,}/g) ?? []).map((w) => w.replace(/-+$/, "")).filter((w) => !NOT_THEIRS.has(w)))];
+  return [...new Set((source.match(/[a-z][a-z-]{2,}/g) ?? []).map((w) => w.replace(/-+$/, "")).filter((w) => !NOT_THEIRS.has(w) && !PAGE_CODE.test(w)))];
 }
 
 /**
