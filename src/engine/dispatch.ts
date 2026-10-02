@@ -81,6 +81,21 @@ export interface DispatchSummary {
   lanes: LaneReport[];
 }
 
+/**
+ * Campaigns that are served in full, right after urgent work and before the fair share.
+ *
+ * Fairness is the right default and the wrong answer on the day one campaign matters more
+ * than the rest: when the plan's weekly hours ran short (2026-10-02) the hot form leads in
+ * teamgrid_leads_v3 waited their turn behind cold lists. Set DISPATCH_PRIORITY_CAMPAIGNS to
+ * a comma list of campaign keys; an empty value turns the tier off.
+ */
+const PRIORITY_CAMPAIGNS = new Set(
+  (process.env.DISPATCH_PRIORITY_CAMPAIGNS ?? "teamgrid_leads_v3")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean),
+);
+
 interface Bucket {
   productId: string;
   campaignKey: string;
@@ -172,6 +187,32 @@ async function dispatchLane(orgId: string, kind: ThinkingKind, now: Date): Promi
     budget -= urgent.length;
   }
   if (budget === 0) return report;
+
+  // Priority campaigns next, in full and oldest first, still outside the round.
+  if (PRIORITY_CAMPAIGNS.size) {
+    const first = await db
+      .collection(C.workQueue)
+      .find({
+        orgId,
+        kind,
+        status: "queued",
+        priority: { $ne: PRIORITY.urgent },
+        dueAt: { $lte: now },
+        campaignKey: { $in: [...PRIORITY_CAMPAIGNS] },
+      })
+      .sort({ dueAt: 1 })
+      .limit(budget)
+      .project({ _id: 1 })
+      .toArray();
+    if (first.length) {
+      await db
+        .collection(C.workQueue)
+        .updateMany({ _id: { $in: first.map((f) => f._id) } }, { $set: { status: "ready" } });
+      report.granted += first.length;
+      budget -= first.length;
+    }
+    if (budget === 0) return report;
+  }
 
   // What each campaign is waiting on. Grouped rather than listed: the whole point is to
   // divide a budget across tenants without reading ten thousand rows to do it.
