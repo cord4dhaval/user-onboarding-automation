@@ -246,7 +246,7 @@ function pluck(payload: unknown, path: string): unknown {
  *
  * Three rules keep this from producing wrong outcomes:
  *
- *  - A negative check is never failure. Only a spent budget or a passed deadline ends a
+ *  - A negative check is never failure. Only a spent message budget ends a
  *    campaign unsuccessfully — product data lags, and a lagging probe would otherwise
  *    close campaigns on people who actually converted.
  *  - Success is measured against a baseline taken on entry, so someone who was already a
@@ -420,12 +420,13 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
     return "succeeded";
   }
 
-  const deadlinePassed = new Date(String(instance.deadline)) < now;
+  // A campaign ends on its message budget, never on the calendar: a lead still opening
+  // our mail on day 15 is worth the next one (Dhaval, 2026-09-30).
   const budget = goal?.budget as { touches: number } | undefined;
   const spent = (instance.spent as { touches: number } | undefined)?.touches ?? 0;
   const budgetSpent = Boolean(budget && spent >= budget.touches);
 
-  if (deadlinePassed || budgetSpent) {
+  if (budgetSpent) {
     await db.collection(C.goalInstances).updateOne(
       { _id: instance._id },
       {
@@ -434,7 +435,7 @@ export async function verifyCampaign(orgId: string, goalInstanceId: string): Pro
           checkResults: results,
           probeResults: probes,
           endedAt: now,
-          outcome: deadlinePassed ? "deadline passed" : "budget spent",
+          outcome: "budget spent",
         },
       },
     );

@@ -10,7 +10,7 @@
  *      account sends it without a note) and li_frame (the slot Claude's messages go in);
  *   2. creates the campaign: hot leads, goal "account created", Claude plans LinkedIn
  *      (routine 6), every message reviewed first;
- *   3. creates its lead source: BrandGrid list_leads every 10 minutes, starting from where the
+ *   3. creates its lead source: BrandGrid ad.leads every 10 minutes, starting from where the
  *      v3 source is now, so only new leads arrive through it;
  *   4. writes the profiles the 18 September search was sure of (high) or thought likely
  *      (medium) onto those leads; the rest are left for Claude's own search;
@@ -114,7 +114,7 @@ async function main() {
   let source = await db.collection(C.sources).findOne({ orgId, productId: PRODUCT_ID, defaultGoalKey: KEY });
   if (source) say(`source for ${KEY}: already there`);
   else {
-    say(`source for ${KEY}: BrandGrid list_leads every 10 min, from ${String(v3Source.cursor)}`);
+    say(`source for ${KEY}: BrandGrid ad.leads every 10 min, from ${String(v3Source.cursor)}`);
     if (apply) {
       const fieldMap = {
         ...(waSource.fieldMap as Record<string, unknown>),

@@ -57,8 +57,6 @@ export interface AdvanceSummary {
  */
 export function tierFor(person: Document, goalInstance: Document): Tier {
   const budget = (goalInstance.spent as { touches?: number } | undefined)?.touches ?? 0;
-  const deadline = goalInstance.deadline ? new Date(String(goalInstance.deadline)) : undefined;
-  if (deadline && deadline <= new Date()) return 3;
 
   const band = (person.temp as { band?: string } | undefined)?.band;
   if (band === "dead") return 3;

@@ -614,7 +614,6 @@ export const TOOLS: ToolDef[] = [
             segment: (person?.belief as { segment?: string } | undefined)?.segment ?? null,
             temperature: (person?.temp as { band?: string } | undefined)?.band ?? null,
             spent: goal.spent,
-            deadline: goal.deadline,
             started_at: goal.startedAt,
             check_results: goal.checkResults ?? {},
             // What the tools actually returned last time, so a verdict rests on data
@@ -907,7 +906,6 @@ export const TOOLS: ToolDef[] = [
               /** What this campaign is and how to write for it, as a person described it. */
               brief: goalDef?.brief ?? null,
               spent: goal.spent,
-              deadline: goal.deadline,
               budget: goalDef?.budget,
               success: goalDef?.success,
               cadence_by_temp: goalDef?.cadenceByTemp,

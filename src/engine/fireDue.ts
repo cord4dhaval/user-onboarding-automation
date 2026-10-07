@@ -78,7 +78,7 @@ export interface FireOptions {
 }
 
 /**
- * Releases due touches under every guardrail: suppression, goal budget, deadline, and the
+ * Releases due touches under every guardrail: suppression, goal budget, and the
  * channel's daily cap. All of it is enforced here in code rather than in a plan or a
  * prompt, so no amount of reasoning upstream can spend past a limit.
  */
@@ -920,7 +920,7 @@ export async function fireDue(opts: FireOptions): Promise<FireSummary> {
 /**
  * Why a message may not go out, and whether that is a verdict or a delay.
  *
- * The difference is the whole point. Suppression, a passed deadline and a spent budget are
+ * The difference is the whole point. Suppression and a spent budget are
  * decisions: the message should never be sent, and marking it skipped is correct. A rate
  * limit is a clock — the same message is perfectly sendable half an hour later. Treating
  * the second like the first is what silently destroyed 85 approved messages when a daily
@@ -958,7 +958,7 @@ async function blockedReason(args: {
 }): Promise<Blocked | null> {
   if (await isSuppressed(args.orgId, [args.address])) return { reason: "on the suppression list" };
 
-  const gi = args.goalInstance as { status: string; deadline: Date; spent: { touches: number }; goalKey: string };
+  const gi = args.goalInstance as { status: string; spent: { touches: number }; goalKey: string };
   if (gi.status !== "active") return { reason: `goal instance is ${gi.status}` };
   // The last check before a campaign message reaches someone who has written back in this
   // campaign since it was written. The reply poller drops these the minute it reads the
@@ -972,7 +972,6 @@ async function blockedReason(args: {
   // the hold ends. An answer to something they wrote still goes either way.
   const hold = holdOf(args.goalInstance, args.now);
   if (hold && !args.isReply) return hold.kind === "lost" ? { reason: hold.reason } : { reason: hold.reason, retryAt: hold.until };
-  if (new Date(gi.deadline) < args.now) return { reason: "goal deadline passed" };
 
   const db = await getDb();
   const goal = await db.collection(C.goals).findOne({ orgId: args.orgId, key: gi.goalKey });

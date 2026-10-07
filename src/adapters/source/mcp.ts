@@ -111,12 +111,26 @@ function parseBody(result: Record<string, unknown>): Record<string, unknown> {
   try {
     const parsed = JSON.parse(raw.slice(at)) as unknown;
     if (Array.isArray(parsed)) return { records: parsed };
-    if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+    if (parsed && typeof parsed === "object") return unwrapEnvelope(parsed as Record<string, unknown>);
   } catch {
     // Not JSON after all. Fall through to the structured fields, which is what a
     // genuinely prose-only answer deserves: no records, no crash.
   }
   return result;
+}
+
+/**
+ * BrandGrid's `ad.leads` (which replaced `list_leads`) wraps the lead list in an envelope:
+ * `{ data: { leads, nextCursor, diagnosis }, provenance, confidence, gaps, next }`. The
+ * leads and the paging cursor live under `data`, and `gaps` says why a page came back empty
+ * or partial. Without unwrapping, the empty `gaps` array was the first array in sight and
+ * every poll read zero leads with no error. A body without that envelope is returned as-is.
+ */
+function unwrapEnvelope(body: Record<string, unknown>): Record<string, unknown> {
+  const data = body.data;
+  if (!data || typeof data !== "object" || Array.isArray(data) || !Array.isArray(body.gaps)) return body;
+  if (body.gaps.length > 0) console.warn(`[source] lead server reported gaps: ${JSON.stringify(body.gaps).slice(0, 500)}`);
+  return data as Record<string, unknown>;
 }
 
 /**
@@ -136,7 +150,7 @@ function extractRecords(body: Record<string, unknown>): RawRecord[] {
   // The parsed body itself. Its record array is under whatever key the server picked —
   // "leads", "contacts", "items" — so the first array of objects is taken.
   for (const value of Object.values(body)) {
-    if (Array.isArray(value) && value.every((v) => v && typeof v === "object")) {
+    if (Array.isArray(value) && value.length > 0 && value.every((v) => v && typeof v === "object")) {
       return value as RawRecord[];
     }
   }

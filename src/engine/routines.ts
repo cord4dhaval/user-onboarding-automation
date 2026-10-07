@@ -674,7 +674,7 @@ ${contract}
 4.2 verdict-writer
   Decide, and submit them together with mark_state:
     succeeded  the evidence plainly shows it. Not "probably".
-    failed     a real ending: they said no, or the budget and deadline are spent.
+    failed     a real ending: they said no, or the message budget is spent.
                Never because a check has simply not passed yet.
     continue   still running. Say in one line where they are.
   mark_state refuses "succeeded" unless every check the campaign defines has

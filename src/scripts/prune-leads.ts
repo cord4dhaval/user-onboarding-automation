@@ -53,7 +53,10 @@ interface Lead {
 /** The tool answers as text with a JSON body inside it. */
 function parse(raw: unknown): Record<string, unknown> {
   const text = typeof raw === "string" ? raw : JSON.stringify(raw);
-  return JSON.parse(text.slice(text.indexOf("{"))) as Record<string, unknown>;
+  const body = JSON.parse(text.slice(text.indexOf("{"))) as Record<string, unknown>;
+  // ad.leads puts the lead list under `data`; `gaps` explains an empty or partial page.
+  if (Array.isArray(body.gaps) && body.gaps.length > 0) console.warn("gaps:", JSON.stringify(body.gaps));
+  return (body.data ?? body) as Record<string, unknown>;
 }
 
 function emailOf(lead: Lead): string {
@@ -93,7 +96,7 @@ async function main(): Promise<void> {
   for (let page = 0; page < 40; page++) {
     const args: Record<string, unknown> = { brandId: BRAND, limit: 100, sinceHours: 2160 };
     if (cursor) args.cursor = cursor;
-    const body = parse(await client.callTool("list_leads", args));
+    const body = parse(await client.callTool("ad.leads", args));
     const batch = (body.leads ?? []) as Lead[];
     seen += batch.length;
     for (const lead of batch) {
