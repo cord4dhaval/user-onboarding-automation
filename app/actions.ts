@@ -257,18 +257,27 @@ export async function startReauthOAuth(formData: FormData) {
 
   const redirectUri = `${await appOrigin()}/api/oauth/callback`;
   const existing = connection.oauth as { clientId?: string; clientSecret?: string } | undefined;
-  let clientId = String(formData.get("clientId") ?? "").trim() || existing?.clientId || "";
-  let clientSecret = String(formData.get("clientSecret") ?? "").trim() || existing?.clientSecret;
+  let clientId = String(formData.get("clientId") ?? "").trim();
+  let clientSecret = String(formData.get("clientSecret") ?? "").trim() || undefined;
 
   if (!clientId) {
+    // A fresh client every time, not the stored one. A client is registered against one
+    // callback address, so one made from localhost or an earlier domain is refused here
+    // with "redirect_uri not registered for this client" — and the server may have dropped
+    // the old registration altogether. The stored client is the fallback only for a server
+    // that cannot register a new one.
     const registered = await registerClient(metadata, redirectUri, "Conversion Engine");
-    if (!registered) {
+    if (registered) {
+      clientId = registered.client_id;
+      clientSecret = registered.client_secret;
+    } else if (existing?.clientId) {
+      clientId = existing.clientId;
+      clientSecret = existing.clientSecret;
+    } else {
       throw new Error(
         "This server does not support dynamic client registration. Enter a client ID issued by the provider.",
       );
     }
-    clientId = registered.client_id;
-    clientSecret = registered.client_secret;
   }
 
   const { verifier, challenge } = createPkce();
